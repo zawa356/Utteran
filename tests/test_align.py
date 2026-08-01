@@ -70,9 +70,7 @@ def test_segment_splits_using_regular_turns_when_exclusive_is_none() -> None:
     words = [Word(0.0, 0.4, "A"), Word(0.5, 0.9, "B")]
     result = align_transcription(
         transcription(Segment(0.0, 0.9, "AB", words)),
-        diarization(
-            [SpeakerTurn(0.0, 0.45, "FIRST"), SpeakerTurn(0.45, 1.0, "SECOND")]
-        ),
+        diarization([SpeakerTurn(0.0, 0.45, "FIRST"), SpeakerTurn(0.45, 1.0, "SECOND")]),
         AlignmentOptions(min_segment_duration=0.0, min_segment_words=0),
     )
 

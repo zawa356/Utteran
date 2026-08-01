@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -57,6 +59,7 @@ def configure_logging(level: str = "info", log_file: Path | None = None) -> None
     root.setLevel(level.upper())
 
     console = logging.StreamHandler()
+    console.setLevel(level.upper())
     console.setFormatter(RedactingFormatter("%(levelname)s: %(message)s"))
     root.addHandler(console)
 
@@ -65,3 +68,24 @@ def configure_logging(level: str = "info", log_file: Path | None = None) -> None
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setFormatter(JsonFormatter())
         root.addHandler(file_handler)
+
+
+@contextmanager
+def job_log(path: Path, level: str = "info") -> Iterator[None]:
+    """Temporarily append redacted structured records to one job log."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    root = logging.getLogger()
+    selected_level = logging.getLevelNamesMapping().get(level.upper(), logging.INFO)
+    previous_level = root.level
+    if previous_level > selected_level:
+        root.setLevel(selected_level)
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setLevel(selected_level)
+    handler.setFormatter(JsonFormatter())
+    root.addHandler(handler)
+    try:
+        yield
+    finally:
+        root.removeHandler(handler)
+        handler.close()
+        root.setLevel(previous_level)

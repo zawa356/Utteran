@@ -5,6 +5,7 @@ from pathlib import Path
 from utteran.config import TokenProvider
 from utteran.diarization.base import DiarizationBackend
 from utteran.errors import BackendUnavailableError, HuggingFaceTokenMissingError
+from utteran.models.manager import find_runtime_model
 
 
 def create_diarization_backend(
@@ -27,6 +28,7 @@ def preflight_diarization_backend(
     if (
         name == "pyannote"
         and not Path(model_id).expanduser().exists()
+        and find_runtime_model(name, model_id, token_provider=token_provider) is None
         and not token_provider.get_token()
     ):
         raise HuggingFaceTokenMissingError

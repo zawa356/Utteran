@@ -1,18 +1,39 @@
-"""Typer command-line interface for Phase 1."""
+"""Thin Typer command-line interface over utteran's reusable core APIs."""
 
 from __future__ import annotations
 
+import json
 import logging
+import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Never
 
 import typer
 from rich.console import Console
 from rich.progress import Progress, TaskID
+from rich.table import Table
 
-from utteran.config import Config, TokenProvider, default_token_provider
-from utteran.errors import CancelledError, ConfigurationError, UtteranError
+from utteran.audio import find_ffmpeg
+from utteran.batch import BatchSummary, discover_inputs, run_batch
+from utteran.config import (
+    Config,
+    TokenProvider,
+    default_config_path,
+    default_token_provider,
+    initialize_config,
+)
+from utteran.devices import DeviceReport, detect_devices
+from utteran.diarization.registry import preflight_diarization_backend
+from utteran.errors import (
+    CancelledError,
+    ConfigurationError,
+    ModelNotFoundError,
+    UtteranError,
+)
+from utteran.jobs import JobStore
 from utteran.logging import configure_logging, mask_secrets, register_secret
+from utteran.models.catalog import ModelEntry, get_model
+from utteran.models.manager import ModelManager
 from utteran.pipeline import run_pipeline
 from utteran.types import PipelineOutcome, ProgressEvent
 
@@ -21,6 +42,13 @@ app = typer.Typer(
     help="音声・動画から話者付き文字起こしを生成します。",
     no_args_is_help=True,
 )
+models_app = typer.Typer(help="推論モデルを明示的に管理します。", no_args_is_help=True)
+jobs_app = typer.Typer(help="保存済みジョブを確認・削除します。", no_args_is_help=True)
+config_app = typer.Typer(help="utteran の設定ファイルを管理します。", no_args_is_help=True)
+app.add_typer(models_app, name="models")
+app.add_typer(jobs_app, name="jobs")
+app.add_typer(config_app, name="config")
+
 console = Console()
 error_console = Console(stderr=True)
 
@@ -54,7 +82,7 @@ class RichProgressReporter:
 
 @app.command()
 def transcribe(
-    input_path: Annotated[Path, typer.Argument(help="入力する音声または動画ファイル")],
+    input_path: Annotated[Path, typer.Argument(help="入力する音声・動画ファイルまたはフォルダ")],
     format_names: Annotated[
         str | None,
         typer.Option("--format", help="出力形式 (srt,vtt,json,txt,md のカンマ区切り)"),
@@ -83,13 +111,27 @@ def transcribe(
     no_diarization: Annotated[
         bool, typer.Option("--no-diarization", help="話者分離を無効にする")
     ] = False,
-    config_path: Annotated[
-        Path | None, typer.Option("--config", help="config.toml のパス")
+    recursive: Annotated[bool, typer.Option("--recursive", help="フォルダを再帰的に処理")] = False,
+    include: Annotated[
+        list[str] | None, typer.Option("--include", help="対象に含める glob (複数指定可)")
     ] = None,
+    exclude: Annotated[
+        list[str] | None, typer.Option("--exclude", help="対象から除く glob (複数指定可)")
+    ] = None,
+    resume: Annotated[
+        bool, typer.Option("--resume/--no-resume", help="完了済みステージを再利用")
+    ] = True,
+    force: Annotated[bool, typer.Option("--force", help="すべてのステージを再実行")] = False,
+    force_unlock: Annotated[
+        bool, typer.Option("--force-unlock", help="既存ジョブロックを強制解除")
+    ] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="処理対象だけを表示")] = False,
+    yes: Annotated[bool, typer.Option("--yes", help="モデル取得などの確認を省略")] = False,
+    config_path: Annotated[Path | None, typer.Option("--config", help="config.toml のパス")] = None,
     verbose: Annotated[bool, typer.Option("--verbose", help="詳細ログを表示")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", help="進捗表示を抑制")] = False,
 ) -> None:
-    """Transcribe one audio or video file."""
+    """Transcribe one file or a stable sequential folder batch."""
     try:
         if verbose and quiet:
             raise ConfigurationError("--verbose と --quiet は同時に指定できません。")
@@ -112,19 +154,326 @@ def transcribe(
         configure_logging(config.general.log_level)
         token_provider = default_token_provider()
         register_secret(token_provider.get_token())
-        outcome = _run_with_progress(input_path, config, token_provider, quiet)
+        _validate_transcribe_path(input_path)
+        includes = tuple(include or ())
+        excludes = tuple(exclude or ())
+
+        if input_path.is_file() and (recursive or includes or excludes):
+            raise ConfigurationError(
+                "--recursive / --include / --exclude はフォルダ入力でのみ指定できます。"
+            )
+        if dry_run:
+            _show_dry_run(input_path, config, recursive, includes, excludes)
+            return
+        if input_path.is_dir() and not discover_inputs(
+            input_path,
+            recursive=recursive,
+            include=includes,
+            exclude=excludes,
+        ):
+            console.print("処理対象ファイルはありません。")
+            return
+
+        if config.diarization.enabled:
+            preflight_diarization_backend(
+                config.diarization.backend,
+                config.diarization.model,
+                token_provider,
+            )
+        find_ffmpeg(config.ffmpeg.path)
+        _ensure_configured_models(config, token_provider, yes=yes, quiet=quiet)
+
+        if input_path.is_dir():
+            summary = _run_batch_with_progress(
+                input_path,
+                config,
+                token_provider,
+                quiet,
+                recursive=recursive,
+                include=includes,
+                exclude=excludes,
+                resume=resume,
+                force=force,
+                force_unlock=force_unlock,
+            )
+            _print_batch_summary(summary)
+            if summary.exit_code:
+                raise typer.Exit(code=summary.exit_code)
+            return
+
+        outcome = _run_with_progress(
+            input_path,
+            config,
+            token_provider,
+            quiet,
+            resume=resume,
+            force=force,
+            force_unlock=force_unlock,
+        )
     except KeyboardInterrupt:
         _exit_expected(CancelledError())
     except UtteranError as exc:
         _exit_expected(exc)
+    except typer.Exit:
+        raise
     except Exception as exc:
         if verbose:
             logging.getLogger(__name__).exception("予期しないエラー")
         error_console.print(f"[red]予期しないエラー:[/red] {mask_secrets(str(exc))}")
         raise typer.Exit(code=1) from None
 
+    if outcome.executed_stages:
+        console.print(f"ジョブ: {outcome.job_id} ({', '.join(outcome.executed_stages)})")
+    else:
+        console.print(f"ジョブ: {outcome.job_id} (完了済みのためスキップ)")
     for path in outcome.output_paths:
         console.print(f"出力: {path}")
+
+
+@app.command("devices")
+def devices_command(
+    json_output: Annotated[bool, typer.Option("--json", help="機械可読な JSON を出力")] = False,
+    config_path: Annotated[Path | None, typer.Option("--config", help="config.toml のパス")] = None,
+) -> None:
+    """Display hardware, runtimes, dependencies, and actual auto choices."""
+    try:
+        config = Config.load(config_path=config_path)
+        report = detect_devices(config.ffmpeg.path)
+    except UtteranError as exc:
+        _exit_expected(exc)
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        return
+    _print_device_report(report)
+
+
+@models_app.command("list")
+def models_list(
+    available: Annotated[
+        bool, typer.Option("--available", help="未導入を含むカタログ全体を表示")
+    ] = False,
+) -> None:
+    """List installed models or the complete catalog."""
+    try:
+        manager = _model_manager()
+        statuses = manager.list_status(available=available)
+    except UtteranError as exc:
+        _exit_expected(exc)
+    table = Table("ID", "導入", "サイズ", "ライセンス", "gated", "保存先")
+    for status in statuses:
+        shown_size = status.size_bytes if status.installed else status.entry.approximate_size_bytes
+        table.add_row(
+            status.entry.key,
+            "yes" if status.installed else "no",
+            _format_size(shown_size),
+            status.entry.license,
+            "yes" if status.entry.gated else "no",
+            str(status.path or "-"),
+        )
+    console.print(table)
+    if not statuses:
+        console.print(
+            "導入済みモデルはありません。`models list --available` で候補を確認できます。"
+        )
+
+
+@models_app.command("download")
+def models_download(
+    identifier: Annotated[str, typer.Argument(help="モデル ID または backend:model-id")],
+) -> None:
+    """Explicitly download one catalog model."""
+    try:
+        manager = _model_manager()
+        entry = get_model(identifier)
+        existing = manager.status(entry)
+        if existing.installed:
+            console.print(f"導入済み: {existing.path}")
+            return
+        with Progress(console=console) as progress:
+            path = manager.download(entry, progress=RichProgressReporter(progress))
+        console.print(f"取得完了: {path}")
+    except KeyboardInterrupt:
+        _exit_expected(CancelledError())
+    except UtteranError as exc:
+        _exit_expected(exc)
+
+
+@models_app.command("remove")
+def models_remove(
+    identifier: Annotated[str, typer.Argument(help="モデル ID または backend:model-id")],
+    yes: Annotated[bool, typer.Option("--yes", help="確認を省略")] = False,
+) -> None:
+    """Remove one explicitly selected model cache."""
+    try:
+        manager = _model_manager()
+        entry = get_model(identifier)
+        status = manager.status(entry)
+        if not status.installed:
+            console.print(f"未導入: {entry.key}")
+            return
+        console.print(f"削除対象: {entry.key}  {_format_size(status.size_bytes)}  {status.path}")
+        if not yes and not typer.confirm("削除しますか?"):
+            console.print("キャンセルしました。")
+            return
+        if manager.remove(entry):
+            console.print(f"削除しました: {entry.key}")
+    except UtteranError as exc:
+        _exit_expected(exc)
+
+
+@models_app.command("verify")
+def models_verify(
+    identifier: Annotated[str | None, typer.Argument(help="省略時は導入済みモデルすべて")] = None,
+) -> None:
+    """Verify required files and sizes for installed models."""
+    try:
+        manager = _model_manager()
+        entries = (
+            [get_model(identifier)]
+            if identifier is not None
+            else [status.entry for status in manager.list_status()]
+        )
+        results = [manager.verify(entry) for entry in entries]
+    except UtteranError as exc:
+        _exit_expected(exc)
+    table = Table("ID", "結果", "サイズ", "詳細")
+    for result in results:
+        table.add_row(
+            result.entry.key,
+            "ok" if result.ok else "failed",
+            _format_size(result.size_bytes),
+            result.message,
+        )
+    console.print(table)
+    if not results:
+        console.print("検証対象の導入済みモデルはありません。")
+    if any(not result.ok for result in results):
+        raise typer.Exit(code=1)
+
+
+@models_app.command("path")
+def models_path() -> None:
+    """Print the effective utteran model directory."""
+    typer.echo(_model_manager().root)
+
+
+@jobs_app.command("list")
+def jobs_list(
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """List jobs with input name, status, update time, and disk size."""
+    try:
+        store = _job_store(config_path)
+        summaries = store.list_jobs()
+    except UtteranError as exc:
+        _exit_expected(exc)
+    table = Table("job_id", "入力", "状態", "更新日時", "サイズ")
+    for item in summaries:
+        table.add_row(
+            item.job_id,
+            item.input_name,
+            item.status,
+            item.updated_at,
+            _format_size(item.size_bytes),
+        )
+    console.print(table)
+    if not summaries:
+        console.print("保存済みジョブはありません。")
+
+
+@jobs_app.command("show")
+def jobs_show(
+    job_id: Annotated[str, typer.Argument(help="16文字のジョブ ID")],
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """Show one manifest and every stage config hash."""
+    try:
+        job = _job_store(config_path).get(job_id)
+    except UtteranError as exc:
+        _exit_expected(exc)
+    console.print(f"入力: {job.manifest.input.path}")
+    console.print(f"状態: {job.manifest.status}")
+    console.print(f"作成: {job.manifest.created_at}")
+    console.print(f"更新: {job.manifest.updated_at}")
+    table = Table("ステージ", "状態", "config_hash", "完了日時", "エラー")
+    for name, stage in job.manifest.stages.items():
+        table.add_row(
+            name,
+            stage.status,
+            stage.config_hash or "-",
+            stage.finished_at or "-",
+            stage.error or "-",
+        )
+    console.print(table)
+
+
+@jobs_app.command("clean")
+def jobs_clean(
+    all_jobs: Annotated[bool, typer.Option("--all", help="すべて削除")] = False,
+    failed: Annotated[bool, typer.Option("--failed", help="失敗ジョブだけ削除")] = False,
+    older_than: Annotated[
+        int | None, typer.Option("--older-than", min=0, help="指定日数より古いジョブ")
+    ] = None,
+    yes: Annotated[bool, typer.Option("--yes", help="確認を省略")] = False,
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """Display and then remove jobs matching exactly one filter."""
+    try:
+        if sum((all_jobs, failed, older_than is not None)) != 1:
+            raise ConfigurationError(
+                "--all / --failed / --older-than のいずれか1つを指定してください。"
+            )
+        store = _job_store(config_path)
+        candidates = store.clean_candidates(
+            all_jobs=all_jobs,
+            failed=failed,
+            older_than_days=older_than,
+        )
+        if not candidates:
+            console.print("削除対象のジョブはありません。")
+            return
+        for item in candidates:
+            console.print(
+                f"削除対象: {item.job_id}  {item.input_name}  {item.status}  "
+                f"{_format_size(item.size_bytes)}"
+            )
+        if not yes and not typer.confirm(f"{len(candidates)}件を削除しますか?"):
+            console.print("キャンセルしました。")
+            return
+        store.remove([item.job_id for item in candidates])
+        console.print(f"{len(candidates)}件のジョブを削除しました。")
+    except UtteranError as exc:
+        _exit_expected(exc)
+
+
+@config_app.command("init")
+def config_init(
+    path: Annotated[Path | None, typer.Option("--path", help="作成先")] = None,
+) -> None:
+    """Create a token-free config.toml template without overwriting."""
+    try:
+        created = initialize_config(path)
+        console.print(f"設定ファイルを作成しました: {created}")
+    except UtteranError as exc:
+        _exit_expected(exc)
+
+
+@config_app.command("show")
+def config_show(
+    path: Annotated[Path | None, typer.Option("--path", help="読み込む config.toml")] = None,
+) -> None:
+    """Print effective validated settings without secret token sources."""
+    try:
+        config = Config.load(config_path=path)
+    except UtteranError as exc:
+        _exit_expected(exc)
+    typer.echo(json.dumps(config.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
+@config_app.command("path")
+def config_path_command() -> None:
+    """Print the platform-specific default config.toml path."""
+    typer.echo(default_config_path())
 
 
 def _run_with_progress(
@@ -132,18 +481,252 @@ def _run_with_progress(
     config: Config,
     token_provider: TokenProvider,
     quiet: bool,
+    *,
+    resume: bool,
+    force: bool,
+    force_unlock: bool,
 ) -> PipelineOutcome:
-    """Run the pipeline with optional Rich progress rendering."""
+    """Run one pipeline with optional Rich progress rendering."""
     if quiet:
-        return run_pipeline(input_path, config, token_provider=token_provider)
-    with Progress(console=console) as progress:
-        reporter = RichProgressReporter(progress)
         return run_pipeline(
             input_path,
             config,
-            progress=reporter,
             token_provider=token_provider,
+            resume=resume,
+            force=force,
+            force_unlock=force_unlock,
         )
+    with Progress(console=console) as progress:
+        return run_pipeline(
+            input_path,
+            config,
+            progress=RichProgressReporter(progress),
+            token_provider=token_provider,
+            resume=resume,
+            force=force,
+            force_unlock=force_unlock,
+        )
+
+
+def _run_batch_with_progress(
+    input_path: Path,
+    config: Config,
+    token_provider: TokenProvider,
+    quiet: bool,
+    *,
+    recursive: bool,
+    include: tuple[str, ...],
+    exclude: tuple[str, ...],
+    resume: bool,
+    force: bool,
+    force_unlock: bool,
+) -> BatchSummary:
+    """Run a folder batch with one shared Rich progress reporter."""
+    if quiet:
+        return run_batch(
+            input_path,
+            config,
+            token_provider=token_provider,
+            recursive=recursive,
+            include=include,
+            exclude=exclude,
+            resume=resume,
+            force=force,
+            force_unlock=force_unlock,
+        )
+    with Progress(console=console) as progress:
+        return run_batch(
+            input_path,
+            config,
+            token_provider=token_provider,
+            progress=RichProgressReporter(progress),
+            recursive=recursive,
+            include=include,
+            exclude=exclude,
+            resume=resume,
+            force=force,
+            force_unlock=force_unlock,
+        )
+
+
+def _ensure_configured_models(
+    config: Config,
+    token_provider: TokenProvider,
+    *,
+    yes: bool,
+    quiet: bool,
+) -> None:
+    """Prompt before any missing catalog model download; never download implicitly."""
+    manager = ModelManager(token_provider=token_provider)
+    entries: list[ModelEntry] = []
+    asr_name = "faster-whisper" if config.asr.backend == "auto" else config.asr.backend
+    for model_id, backend, enabled in (
+        (config.asr.model, asr_name, True),
+        (
+            config.diarization.model,
+            config.diarization.backend,
+            config.diarization.enabled,
+        ),
+    ):
+        if not enabled:
+            continue
+        try:
+            entry = get_model(model_id, backend=backend)
+        except ConfigurationError:
+            continue
+        if entry not in entries:
+            entries.append(entry)
+    for entry in entries:
+        if manager.status(entry).installed:
+            continue
+        command = f"utteran models download {entry.key}"
+        if not yes:
+            if not sys.stdin.isatty():
+                raise ModelNotFoundError(
+                    f"モデル '{entry.key}' が未取得です。非対話環境では自動取得しません。"
+                    f"`{command}` を先に実行するか、--yes を指定してください。"
+                )
+            if not typer.confirm(
+                f"モデル {entry.key} (概算 {_format_size(entry.approximate_size_bytes)}) "
+                "を取得しますか?"
+            ):
+                raise ModelNotFoundError(f"モデルが必要です。`{command}` を実行してください。")
+        if quiet:
+            manager.download(entry)
+        else:
+            with Progress(console=console) as progress:
+                manager.download(entry, progress=RichProgressReporter(progress))
+
+
+def _show_dry_run(
+    input_path: Path,
+    config: Config,
+    recursive: bool,
+    include: tuple[str, ...],
+    exclude: tuple[str, ...],
+) -> None:
+    """Display selected inputs without checking dependencies or downloading models."""
+    paths = (
+        [input_path]
+        if input_path.is_file()
+        else discover_inputs(
+            input_path,
+            recursive=recursive,
+            include=include,
+            exclude=exclude,
+        )
+    )
+    for path in paths:
+        console.print(f"処理対象: {path}")
+    console.print(f"合計: {len(paths)}件 / 出力先: {config.general.output_dir}")
+
+
+def _print_batch_summary(summary: BatchSummary) -> None:
+    """Print aggregate counts plus all skip/failure reasons."""
+    console.print(
+        f"集計: 成功 {summary.success_count} / スキップ {summary.skipped_count} / "
+        f"失敗 {summary.failed_count}"
+    )
+    for item in summary.items:
+        if item.status in {"skipped", "failed"}:
+            style = "yellow" if item.status == "skipped" else "red"
+            console.print(f"[{style}]{item.status}:[/{style}] {item.path}: {item.reason}")
+
+
+def _print_device_report(report: DeviceReport) -> None:
+    """Render a compact human-oriented device table."""
+    table = Table("項目", "状態", "詳細")
+    cpu = report.cpu
+    table.add_row(
+        "CPU",
+        "available",
+        f"logical={cpu.logical_cores}, physical={cpu.physical_cores}, "
+        f"AVX2={cpu.avx2}, AVX-512={cpu.avx512}",
+    )
+    ct2 = report.ctranslate2
+    table.add_row(
+        "CTranslate2",
+        "available" if ct2.available else "unavailable",
+        f"version={ct2.version}, CPU={','.join(ct2.cpu_compute_types) or '-'}",
+    )
+    for device in ct2.cuda_devices:
+        table.add_row(
+            f"CTranslate2 cuda:{device.index}",
+            "usable" if device.usable else "unusable",
+            f"{device.name}, VRAM={_format_size(device.memory_bytes)}, "
+            f"compute={','.join(device.compute_types) or '-'} {device.error or ''}",
+        )
+    libraries = report.cuda_libraries
+    table.add_row("cuDNN", "found" if libraries.cudnn else "missing", libraries.cudnn or "-")
+    table.add_row("cuBLAS", "found" if libraries.cublas else "missing", libraries.cublas or "-")
+    torch = report.pytorch
+    table.add_row(
+        "PyTorch CUDA",
+        "usable" if torch.cuda_available else "unavailable",
+        f"version={torch.version}, devices={len(torch.cuda_devices)}",
+    )
+    for device in torch.cuda_devices:
+        table.add_row(
+            f"PyTorch cuda:{device.index}",
+            "usable" if device.usable else "unusable",
+            f"{device.name}, VRAM={_format_size(device.memory_bytes)} {device.error or ''}",
+        )
+    table.add_row(
+        "OpenVINO",
+        "available" if report.openvino.available else "unavailable",
+        ", ".join(report.openvino.values) or report.openvino.error or "-",
+    )
+    table.add_row(
+        "ONNX Runtime",
+        "available" if report.onnxruntime.available else "unavailable",
+        ", ".join(report.onnxruntime.values) or report.onnxruntime.error or "-",
+    )
+    table.add_row(
+        "ffmpeg",
+        "available" if report.ffmpeg.available else "unavailable",
+        f"{report.ffmpeg.path or '-'} / {report.ffmpeg.version or report.ffmpeg.error or '-'}",
+    )
+    for backend, available in report.backends.items():
+        table.add_row(
+            f"backend: {backend}",
+            "available" if available else "unavailable",
+            "-",
+        )
+    console.print(table)
+    selected = report.auto_selection
+    console.print(
+        "auto: "
+        f"ASR={selected.asr_backend}/{selected.asr_device}/{selected.asr_compute_type}, "
+        f"diarization={selected.diarization_backend}/{selected.diarization_device}"
+    )
+    for note in selected.notes:
+        console.print(f"[cyan]情報:[/cyan] {note}")
+    for warning in report.warnings:
+        console.print(f"[yellow]警告:[/yellow] {warning}")
+
+
+def _model_manager() -> ModelManager:
+    """Create a token-masked model manager for a CLI command."""
+    provider = default_token_provider()
+    register_secret(provider.get_token())
+    return ModelManager(token_provider=provider)
+
+
+def _job_store(config_path: Path | None) -> JobStore:
+    """Create a job store from effective configuration."""
+    return JobStore(Config.load(config_path=config_path).effective_job_dir)
+
+
+def _validate_transcribe_path(path: Path) -> None:
+    """Validate file-or-directory input before any dependency preflight."""
+    if not path.exists():
+        from utteran.errors import InputFileNotFoundError
+
+        raise InputFileNotFoundError(f"入力ファイルが見つかりません: {path}")
+    if not path.is_file() and not path.is_dir():
+        from utteran.errors import UnsupportedInputError
+
+        raise UnsupportedInputError(f"通常ファイルまたはフォルダを指定してください: {path}")
 
 
 def _cli_overrides(
@@ -211,7 +794,19 @@ def _cli_overrides(
     return overrides
 
 
-def _exit_expected(error: UtteranError) -> None:
+def _format_size(size: int | None) -> str:
+    """Format bytes for compact tables."""
+    if size is None:
+        return "unknown"
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024 or unit == "TiB":
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} TiB"
+
+
+def _exit_expected(error: UtteranError) -> Never:
     """Print an actionable expected error without a traceback."""
     error_console.print(f"[red]エラー:[/red] {mask_secrets(str(error))}")
     raise typer.Exit(code=error.exit_code) from None

@@ -31,8 +31,7 @@ class MarkdownExporter(Exporter):
             lines.append("- 話者分離: 無効")
         else:
             lines.append(
-                f"- 話者分離: {diarization.backend} / {diarization.model_id} / "
-                f"{diarization.device}"
+                f"- 話者分離: {diarization.backend} / {diarization.model_id} / {diarization.device}"
             )
         lines.extend(["", "## 文字起こし", ""])
         for segment in result.segments:

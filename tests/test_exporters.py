@@ -28,9 +28,7 @@ def sample_result(tmp_path: Path) -> PipelineResult:
         [Word(3661.234, 3662.005, " hello", 0.9)],
         "SPEAKER_00",
     )
-    transcription = TranscriptionResult(
-        [segment], "en", 3662.005, "faster-whisper", "tiny", "cpu"
-    )
+    transcription = TranscriptionResult([segment], "en", 3662.005, "faster-whisper", "tiny", "cpu")
     diarization = DiarizationResult(
         [SpeakerTurn(3661.0, 3663.0, "SPEAKER_00")],
         None,

@@ -3,12 +3,18 @@
 ## 現在のフェーズと進捗
 
 - Phase 1（骨格と最小動作）: 実装完了、ローカル検証完了（gated pyannote 実モデル E2E を除く）。
-- Phase 2 着手前の初回 Git スナップショットを作成する作業単位。追跡対象の棚卸しと
-  `.gitignore` 整備を完了し、Phase 1 一式を1コミットにまとめる。
+- Phase 1 初回コミット: `83a4b29 feat: implement Phase 1 transcription pipeline`。
+- Phase 2（実運用機能）: 実装完了、ローカル検証完了。ジョブ／レジューム、フォルダバッチ、
+  devices、モデル／ジョブ／設定管理 CLI、Windows setup を実装。Windows 実機 setup と
+  gated pyannote／既定 large-v3-turbo／実 CUDA 推論は環境制約により未検証として継続管理する。
+- `docs/utteran_Phase2_指示書.md` 全399行、既存状態、要件定義、変更履歴を読了し、
+  コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
 - コード着手前の必須4文書を作成。
 
 ## 実装計画
+
+### Phase 1（完了）
 
 1. プロジェクトメタデータ、src レイアウト、ライセンス、依存ライセンス表記を作成する。
 2. 共通型、例外、設定、ログの基盤を実装し、モデル不要テストを追加する。
@@ -21,8 +27,71 @@
 9. `uv sync`、ruff、mypy、モデル不要 pytest、可能な範囲の ffmpeg 結合確認を実施する。
 10. 4文書を実装結果と検証結果に合わせて最終更新する。
 
+### Phase 2（完了）
+
+1. `jobs.py` に入力識別、決定的 config hash、原子的 manifest、中間 JSON、ロックを実装し、
+   モデル不要テストで破損・再開・依存無効化を検証する。
+2. pipeline を永続ジョブ上の段階実行へ移し、バックエンドをバッチ全体で再利用できる
+   ライフサイクル、進捗、キャンセル、force/resume/export-only を結合する。
+3. 安定した名前順のフォルダ選別と逐次バッチ処理、include/exclude、集計、終了コードを実装する。
+4. `devices.py` に注入可能な環境検出と実 CUDA 可用性に基づく自動判定を実装し、CLI を追加する。
+5. モデルカタログ／管理層を実装し、明示的な取得・削除・検証と gated エラー分類を CLI に接続する。
+6. `jobs` / `config` サブコマンドと確認プロンプト、JSON／人間向け表示を追加する。
+7. 冪等な Windows `setup.ps1` を作成し、静的検査可能範囲と未検証事項を記録する。
+8. README と必須文書を各作業単位で同期し、ruff、mypy、モデル不要 pytest、CLI 結合確認を行う。
+
 ## 直近の作業内容と結果
 
+- Phase 2 着手時に指定された仕様訂正を反映。`job_id` は入力ハッシュのみ、設定差分は
+  ステージ別 config hash で判定し、決定的 JSON 正規化を要求する仕様へ変更した。
+- バッチ一部失敗の終了コード 5、全滅時 1、PID/開始時刻を持つジョブロックと
+  `--force-unlock`、`devices --json` を要件定義へ追加した。
+- `jobs.py` に bounded input fingerprint、入力だけに基づく job ID、決定的 stage config hash、
+  原子的 manifest／schema version 付き中間 JSON、依存グラフによる無効化を実装した。
+- PID と開始時刻を持つ排他ロック、生存 PID の拒否、古い／破損ロックの回収、ジョブ一覧、
+  削除候補選択、サイズ集計を実装。ジョブ／型テスト 12 passed、mypy 25 files success。
+- pipeline をジョブの5段階へ移行。正規化 WAV と schema version 付き ASR／話者分離／merge
+  結果を永続化し、同一設定の再実行は全段階をスキップ、出力設定だけの変更は export だけを再実行する。
+- `BackendPool` で ASR／話者分離モデルを設定キーごとに一度だけロードし、逐次バッチ全体で
+  再利用する。直接注入した fake backend を使う Phase 1 テスト互換も維持した。
+- `batch.py` に既知メディア拡張子の事前選別、再帰、include/exclude、安定名前順、dry-run、
+  個別失敗継続、成功／スキップ／失敗集計と終了コード 0/1/5 を実装した。
+- pipeline/batch/jobs の重点テスト 18 passed、ruff 対象検査 passed、mypy 26 files success。
+- `devices.py` に CPU topology/AVX、CTranslate2 CUDA compute types、NVIDIA 名称/VRAM、
+  cuDNN/cuBLAS、PyTorch 実 CUDA 確保、OpenVINO、ONNX Runtime、ffmpeg の独立検出を実装。
+- `DeviceProbeSet` で検出関数を注入可能にし、JSON 化可能な `DeviceReport` と auto 選択を追加。
+  デバイス／ASR／pyannote 重点テスト 9 passed、ruff passed、mypy 27 files success。
+- faster-whisper は CUDA の対応 compute type を検証し、auto では float16 → int8_float16 →
+  int8 の順で選択。明示デバイス／compute type は不適合時にエラーとし、退避しない。
+- `models/catalog.py` に Phase 2 最低要件5エントリを backend 別に登録し、同名モデルを
+  `<backend>:<model-id>` で一意表示する。`models/manager.py` に保存先、検出、明示取得、削除、
+  必須ファイルとサイズの検証、進捗／キャンセル境界、Hub エラー分類を実装した。
+- 管理領域を優先し、Phase 1 と整合する Hugging Face 標準キャッシュも local-only で検出する。
+  backend load は管理済み snapshot をローカルパスとして解決し、暗黙取得を維持しない。
+- models／faster-whisper／pyannote の重点テスト 12 passed、ruff passed、mypy 30 files success。
+- Typer CLI に transcribe のバッチ／resume／force／lock／dry-run／yes と、devices、models、jobs、
+  config の全 Phase 2 サブコマンドを接続した。削除前表示・確認、非対話モデル取得拒否、
+  部分失敗 exit 5、JSON raw 出力、秘密登録／マスクを実装した。
+- CLI/config 13 tests passed。全 src/tests ruff passed、mypy 30 files success。
+- 実環境 `utteran devices --json` exit 0。CPU 16 logical/8 physical、AVX2、GTX 1070 Ti 8GiB、
+  CTranslate2 4.8.1 は CUDAを1台列挙するが cuDNN/cuBLAS未解決のため usable=false、auto=CPU/int8。
+  PyTorch/OpenVINO/ffmpeg は現 dev extra 環境で未導入、ONNX Runtime CPU/Azure は検出。
+- Windows `setup.ps1` を作成。cpu/cuda/intel profile、SkipModels/SkipFfmpeg/ModelDir/Models、
+  uv sync、SHA-256 検証付き ffmpeg 配置、.env 非上書き、モデル事前取得、CUDA/全devices 診断を実装。
+- Windows PowerShell 5.1 Parser API を WSL から実行し `PowerShell syntax OK`。実際の sync、
+  ネットワーク取得、ffmpeg 展開、CUDA DLL 解決は Windows 実機では未実行。
+- `intel` extra に openvino-genai 2025以上2027未満を追加し、`uv lock` は159 packagesで成功。
+- README を全 Phase 2 CLI、resume/config hash、バッチ集計、Windows setup、Linux 手動導入、
+  モデル／ジョブ保存先と削除、devices JSON、ライセンスへ同期。THIRD_PARTY_NOTICES も更新。
+- job ごとの `utteran.log` handler を追加し、JSON Lines と最終 formatter の秘密マスクで段階遷移を
+  記録。managed pyannote の token なし local 解決順序と、再帰バッチの job/output 自己入力を修正。
+- quiet 時もジョブログには INFO の段階遷移を残し、コンソールだけを抑制するよう handler を分離。
+  破損 manifest のジョブも `corrupt` として一覧・削除対象にできるよう復旧経路を補強した。
+- 一時 Linux 静的 ffmpeg、合成 MP4、cached faster-whisper tiny、話者分離なしで Phase 2 実 E2E。
+  初回は5段階、同条件の2回目は全段階 skip、形式変更は export-only、force は全段階再実行を確認。
+- 最終検査: Python 3.12.3 でモデル不要 72 tests passed、ruff check／src・tests format check、
+  mypy strict（30 source files）、`uv lock --check`（159 packages）がすべて成功。
+- Python 3.11.15 の隔離 dev 環境でもモデル不要 72 tests passed。
 - `pyproject.toml`、src パッケージ骨格、MIT ライセンス、依存物の注意書き、
   `.gitignore`、`.env.example` を作成した。
 - ローカル環境は Python 3.12.3。uv 0.12.1 をユーザー領域へ導入。WSL 側のシステム
@@ -67,11 +136,40 @@
   `uv sync --extra pyannote`、pyannote.audio 4.0.7 API 確認、fake pipeline 結合は実施済み。
 - faster-whisper は tiny/CPU の実モデル E2E 済み。既定 large-v3-turbo と実 CUDA 推論は
   モデル／CUDA ランタイム未導入のため未実施。
-- 設計書はキーリングの service/user 名を規定していないため、実装判断を下記へ記録済み。
-- Phase 1 はジョブ管理を含まないため、設計原則の中間ファイル永続化は Phase 2 の責務とし、Phase 1 では結果モデルの JSON シリアライズ性を保証する。
+- `setup.ps1` は Windows PowerShell 5.1 Parser API による構文検査済みだが、Windows 実機での
+  uv sync、ネットワーク取得、ffmpeg 展開、CUDA DLL 解決を含む一気通貫実行は未実施。
 
 ## 設計上の判断とその理由
 
+- config hash の浮動小数固定桁は12桁とした。仕様は固定桁化のみを要求し桁数を未指定だが、
+  設定値の実用精度を十分保持しつつ、浮動小数の表現揺れを排除できるため。
+- 破損または未対応バージョンの manifest は `manifest.corrupt.<日時>.json` へ退避して警告し、
+  新規 manifest から全段階を再計算する。破損データを黙って上書きせず復旧を継続するため。
+- manifest の各ステージへ `error` と `artifacts` を追加した。6.4 の必須項目を保ちつつ、
+  jobs 表示で失敗理由を示し、export 出力の消失をレジューム判定できるようにするため。
+- Phase 2 は OpenVINO ASR 実装を明示的に除外しているため、Intel GPU/NPU を検出しても現在の
+  `auto` は実装済み faster-whisper CPU を選ぶ。devices では Phase 3 の高速化候補として警告する。
+  未実装 backend を「実際に使われる」と表示して transcribe を失敗させないため。
+- CTranslate2 の「実推論可能」判定はモデル非依存で可能な
+  `get_supported_compute_types(device, index)` によるランタイム初期化を一次判定とし、モデル load を
+  最終判定とする。モデルを暗黙取得せずに任意 GPU で完全な推論 probe は構成できないため。
+- モデルカタログの取得元は公式 Hugging Face ページと faster-whisper 1.2.1 の alias 表で確認し、
+  turbo=`mobiuslabsgmbh/faster-whisper-large-v3-turbo`、large-v3=`Systran/...`、
+  Kotoba=`kotoba-tech/kotoba-whisper-v2.0-faster`、OpenVINO=`OpenVINO/...fp16-ov` とした。
+- 同じ `large-v3-turbo` が複数 backend にあるため、CLI の一意キーは
+  `<backend>:<model-id>` とし、transcribe は backend と model_id の組で曖昧なく解決する。
+  backend なしの曖昧な指定は、誤った大容量形式を取得しないよう候補を示して拒否する。
+- Windows ffmpeg は ffmpeg.org が公式ダウンロードページで案内する gyan.dev の
+  `ffmpeg-release-essentials.zip` を採用した。配布物はGPLv3のため取得前に表示し、リポジトリへ
+  同梱せず、公開 `.sha256` と照合してからユーザーデータ配下へ配置する。
+- setup の cpu/cuda profile は既定話者分離を利用できるよう pyannote extra を含め、intel は
+  pyannote + intel extras とした。profile はハードウェア選択であり ASRだけのlite導入ではないため。
+- `models remove` は utteran 管理コピーを優先し、標準 HF cache のみ存在する場合は
+  huggingface_hub の cache API で当該 repo の revision を削除する。明示削除要求を満たしつつ、
+  パスを推測した再帰削除を避けるため。
+- Phase 2 指示の export hash 表は `[output]` のみだが、`[general].output_dir` を変えた際に旧出力を
+  誤って再利用するため、実効出力先の絶対パスも hash 対象へ追加し要件定義を同期した。
+  出力場所だけの変更なので export-only 再実行となり、上流キャッシュは維持される。
 - `keyring` はコア依存にした。HF トークン探索は Phase 1 の通常機能であり、利用環境で
   常に同じ優先順位を保証するため。キーリング自体が利用不能な場合は安全にスキップする。
 - 依存バージョンは互換性のあるメジャーバージョン範囲で制約した。再現性は `uv.lock` で担保し、
@@ -89,8 +187,8 @@
   既存ファイルを半端な内容で上書きしないため。
 - Phase 1 のモデル管理除外と設計書10.1の「暗黙ダウンロード禁止」を両立するため、
   faster-whisper は `local_files_only=True` で Hub キャッシュを参照し、ローカルパスは直接読む。
-- Phase 2 の詳細デバイス検出は実装せず、Phase 1 の `auto` は CTranslate2 が CUDA を報告すれば
-  `cuda:0`、それ以外は CPU とする最小選択に限定した。
+- Phase 1 時点の `auto` は CTranslate2 の CUDA 列挙だけを見る最小選択だったが、Phase 2 で
+  compute type と CUDA ライブラリを含む実可用性判定へ置き換えた。
 - pyannote の Hub ID は `snapshot_download(..., local_files_only=True)` で既存キャッシュのみを
   解決する。未取得時だけ軽量な model_info で未同意／無効トークンを分類し、暗黙取得しない。
 - pyannote 4.x/TorchCodec は ffmpeg 共有ライブラリを別途要求するため、ffmpeg で作った
@@ -105,8 +203,8 @@
   番号がずれないよう、要求された全形式で空いている共通 stem を選ぶ。
 - SRT/VTT の話者接頭辞は設計書に具体表記がないため `表示名: 本文` とした。TXT と統一され、
   汎用字幕ソフトでもプレーンテキストとして表示できるため。
-- Phase 1 は jobs/レジューム対象外のため、正規化 WAV は `TemporaryDirectory` に置き、重い結果は
-  JSON シリアライズ可能な共通モデルで保持する。永続化は Phase 2 のジョブ層で追加する。
+- Phase 1 では正規化 WAV を `TemporaryDirectory` に置いていたが、Phase 2 で schema version 付き
+  中間 JSON とともにジョブディレクトリへ永続化し、段階レジュームへ利用するよう置き換えた。
 - pyannote のトークン不足は ASR 前に検出するため、レジストリに軽量 preflight を置いた。
   pipeline は固有実装を import せず、不要な音声抽出・ASR 後に失敗することを防ぐ。
 - バックエンド由来の生例外文は、トークンを含む可能性を完全には否定できないため、
@@ -114,10 +212,11 @@
 
 ## 次に着手すべきこと
 
-- HF 利用条件へ同意済みのトークンがある環境で community-1 を事前取得し、実話者音声による
-  pyannote E2E と `--num-speakers` の実モデル精度確認を行う。
-- Phase 1 スナップショット後、Phase 2（ジョブ管理・レジューム、フォルダ処理、モデル管理、
-  setup.ps1、devices）へ進む。
+- Windows 実機が利用可能になったら `setup.ps1` の cpu/cuda/intel profile、ffmpeg 取得、
+  オフライン継続、冪等な再実行を一気通貫で確認する。
+- HF 利用条件へ同意済みのトークンと対応ランタイムが得られれば community-1、
+  large-v3-turbo、実 CUDA の未検証 E2E を実施する。
+- Phase 2 の変更一式は `feat: implement Phase 2 operational workflows` としてコミットする。
 
 ## 既知の落とし穴・回避方法
 
@@ -129,7 +228,8 @@
 
 - 作業パス: `/mnt/c/UserDataFile/Git/Utteran`
 - OS 実行環境: Linux/WSL 系 bash（詳細確認は今後実施）
-- 現在のディレクトリは Git リポジトリとして初期化されていない。
+- Git リポジトリ初回コミットは `83a4b29`。Phase 2 実装と指示書は
+  `feat: implement Phase 2 operational workflows` の変更セットに収録。
 - `python3 --version`: 3.12.3。
 - `/home/<user>/.local/bin/uv --version`: 0.12.1。
 - WSL の `ffmpeg -version`: 未導入。Windows 側 `C:\path\ffmpeg\bin\ffmpeg.exe` は確認したが、
@@ -142,13 +242,23 @@
 - `uv sync --extra pyannote --extra dev --link-mode=copy`: 成功、pyannote.audio 4.0.7 導入確認。
 - `uv sync --link-mode=copy` と直後の `uv sync --check`: 成功（extra なし49 packages）。
 - 最終環境は `uv sync --extra dev --link-mode=copy` 済み（pyannote extra は現在未導入）。
-- Python 3.12.3: `uv run pytest -m "not requires_model"` = 36 passed（最終）。
-- Python 3.11.15 隔離環境: 同テスト = 35 passed（トークン優先テスト追加前）。
-- `uv run ruff check`: All checks passed。
-- `uv run mypy`: Success、24 source files。
-- `uv run utteran --help` / `uv run utteran transcribe --help`: exit 0、transcribe のみ表示。
+- Python 3.12.3: `uv run --no-sync pytest -m "not requires_model"` = 72 passed。
+- Python 3.11.15 隔離環境: `uv run --isolated --python 3.11 --extra dev pytest -m
+  "not requires_model"` = 72 passed（Python 3.11.15）。
+- `uv run --no-sync ruff check`: All checks passed。
+- `uv run --no-sync ruff format --check src tests`: 44 files already formatted。
+- `uv run --no-sync mypy`: Success、30 source files。
+- `uv run utteran --help` / `transcribe --help`、devices、models、jobs、config の主要 read-only
+  コマンド: exit 0。
 - 合成 MP4 + Linux ffmpeg: 正規化結果 mono / sample width 2 / 16kHz を確認。
 - 合成 MP4 + cached faster-whisper tiny + device auto: CLI exit 0、CPU fallback、
   SRT/VTT/JSON/TXT/MD の5ファイルと JSON schema_version 1 を確認。
-- `uv lock --check`: 成功、156 packages 解決済み。
-- `diff -q docs/utteran_設計書.md 要件定義.md`: 差分なし。
+- Phase 2 実 E2E: 一時 Linux 静的 ffmpeg + 合成 MP4 + cached tiny + no-diarization。
+  初回5段階実行、同一 job ID の2回目全 skip、format 変更時 export-only、force 時全段階実行を確認。
+- `utteran devices --json`: exit 0。実環境の CPU／CTranslate2 CUDA 列挙／CUDA ライブラリ不足／
+  ONNX Runtime／ffmpeg 不在を JSON 化し、auto=CPU/int8 を確認。
+- Windows PowerShell 5.1 Parser API: `setup.ps1` は `PowerShell syntax OK`。
+- `uv lock --check`: 成功、159 packages 解決済み。
+- `git diff --check`: 問題なし。
+- `要件定義.md` は Phase 1 設計書を基礎に、Phase 2 指示書の訂正5点と実効 output_dir の
+  export hash 判断を同期済み。このため設計書原本との差分は意図した仕様更新。

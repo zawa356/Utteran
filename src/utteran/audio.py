@@ -104,6 +104,10 @@ def normalize_audio(
         if not temporary_path.is_file() or temporary_path.stat().st_size == 0:
             raise AudioDecodeError(f"ffmpeg が空の音声を生成しました: {input_path.name}")
         temporary_path.replace(output_path)
+    except KeyboardInterrupt:
+        if process is not None and process.poll() is None:
+            _stop_process(process)
+        raise
     except OSError as exc:
         if process is not None and process.poll() is None:
             _stop_process(process)

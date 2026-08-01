@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from utteran.config import Config, DotEnvTokenProvider, default_token_provider
+from utteran.config import (
+    Config,
+    DotEnvTokenProvider,
+    default_token_provider,
+    initialize_config,
+)
+from utteran.errors import ConfigurationError
 
 
 def test_config_priority_cli_env_dotenv_toml_defaults(
@@ -76,3 +82,14 @@ def test_documented_empty_path_sentinels_use_platform_defaults(tmp_path: Path) -
 
     assert config.general.job_dir is None
     assert config.ffmpeg.path is None
+
+
+def test_config_init_does_not_overwrite_existing_file(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+
+    assert initialize_config(path) == path
+    original = path.read_text(encoding="utf-8")
+    assert "HF_TOKEN" not in original
+    with pytest.raises(ConfigurationError, match="既に存在"):
+        initialize_config(path)
+    assert path.read_text(encoding="utf-8") == original

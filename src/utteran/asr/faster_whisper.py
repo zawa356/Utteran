@@ -9,12 +9,14 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from utteran.asr.base import ASRBackend
+from utteran.devices import select_faster_whisper_device
 from utteran.errors import (
     BackendUnavailableError,
     CancelledError,
     ModelNotFoundError,
     VramExhaustedError,
 )
+from utteran.models.manager import find_runtime_model
 from utteran.types import (
     ASROptions,
     CancelToken,
@@ -67,40 +69,45 @@ class FasterWhisperBackend(ASRBackend):
             )
         from faster_whisper import WhisperModel
 
-        selected_device, device_index = _select_device(device)
-        selected_compute_type = _select_compute_type(compute_type, selected_device)
+        selection = select_faster_whisper_device(device, compute_type)
+        runtime_model = find_runtime_model(self.name, model_id)
+        model_source = str(runtime_model) if runtime_model is not None else model_id
+        selected_device = selection.device
+        device_index = selection.device_index
+        selected_compute_type = selection.compute_type
+        if selection.note:
+            logging.getLogger(__name__).info(selection.note)
         try:
             self._model = WhisperModel(
-                model_id,
+                model_source,
                 device=selected_device,
                 device_index=device_index,
                 compute_type=selected_compute_type,
-                local_files_only=not Path(model_id).exists(),
+                local_files_only=not Path(model_source).exists(),
             )
         except Exception as exc:
             if device == "auto" and selected_device == "cuda" and not _is_model_error(exc):
                 logging.getLogger(__name__).warning(
                     "CUDA でモデルを初期化できないため CPU へフォールバックします。"
                 )
-                selected_device = "cpu"
-                device_index = 0
-                selected_compute_type = _select_compute_type(compute_type, selected_device)
+                fallback = select_faster_whisper_device("cpu", compute_type)
+                selected_device = fallback.device
+                device_index = fallback.device_index
+                selected_compute_type = fallback.compute_type
                 try:
                     self._model = WhisperModel(
-                        model_id,
+                        model_source,
                         device=selected_device,
                         device_index=device_index,
                         compute_type=selected_compute_type,
-                        local_files_only=not Path(model_id).exists(),
+                        local_files_only=not Path(model_source).exists(),
                     )
                 except Exception as fallback_error:
                     _raise_load_error(model_id, selected_device, fallback_error)
             else:
                 _raise_load_error(model_id, selected_device, exc)
         self._model_id = model_id
-        self._device = (
-            f"cuda:{device_index}" if selected_device == "cuda" else selected_device
-        )
+        self._device = f"cuda:{device_index}" if selected_device == "cuda" else selected_device
 
     def transcribe(
         self,
@@ -183,42 +190,14 @@ class FasterWhisperBackend(ASRBackend):
         gc.collect()
 
 
-def _select_device(requested: str) -> tuple[str, int]:
-    """Resolve the minimal Phase 1 auto/cpu/cuda device syntax."""
-    if requested == "auto":
-        try:
-            import ctranslate2
-
-            return ("cuda", 0) if ctranslate2.get_cuda_device_count() else ("cpu", 0)
-        except Exception:
-            return "cpu", 0
-    if requested == "cuda":
-        return "cuda", 0
-    if requested.startswith("cuda:"):
-        try:
-            return "cuda", int(requested.partition(":")[2])
-        except ValueError:
-            raise BackendUnavailableError(f"不正な CUDA デバイス指定です: {requested}") from None
-    if requested == "cpu":
-        return "cpu", 0
-    raise BackendUnavailableError(f"faster-whisper が対応していないデバイスです: {requested}")
-
-
-def _select_compute_type(requested: str, device: str) -> str:
-    """Resolve the conservative default compute type for CPU or CUDA."""
-    if requested != "auto":
-        return requested
-    return "float16" if device == "cuda" else "int8"
-
-
 def _raise_load_error(model_id: str, device: str, error: Exception) -> None:
     """Translate expected model, CUDA library, and memory failures."""
     detail = str(error).casefold()
     if _is_model_error(error):
         raise ModelNotFoundError(
             f"ASR モデル '{model_id}' をローカルで読み込めません。"
-            "Phase 1 はモデルを暗黙にダウンロードしません。"
-            "Hugging Face CLI などでモデルを事前取得するか、"
+            "モデルは暗黙にダウンロードしません。"
+            "`utteran models download faster-whisper:<モデルID>` で取得するか、"
             "ローカルモデルパスを指定してください。"
         ) from None
     if "out of memory" in detail or "cuda_error_out_of_memory" in detail:

@@ -1,0 +1,622 @@
+"""Hardware, runtime dependency, and backend auto-selection diagnostics."""
+
+from __future__ import annotations
+
+import ctypes.util
+import importlib.util
+import os
+import platform
+import shutil
+import subprocess
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, replace
+from pathlib import Path
+from typing import Any
+
+from utteran.audio import find_ffmpeg
+from utteran.errors import BackendUnavailableError, FfmpegNotFoundError
+
+
+@dataclass(frozen=True)
+class CPUReport:
+    """CPU topology and instruction-set report."""
+
+    logical_cores: int | None
+    physical_cores: int | None
+    avx2: bool | None
+    avx512: bool | None
+
+
+@dataclass(frozen=True)
+class AcceleratorDevice:
+    """One accelerator as seen by a specific runtime."""
+
+    index: int
+    name: str
+    memory_bytes: int | None
+    compute_types: tuple[str, ...] = ()
+    usable: bool = False
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class CTranslate2Report:
+    """CTranslate2 CPU and CUDA capabilities."""
+
+    available: bool
+    version: str | None
+    cpu_compute_types: tuple[str, ...]
+    cuda_device_count: int
+    cuda_devices: tuple[AcceleratorDevice, ...]
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class TorchReport:
+    """PyTorch availability and actually initializable CUDA devices."""
+
+    available: bool
+    version: str | None
+    cuda_available: bool
+    cuda_devices: tuple[AcceleratorDevice, ...]
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class LibraryReport:
+    """CUDA shared-library resolution report."""
+
+    cudnn: str | None
+    cublas: str | None
+
+
+@dataclass(frozen=True)
+class OptionalRuntimeReport:
+    """Optional Phase 3 runtime and its advertised devices/providers."""
+
+    available: bool
+    values: tuple[str, ...]
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class FfmpegReport:
+    """Resolved ffmpeg executable and first version line."""
+
+    available: bool
+    path: str | None
+    version: str | None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class AutoSelection:
+    """Backends and devices used by the currently implemented auto mode."""
+
+    asr_backend: str
+    asr_device: str
+    asr_compute_type: str
+    diarization_backend: str
+    diarization_device: str
+    notes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class DeviceReport:
+    """Complete machine-readable devices command payload."""
+
+    cpu: CPUReport
+    ctranslate2: CTranslate2Report
+    cuda_libraries: LibraryReport
+    pytorch: TorchReport
+    openvino: OptionalRuntimeReport
+    onnxruntime: OptionalRuntimeReport
+    ffmpeg: FfmpegReport
+    backends: dict[str, bool]
+    auto_selection: AutoSelection
+    warnings: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable report for future GUI consumers."""
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class DeviceProbeSet:
+    """Injectable environment probes used by tests and platform adapters."""
+
+    cpu: Callable[[], CPUReport]
+    ctranslate2: Callable[[], CTranslate2Report]
+    libraries: Callable[[], LibraryReport]
+    torch: Callable[[], TorchReport]
+    openvino: Callable[[], OptionalRuntimeReport]
+    onnxruntime: Callable[[], OptionalRuntimeReport]
+    ffmpeg: Callable[[Path | None], FfmpegReport]
+    backends: Callable[[], dict[str, bool]]
+
+
+@dataclass(frozen=True)
+class FasterWhisperSelection:
+    """Validated CTranslate2 runtime arguments."""
+
+    device: str
+    device_index: int
+    compute_type: str
+    note: str | None = None
+
+
+def system_probes() -> DeviceProbeSet:
+    """Create the real environment probe collection."""
+    return DeviceProbeSet(
+        cpu=detect_cpu,
+        ctranslate2=detect_ctranslate2,
+        libraries=detect_cuda_libraries,
+        torch=detect_torch,
+        openvino=detect_openvino,
+        onnxruntime=detect_onnxruntime,
+        ffmpeg=detect_ffmpeg,
+        backends=detect_backends,
+    )
+
+
+def detect_devices(
+    ffmpeg_path: Path | None = None,
+    *,
+    probes: DeviceProbeSet | None = None,
+) -> DeviceReport:
+    """Run independent probes and derive the current auto-mode decision."""
+    selected_probes = probes or system_probes()
+    cpu = selected_probes.cpu()
+    raw_ctranslate2 = selected_probes.ctranslate2()
+    libraries = selected_probes.libraries()
+    ctranslate2 = _apply_cuda_library_status(raw_ctranslate2, libraries)
+    torch = selected_probes.torch()
+    openvino = selected_probes.openvino()
+    onnxruntime = selected_probes.onnxruntime()
+    ffmpeg = selected_probes.ffmpeg(ffmpeg_path)
+    backends = selected_probes.backends()
+    auto_selection, warnings = _auto_selection(ctranslate2, torch, openvino)
+    if ctranslate2.cuda_device_count and not any(
+        device.usable for device in ctranslate2.cuda_devices
+    ):
+        warnings.append(
+            "CUDA デバイスは列挙されましたが CTranslate2 で初期化できません。"
+            "cuDNN / cuBLAS とドライバーを確認してください。"
+        )
+    return DeviceReport(
+        cpu=cpu,
+        ctranslate2=ctranslate2,
+        cuda_libraries=libraries,
+        pytorch=torch,
+        openvino=openvino,
+        onnxruntime=onnxruntime,
+        ffmpeg=ffmpeg,
+        backends=backends,
+        auto_selection=auto_selection,
+        warnings=tuple(warnings),
+    )
+
+
+def select_faster_whisper_device(
+    requested_device: str,
+    requested_compute_type: str,
+    *,
+    report: CTranslate2Report | None = None,
+) -> FasterWhisperSelection:
+    """Validate explicit choices and safely resolve auto compute fallbacks."""
+    runtime = report or _apply_cuda_library_status(
+        detect_ctranslate2(),
+        detect_cuda_libraries(),
+    )
+    if not runtime.available:
+        raise BackendUnavailableError(
+            "CTranslate2 を読み込めません。`uv sync` を実行してください。"
+        )
+
+    requested = requested_device.casefold()
+    if requested == "auto":
+        cuda = next((device for device in runtime.cuda_devices if device.usable), None)
+        if cuda is not None:
+            compute = _choose_compute_type(requested_compute_type, cuda.compute_types, "cuda")
+            note = None
+            if requested_compute_type == "auto" and compute != "float16":
+                note = f"CUDA float16 が利用できないため {compute} を使用します。"
+            return FasterWhisperSelection("cuda", cuda.index, compute, note)
+        compute = _choose_compute_type(
+            requested_compute_type,
+            runtime.cpu_compute_types,
+            "cpu",
+        )
+        note = "CUDA を初期化できないため CPU を使用します。" if runtime.cuda_device_count else None
+        return FasterWhisperSelection("cpu", 0, compute, note)
+
+    if requested == "cpu":
+        return FasterWhisperSelection(
+            "cpu",
+            0,
+            _choose_compute_type(requested_compute_type, runtime.cpu_compute_types, "cpu"),
+        )
+    if requested == "cuda":
+        index = 0
+    elif requested.startswith("cuda:"):
+        try:
+            index = int(requested.partition(":")[2])
+        except ValueError:
+            raise BackendUnavailableError(
+                f"不正な CUDA デバイス指定です: {requested_device}"
+            ) from None
+    else:
+        raise BackendUnavailableError(
+            f"faster-whisper が対応していないデバイスです: {requested_device}"
+        )
+    device = next((item for item in runtime.cuda_devices if item.index == index), None)
+    if device is None or not device.usable:
+        detail = f" ({device.error})" if device is not None and device.error else ""
+        raise BackendUnavailableError(
+            f"明示指定された cuda:{index} を CTranslate2 で初期化できません。{detail}"
+            "自動フォールバックは行いません。"
+        )
+    return FasterWhisperSelection(
+        "cuda",
+        index,
+        _choose_compute_type(requested_compute_type, device.compute_types, "cuda"),
+    )
+
+
+def detect_cpu() -> CPUReport:
+    """Detect topology and flags without requiring a third-party package."""
+    flags = _cpu_flags()
+    physical = _physical_cpu_count()
+    return CPUReport(
+        logical_cores=os.cpu_count(),
+        physical_cores=physical,
+        avx2=None if flags is None else "avx2" in flags,
+        avx512=(None if flags is None else any(flag.startswith("avx512") for flag in flags)),
+    )
+
+
+def detect_ctranslate2() -> CTranslate2Report:
+    """Probe CTranslate2 devices by requesting their supported compute types."""
+    if importlib.util.find_spec("ctranslate2") is None:
+        return CTranslate2Report(False, None, (), 0, (), "未導入")
+    try:
+        import ctranslate2
+
+        cpu_types = tuple(sorted(ctranslate2.get_supported_compute_types("cpu")))
+        count = int(ctranslate2.get_cuda_device_count())
+        metadata = _nvidia_metadata()
+        cuda_devices: list[AcceleratorDevice] = []
+        for index in range(count):
+            name, memory = metadata.get(index, (f"NVIDIA CUDA {index}", None))
+            try:
+                compute_types = tuple(
+                    sorted(ctranslate2.get_supported_compute_types("cuda", index))
+                )
+                cuda_devices.append(
+                    AcceleratorDevice(
+                        index,
+                        name,
+                        memory,
+                        compute_types,
+                        bool(compute_types),
+                    )
+                )
+            except Exception as exc:
+                cuda_devices.append(
+                    AcceleratorDevice(index, name, memory, error=_bounded_error(exc))
+                )
+        return CTranslate2Report(
+            True,
+            str(getattr(ctranslate2, "__version__", "unknown")),
+            cpu_types,
+            count,
+            tuple(cuda_devices),
+        )
+    except Exception as exc:
+        return CTranslate2Report(False, None, (), 0, (), _bounded_error(exc))
+
+
+def detect_torch() -> TorchReport:
+    """Probe PyTorch CUDA by allocating a minimal tensor on each device."""
+    if importlib.util.find_spec("torch") is None:
+        return TorchReport(False, None, False, (), "未導入")
+    try:
+        import torch
+
+        devices: list[AcceleratorDevice] = []
+        if torch.cuda.is_available():
+            for index in range(torch.cuda.device_count()):
+                try:
+                    properties = torch.cuda.get_device_properties(index)
+                    probe = torch.empty(1, device=f"cuda:{index}")
+                    del probe
+                    devices.append(
+                        AcceleratorDevice(
+                            index,
+                            str(properties.name),
+                            int(properties.total_memory),
+                            usable=True,
+                        )
+                    )
+                except Exception as exc:
+                    devices.append(
+                        AcceleratorDevice(
+                            index,
+                            f"CUDA {index}",
+                            None,
+                            error=_bounded_error(exc),
+                        )
+                    )
+        usable = any(device.usable for device in devices)
+        return TorchReport(
+            True,
+            str(getattr(torch, "__version__", "unknown")),
+            usable,
+            tuple(devices),
+        )
+    except Exception as exc:
+        return TorchReport(False, None, False, (), _bounded_error(exc))
+
+
+def detect_cuda_libraries() -> LibraryReport:
+    """Resolve cuDNN and cuBLAS by loader name or a PATH directory."""
+    return LibraryReport(
+        cudnn=_find_shared_library(("cudnn", "libcudnn"), ("cudnn*.dll", "libcudnn.so*")),
+        cublas=_find_shared_library(
+            ("cublas", "libcublas"),
+            ("cublas*.dll", "libcublas.so*"),
+        ),
+    )
+
+
+def detect_openvino() -> OptionalRuntimeReport:
+    """Report OpenVINO devices when the optional Phase 3 runtime is installed."""
+    if importlib.util.find_spec("openvino") is None:
+        return OptionalRuntimeReport(False, (), "未導入")
+    try:
+        from openvino import Core
+
+        return OptionalRuntimeReport(True, tuple(str(item) for item in Core().available_devices))
+    except Exception as exc:
+        return OptionalRuntimeReport(False, (), _bounded_error(exc))
+
+
+def detect_onnxruntime() -> OptionalRuntimeReport:
+    """Report ONNX Runtime execution providers without importing a backend."""
+    if importlib.util.find_spec("onnxruntime") is None:
+        return OptionalRuntimeReport(False, (), "未導入")
+    try:
+        import onnxruntime
+
+        return OptionalRuntimeReport(
+            True,
+            tuple(str(item) for item in onnxruntime.get_available_providers()),
+        )
+    except Exception as exc:
+        return OptionalRuntimeReport(False, (), _bounded_error(exc))
+
+
+def detect_ffmpeg(configured_path: Path | None = None) -> FfmpegReport:
+    """Report the product's resolved ffmpeg and a bounded version string."""
+    try:
+        path = find_ffmpeg(configured_path)
+    except FfmpegNotFoundError as exc:
+        return FfmpegReport(False, None, None, str(exc))
+    try:
+        completed = subprocess.run(
+            [str(path), "-version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        first_line = completed.stdout.splitlines()[0] if completed.stdout else None
+        return FfmpegReport(completed.returncode == 0, str(path), first_line)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return FfmpegReport(False, str(path), None, _bounded_error(exc))
+
+
+def detect_backends() -> dict[str, bool]:
+    """Report current and future backend package availability."""
+    return {
+        "faster-whisper": _module_available("faster_whisper"),
+        "pyannote": _module_available("pyannote.audio"),
+        "openvino": _module_available("openvino"),
+        "sherpa-onnx": _module_available("sherpa_onnx"),
+    }
+
+
+def _auto_selection(
+    ctranslate2: CTranslate2Report,
+    torch: TorchReport,
+    openvino: OptionalRuntimeReport,
+) -> tuple[AutoSelection, list[str]]:
+    """Select implemented backends and explain Phase 3 acceleration opportunities."""
+    notes: list[str] = []
+    try:
+        asr = select_faster_whisper_device("auto", "auto", report=ctranslate2)
+        if asr.note:
+            notes.append(asr.note)
+        asr_device = f"cuda:{asr.device_index}" if asr.device == "cuda" else "cpu"
+        asr_compute = asr.compute_type
+    except BackendUnavailableError as exc:
+        asr_device = "unavailable"
+        asr_compute = "unavailable"
+        notes.append(str(exc))
+    torch_cuda = next((device for device in torch.cuda_devices if device.usable), None)
+    diarization_device = f"cuda:{torch_cuda.index}" if torch_cuda is not None else "cpu"
+    intel_accelerators = tuple(
+        item for item in openvino.values if item.upper().startswith(("GPU", "NPU"))
+    )
+    warnings: list[str] = []
+    if asr_device == "cpu" and intel_accelerators:
+        warnings.append(
+            "Intel GPU / NPU が検出されました。ASR は OpenVINO で高速化できますが、"
+            "Phase 2 の実装済み ASR は faster-whisper CPU、話者分離は pyannote CPU です。"
+        )
+    return (
+        AutoSelection(
+            asr_backend="faster-whisper",
+            asr_device=asr_device,
+            asr_compute_type=asr_compute,
+            diarization_backend="pyannote",
+            diarization_device=diarization_device,
+            notes=tuple(notes),
+        ),
+        warnings,
+    )
+
+
+def _choose_compute_type(requested: str, supported: tuple[str, ...], device: str) -> str:
+    """Choose a supported type without silently changing an explicit request."""
+    if requested != "auto":
+        if requested not in supported:
+            raise BackendUnavailableError(
+                f"{device} は compute_type={requested} に対応していません。"
+                f"対応値: {', '.join(supported) or 'なし'}"
+            )
+        return requested
+    preference = (
+        ("float16", "int8_float16", "int8", "float32", "int8_float32")
+        if device == "cuda"
+        else ("int8", "int8_float32", "float32", "int16")
+    )
+    selected = next((item for item in preference if item in supported), None)
+    if selected is None:
+        raise BackendUnavailableError(f"{device} で利用可能な compute_type がありません。")
+    return selected
+
+
+def _apply_cuda_library_status(
+    report: CTranslate2Report,
+    libraries: LibraryReport,
+) -> CTranslate2Report:
+    """Reject CUDA auto selection when required inference libraries are unresolved."""
+    missing = [
+        name
+        for name, value in (("cuDNN", libraries.cudnn), ("cuBLAS", libraries.cublas))
+        if value is None
+    ]
+    if not missing:
+        return report
+    detail = f"未解決の共有ライブラリ: {', '.join(missing)}"
+    devices = tuple(
+        replace(device, usable=False, error=device.error or detail)
+        for device in report.cuda_devices
+    )
+    return replace(report, cuda_devices=devices)
+
+
+def _cpu_flags() -> set[str] | None:
+    """Read CPU flags from Linux procfs or macOS sysctl when available."""
+    cpuinfo = Path("/proc/cpuinfo")
+    if cpuinfo.is_file():
+        try:
+            for line in cpuinfo.read_text(encoding="utf-8", errors="ignore").splitlines():
+                key, separator, value = line.partition(":")
+                if separator and key.strip().casefold() in {"flags", "features"}:
+                    return {item.casefold() for item in value.split()}
+        except OSError:
+            return None
+    if platform.system() == "Darwin":
+        try:
+            result = subprocess.run(
+                ["sysctl", "-n", "machdep.cpu.features", "machdep.cpu.leaf7_features"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            return {item.casefold() for item in result.stdout.split()}
+        except (OSError, subprocess.SubprocessError):
+            return None
+    return None
+
+
+def _physical_cpu_count() -> int | None:
+    """Count unique Linux physical/core IDs; return unknown elsewhere."""
+    cpuinfo = Path("/proc/cpuinfo")
+    if not cpuinfo.is_file():
+        return None
+    try:
+        pairs: set[tuple[str, str]] = set()
+        physical = "0"
+        core: str | None = None
+        lines = cpuinfo.read_text(encoding="utf-8", errors="ignore").splitlines()
+        for line in (*lines, ""):
+            if not line:
+                if core is not None:
+                    pairs.add((physical, core))
+                physical, core = "0", None
+                continue
+            key, separator, value = line.partition(":")
+            if not separator:
+                continue
+            if key.strip() == "physical id":
+                physical = value.strip()
+            elif key.strip() == "core id":
+                core = value.strip()
+        return len(pairs) or None
+    except OSError:
+        return None
+
+
+def _nvidia_metadata() -> dict[int, tuple[str, int | None]]:
+    """Query optional nvidia-smi for names and total VRAM."""
+    executable = shutil.which("nvidia-smi")
+    if executable is None:
+        return {}
+    try:
+        result = subprocess.run(
+            [
+                executable,
+                "--query-gpu=name,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    metadata: dict[int, tuple[str, int | None]] = {}
+    for index, line in enumerate(result.stdout.splitlines()):
+        name, separator, memory = line.rpartition(",")
+        if not separator:
+            continue
+        try:
+            memory_bytes = int(memory.strip()) * 1024 * 1024
+        except ValueError:
+            memory_bytes = None
+        metadata[index] = (name.strip(), memory_bytes)
+    return metadata
+
+
+def _find_shared_library(names: tuple[str, ...], globs: tuple[str, ...]) -> str | None:
+    """Resolve a loader name first, then scan explicit PATH directories."""
+    for name in names:
+        if resolved := ctypes.util.find_library(name):
+            return resolved
+    for raw_directory in os.environ.get("PATH", "").split(os.pathsep):
+        directory = Path(raw_directory)
+        if not directory.is_dir():
+            continue
+        for pattern in globs:
+            match = next(directory.glob(pattern), None)
+            if match is not None:
+                return str(match)
+    return None
+
+
+def _bounded_error(error: Exception) -> str:
+    """Return a short diagnostic without backend traceback data."""
+    return str(error).replace("\r", " ").replace("\n", " ")[:500]
+
+
+def _module_available(name: str) -> bool:
+    """Check optional dotted modules without propagating a missing parent import."""
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False

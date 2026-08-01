@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from utteran.asr.faster_whisper import FasterWhisperBackend
+from utteran.devices import LibraryReport
 from utteran.errors import ModelNotFoundError
 from utteran.types import ASROptions, ProgressEvent
 
@@ -77,6 +78,14 @@ def test_auto_device_falls_back_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("faster_whisper.WhisperModel", CudaFailingLoader)
     monkeypatch.setattr("ctranslate2.get_cuda_device_count", lambda: 1)
+    monkeypatch.setattr(
+        "utteran.devices.detect_cuda_libraries",
+        lambda: LibraryReport("cudnn", "cublas"),
+    )
+    monkeypatch.setattr(
+        "ctranslate2.get_supported_compute_types",
+        lambda device, _index=0: {"float16"} if device == "cuda" else {"int8"},
+    )
     backend = FasterWhisperBackend()
 
     backend.load("tiny", "auto", "auto")

@@ -81,6 +81,22 @@ class AudioDecodeError(InputError):
     """Raised when ffmpeg cannot decode the input."""
 
 
+class JobError(UtteranError):
+    """A job manifest, lock, or lifecycle operation failed."""
+
+
+class JobLockedError(JobError):
+    """Raised when another live process owns a job directory."""
+
+
+class JobNotFoundError(JobError):
+    """Raised when a requested job does not exist."""
+
+
+class JobManifestError(JobError):
+    """Raised when a manifest cannot safely identify its job."""
+
+
 class CancelledError(UtteranError):
     """Raised on cooperative or keyboard cancellation."""
 

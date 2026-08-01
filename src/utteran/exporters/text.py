@@ -16,7 +16,6 @@ class TextExporter(Exporter):
     def render(self, result: PipelineResult, options: ExportOptions) -> str:
         """Render a compact plain text transcript."""
         lines = [
-            display_text(segment.text, segment.speaker, options)
-            for segment in result.segments
+            display_text(segment.text, segment.speaker, options) for segment in result.segments
         ]
         return "\n".join(lines) + ("\n" if lines else "")

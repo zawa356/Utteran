@@ -26,9 +26,7 @@ def test_ffmpeg_missing_has_actionable_error(
 
 
 def test_command_normalizes_to_pcm16_16khz_mono(tmp_path: Path) -> None:
-    command = build_ffmpeg_command(
-        Path("ffmpeg"), tmp_path / "video.mp4", tmp_path / "audio.wav"
-    )
+    command = build_ffmpeg_command(Path("ffmpeg"), tmp_path / "video.mp4", tmp_path / "audio.wav")
 
     assert command[command.index("-acodec") + 1] == "pcm_s16le"
     assert command[command.index("-ar") + 1] == "16000"

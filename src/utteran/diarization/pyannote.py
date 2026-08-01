@@ -23,6 +23,7 @@ from utteran.errors import (
     ModelNotFoundError,
     VramExhaustedError,
 )
+from utteran.models.manager import find_runtime_model
 from utteran.types import (
     CancelToken,
     DeviceInfo,
@@ -80,10 +81,18 @@ class PyannoteBackend(DiarizationBackend):
         token: str | None = None
         model_path = Path(model_id).expanduser()
         if not model_path.exists():
-            token = self._token_provider.get_token()
-            if not token:
-                raise HuggingFaceTokenMissingError
-            model_path = _resolve_cached_model(model_id, token)
+            managed_model = find_runtime_model(
+                self.name,
+                model_id,
+                token_provider=self._token_provider,
+            )
+            if managed_model is not None:
+                model_path = managed_model
+            else:
+                token = self._token_provider.get_token()
+                if not token:
+                    raise HuggingFaceTokenMissingError
+                model_path = _resolve_cached_model(model_id, token)
 
         try:
             import torch
@@ -92,9 +101,7 @@ class PyannoteBackend(DiarizationBackend):
             selected_device = _select_device(device, torch)
             pipeline = Pipeline.from_pretrained(model_path, token=token)
             if pipeline is None:
-                raise ModelNotFoundError(
-                    f"話者分離モデル '{model_id}' の設定を読み込めません。"
-                )
+                raise ModelNotFoundError(f"話者分離モデル '{model_id}' の設定を読み込めません。")
             try:
                 pipeline.to(torch.device(selected_device))
             except Exception:
@@ -232,14 +239,45 @@ def _resolve_cached_model(model_id: str, token: str) -> Path:
 
 
 def _select_device(requested: str, torch_module: Any) -> str:
-    """Resolve the minimal Phase 1 CPU/CUDA device selection."""
+    """Resolve CPU/CUDA after a minimal real CUDA allocation probe."""
     if requested == "auto":
-        return "cuda:0" if torch_module.cuda.is_available() else "cpu"
+        if _torch_cuda_usable(torch_module, 0):
+            return "cuda:0"
+        if torch_module.cuda.is_available():
+            logging.getLogger(__name__).info("PyTorch CUDA を初期化できないため CPU を使用します。")
+        return "cpu"
     if requested == "cuda":
-        return "cuda:0"
-    if requested == "cpu" or requested.startswith("cuda:"):
+        requested = "cuda:0"
+    if requested == "cpu":
         return requested
+    if requested.startswith("cuda:"):
+        try:
+            index = int(requested.partition(":")[2])
+        except ValueError:
+            raise BackendUnavailableError(f"不正な CUDA デバイス指定です: {requested}") from None
+        if not _torch_cuda_usable(torch_module, index):
+            raise BackendUnavailableError(
+                f"明示指定された cuda:{index} を PyTorch で初期化できません。"
+                "自動フォールバックは行いません。"
+            )
+        return f"cuda:{index}"
     raise BackendUnavailableError(f"pyannote が対応していないデバイスです: {requested}")
+
+
+def _torch_cuda_usable(torch_module: Any, index: int) -> bool:
+    """Verify PyTorch CUDA initialization with a one-element allocation."""
+    try:
+        if (
+            index < 0
+            or not torch_module.cuda.is_available()
+            or index >= torch_module.cuda.device_count()
+        ):
+            return False
+        probe = torch_module.empty(1, device=f"cuda:{index}")
+        del probe
+        return True
+    except Exception:
+        return False
 
 
 def _load_pcm_waveform(audio_path: Path) -> dict[str, Any]:

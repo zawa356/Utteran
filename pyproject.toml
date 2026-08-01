@@ -26,6 +26,9 @@ dependencies = [
 pyannote = [
   "pyannote.audio>=4,<5",
 ]
+intel = [
+  "openvino-genai>=2025,<2027",
+]
 dev = [
   "mypy>=1.11,<2",
   "pytest>=8.3,<9",
@@ -68,6 +71,8 @@ module = [
   "huggingface_hub",
   "huggingface_hub.*",
   "keyring",
+  "onnxruntime",
+  "openvino",
   "pyannote.*",
   "torch",
 ]

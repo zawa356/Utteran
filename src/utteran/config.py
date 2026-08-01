@@ -24,6 +24,49 @@ from utteran.errors import ConfigurationError
 OutputFormat = Literal["srt", "vtt", "json", "txt", "md"]
 LogLevel = Literal["debug", "info", "warning", "error", "critical"]
 
+CONFIG_TEMPLATE = """[general]
+output_dir = "./output"
+job_dir = ""
+log_level = "info"
+
+[asr]
+backend = "auto"
+model = "large-v3-turbo"
+device = "auto"
+compute_type = "auto"
+language = "ja"
+vad_filter = true
+condition_on_previous_text = false
+beam_size = 5
+initial_prompt = ""
+
+[diarization]
+enabled = true
+backend = "pyannote"
+model = "pyannote/speaker-diarization-community-1"
+device = "auto"
+num_speakers = 0
+min_speakers = 0
+max_speakers = 0
+
+[output]
+formats = ["srt", "json", "md"]
+srt_bom = false
+newline = "lf"
+show_speaker = true
+speaker_labels = {}
+
+[ffmpeg]
+path = ""
+
+[alignment]
+max_nearest_distance = 2.0
+min_segment_duration = 0.3
+min_segment_words = 2
+merge_gap = 0.5
+renumber_speakers = true
+"""
+
 
 def _default_output_formats() -> list[OutputFormat]:
     """Return a fresh default output format list."""
@@ -55,7 +98,7 @@ class ASRConfig(BaseModel):
     vad_filter: bool = True
     condition_on_previous_text: bool = False
     beam_size: int = Field(default=5, ge=1)
-    initial_prompt: str | None = None
+    initial_prompt: str | None = ""
 
 
 class DiarizationConfig(BaseModel):
@@ -161,6 +204,23 @@ class Config(BaseSettings):
     def effective_job_dir(self) -> Path:
         """Return the configured job dir or the platform cache default."""
         return self.general.job_dir or Path(user_cache_dir("utteran")) / "jobs"
+
+
+def default_config_path() -> Path:
+    """Return the platform-specific config.toml location."""
+    return Path(user_config_dir("utteran")) / "config.toml"
+
+
+def initialize_config(path: Path | None = None) -> Path:
+    """Create the documented token-free template without overwriting a file."""
+    selected = path or default_config_path()
+    selected.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with selected.open("x", encoding="utf-8", newline="\n") as config_file:
+            config_file.write(CONFIG_TEMPLATE)
+    except FileExistsError:
+        raise ConfigurationError(f"設定ファイルは既に存在します: {selected}") from None
+    return selected
 
 
 class TokenProvider(ABC):

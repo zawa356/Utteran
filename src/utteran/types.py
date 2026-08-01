@@ -61,9 +61,7 @@ class TranscriptionResult:
                         end=float(word["end"]),
                         text=str(word["text"]),
                         probability=(
-                            None
-                            if word.get("probability") is None
-                            else float(word["probability"])
+                            None if word.get("probability") is None else float(word["probability"])
                         ),
                     )
                     for word in segment.get("words", [])
@@ -113,9 +111,7 @@ class DiarizationResult:
         return cls(
             turns=[SpeakerTurn(**turn) for turn in data["turns"]],
             exclusive_turns=(
-                None
-                if exclusive_data is None
-                else [SpeakerTurn(**turn) for turn in exclusive_data]
+                None if exclusive_data is None else [SpeakerTurn(**turn) for turn in exclusive_data]
             ),
             num_speakers=int(data["num_speakers"]),
             backend=str(data["backend"]),
@@ -222,6 +218,30 @@ class PipelineResult:
     segments: list[Segment]
     created_at: str
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return a backend-neutral representation for job persistence."""
+        return {
+            "input_path": str(self.input_path),
+            "transcription": self.transcription.to_dict(),
+            "diarization": (None if self.diarization is None else self.diarization.to_dict()),
+            "segments": [asdict(segment) for segment in self.segments],
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PipelineResult:
+        """Restore a pipeline result from a versioned intermediate file."""
+        diarization_data = data.get("diarization")
+        return cls(
+            input_path=Path(str(data["input_path"])),
+            transcription=TranscriptionResult.from_dict(data["transcription"]),
+            diarization=(
+                None if diarization_data is None else DiarizationResult.from_dict(diarization_data)
+            ),
+            segments=[_segment_from_dict(segment) for segment in data["segments"]],
+            created_at=str(data["created_at"]),
+        )
+
 
 @dataclass(frozen=True)
 class PipelineOutcome:
@@ -229,3 +249,26 @@ class PipelineOutcome:
 
     result: PipelineResult
     output_paths: list[Path]
+    job_id: str | None = None
+    executed_stages: tuple[str, ...] = ()
+
+
+def _segment_from_dict(data: dict[str, Any]) -> Segment:
+    """Restore one common segment from persisted JSON data."""
+    return Segment(
+        start=float(data["start"]),
+        end=float(data["end"]),
+        text=str(data["text"]),
+        words=[
+            Word(
+                start=float(word["start"]),
+                end=float(word["end"]),
+                text=str(word["text"]),
+                probability=(
+                    None if word.get("probability") is None else float(word["probability"])
+                ),
+            )
+            for word in data.get("words", [])
+        ],
+        speaker=None if data.get("speaker") is None else str(data["speaker"]),
+    )
