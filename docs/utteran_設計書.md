@@ -1,0 +1,715 @@
+# utteran 設計書 / 要件定義
+
+> このドキュメントは utteran リポジトリの `要件定義.md` として配置する。
+> 仕様に変更が生じた場合、実装と同じ作業単位で必ず本書を更新すること。
+
+---
+
+## 1. 概要
+
+### 1.1 目的
+
+音声・動画ファイルから、話者を区別した文字起こしを生成するローカル実行ツール。
+会議・インタビュー・講演の記録作成を主用途とする。
+
+### 1.2 スコープ
+
+**対象とするもの**
+
+- ファイル入力によるバッチ処理（単一ファイル / フォルダ再帰 / キュー）
+- 文字起こし（ASR）と話者分離（Speaker Diarization）の統合
+- 複数の推論バックエンド（CPU / NVIDIA / Intel、将来 AMD）の切り替え
+- CLI インターフェース
+
+**対象としないもの（現時点）**
+
+- リアルタイム（マイク入力）処理
+- 文字起こし結果の編集エディタ
+- クラウド API への送信（完全ローカル実行を前提とする）
+- GUI（後続フェーズで追加可能な設計にとどめる）
+
+### 1.3 想定音源
+
+| 種別 | 話者数 | 想定長 |
+|---|---|---|
+| 会議・打ち合わせ | 2〜6人 | 30分〜3時間 |
+| インタビュー・対談 | 2人 | 30分〜2時間 |
+| 講演・セミナー | 1人＋質疑 | 1〜3時間 |
+
+3時間を超える音声も処理可能であること。
+
+### 1.4 プロジェクト情報
+
+| 項目 | 値 |
+|---|---|
+| 名称 | utteran |
+| 言語 | Python 3.11 / 3.12 |
+| パッケージ管理 | uv（`pyproject.toml`） |
+| ライセンス | MIT |
+| 主対象 OS | Windows 10/11 |
+| 副対象 OS | Linux（動作可能な実装とする） |
+
+---
+
+## 2. アーキテクチャ
+
+### 2.1 設計原則
+
+1. **コアはライブラリとして実装し、CLI はその薄いラッパーとする。**
+   将来 GUI を追加する際に、コアへの変更を不要にするため。
+2. **すべての長時間処理は進捗コールバックとキャンセルに対応する。**
+   GUI のプログレスバーと中断ボタンに直結できるようにするため。
+3. **設定は単一の Config オブジェクトに集約する。**
+   GUI の設定画面がこれをバインドするだけで済むようにするため。
+4. **バックエンドはプラグイン的なインターフェースで抽象化する。**
+   モデル固有の構造を上位層に漏らさない。
+5. **重い処理の結果は必ず中間ファイルに保存する。**
+   再実行時に不要な再計算を発生させない。
+
+### 2.2 ディレクトリ構成
+
+```
+utteran/
+├── README.md                  # 必須ドキュメント
+├── 変更履歴.md                # 必須ドキュメント
+├── 要件定義.md                # 必須ドキュメント（本書）
+├── AISTATE.md                 # 必須ドキュメント
+├── LICENSE                    # MIT
+├── THIRD_PARTY_NOTICES.md     # 依存ライブラリ・モデルのライセンス表記
+├── pyproject.toml
+├── setup.ps1                  # Windows 向けセットアップスクリプト
+├── .env.example
+├── src/
+│   └── utteran/
+│       ├── __init__.py
+│       ├── cli.py             # typer によるCLI定義
+│       ├── config.py          # pydantic-settings による設定
+│       ├── types.py           # 共通データモデル
+│       ├── pipeline.py        # 全体オーケストレーション
+│       ├── jobs.py            # ジョブ管理・レジューム
+│       ├── audio.py           # ffmpeg 経由の音声抽出・正規化
+│       ├── devices.py         # デバイス・バックエンド検出
+│       ├── align.py           # ASR結果と話者区間の突き合わせ
+│       ├── logging.py         # ログ設定（トークンマスク含む）
+│       ├── errors.py          # 例外定義
+│       ├── asr/
+│       │   ├── base.py        # ASRBackend 抽象基底
+│       │   ├── faster_whisper.py
+│       │   ├── openvino.py    # Phase 3
+│       │   └── registry.py
+│       ├── diarization/
+│       │   ├── base.py        # DiarizationBackend 抽象基底
+│       │   ├── pyannote.py
+│       │   ├── sherpa_onnx.py # Phase 3
+│       │   └── registry.py
+│       ├── exporters/
+│       │   ├── base.py
+│       │   ├── srt.py
+│       │   ├── vtt.py
+│       │   ├── json_exporter.py
+│       │   ├── text.py
+│       │   └── markdown.py
+│       └── models/
+│           ├── catalog.py     # モデル定義（ID、形式、サイズ、URL）
+│           └── manager.py     # ダウンロード・検証・削除
+├── tests/
+└── docs/
+```
+
+### 2.3 処理パイプライン
+
+```
+入力ファイル（音声 / 動画）
+  │
+  ├─[1] 音声抽出・正規化 ─────→ audio.wav (16kHz / mono / PCM 16bit)
+  │                              ffmpeg 使用
+  ├─[2] ASR ────────────────→ asr.json
+  │                              単語レベルタイムスタンプ付き
+  ├─[3] 話者分離 ───────────→ diarization.json
+  │                              話者区間 + exclusive 区間
+  ├─[4] 突き合わせ・話者割当 → merged.json
+  │
+  └─[5] 出力生成 ───────────→ *.srt / *.vtt / *.json / *.txt / *.md
+```
+
+各ステージは独立して完了状態を持ち、レジューム時は未完了のステージから再開する。
+
+---
+
+## 3. データモデル
+
+`src/utteran/types.py` に定義する。バックエンド固有の構造を上位層に漏らさないこと。
+
+```python
+@dataclass(frozen=True)
+class Word:
+    start: float          # 秒
+    end: float            # 秒
+    text: str
+    probability: float | None = None
+
+@dataclass
+class Segment:
+    start: float
+    end: float
+    text: str
+    words: list[Word] = field(default_factory=list)
+    speaker: str | None = None      # 話者割当後に設定される
+
+@dataclass
+class TranscriptionResult:
+    segments: list[Segment]
+    language: str
+    duration: float
+    backend: str                    # 例: "faster-whisper"
+    model_id: str
+    device: str
+
+@dataclass(frozen=True)
+class SpeakerTurn:
+    start: float
+    end: float
+    speaker: str                    # 例: "SPEAKER_00"
+
+@dataclass
+class DiarizationResult:
+    turns: list[SpeakerTurn]
+    exclusive_turns: list[SpeakerTurn] | None   # 対応バックエンドのみ
+    num_speakers: int
+    backend: str
+    model_id: str
+    device: str
+```
+
+**重要**: `TranscriptionResult` は Whisper 固有の構造を含めない。将来 Whisper 以外の
+ASR モデル（Voxtral、Qwen3-ASR 等）を追加できるようにするため。
+
+---
+
+## 4. バックエンド
+
+### 4.1 対応方針
+
+| 用途 | 実装 | 対象ハードウェア | 導入フェーズ |
+|---|---|---|---|
+| ASR | faster-whisper (CTranslate2) | CPU / NVIDIA (CUDA) | Phase 1 |
+| ASR | OpenVINO GenAI | Intel CPU / GPU / NPU | Phase 3 |
+| ASR | whisper.cpp (Vulkan) | AMD 他 | 将来 |
+| 話者分離 | pyannote.audio 4.x | CPU / NVIDIA (CUDA) | Phase 1（既定） |
+| 話者分離 | sherpa-onnx | CPU / CUDA / OpenVINO / DirectML | Phase 3 |
+
+### 4.2 ASRBackend インターフェース
+
+```python
+class ASRBackend(ABC):
+    name: ClassVar[str]
+
+    @classmethod
+    @abstractmethod
+    def is_available(cls) -> bool:
+        """必要な依存パッケージが導入済みか。import 失敗を握りつぶして False を返す。"""
+
+    @classmethod
+    @abstractmethod
+    def available_devices(cls) -> list[DeviceInfo]:
+        """このバックエンドで利用可能なデバイスの一覧。"""
+
+    @abstractmethod
+    def load(self, model_id: str, device: str, compute_type: str) -> None: ...
+
+    @abstractmethod
+    def transcribe(
+        self,
+        audio_path: Path,
+        options: ASROptions,
+        progress: ProgressCallback | None = None,
+        cancel: CancelToken | None = None,
+    ) -> TranscriptionResult: ...
+
+    @abstractmethod
+    def unload(self) -> None: ...
+```
+
+`ASROptions` には最低限、`language`、`initial_prompt`、`vad_filter`、`beam_size`、
+`condition_on_previous_text`、`word_timestamps` を含める。
+
+### 4.3 DiarizationBackend インターフェース
+
+```python
+class DiarizationBackend(ABC):
+    name: ClassVar[str]
+
+    @classmethod
+    @abstractmethod
+    def is_available(cls) -> bool: ...
+
+    @classmethod
+    @abstractmethod
+    def available_devices(cls) -> list[DeviceInfo]: ...
+
+    @abstractmethod
+    def load(self, model_id: str, device: str) -> None: ...
+
+    @abstractmethod
+    def diarize(
+        self,
+        audio_path: Path,
+        options: DiarizationOptions,
+        progress: ProgressCallback | None = None,
+        cancel: CancelToken | None = None,
+    ) -> DiarizationResult: ...
+
+    @abstractmethod
+    def unload(self) -> None: ...
+```
+
+`DiarizationOptions` には `num_speakers`、`min_speakers`、`max_speakers` を含める。
+
+### 4.4 pyannote バックエンドの仕様
+
+- 既定モデル: `pyannote/speaker-diarization-community-1`
+- Hugging Face のアクセストークンが必要。モデル利用条件への同意も必要。
+- pyannote.audio 4.x の出力から `speaker_diarization` と `exclusive_speaker_diarization`
+  の両方を取得し、後者を `DiarizationResult.exclusive_turns` に格納する。
+- トークン未設定時は、取得手順を案内する明確なエラーメッセージを出す。
+  スタックトレースをそのまま見せない。
+- ローカルパス指定によるオフライン読み込みに対応する。
+
+### 4.5 デバイス検出
+
+`utteran devices` で、利用可能なバックエンドとデバイスを一覧表示する。
+
+検出項目:
+- CPU（コア数、命令セット）
+- NVIDIA GPU（CUDA 有無、VRAM、cuDNN/cuBLAS の DLL 解決可否）
+- Intel GPU / NPU（OpenVINO の利用可能デバイス）
+- 各バックエンドの `is_available()` 結果
+
+自動選択のロジック:
+1. ASR: CUDA が使えれば faster-whisper + CUDA、Intel GPU/NPU があれば OpenVINO、
+   いずれもなければ faster-whisper + CPU
+2. 話者分離: CUDA が使えれば pyannote + CUDA、なければ pyannote + CPU
+3. Intel 環境では「ASR は GPU/NPU、話者分離は CPU」という組み合わせになる点を
+   警告として明示する（pyannote は Intel GPU で高速化できないため）
+
+---
+
+## 5. 設定
+
+### 5.1 優先順位
+
+```
+CLI 引数  >  環境変数  >  .env  >  config.toml  >  既定値
+```
+
+Hugging Face トークンのみ、さらに OS キーリングを参照先に加える（優先度は .env の次）。
+
+### 5.2 config.toml
+
+配置場所は `platformdirs.user_config_dir("utteran")`。`utteran config init` で雛形を生成する。
+
+```toml
+[general]
+output_dir = "./output"
+job_dir = ""              # 空文字ならユーザーキャッシュ配下
+log_level = "info"
+
+[asr]
+backend = "auto"          # auto | faster-whisper | openvino
+model = "large-v3-turbo"
+device = "auto"
+compute_type = "auto"     # float16 | int8_float16 | int8 など
+language = "ja"
+vad_filter = true
+condition_on_previous_text = false
+beam_size = 5
+initial_prompt = ""
+
+[diarization]
+enabled = true
+backend = "pyannote"      # pyannote | sherpa-onnx
+model = "pyannote/speaker-diarization-community-1"
+device = "auto"
+num_speakers = 0          # 0 なら自動推定
+min_speakers = 0
+max_speakers = 0
+
+[output]
+formats = ["srt", "json", "md"]
+srt_bom = false           # Windows の字幕ソフト向けに UTF-8 BOM を付与
+speaker_labels = {}       # 例: { SPEAKER_00 = "田中", SPEAKER_01 = "佐藤" }
+
+[ffmpeg]
+path = ""                 # 空文字なら PATH から探索し、なければ同梱先を参照
+```
+
+### 5.3 トークンの取り扱い
+
+- `config.toml` にトークンを書かせない。書かれていても読み取らず、警告を出す。
+- ログ出力時、トークンらしき文字列は常にマスクする（`hf_****`）。
+- 例外メッセージやスタックトレースにトークンが混入しないようにする。
+- 将来の GUI が利用できるよう、`TokenProvider` として抽象化する
+  （環境変数 / .env / キーリングの各実装を持つ）。
+
+---
+
+## 6. ジョブ管理とレジューム
+
+### 6.1 ジョブディレクトリ
+
+```
+<job_dir>/<job_id>/
+├── manifest.json       # 入力情報、設定ハッシュ、各ステージの状態
+├── audio.wav           # 抽出済み音声（16kHz mono）
+├── asr.json            # ASR 結果
+├── diarization.json    # 話者分離結果
+├── merged.json         # 統合結果
+└── utteran.log         # このジョブのログ
+```
+
+### 6.2 job_id の決定
+
+```
+job_id = sha256(入力ファイルの内容ハッシュ + 正規化した設定のハッシュ)[:16]
+```
+
+入力ファイルのハッシュは、全体を読むと遅いため
+「ファイルサイズ + 更新時刻 + 先頭 1MB + 末尾 1MB」から算出する。
+
+### 6.3 ステージ依存関係
+
+設定変更時に再実行が必要なステージを明示する。
+
+| ステージ | 再実行が必要になる設定変更 |
+|---|---|
+| audio | 入力ファイル、ffmpeg のパラメータ |
+| asr | audio の変更、`[asr]` 配下すべて |
+| diarization | audio の変更、`[diarization]` 配下すべて |
+| merge | asr / diarization の変更、突き合わせパラメータ |
+| export | merge の変更、`[output]` 配下すべて |
+
+出力形式や話者名だけを変更した再実行は、export のみが走ること。
+
+### 6.4 manifest.json
+
+```json
+{
+  "version": 1,
+  "job_id": "a1b2c3d4e5f6a7b8",
+  "input": { "path": "...", "size": 123456, "mtime": 1700000000, "hash": "..." },
+  "created_at": "2026-01-01T00:00:00+09:00",
+  "updated_at": "2026-01-01T00:00:00+09:00",
+  "stages": {
+    "audio":       { "status": "done", "config_hash": "...", "finished_at": "..." },
+    "asr":         { "status": "done", "config_hash": "...", "finished_at": "..." },
+    "diarization": { "status": "running", "config_hash": "...", "finished_at": null },
+    "merge":       { "status": "pending", "config_hash": null, "finished_at": null },
+    "export":      { "status": "pending", "config_hash": null, "finished_at": null }
+  }
+}
+```
+
+`status` は `pending | running | done | failed` の4値。
+異常終了で `running` のまま残った場合、次回実行時は `pending` として扱う。
+
+---
+
+## 7. 突き合わせ（align.py）
+
+ASR の単語タイムスタンプと話者区間を突き合わせ、各セグメントに話者を割り当てる。
+
+### 7.1 アルゴリズム
+
+1. `exclusive_turns` が存在すればそちらを優先して使用する。
+   存在しない場合は `turns` を使い、重なり区間は開始が早い話者を優先する。
+2. 各単語について、単語の中心時刻を含む話者区間の話者を割り当てる。
+3. どの区間にも含まれない場合、重なり時間が最大の区間を採用する。
+   重なりがまったくない場合は、最も近い区間を採用する。
+   距離が閾値（既定 2.0 秒）を超える場合は `UNKNOWN` とする。
+4. セグメント内で話者が混在する場合、話者の切り替わり位置でセグメントを分割する。
+5. 分割後、極端に短いセグメント（既定 0.3 秒未満、または 2 単語未満）は
+   前後の同一話者セグメントに吸収する。相槌によるラベルの細分化を防ぐ。
+6. 連続する同一話者のセグメントは、間隔が閾値（既定 0.5 秒）以下なら結合する。
+
+### 7.2 パラメータ
+
+上記の閾値はすべて設定で変更可能にする。既定値は上記のとおり。
+
+### 7.3 話者ラベル
+
+- 内部表現は `SPEAKER_00` 形式を維持する。
+- 出力時に `[output].speaker_labels` によるリネームを適用する。
+- 話者の登場順に `SPEAKER_00` から振り直すオプションを持つ
+  （バックエンドが返す番号は登場順とは限らないため）。
+
+---
+
+## 8. 入出力
+
+### 8.1 入力
+
+- 音声: wav, mp3, m4a, flac, ogg, aac, wma
+- 動画: mp4, mkv, mov, avi, webm, ts
+- ffmpeg でデコードできるものはすべて受け付ける方針とし、上記は明示的にテストする対象。
+- 複数チャンネルはモノラルにダウンミックスする。
+- サンプリングレートは 16kHz に変換する。
+
+### 8.2 出力
+
+| 形式 | 拡張子 | 内容 |
+|---|---|---|
+| SRT | .srt | 字幕。話者名を行頭に付与するオプションあり |
+| WebVTT | .vtt | 字幕 |
+| JSON | .json | 単語レベルを含む全情報。再利用・二次加工用 |
+| テキスト | .txt | 話者名付きの本文 |
+| Markdown | .md | 話者名付き本文＋メタ情報（処理条件、日時、モデル） |
+
+- 文字コードは UTF-8。SRT のみ BOM 付与オプションを持つ。
+- 改行コードは LF（SRT/VTT は CRLF も選べるようにする）。
+- 出力ファイル名は既定で `<入力ファイル名>.<拡張子>`。衝突時は連番を付与する。
+
+### 8.3 JSON 出力のスキーマ
+
+バージョンフィールドを持たせ、後方互換性を管理する。
+
+```json
+{
+  "schema_version": 1,
+  "input": { "path": "...", "duration": 3600.0 },
+  "processing": {
+    "asr": { "backend": "faster-whisper", "model": "large-v3-turbo", "device": "cuda" },
+    "diarization": { "backend": "pyannote", "model": "...", "device": "cuda" },
+    "created_at": "..."
+  },
+  "speakers": ["SPEAKER_00", "SPEAKER_01"],
+  "segments": [
+    {
+      "start": 0.5, "end": 3.2, "speaker": "SPEAKER_00", "text": "...",
+      "words": [ { "start": 0.5, "end": 0.8, "text": "...", "probability": 0.98 } ]
+    }
+  ]
+}
+```
+
+---
+
+## 9. CLI 仕様
+
+```
+utteran transcribe <入力パス> [オプション]
+    --format srt,json,md          出力形式（カンマ区切り）
+    --output-dir <パス>
+    --asr-backend <名前>
+    --asr-model <ID>
+    --diarization-backend <名前>
+    --device <名前>
+    --language <コード>
+    --num-speakers <N>
+    --min-speakers <N>
+    --max-speakers <N>
+    --no-diarization
+    --recursive                   ディレクトリを再帰的に処理
+    --resume                      既存ジョブから再開（既定で有効）
+    --force                       すべてのステージを再実行
+    --dry-run                     処理内容の表示のみ
+    --config <パス>
+    --verbose / --quiet
+
+utteran devices                   利用可能なバックエンドとデバイスを表示
+utteran models list               モデルの一覧と導入状況
+utteran models download <ID>      モデルの取得
+utteran models remove <ID>
+utteran models verify             導入済みモデルの整合性検証
+utteran models path               モデル保存先の表示
+utteran jobs list                 ジョブの一覧
+utteran jobs show <job_id>
+utteran jobs clean [--all|--failed|--older-than <日数>]
+utteran config init               設定ファイルの雛形生成
+utteran config show               現在の有効な設定（トークンはマスク）
+utteran config path
+utteran eval <正解ディレクトリ>    DER / WER の算出（Phase 4）
+```
+
+終了コード:
+
+| コード | 意味 |
+|---|---|
+| 0 | 正常終了 |
+| 1 | 一般エラー |
+| 2 | 設定エラー（トークン未設定、不正な設定値など） |
+| 3 | 依存エラー（ffmpeg 未検出、バックエンド未導入など） |
+| 4 | 入力エラー（ファイル未検出、デコード失敗など） |
+| 130 | ユーザーによる中断 |
+
+---
+
+## 10. モデル管理
+
+### 10.1 方針
+
+- ユーザーが明示的に管理できること。暗黙のダウンロードで数GBを消費させない。
+- 未取得のモデルが指定された場合、自動ダウンロードするか確認プロンプトを出す。
+  `--yes` で省略可能。非対話環境では明確なエラーとする。
+- `setup.ps1` からモデル取得を実行できること。
+- 完全オフライン運用が可能なこと（事前取得のみで動作する）。
+
+### 10.2 モデルカタログ
+
+`models/catalog.py` に、モデル ID・バックエンド・形式・概算サイズ・取得元を定義する。
+同じ Whisper large-v3-turbo でも、バックエンドごとに必要な形式が異なる点に注意する。
+
+| モデル ID | バックエンド | 形式 |
+|---|---|---|
+| large-v3-turbo | faster-whisper | CTranslate2 |
+| large-v3-turbo | openvino | OpenVINO IR |
+| large-v3 | faster-whisper | CTranslate2 |
+| kotoba-whisper-v2.0 | faster-whisper | CTranslate2 |
+| pyannote/speaker-diarization-community-1 | pyannote | pyannote pipeline |
+
+保存先は `platformdirs.user_cache_dir("utteran") / "models"`。
+環境変数 `UTTERAN_MODEL_DIR` で上書き可能。
+
+---
+
+## 11. ffmpeg
+
+- 起動時に以下の順で探索する。
+  1. 設定 `[ffmpeg].path`
+  2. `PATH` 環境変数
+  3. アプリケーションデータ配下の同梱先（`<user_data_dir>/bin/ffmpeg.exe`）
+- いずれにも見つからない場合、`setup.ps1` での取得を案内するエラーを出す。
+- リポジトリには ffmpeg のバイナリを含めない（ライセンス上の理由）。
+- `setup.ps1` は公式配布物を取得し、上記の同梱先に配置する。
+
+---
+
+## 12. ログ・エラー処理
+
+- 標準出力は人間向けの進捗表示（rich 等）、ログファイルは構造化ログとする。
+- ジョブごとに `utteran.log` を残す。
+- 想定される失敗は専用の例外型を定義し、ユーザー向けの対処法を含むメッセージを出す。
+  トークン未設定、モデル未取得、ffmpeg 未検出、VRAM 不足、対応外の入力形式など。
+- 想定外の例外のみスタックトレースを表示し、`--verbose` で詳細を出す。
+- 一括処理中に個別ファイルが失敗しても全体を止めない。最後に失敗一覧を表示する。
+
+---
+
+## 13. 長時間音声への対応
+
+3時間超の音声で問題になるのは話者分離側である。ASR は 30 秒チャンクの逐次処理のため
+長さ自体は問題にならない。
+
+pyannote は音声全体を一括処理するため、長時間音声ではメモリ消費が大きい。
+分割処理すると、チャンクごとに話者 ID が独立して振られ、同じ話者に別の ID が付く。
+
+対応方針:
+
+1. まず一括処理を試みる。
+2. 事前に必要メモリを概算し、閾値を超える場合は警告する。
+3. メモリ不足が発生した場合、分割モードにフォールバックする。
+4. 分割モードでは、各チャンクの話者埋め込みを保持し、
+   全チャンク分をまとめて最終クラスタリングを1回だけ実行する。
+   これにより話者 ID の一貫性を保つ。
+
+分割モードの実装は Phase 4 とする。Phase 1 では一括処理のみを実装し、
+メモリ不足時は明確なエラーメッセージを出す。
+
+---
+
+## 14. 依存関係とインストールプロファイル
+
+```
+utteran                # コア + faster-whisper（torch 非依存）
+utteran[pyannote]      # pyannote.audio + torch（既定の推奨構成）
+utteran[intel]         # openvino-genai
+utteran[onnx]          # sherpa-onnx / onnxruntime
+utteran[dev]           # 開発用
+```
+
+- torch は `[pyannote]` にのみ含める。将来の exe 化で lite 構成を選べるようにするため。
+- CTranslate2 の CUDA 実行には cuDNN / cuBLAS が必要。`setup.ps1` で対応する。
+
+---
+
+## 15. ライセンス表記
+
+コードは MIT だが、依存モデルのライセンスは異なる。`THIRD_PARTY_NOTICES.md` に記載する。
+
+| 対象 | ライセンス | 注意点 |
+|---|---|---|
+| Whisper | MIT | |
+| pyannote community-1 | CC-BY-4.0 | 利用条件への同意が必要 |
+| sherpa-onnx | Apache-2.0 | モデルごとに個別のライセンスあり |
+| ffmpeg | GPL/LGPL | 同梱しないため配布物には影響しない |
+
+README にも、モデル利用条件への同意が必要である旨を明記する。
+
+---
+
+## 16. 開発規約
+
+- 型ヒントを全関数に付与する。`mypy` で検査する。
+- `ruff` で lint とフォーマットを行う。
+- パスは `pathlib.Path` を使用する。文字列連結でパスを組み立てない。
+- 外部プロセス呼び出しは `subprocess` のリスト形式で行う。`shell=True` を使わない。
+- Windows と Linux の差異はコード内で分岐せず、可能な限り標準ライブラリで吸収する。
+- テストは pytest。モデルを必要としないテストと、必要とするテストを
+  マーカーで分離する（`@pytest.mark.requires_model`）。
+- CI ではモデル不要のテストのみ実行する。
+
+---
+
+## 17. フェーズ計画
+
+### Phase 1 — 骨格と最小動作
+
+プロジェクト構成、Config、CLI 骨格、ffmpeg 音声抽出、faster-whisper（CPU/CUDA）、
+pyannote、突き合わせ、SRT/VTT/JSON/TXT/MD 出力、単一ファイル処理。
+
+### Phase 2 — 実運用機能
+
+ジョブ管理とレジューム、フォルダ一括・キュー処理、モデル管理コマンド、
+`setup.ps1`、`devices` コマンド、デバイス自動判定。
+
+### Phase 3 — バックエンド拡張
+
+OpenVINO ASR バックエンド、sherpa-onnx 話者分離バックエンド、
+バックエンド切り替えの設定と検証。
+
+### Phase 4 — 長時間対応と公開準備
+
+分割処理＋全体クラスタリング、メモリ監視、`eval` コマンド、CI、ドキュメント整備。
+
+### Phase 5 以降
+
+GUI、AMD 対応（whisper.cpp Vulkan）、exe 化。
+
+---
+
+## 18. ドキュメント運用ルール
+
+以下の4文書はリポジトリ直下に常に存在し、内容と実装が一致していなければならない。
+
+| ファイル | 内容 | 更新義務 |
+|---|---|---|
+| `README.md` | 概要、インストール、使い方、対応バックエンド、ライセンス | CLI・インストール手順・対応機能に変更があるたび |
+| `変更履歴.md` | Keep a Changelog 形式の変更履歴 | すべての作業単位で |
+| `要件定義.md` | 本書。仕様の唯一の情報源 | 仕様変更があるたび |
+| `AISTATE.md` | AI 作業者向けの状態記録 | すべての作業単位で |
+
+**更新は実装と同じ作業単位で行うこと。実装だけ進めてドキュメントを後回しにしてはならない。**
+
+### AISTATE.md の役割
+
+AI がセッションをまたいで作業する際のコンテキスト置き場。
+新しいセッションを開始した AI が、これを読むだけで現在地を把握できる状態を維持する。
+形式は自由だが、以下を含めること。
+
+- 現在のフェーズと進捗
+- 直近の作業内容と、その結果
+- 未解決の課題、判断を保留している事項
+- 設計上の判断とその理由（なぜその選択をしたか）
+- 次に着手すべきこと
+- 既知の落とし穴、ハマった箇所とその回避方法
+
+人間向けの体裁は不要。AI が読んで作業を再開できることを最優先する。
