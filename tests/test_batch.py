@@ -126,11 +126,12 @@ def test_discover_inputs_is_stable_recursive_and_glob_adjustable(tmp_path: Path)
 
 
 def test_batch_reuses_one_loaded_backend_for_all_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     (tmp_path / "a.wav").write_bytes(b"a")
     (tmp_path / "b.wav").write_bytes(b"b")
     backend = CountingASR()
+    caplog.set_level("INFO")
     monkeypatch.setattr("utteran.pipeline.normalize_audio", fake_normalize)
 
     summary = run_batch(tmp_path, _config(tmp_path), asr_backend=backend)
@@ -140,6 +141,8 @@ def test_batch_reuses_one_loaded_backend_for_all_files(
     assert backend.load_count == 1
     assert backend.transcribe_count == 2
     assert backend.unload_count == 1
+    assert sum("ASRバックエンドをロード" in record.message for record in caplog.records) == 1
+    assert sum("ASRバックエンドを再利用" in record.message for record in caplog.records) == 1
 
 
 def test_batch_continues_after_failure_and_returns_partial_exit_code(

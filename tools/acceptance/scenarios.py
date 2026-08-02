@@ -350,6 +350,133 @@ def validate_log(jobs: Path, input_path: Path) -> None:
     print(json.dumps({"json_log_lines": len(lines), "token_pattern_found": False}))
 
 
+def validate_batch_summary(
+    command: list[str],
+    *,
+    expected_exit: int,
+    expected_success: int,
+    expected_skipped: int,
+    expected_failed: int,
+) -> None:
+    completed = _run(command, expected_exit=expected_exit)
+    match = re.search(
+        r"集計:\s*成功\s+(\d+)\s*/\s*スキップ\s+(\d+)\s*/\s*失敗\s+(\d+)",
+        completed.stdout,
+    )
+    if match is None:
+        raise AssertionError("batch summary line was not found")
+    counts = tuple(int(value) for value in match.groups())
+    expected = (expected_success, expected_skipped, expected_failed)
+    if counts != expected:
+        raise AssertionError(f"batch counts were {counts}, expected {expected}")
+    print(
+        json.dumps(
+            {
+                "exit_code": expected_exit,
+                "success": counts[0],
+                "skipped": counts[1],
+                "failed": counts[2],
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def validate_batch_state(
+    jobs: Path,
+    directory: Path,
+    output: Path,
+    expected_order: tuple[str, ...],
+) -> None:
+    records: list[tuple[str, str, dict[str, Any]]] = []
+    for name in expected_order:
+        job = _find_job(jobs, directory / name)
+        manifest = _load(job / "manifest.json")
+        records.append((str(manifest["created_at"]), name, manifest))
+    actual_order = tuple(name for _created, name, _manifest in sorted(records))
+    if actual_order != expected_order:
+        raise AssertionError(f"batch job order was {actual_order}, expected {expected_order}")
+    statuses = {
+        name: (
+            "failed"
+            if any(stage["status"] == "failed" for stage in manifest["stages"].values())
+            else "done"
+            if all(stage["status"] == "done" for stage in manifest["stages"].values())
+            else "pending"
+        )
+        for _created, name, manifest in records
+    }
+    if statuses.get("broken.mp4") != "failed":
+        raise AssertionError("broken.mp4 job is not failed")
+    completed = [name for name, status in statuses.items() if status == "done"]
+    output_count = len(list(output.glob("*.json")))
+    if output_count != len(completed):
+        raise AssertionError(
+            f"batch output count was {output_count}, expected {len(completed)}"
+        )
+    print(
+        json.dumps(
+            {"job_order": actual_order, "failed": 1, "completed": len(completed)},
+            sort_keys=True,
+        )
+    )
+
+
+def validate_backend_reuse(jobs: Path, inputs: tuple[Path, ...]) -> None:
+    messages: list[str] = []
+    for input_path in inputs:
+        log = _find_job(jobs, input_path) / "utteran.log"
+        for line in log.read_text(encoding="utf-8").splitlines():
+            if line:
+                messages.append(str(json.loads(line).get("message", "")))
+    loads = sum("ASRバックエンドをロード" in message for message in messages)
+    reuses = sum("ASRバックエンドを再利用" in message for message in messages)
+    if loads != 1 or reuses < len(inputs) - 1:
+        raise AssertionError(f"ASR backend log counts were load={loads}, reuse={reuses}")
+    print(json.dumps({"asr_loads": loads, "asr_reuses": reuses}, sort_keys=True))
+
+
+def validate_dry_run(
+    jobs: Path,
+    expected: tuple[str, ...],
+    absent: tuple[str, ...],
+    command: list[str],
+) -> None:
+    before = {
+        path: path.stat().st_mtime_ns for path in jobs.glob("*/manifest.json") if path.is_file()
+    }
+    completed = _run(command)
+    for value in expected:
+        if value not in completed.stdout:
+            raise AssertionError(f"dry-run output is missing expected candidate: {value}")
+    for value in absent:
+        if value in completed.stdout:
+            raise AssertionError(f"dry-run output included excluded candidate: {value}")
+    after = {
+        path: path.stat().st_mtime_ns for path in jobs.glob("*/manifest.json") if path.is_file()
+    }
+    if before != after:
+        raise AssertionError("dry-run changed job manifests")
+    print(json.dumps({"candidate_count": len(expected), "jobs_unchanged": True}))
+
+
+def validate_generated_exclusion(
+    output: Path,
+    jobs: Path,
+    command: list[str],
+) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    jobs.mkdir(parents=True, exist_ok=True)
+    (output / "should_not_process.mp4").write_bytes(b"generated output fixture")
+    (jobs / "should_not_process.mp4").write_bytes(b"generated job fixture")
+    _run(command)
+    if list(jobs.glob("*/manifest.json")):
+        raise AssertionError("generated job directory was recursively processed")
+    if list(output.glob("*.json")):
+        raise AssertionError("generated output directory was recursively processed")
+    print(json.dumps({"excluded_generated_candidates": 2}))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="scenario", required=True)
@@ -390,6 +517,34 @@ def main() -> int:
     log.add_argument("--jobs", type=Path, required=True)
     log.add_argument("--input", type=Path, required=True)
 
+    batch_summary = subparsers.add_parser("batch-summary")
+    batch_summary.add_argument("--exit", type=int, required=True)
+    batch_summary.add_argument("--success", type=int, required=True)
+    batch_summary.add_argument("--skipped", type=int, required=True)
+    batch_summary.add_argument("--failed", type=int, required=True)
+    batch_summary.add_argument("command", nargs=argparse.REMAINDER)
+
+    batch_state = subparsers.add_parser("batch-state")
+    batch_state.add_argument("--jobs", type=Path, required=True)
+    batch_state.add_argument("--dir", type=Path, required=True)
+    batch_state.add_argument("--output", type=Path, required=True)
+    batch_state.add_argument("--order", required=True)
+
+    reuse = subparsers.add_parser("backend-reuse")
+    reuse.add_argument("--jobs", type=Path, required=True)
+    reuse.add_argument("inputs", type=Path, nargs="+")
+
+    dry_run = subparsers.add_parser("dry-run")
+    dry_run.add_argument("--jobs", type=Path, required=True)
+    dry_run.add_argument("--expected", required=True)
+    dry_run.add_argument("--absent", default="")
+    dry_run.add_argument("command", nargs=argparse.REMAINDER)
+
+    generated = subparsers.add_parser("generated-exclusion")
+    generated.add_argument("--output", type=Path, required=True)
+    generated.add_argument("--jobs", type=Path, required=True)
+    generated.add_argument("command", nargs=argparse.REMAINDER)
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -408,8 +563,34 @@ def main() -> int:
         corrupt_manifest(args.jobs, args.command)
     elif args.scenario == "jobs-management":
         jobs_management(args.jobs, args.utteran, args.config)
-    else:
+    elif args.scenario == "log":
         validate_log(args.jobs, args.input)
+    elif args.scenario == "batch-summary":
+        validate_batch_summary(
+            args.command,
+            expected_exit=args.exit,
+            expected_success=args.success,
+            expected_skipped=args.skipped,
+            expected_failed=args.failed,
+        )
+    elif args.scenario == "batch-state":
+        validate_batch_state(
+            args.jobs,
+            args.dir,
+            args.output,
+            tuple(filter(None, args.order.split(","))),
+        )
+    elif args.scenario == "backend-reuse":
+        validate_backend_reuse(args.jobs, tuple(args.inputs))
+    elif args.scenario == "dry-run":
+        validate_dry_run(
+            args.jobs,
+            tuple(filter(None, args.expected.split(","))),
+            tuple(filter(None, args.absent.split(","))),
+            args.command,
+        )
+    else:
+        validate_generated_exclusion(args.output, args.jobs, args.command)
     return 0
 
 

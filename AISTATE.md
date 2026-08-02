@@ -172,6 +172,14 @@
 - U-004修正: batchのAudioDecodeError item statusをfailedへ変更。正常＋decode failureはexit5、
   全decode failureはexit1、完了済み/dry-runだけskipとするようREADME/要件定義を同期し、
   fake normalizeがdecode failureを出すモデル不要回帰を追加。G5-01再試験待ち。
+- G5-01修正後rerunは1.547秒、既存正常3 jobsをskipしbrokenをfailedとしてexit5で合格。
+  G5モデル再利用の実ログ検証用にBackendPoolのASR/diarization load/reuseを非秘密INFOログへ追加し、
+  CountingASRのload=1/reuse=1回帰へログ回数assertも追加。残りG5 case定義・実行へ進む。
+- G5-02/04/05/07/08/09は合格。G5-05は再帰2件を60.906秒で処理、G5-09は実Ctrl+Cを
+  14.968秒でexit 130として回収した。G5-03/06は受入検証器不具合H-002で失敗:
+  既存jobのcreated_atを今回の処理順と誤認し、同一fingerprintを持つコピーが1 job IDを共有して
+  manifest.input.pathが最後の入力へ更新される設計を考慮せずパスだけでjobを探索していた。
+  failure commit後、G5-02の実CLI出力順を検査し、job探索をfingerprint由来IDへ修正してrerunする。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

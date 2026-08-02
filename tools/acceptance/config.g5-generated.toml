@@ -1,0 +1,19 @@
+[general]
+output_dir = "./output/_testdata/batch/generated_output"
+job_dir = "./output/_testdata/batch/generated_jobs"
+
+[asr]
+backend = "faster-whisper"
+model = "large-v3-turbo"
+device = "cpu"
+compute_type = "int8"
+language = "ja"
+
+[diarization]
+enabled = false
+
+[output]
+formats = ["json"]
+
+[ffmpeg]
+path = "C:/path/ffmpeg/bin/ffmpeg.exe"

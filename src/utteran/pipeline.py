@@ -63,6 +63,9 @@ class BackendPool:
             config.asr.compute_type,
         )
         if self._asr_key == key and self._asr is not None:
+            logging.getLogger(__name__).info(
+                "ASRバックエンドを再利用: %s/%s/%s/%s", *key
+            )
             return self._asr
         if self._asr is not None and self._asr_key is not None:
             self._asr.unload()
@@ -70,6 +73,7 @@ class BackendPool:
         self._asr = self._asr or create_asr_backend(config.asr.backend)
         self._asr.load(config.asr.model, config.asr.device, config.asr.compute_type)
         self._asr_key = key
+        logging.getLogger(__name__).info("ASRバックエンドをロード: %s/%s/%s/%s", *key)
         return self._asr
 
     def diarization(self, config: Config) -> DiarizationBackend:
@@ -80,6 +84,9 @@ class BackendPool:
             config.diarization.device,
         )
         if self._diarization_key == key and self._diarization is not None:
+            logging.getLogger(__name__).info(
+                "話者分離バックエンドを再利用: %s/%s/%s", *key
+            )
             return self._diarization
         if self._diarization is not None and self._diarization_key is not None:
             self._diarization.unload()
@@ -90,6 +97,9 @@ class BackendPool:
         )
         self._diarization.load(config.diarization.model, config.diarization.device)
         self._diarization_key = key
+        logging.getLogger(__name__).info(
+            "話者分離バックエンドをロード: %s/%s/%s", *key
+        )
         return self._diarization
 
     def close(self) -> None:

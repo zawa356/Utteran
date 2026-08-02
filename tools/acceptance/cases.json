@@ -700,9 +700,125 @@
       "{utteran}", "transcribe", "{testdata}/batch",
       "--config", "{project}/tools/acceptance/config.acceptance.toml",
       "--output-dir", "{acceptance}/g5/main", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "--language", "ja", "--device", "cpu", "--no-diarization"
     ],
     "expected_exit_codes": [5],
     "timeout_seconds": 5400
+  },
+  {
+    "id": "G5-02",
+    "group": "G5",
+    "description": "Validate partial-failure summary counts and exit code 5",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "batch-summary",
+      "--exit", "5", "--success", "0", "--skipped", "3", "--failed", "1", "--",
+      "{utteran}", "transcribe", "{testdata}/batch",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g5/main", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G5-03",
+    "group": "G5",
+    "description": "Validate stable batch order, continuation, jobs, and outputs",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "batch-state",
+      "--jobs", "{jobs}", "--dir", "{testdata}/batch",
+      "--output", "{acceptance}/g5/main",
+      "--order", "broken.mp4,clip_03m.m4a,clip_03m.wav,clip_30s.mp4"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G5-04",
+    "group": "G5",
+    "description": "Return exit code 1 when every selected batch item fails",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/batch",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g5/all-failed", "--format", "json",
+      "--include", "broken.mp4", "--include", "notmedia.txt",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [1],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G5-05",
+    "group": "G5",
+    "description": "Recursively process selected root and nested media with one backend",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/batch",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g5/reuse", "--format", "json",
+      "--recursive", "--include", "clip_30s.mp4", "--include", "nested/nested_clip.mp4",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 1200
+  },
+  {
+    "id": "G5-06",
+    "group": "G5",
+    "description": "Confirm the ASR backend was loaded once and then reused",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "backend-reuse",
+      "--jobs", "{jobs}",
+      "{testdata}/batch/clip_30s.mp4", "{testdata}/batch/nested/nested_clip.mp4"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G5-07",
+    "group": "G5",
+    "description": "Apply recursive include/exclude globs in dry-run without changing jobs",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "dry-run",
+      "--jobs", "{jobs}", "--expected", "clip_30s.mp4",
+      "--absent", "broken.mp4,nested_clip.mp4,notmedia.txt", "--",
+      "{utteran}", "transcribe", "{testdata}/batch",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--recursive", "--include", "*.mp4", "--exclude", "broken*",
+      "--exclude", "nested/*", "--dry-run", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G5-08",
+    "group": "G5",
+    "description": "Exclude configured output and job roots from recursive inputs",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "generated-exclusion",
+      "--output", "{testdata}/batch/generated_output",
+      "--jobs", "{testdata}/batch/generated_jobs", "--",
+      "{utteran}", "transcribe", "{testdata}/batch",
+      "--config", "{project}/tools/acceptance/config.g5-generated.toml",
+      "--recursive", "--include", "should_not_process.mp4", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G5-09",
+    "group": "G5",
+    "description": "Return exit code 130 on a real SIGINT during batch ASR",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "interrupt",
+      "--jobs", "{jobs}", "--input", "{testdata}/batch/clip_03m.m4a",
+      "--delay", "3", "--",
+      "{utteran}", "transcribe", "{testdata}/batch",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g5/interrupt", "--format", "json",
+      "--include", "clip_03m.m4a", "--language", "ja", "--device", "cpu",
+      "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
   }
 ]
