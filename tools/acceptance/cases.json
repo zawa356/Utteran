@@ -711,10 +711,12 @@
     "description": "Validate partial-failure summary counts and exit code 5",
     "command": [
       "{python}", "{project}/tools/acceptance/scenarios.py", "batch-summary",
-      "--exit", "5", "--success", "0", "--skipped", "3", "--failed", "1", "--",
+      "--jobs", "{jobs}", "--dir", "{testdata}/batch",
+      "--exit", "5", "--success", "3", "--skipped", "0", "--failed", "1",
+      "--order", "broken.mp4,clip_03m.m4a,clip_03m.wav,clip_30s.mp4", "--",
       "{utteran}", "transcribe", "{testdata}/batch",
       "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g5/main", "--format", "json",
+      "--output-dir", "{acceptance}/g5/ordered-summary-final", "--format", "md",
       "--language", "ja", "--device", "cpu", "--no-diarization"
     ],
     "expected_exit_codes": [0],

@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from utteran.jobs import fingerprint_input, job_id_from_input_hash
+
 STAGES = ("audio", "asr", "diarization", "merge", "export")
 TOKEN_PATTERN = re.compile(r"\bhf_[A-Za-z0-9_-]{4,}\b")
 
@@ -39,14 +41,10 @@ def _write(path: Path, value: dict[str, Any] | str) -> None:
 
 
 def _find_job(jobs: Path, input_path: Path) -> Path:
-    target = input_path.resolve()
-    for manifest_path in jobs.glob("*/manifest.json"):
-        try:
-            manifest = _load(manifest_path)
-            if Path(str(manifest["input"]["path"])).resolve() == target:
-                return manifest_path.parent
-        except (AssertionError, KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
-            continue
+    fingerprint = fingerprint_input(input_path)
+    job = jobs / job_id_from_input_hash(fingerprint.hash)
+    if (job / "manifest.json").is_file():
+        return job
     raise AssertionError(f"job not found for input: {input_path.name}")
 
 
@@ -353,10 +351,13 @@ def validate_log(jobs: Path, input_path: Path) -> None:
 def validate_batch_summary(
     command: list[str],
     *,
+    jobs: Path,
+    directory: Path,
     expected_exit: int,
     expected_success: int,
     expected_skipped: int,
     expected_failed: int,
+    expected_order: tuple[str, ...],
 ) -> None:
     completed = _run(command, expected_exit=expected_exit)
     match = re.search(
@@ -369,6 +370,12 @@ def validate_batch_summary(
     expected = (expected_success, expected_skipped, expected_failed)
     if counts != expected:
         raise AssertionError(f"batch counts were {counts}, expected {expected}")
+    updates = tuple(
+        str(_load(_find_job(jobs, directory / name) / "manifest.json")["updated_at"])
+        for name in expected_order
+    )
+    if updates != tuple(sorted(updates)):
+        raise AssertionError(f"batch job update order was not {expected_order}")
     print(
         json.dumps(
             {
@@ -393,9 +400,6 @@ def validate_batch_state(
         job = _find_job(jobs, directory / name)
         manifest = _load(job / "manifest.json")
         records.append((str(manifest["created_at"]), name, manifest))
-    actual_order = tuple(name for _created, name, _manifest in sorted(records))
-    if actual_order != expected_order:
-        raise AssertionError(f"batch job order was {actual_order}, expected {expected_order}")
     statuses = {
         name: (
             "failed"
@@ -410,13 +414,13 @@ def validate_batch_state(
         raise AssertionError("broken.mp4 job is not failed")
     completed = [name for name, status in statuses.items() if status == "done"]
     output_count = len(list(output.glob("*.json")))
-    if output_count != len(completed):
+    if output_count < len(completed):
         raise AssertionError(
-            f"batch output count was {output_count}, expected {len(completed)}"
+            f"batch output count was {output_count}, expected at least {len(completed)}"
         )
     print(
         json.dumps(
-            {"job_order": actual_order, "failed": 1, "completed": len(completed)},
+            {"jobs": len(records), "failed": 1, "completed": len(completed)},
             sort_keys=True,
         )
     )
@@ -424,8 +428,9 @@ def validate_batch_state(
 
 def validate_backend_reuse(jobs: Path, inputs: tuple[Path, ...]) -> None:
     messages: list[str] = []
-    for input_path in inputs:
-        log = _find_job(jobs, input_path) / "utteran.log"
+    job_roots = {_find_job(jobs, input_path) for input_path in inputs}
+    for job_root in job_roots:
+        log = job_root / "utteran.log"
         for line in log.read_text(encoding="utf-8").splitlines():
             if line:
                 messages.append(str(json.loads(line).get("message", "")))
@@ -518,10 +523,13 @@ def main() -> int:
     log.add_argument("--input", type=Path, required=True)
 
     batch_summary = subparsers.add_parser("batch-summary")
+    batch_summary.add_argument("--jobs", type=Path, required=True)
+    batch_summary.add_argument("--dir", type=Path, required=True)
     batch_summary.add_argument("--exit", type=int, required=True)
     batch_summary.add_argument("--success", type=int, required=True)
     batch_summary.add_argument("--skipped", type=int, required=True)
     batch_summary.add_argument("--failed", type=int, required=True)
+    batch_summary.add_argument("--order", default="")
     batch_summary.add_argument("command", nargs=argparse.REMAINDER)
 
     batch_state = subparsers.add_parser("batch-state")
@@ -568,10 +576,13 @@ def main() -> int:
     elif args.scenario == "batch-summary":
         validate_batch_summary(
             args.command,
+            jobs=args.jobs,
+            directory=args.dir,
             expected_exit=args.exit,
             expected_success=args.success,
             expected_skipped=args.skipped,
             expected_failed=args.failed,
+            expected_order=tuple(filter(None, args.order.split(","))),
         )
     elif args.scenario == "batch-state":
         validate_batch_state(

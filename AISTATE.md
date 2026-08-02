@@ -180,6 +180,15 @@
   既存jobのcreated_atを今回の処理順と誤認し、同一fingerprintを持つコピーが1 job IDを共有して
   manifest.input.pathが最後の入力へ更新される設計を考慮せずパスだけでjobを探索していた。
   failure commit後、G5-02の実CLI出力順を検査し、job探索をfingerprint由来IDへ修正してrerunする。
+- H-002修正途中: fingerprint job探索後のG5-06は合格（ASR load=1/reuse=1）。G5-02/03は
+  前後caseが同じjobの中断状態・export hash・衝突回避出力を変えるため、固定skip数と出力総数の
+  完全一致では再試験不能だった。G5-02に固有export条件を与えて成功3/失敗1と実表示順を検証し、
+  G5-03は衝突回避で増える出力を許容し完了件数以上を要求する。
+- H-002最終: G5-02/03/06 rerun合格。G5全9 case（指示書11観点）がpass。
+  WSLモデル不要testは87 passed/2 Windows-only skipped、ruff/format/mypy合格。
+- Windowsモデル不要testは88 passed/1 failed。H-003: `test_remote_model_requires_token`が実機の
+  導入済みcommunity-1を発見し、正当なlocal model経路でtoken不要になったため例外を発生させなかった。
+  failure commit後、テスト専用model cacheを空directoryへ隔離してremote/token経路を保証する。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
