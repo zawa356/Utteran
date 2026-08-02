@@ -219,6 +219,11 @@
   token値として検出した。failure commit後、実token相当の十分長いsuffixだけへ検出条件を絞る。
 - H-004修正: byte scannerをword boundary付き`hf_` + 16文字以上のtoken suffixへ変更し、
   `hf_token` keyは非検出・長いdummy token値は検出するモデル不要回帰を追加。G10-02 rerun待ち。
+- 受入G10完了: G10-01/02最新run全pass。dummy token原文は通常/verbose/例外/job logの
+  いずれにも残らずmask済み。output配下125 filesをtoken形状scanして0件、`.env`・機密input・
+  output resultsの3パスをgit check-ignore確認、git statusにもprivate内容なし。`.env`値自体は
+  禁止事項に従い未読（標準HF token形状scanで代替）。WSL 88 passed/2 skipped、Windows 90 passed、
+  ruff/format/mypy合格。次はG11。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
