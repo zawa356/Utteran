@@ -619,6 +619,147 @@ def validate_documentation_contracts(readme: Path, requirements: Path) -> None:
     )
 
 
+def validate_start_front(project: Path, start_script: Path, testdata: Path) -> None:
+    """Parse, review, and smoke-test safe interactive-front menu paths."""
+    quoted_path = str(start_script).replace("'", "''")
+    parser_command = (
+        "$tokens=$null; $errors=$null; "
+        f"[System.Management.Automation.Language.Parser]::ParseFile('{quoted_path}', "
+        "[ref]$tokens, [ref]$errors) | Out-Null; "
+        "if ($errors.Count -ne 0) { $errors | ForEach-Object { $_.Message }; exit 1 }"
+    )
+    parsed = subprocess.run(
+        ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", parser_command],
+        cwd=project,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding=locale.getpreferredencoding(False),
+        errors="replace",
+    )
+    if parsed.returncode != 0:
+        raise AssertionError("PowerShell Parser API rejected start.ps1")
+
+    source = start_script.read_text(encoding="utf-8-sig")
+    required_snippets = (
+        '$CommandArguments.Add("transcribe")',
+        '$CommandArguments.Add("--asr-backend")',
+        '$CommandArguments.Add("--asr-model")',
+        '$CommandArguments.Add("--device")',
+        '$CommandArguments.Add("--language")',
+        '$CommandArguments.Add("--format")',
+        '$CommandArguments.Add("--diarization-backend")',
+        '$CommandArguments.Add("--num-speakers")',
+        '$CommandArguments.Add("--min-speakers")',
+        '$CommandArguments.Add("--max-speakers")',
+        '$CommandArguments.Add("--no-diarization")',
+        '$CommandArguments.Add("--recursive")',
+        'Option "--include"',
+        'Option "--exclude"',
+        '$CommandArguments.Add("--no-resume")',
+        '$CommandArguments.Add("--force")',
+        '$CommandArguments.Add("--force-unlock")',
+        '$CommandArguments.Add("--config")',
+        '$CommandArguments.Add("--verbose")',
+        '$CommandArguments.Add("--quiet")',
+        'Invoke-Utteran -Arguments @("models", "list", "--available")',
+        'Invoke-Utteran -Arguments @("models", "download")',
+        'Invoke-Utteran -Arguments @("models", "remove", $ModelID)',
+        'Invoke-Utteran -Arguments @("models", "verify")',
+        'Invoke-Utteran -Arguments @("devices", "--json")',
+        'Invoke-Utteran -Arguments @("jobs", "clean", "--all")',
+        'Invoke-Utteran -Arguments @("config", "show")',
+        'Invoke-Utteran -Arguments @("config", "init")',
+        'Invoke-Utteran -Arguments @("config", "path")',
+        '"1" { "cpu" }',
+        '"2" { "cuda" }',
+        '"3" { "intel" }',
+    )
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise AssertionError(f"start.ps1 command mapping is incomplete: {missing}")
+    if "Invoke-Expression" in source:
+        raise AssertionError("start.ps1 re-evaluates user input as PowerShell code")
+
+    read_only_input = "\n".join(
+        ("2", "2", "", "0", "3", "2", "", "0", "4", "1", "", "0", "5", "3", "", "0", "0", "")
+    )
+    read_only = _run_powershell_front(start_script, project, read_only_input)
+    if read_only.returncode != 0:
+        raise AssertionError("start.ps1 read-only menu smoke test failed")
+
+    wizard_input = "\n".join(
+        (
+            "1",
+            "P",
+            str(testdata / "clip_30s.mp4"),
+            "",
+            "1",
+            "1",
+            "2",
+            "1",
+            "n",
+            "1",
+            "1",
+            "n",
+            "",
+            "3",
+            "2",
+            "0",
+            "0",
+            "",
+        )
+    )
+    wizard = _run_powershell_front(start_script, project, wizard_input)
+    if wizard.returncode != 0:
+        raise AssertionError("start.ps1 transcription dry-run smoke test failed")
+    combined = wizard.stdout + wizard.stderr
+    if not all(
+        value in combined for value in ("utteran transcribe", "--dry-run", "--no-diarization")
+    ):
+        raise AssertionError("start.ps1 dry-run command summary was incomplete")
+    if TOKEN_PATTERN.search(combined):
+        raise AssertionError("start.ps1 smoke output included a token-shaped value")
+    print(
+        json.dumps(
+            {
+                "parser_errors": 0,
+                "command_mappings": len(required_snippets),
+                "read_only_smoke": True,
+                "transcribe_dry_run": True,
+                "manual_only": ["setup profile switch", "Explorer", "destructive confirmations"],
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def _run_powershell_front(
+    start_script: Path,
+    project: Path,
+    input_text: str,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(start_script),
+        ],
+        cwd=project,
+        input=input_text,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding=locale.getpreferredencoding(False),
+        errors="replace",
+        timeout=180,
+    )
+
+
 def _stage_signature(manifest: dict[str, Any]) -> dict[str, str]:
     return {
         stage: json.dumps(manifest["stages"][stage], ensure_ascii=False, sort_keys=True)
@@ -1145,6 +1286,11 @@ def main() -> int:
     documentation.add_argument("--readme", type=Path, required=True)
     documentation.add_argument("--requirements", type=Path, required=True)
 
+    start_front = subparsers.add_parser("start-front")
+    start_front.add_argument("--project", type=Path, required=True)
+    start_front.add_argument("--script", type=Path, required=True)
+    start_front.add_argument("--testdata", type=Path, required=True)
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -1226,8 +1372,10 @@ def main() -> int:
         validate_security_scan(args.project, tuple(args.roots))
     elif args.scenario == "readme-commands":
         validate_readme_commands(args.project, args.utteran, args.testdata, args.config)
-    else:
+    elif args.scenario == "documentation-contracts":
         validate_documentation_contracts(args.readme, args.requirements)
+    else:
+        validate_start_front(args.project, args.script, args.testdata)
     return 0
 
 

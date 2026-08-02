@@ -1338,5 +1338,17 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 60
+  },
+  {
+    "id": "G12-01",
+    "group": "G12",
+    "description": "Parse, review, and smoke-test the Windows interactive front",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "start-front",
+      "--project", "{project}", "--script", "{project}/start.ps1",
+      "--testdata", "{testdata}"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 300
   }
 ]

@@ -241,6 +241,11 @@
   destructive targetで実行、transcribe 24 options、exit codes 7種、Config 30 fieldsをコード照合。
   setup/uv/quality例は先行実行記録も確認。WSL 88 passed/2 skipped、Windows 90 passed、
   ruff/format/mypy合格。次はG12 start.ps1。
+- 受入G12完了: G12-01 pass。Windows PowerShell Parser API errors=0、start.ps1の32 command
+  mappingをコード監査、Invoke-Expressionなし・argument array実行を確認。models list/devices JSON/
+  jobs list/config pathのread-only対話メニューと、synthetic 30秒input指定のno-diarization/CPU/quiet
+  transcribe dry-runをpipe入力でexit0確認。setup profile切替、Explorer起動、model/job削除確認は
+  外部状態変更/UIのため未実施（コード監査のみ）。G1-G12終了、次は事前品質確認後G13 CUDA耐久。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
