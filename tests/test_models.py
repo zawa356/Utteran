@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 
 import httpx
@@ -166,6 +168,131 @@ def test_gated_download_classifies_missing_token_and_agreement(
     monkeypatch.setattr("huggingface_hub.snapshot_download", gated_download)
     with pytest.raises(ModelAgreementError, match="利用条件"):
         ModelManager(tmp_path / "models", StaticTokenProvider("hf_test")).download(entry)
+
+
+def test_download_corrects_alignment_heads_that_crash_the_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A config.json referencing a nonexistent decoder layer (the
+    kotoba-whisper-v2.0-faster defect) is rewritten to a safe fallback when
+    the isolated alignment probe reports an abnormal (crashed) exit."""
+    manager = ModelManager(tmp_path / "models", StaticTokenProvider(None))
+    entry = get_model("faster-whisper:kotoba-whisper-v2.0")
+
+    def fake_download(*, repo_id: str, token: str | None, local_dir: Path) -> str:
+        local_dir.mkdir(parents=True)
+        (local_dir / "config.json").write_text(
+            json.dumps({"alignment_heads": [[25, 6]]}), encoding="utf-8"
+        )
+        (local_dir / "model.bin").write_bytes(b"weights")
+        return str(local_dir)
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", fake_download)
+    monkeypatch.setattr(
+        "utteran.models.manager.subprocess.run",
+        lambda *_a, **_k: subprocess.CompletedProcess([], returncode=-1073741819),
+    )
+
+    path = manager.download(entry)
+
+    fixed = json.loads((path / "config.json").read_text(encoding="utf-8"))
+    assert fixed["alignment_heads"] == [[0, 0]]
+
+
+def test_download_keeps_alignment_heads_when_probe_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = ModelManager(tmp_path / "models", StaticTokenProvider(None))
+    entry = get_model("faster-whisper:large-v3")
+    original_heads = [[3, 14]]
+
+    def fake_download(*, repo_id: str, token: str | None, local_dir: Path) -> str:
+        local_dir.mkdir(parents=True)
+        (local_dir / "config.json").write_text(
+            json.dumps({"alignment_heads": original_heads}), encoding="utf-8"
+        )
+        (local_dir / "model.bin").write_bytes(b"weights")
+        return str(local_dir)
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", fake_download)
+    monkeypatch.setattr(
+        "utteran.models.manager.subprocess.run",
+        lambda *_a, **_k: subprocess.CompletedProcess([], returncode=0),
+    )
+
+    path = manager.download(entry)
+
+    kept = json.loads((path / "config.json").read_text(encoding="utf-8"))
+    assert kept["alignment_heads"] == original_heads
+
+
+def test_download_keeps_alignment_heads_when_probe_is_inconclusive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ordinary Python-level failure inside the probe (exit code 2, e.g. a
+    missing optional dependency) must not be treated as proof of the crash."""
+    manager = ModelManager(tmp_path / "models", StaticTokenProvider(None))
+    entry = get_model("faster-whisper:large-v3")
+    original_heads = [[3, 14]]
+
+    def fake_download(*, repo_id: str, token: str | None, local_dir: Path) -> str:
+        local_dir.mkdir(parents=True)
+        (local_dir / "config.json").write_text(
+            json.dumps({"alignment_heads": original_heads}), encoding="utf-8"
+        )
+        (local_dir / "model.bin").write_bytes(b"weights")
+        return str(local_dir)
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", fake_download)
+    monkeypatch.setattr(
+        "utteran.models.manager.subprocess.run",
+        lambda *_a, **_k: subprocess.CompletedProcess([], returncode=2),
+    )
+
+    path = manager.download(entry)
+
+    kept = json.loads((path / "config.json").read_text(encoding="utf-8"))
+    assert kept["alignment_heads"] == original_heads
+
+
+def test_verify_self_heals_installed_model_with_crashing_alignment_heads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = ModelManager(tmp_path / "models", StaticTokenProvider(None))
+    entry = get_model("faster-whisper:kotoba-whisper-v2.0")
+    path = manager.managed_path(entry)
+    path.mkdir(parents=True)
+    (path / "config.json").write_text(json.dumps({"alignment_heads": [[25, 6]]}), encoding="utf-8")
+    (path / "model.bin").write_bytes(b"weights")
+    monkeypatch.setattr(
+        "utteran.models.manager.subprocess.run",
+        lambda *_a, **_k: subprocess.CompletedProcess([], returncode=-1073741819),
+    )
+
+    verification = manager.verify(entry)
+
+    assert verification.ok
+    fixed = json.loads((path / "config.json").read_text(encoding="utf-8"))
+    assert fixed["alignment_heads"] == [[0, 0]]
+
+
+def test_verify_skips_probe_for_an_already_fixed_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = ModelManager(tmp_path / "models", StaticTokenProvider(None))
+    entry = get_model("faster-whisper:kotoba-whisper-v2.0")
+    path = manager.managed_path(entry)
+    path.mkdir(parents=True)
+    (path / "config.json").write_text(json.dumps({"alignment_heads": [[0, 0]]}), encoding="utf-8")
+    (path / "model.bin").write_bytes(b"weights")
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "utteran.models.manager.subprocess.run",
+        lambda *args, **kwargs: calls.append(args) or subprocess.CompletedProcess([], returncode=0),
+    )
+
+    assert manager.verify(entry).ok
+    assert calls == []
 
 
 def test_download_classifies_invalid_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

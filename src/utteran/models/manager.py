@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
@@ -156,6 +159,8 @@ class ModelManager:
                 "`utteran models remove` 後に再取得してください。"
             )
         _write_metadata(downloaded, entry)
+        if entry.format == "CTranslate2":
+            _verify_alignment_heads(downloaded)
         if progress is not None:
             progress(
                 ProgressEvent(
@@ -215,6 +220,8 @@ class ModelManager:
             )
         if size <= 0:
             return VerificationResult(entry, False, path, size, "モデルディレクトリが空です")
+        if entry.format == "CTranslate2":
+            _verify_alignment_heads(path)
         return VerificationResult(entry, True, path, size, "正常")
 
 
@@ -276,6 +283,50 @@ def _missing_required_files(entry: ModelEntry, path: Path) -> tuple[str, ...]:
     if entry.format == "ONNX":
         return () if any(path.rglob("*.onnx")) else ("*.onnx",)
     return () if any(candidate.is_file() for candidate in path.rglob("*")) else ("<model-file>",)
+
+
+_SAFE_ALIGNMENT_HEADS = [[0, 0]]
+
+
+def _verify_alignment_heads(path: Path) -> None:
+    """Detect and safely replace an alignment_heads config that indexes a
+    decoder layer the model does not have.
+
+    Some CTranslate2 conversions of distilled Whisper models (for example
+    kotoba-whisper-v2.0-faster) ship this config unmodified from the
+    original, deeper decoder. Requesting word timestamps then crashes the
+    process natively; Python cannot catch it. Running the same alignment
+    path in a disposable subprocess lets a crash be observed safely from the
+    outside via the exit code, without risking the caller's process.
+    """
+    config_path = path / "config.json"
+    if not config_path.is_file():
+        return
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if "alignment_heads" not in config or config["alignment_heads"] == _SAFE_ALIGNMENT_HEADS:
+        return
+    try:
+        probe = subprocess.run(
+            [sys.executable, "-m", "utteran.models._alignment_probe", str(path)],
+            capture_output=True,
+            timeout=180,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    if probe.returncode in (0, 2):
+        return
+    logging.getLogger(__name__).warning(
+        "モデル '%s' の alignment_heads が実際の decoder に存在しない層を参照しており、"
+        "単語タイムスタンプ計算時にクラッシュするため、安全な既定値へ自動修正しました。"
+        "単語レベルのタイムスタンプ精度が低下する可能性があります。",
+        path.name,
+    )
+    config["alignment_heads"] = _SAFE_ALIGNMENT_HEADS
+    config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
 
 def _raise_download_error(entry: ModelEntry, error: Exception) -> None:

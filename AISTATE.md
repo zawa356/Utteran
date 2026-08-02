@@ -20,6 +20,10 @@
   専用branch`test/acceptance-phase2`を作成し、実施結果を`docs/受入試験報告.md`へ集約した。
   試験終了コミットは`982c5f5`。最終profileはCUDAを維持し、2時間job
   `7be37b2d3fc10277`と約56 MiBの再現fixtureを保持する。
+- Phase 2 follow-up（kotoba-whisper-v2.0クラッシュ修正）: 実装・Windows実機検証完了。
+  受入試験ではkotoba-whisper-v2.0の実推論E2Eを検証していなかったため、受入完了後の
+  利用者実運用（start.ps1文字起こしウィザード、実会議MP4、CUDA）で初めて発現した
+  ネイティブクラッシュ（U-005）を修正した。
 - `docs/utteran_Phase2_指示書.md` 全399行、既存状態、要件定義、変更履歴を読了し、
   コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
@@ -429,6 +433,31 @@
 - Phase 1 コミット前に追跡対象を棚卸し。リポジトリ内に音声・動画・字幕・ログの残存なし。
   `.env` は内容を読まず ignore を確認し、`.venv` も追跡対象外とした。設計書と Phase 1 指示書は
   仕様・作業履歴として追跡対象に維持した。
+- U-005: 受入完了後、利用者がstart.ps1の文字起こしウィザードで実会議MP4・kotoba-whisper-v2.0・
+  CUDAを選択したところ、ASR実行直後にWindows終了コード`-1073741819`（STATUS_ACCESS_VIOLATION）で
+  utteranプロセスが即死した。ジョブmanifestは`audio done/asr pending`で、Python例外もtracebackも
+  一切出力されなかった。
+- 30秒clip fixtureで同条件（faster-whisper/kotoba-whisper-v2.0/cuda:0/language ja/no-diarization）
+  を隔離job/output先で再現し、実会議ファイル固有の問題ではなくモデル側の問題と切り分けた。
+  導入済みモデルファイル一式（config.json/model.bin/tokenizer.json/vocabulary.json/
+  preprocessor_config.json）はlarge-v3-turboと同型で、サイズも損傷を示す兆候はなかった。
+- ローカルの`config.json`を確認したところ、`alignment_heads`が`[[7,0],[10,17],...,[25,6]]`と
+  layer 25まで参照していた。HuggingFace上の変換元`kotoba-tech/kotoba-whisper-v2.0`本体の
+  `generation_config.json`を確認すると、`decoder_layers=2`（distil-whisper系、encoderは32層を
+  維持しdecoderのみ2層へ圧縮）に対し、同じ`alignment_heads`が既に上流でそのまま設定されていた。
+  蒸留前の大型モデル（openai/whisper-large-v2相当）の値を更新せず配布した上流側の既存不具合。
+  utteranは`pipeline.py`で単語タイムスタンプ（`word_timestamps=True`、JSON出力仕様上必須）を
+  常時要求するため、実在しないdecoder layerへの範囲外アクセスで確実にクラッシュしていた。
+  ローカルの`config.json`の`alignment_heads`を実在するlayer 1（decoderの最終層）の全20 headへ
+  書き換えると、同じ再現手順がexit 0・単語タイムスタンプ含む正常なJSONで完了した。
+- 恒久対応として、`models download`完了時と`models verify`実行時に、CTranslate2形式モデルへ
+  隔離subprocess（`utteran.models._alignment_probe`）で単語タイムスタンプ計算を1回試行する
+  検証を追加した。ネイティブクラッシュ由来の異常終了（0でも2でもないreturncode）を検知した
+  場合のみ`alignment_heads`を安全な既定値`[[0, 0]]`へ自動修正する。Python例外（returncode 2）
+  による検証不能時は誤って書き換えない。既に修正済み（`[[0, 0]]`）のモデルは再検証をスキップし、
+  毎回のCPUモデルロードを避ける。`subprocess.run`をモックしたモデル不要回帰6件を追加。
+  ruff/format/mypy/pytest（96 passed、既存の環境依存Ctrl+C harness試験1件は今回の変更と無関係に
+  Git Bash端末実行時のみ失敗）で確認した。
 
 ## 未解決の課題・保留事項
 
@@ -534,6 +563,11 @@
   pipeline は固有実装を import せず、不要な音声抽出・ASR 後に失敗することを防ぐ。
 - バックエンド由来の生例外文は、トークンを含む可能性を完全には否定できないため、
   ユーザー向け例外へ埋め込まない。verbose ログも最終 formatter でマスクする。
+- CTranslate2の`alignment_heads`不整合はネイティブクラッシュでPythonから捕捉不能なため、
+  実プロセス内では検証できない。`models download`/`verify`から隔離subprocessで同じ処理を
+  一度だけ試行し、プロセスの生死（exit code）という外部から観測可能な信号で判定する設計とした。
+  クラッシュ確定時のみ書き換え、判定不能（Python例外）時は書き換えない非対称な扱いにしたのは、
+  誤検知でモデルを不必要に壊すより、まれに古い壊れた設定を見逃す方を安全側と判断したため。
 
 ## 次に着手すべきこと
 
@@ -550,6 +584,12 @@
   PowerShellでは表示された `UV_PROJECT_ENVIRONMENT` を設定する。
 - `start.ps1`の先頭UTF-8 BOMを保持する。PowerShell 7だけで検査せず、Windows PowerShell 5.1
   Parser APIと実行の双方を確認する。
+- 第三者配布のCTranslate2モデル（特に蒸留系）は`config.json`の`alignment_heads`が
+  decoder層数と整合しているとは限らない。単語タイムスタンプ計算はネイティブクラッシュとして
+  失敗しうるため、モデル固有のバグを疑う際はまず`models verify`を実行する。
+- `tools/acceptance`のCtrl+C系試験はWindows実コンソール（PowerShell/cmd.exe）前提。
+  Git BashやConPTY経由で`pytest`を実行すると`test_ctrl_c_is_confined_to_the_child_console`が
+  タイムアウトすることがある。製品側の不具合ではなく、試験ハーネスの実行環境依存。
 
 ## 動作確認環境・手順
 
