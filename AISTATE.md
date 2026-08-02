@@ -2,12 +2,13 @@
 
 ## 現在のフェーズと進捗
 
-- Phase 1（骨格と最小動作）: 実装完了、ローカル検証完了（gated pyannote 実モデル E2E を除く）。
+- Phase 1（骨格と最小動作）: 実装完了。受入試験でfaster-whisperとgated pyannoteの
+  CPU/CUDA実モデルE2E、5形式出力を検証済み。
 - Phase 1 初回コミット: `83a4b29 feat: implement Phase 1 transcription pipeline`。
 - Phase 2 実装コミット: `54fa46d feat: implement Phase 2 operational workflows`。
-- Phase 2（実運用機能）: 実装完了、ローカル検証完了。ジョブ／レジューム、フォルダバッチ、
-  devices、モデル／ジョブ／設定管理 CLI、Windows setup を実装。Windows実機でcpu/cuda/intelを
-  検証済み。gated pyannote／既定 large-v3-turboの実モデルE2Eは未検証として継続管理する。
+- Phase 2（実運用機能）: 実装・受入試験完了。ジョブ／レジューム、フォルダバッチ、devices、
+  モデル／ジョブ／設定管理CLI、Windows setupを実装。Windows実機でcpu/cuda/intel profileと、
+  large-v3-turbo＋community-1のCPU/CUDA実処理を検証済み。
 - Phase 2 follow-up（モデル導線改善）: 実装・Windows/WSL検証完了。setupからモデル管理を分離し、
   models CLIへ説明付き一覧、番号選択、従来の明示ID指定を集約した。
 - Phase 2 follow-up（Windows対話フロント）: 実装・Windows/WSL検証完了。input/output運用と、
@@ -15,9 +16,9 @@
 - Phase 2 follow-up（不完全モデル検出）: 実装・Windows/WSL検証完了。利用者環境でpyannote
   community-1の重みが欠落した約1.1 MiBの部分取得を「導入済み」「正常」と誤判定する問題と、
   Windows MAX_PATHによる取得失敗を修正した。
-- Phase 1/2受入試験: 進行中。`docs/utteran_受入試験指示書.md`全534行と必須4文書を読了し、
-  開始コミット`57ecbb3`から専用branch`test/acceptance-phase2`を作成。開始時の未追跡指示書を
-  `8b55d5d chore: snapshot before acceptance testing`で記録した。
+- Phase 1/2受入試験: G0〜G14完了。最新115/115ケースpass。開始コミット`57ecbb3`から
+  専用branch`test/acceptance-phase2`を作成し、実施結果を`docs/受入試験報告.md`へ集約した。
+  最終profileはCUDAを維持し、2時間job `7be37b2d3fc10277`と約56 MiBの再現fixtureを保持する。
 - `docs/utteran_Phase2_指示書.md` 全399行、既存状態、要件定義、変更履歴を読了し、
   コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
@@ -77,7 +78,7 @@
 4. カタログ概算サイズと必須文書を実態へ同期する。
 5. WSL／Windows品質ゲートと実キャッシュ表示を検証し、コミットする。
 
-### Phase 1/2受入試験（進行中）
+### Phase 1/2受入試験（完了）
 
 1. Windows環境・入力メタデータを本文非参照で記録し、派生クリップをoutput配下へ生成する。
 2. 再開・個別再実行・timeout・process tree停止・出力抄録・peak memory対応ハーネスを作る。
@@ -430,12 +431,14 @@
 
 ## 未解決の課題・保留事項
 
-- pyannote 実モデル E2E は HF トークン未設定かつ gated モデル未取得のため未実施。
-  `uv sync --extra pyannote`、pyannote.audio 4.0.7 API 確認、fake pipeline 結合は実施済み。
-- faster-whisper は tiny/CPU の実モデル E2E 済み。既定 large-v3-turbo と実 CUDA 推論は
-  モデル未取得のため未実施。CUDAランタイム、実CUDAカーネル、CTranslate2 CUDA初期化は検証済み。
-- `setup.ps1` のcpu/cuda/intel同期と診断はWindows実機検証済み。専用models CLIによる実モデル取得、
-  ffmpeg未導入時のネットワーク取得、完全オフライン継続は未実施。
+- 受入試験で確認された未修正の製品不具合はない。
+- pyannote実モデルE2EはCPU/CUDA、固定／範囲／自動話者数、3分／約2時間19分で検証済み。
+- large-v3-turbo実モデルE2EはCPU/CUDA、短時間／約2時間19分で検証済み。
+- 登録カタログに小容量モデルがないため、G6の削除→再取得→再削除は条件不成立。導入済み
+  大容量モデルを試験だけのために削除しなかった。
+- G12のExplorer起動、setup profile切替、破壊的確認はコード監査と非破壊dry-runまで。
+- 約2時間19分のCPU耐久はCUDA成功時には不要という指示に従い未実施。
+- 実文字起こし本文の意味的評価は利用者確認事項。構造・時刻・言語・重複・空欄・話者統計は合格。
 
 ## 設計上の判断とその理由
 
@@ -533,10 +536,9 @@
 
 ## 次に着手すべきこと
 
-- Windowsでffmpeg未導入時の取得・SHA-256検証、完全オフライン継続、専用models CLIによる
-  gated／大容量実モデル取得を確認する。
-- HF 利用条件へ同意済みのトークンとモデルが得られれば community-1、large-v3-turbo、
-  それら実モデルを使うCUDA推論の未検証E2Eを実施する。
+- 受入報告に記載した品質確認用成果物を、必要に応じて利用者が意味的に目視確認する。
+- Phase 3へ進む場合は、`docs/受入試験報告.md`の性能値・未実施事項と本ファイルを起点にする。
+- `output/_testdata/`は再試験不要になった時点で削除可能。2時間jobは指示により削除しない。
 
 ## 既知の落とし穴・回避方法
 
@@ -551,7 +553,8 @@
 ## 動作確認環境・手順
 
 - 作業パス: `/mnt/c/UserDataFile/Git/Utteran`
-- OS 実行環境: Linux/WSL 系 bash（詳細確認は今後実施）
+- 受入実行環境: Windows 11 Pro 10.0.26200、Python 3.12.0、uv 0.11.32。
+  補助品質検査はWSL Python 3.11.15でも実施。
 - Git リポジトリ初回コミットは `83a4b29`。Phase 2 実装と指示書は
   `feat: implement Phase 2 operational workflows` の変更セットに収録。
 - `python3 --version`: 3.12.3。
@@ -565,10 +568,10 @@
 - align 追加時: 7 tests passed、ruff passed、mypy strict passed（外部 typed package は追跡除外）。
 - `uv sync --extra pyannote --extra dev --link-mode=copy`: 成功、pyannote.audio 4.0.7 導入確認。
 - `uv sync --link-mode=copy` と直後の `uv sync --check`: 成功（extra なし49 packages）。
-- 最終環境は `uv sync --extra dev --link-mode=copy` 済み（pyannote extra は現在未導入）。
-- WSL Python 3.11.15: `uv run --no-sync pytest -m "not requires_model"` = 82 passed。
+- WSL環境は`uv sync --extra dev --link-mode=copy`済み。
+- WSL Python 3.11.15最終: `pytest -m "not requires_model"` = 90 passed / 2 Windows-only skipped。
 - `uv run --no-sync ruff check`: All checks passed。
-- `uv run --no-sync ruff format --check src tests`: 44 files already formatted。
+- `ruff format --check src tests tools`: 52 files already formatted。
 - `uv run --no-sync mypy`: Success、30 source files。
 - `uv run utteran --help` / `transcribe --help`、devices、models、jobs、config の主要 read-only
   コマンド: exit 0。
@@ -577,8 +580,7 @@
   SRT/VTT/JSON/TXT/MD の5ファイルと JSON schema_version 1 を確認。
 - Phase 2 実 E2E: 一時 Linux 静的 ffmpeg + 合成 MP4 + cached tiny + no-diarization。
   初回5段階実行、同一 job ID の2回目全 skip、format 変更時 export-only、force 時全段階実行を確認。
-- `utteran devices --json`: exit 0。実環境の CPU／CTranslate2 CUDA 列挙／CUDA ライブラリ不足／
-  ONNX Runtime／ffmpeg 不在を JSON 化し、auto=CPU/int8 を確認。
+- Phase 2初期WSLの`utteran devices --json`: CUDAライブラリ不足を検出しauto=CPU/int8。
 - Windows PowerShell 5.1 Parser API: `setup.ps1` と `start.ps1` は `PowerShell syntax OK`。
 - Windows PowerShell 5.1: `start.ps1` の終了、2種類の文字起こしdry-run、models／devices／jobs／
   configのread-onlyメニュー接続はいずれもexit 0。
@@ -594,10 +596,17 @@
 - Windows cuda: PyTorch 2.11.0+cu126、GTX 1070 Ti sm_61でCUDAカーネル／同期成功、
   CTranslate2 cuda:0/int8、cuDNN/cuBLAS found、auto diarization=cuda:0。
 - Windows intel: OpenVINO 2026.2.1、available devices=CPU/GPU。
-- Windows環境の最終状態は利用者が最初に指定したcpu profileへ復帰済み。
+- Windows最終環境は`uv sync --extra cuda --extra dev`済み。Python 3.12.0でモデル不要92 passed、
+  ruff check、52 files format check、mypy 30 source filesが合格。
+- Windows最終profileは指示書の判断基準に従いCUDAを維持。PyTorch 2.11.0+cu126、
+  `devices --json`のautoはASR=`cuda:0/int8`、話者分離=`cuda:0`。
 - WSL/Windows双方でruff checkとmypy（30 source files）成功。mypyを両OSから同じ
   `.mypy_cache` へ同時実行するとinternal errorになったため、クロスOS検査は逐次実行する。
 - `uv lock --check`: 成功、163 packages 解決済み。
 - `git diff --check`: 問題なし。
+- 受入最新集計: `output/_acceptance/results.jsonl`は162 records、115 unique ID、115 pass。
+  最終秘密値走査は145 files、token形式match 0。`.env`内容は未読。
+- G13保持job `output/_acceptance/jobs/7be37b2d3fc10277`は全stage done、約269 MiB。
+  `output/_testdata`は58,314,597 bytesで、100 MiB上限未満のため再現用に保持。
 - `要件定義.md` は Phase 1 設計書を基礎に、Phase 2 指示書の訂正5点と実効 output_dir の
   export hash 判断を同期済み。このため設計書原本との差分は意図した仕様更新。

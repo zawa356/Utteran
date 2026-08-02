@@ -390,6 +390,22 @@ export UTTERAN_DIARIZATION__NUM_SPEAKERS=2
 拡張子を既定候補とし、`--include` で追加できます。JSON 出力は `schema_version: 1` と単語
 タイムスタンプを含みます。
 
+## 実測性能の目安
+
+Windows 11、GTX 1070 Ti 8 GiB、8 physical / 16 logical core CPU、large-v3-turbo/int8、
+pyannote community-1での受入試験値です。音声内容、モデル、他processのGPU使用量で変動します。
+
+| 音声長 | 構成 | 処理時間 | 実時間比 | ピークRAM |
+|---:|---|---:|---:|---:|
+| 3分 | CPU、ASRのみ | 104.688秒 | 1.720x | 1.85 GiB |
+| 3分 | CUDA、ASRのみ | 20.844秒 | 8.635x | 2.12 GiB |
+| 3分 | CUDA、ASR＋話者分離 | 35.859秒 | 5.020x | 2.14 GiB |
+| 約2時間19分 | CUDA、ASRのみ | 417.734秒 | 20.02x | 7.38 GiB |
+| 約2時間19分 | CUDA、ASR＋話者分離 | 770.625秒 | 10.85x | 7.37 GiB |
+
+詳しい条件、VRAM、モデルロード時間、CPU話者分離値は
+[受入試験報告](docs/受入試験報告.md)を参照してください。
+
 ## 開発と検査
 
 ```console

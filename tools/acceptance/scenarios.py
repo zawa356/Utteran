@@ -420,9 +420,7 @@ def validate_postflight(
 ) -> None:
     """Verify aggregate results and retained state without reading transcript text."""
     records = [
-        json.loads(line)
-        for line in results.read_text(encoding="utf-8").splitlines()
-        if line
+        json.loads(line) for line in results.read_text(encoding="utf-8").splitlines() if line
     ]
     latest = {str(record["id"]): record for record in records}
     expected_groups = {f"G{index}" for index in range(14)}
@@ -441,16 +439,12 @@ def validate_postflight(
     job = _find_job(jobs, input_path)
     manifest = _load(job / "manifest.json")
     incomplete = sorted(
-        stage
-        for stage, state in manifest["stages"].items()
-        if state.get("status") != "done"
+        stage for stage, state in manifest["stages"].items() if state.get("status") != "done"
     )
     if incomplete:
         raise AssertionError(f"retained endurance job is incomplete: {incomplete}")
 
-    testdata_bytes = sum(
-        path.stat().st_size for path in testdata.rglob("*") if path.is_file()
-    )
+    testdata_bytes = sum(path.stat().st_size for path in testdata.rglob("*") if path.is_file())
     if testdata_bytes > 100 * 1024 * 1024:
         raise AssertionError("acceptance fixtures exceed the 100 MiB postflight limit")
     job_bytes = sum(path.stat().st_size for path in job.rglob("*") if path.is_file())
