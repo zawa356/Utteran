@@ -5,6 +5,7 @@ from runpy import run_path
 
 _HARNESS = run_path(str(Path(__file__).parents[1] / "tools" / "acceptance" / "harness.py"))
 _descendant_ids = _HARNESS["_descendant_ids"]
+_parse_gpu_memory = _HARNESS["_parse_gpu_memory"]
 
 
 def test_descendant_ids_follows_multiple_generations_without_unrelated_processes() -> None:
@@ -17,3 +18,8 @@ def test_descendant_ids_follows_multiple_generations_without_unrelated_processes
     }
 
     assert _descendant_ids(100, parent_by_pid) == {100, 101, 102, 103}
+
+
+def test_parse_gpu_memory_converts_mib_and_rejects_unavailable_values() -> None:
+    assert _parse_gpu_memory("5120, 8192\n") == (5120 * 1024**2, 8192 * 1024**2)
+    assert _parse_gpu_memory("[N/A], 8192\n") is None

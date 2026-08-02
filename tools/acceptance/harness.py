@@ -36,6 +36,7 @@ class Case:
     timeout_seconds: float
     environment: dict[str, str]
     minimum_peak_memory_bytes: int | None
+    measure_vram: bool
 
 
 def _windows_utteran() -> Path:
@@ -51,6 +52,7 @@ def _placeholders() -> dict[str, str]:
             _windows_utteran() if os.name == "nt" else PROJECT_ROOT / ".venv/bin/utteran"
         ),
         "testdata": str(PROJECT_ROOT / "output" / "_testdata"),
+        "actual": str(PROJECT_ROOT / "input" / "2026-08-01 11-01-55.mp4"),
         "acceptance": str(acceptance),
         "jobs": str(acceptance / "jobs"),
     }
@@ -98,6 +100,7 @@ def load_cases(path: Path) -> list[Case]:
                     if item.get("minimum_peak_memory_bytes") is None
                     else int(item["minimum_peak_memory_bytes"])
                 ),
+                measure_vram=bool(item.get("measure_vram", False)),
             )
         )
     return cases
@@ -123,6 +126,45 @@ def _read_peak_memory(pid: int) -> int | None:
     if os.name == "nt":
         return _read_windows_tree_memory(pid)
     return _read_posix_tree_memory(pid)
+
+
+def _parse_gpu_memory(output: str) -> tuple[int, int] | None:
+    """Parse nvidia-smi's first used,total MiB row as bytes."""
+    first = next((line.strip() for line in output.splitlines() if line.strip()), "")
+    if not first:
+        return None
+    try:
+        used, total = (int(value.strip()) * 1024**2 for value in first.split(",", 1))
+    except (TypeError, ValueError):
+        return None
+    return used, total
+
+
+def _read_gpu_memory() -> tuple[int, int] | None:
+    """Read total GPU memory use where per-process WDDM accounting is unavailable."""
+    candidates = (
+        [Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "nvidia-smi.exe"]
+        if os.name == "nt"
+        else [Path("/usr/bin/nvidia-smi")]
+    )
+    executable = next((path for path in candidates if path.is_file()), None)
+    if executable is None:
+        return None
+    try:
+        completed = subprocess.run(
+            [
+                str(executable),
+                "--query-gpu=memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return _parse_gpu_memory(completed.stdout) if completed.returncode == 0 else None
 
 
 def _descendant_ids(root_pid: int, parent_by_pid: dict[int, int]) -> set[int]:
@@ -286,6 +328,7 @@ def run_case(case: Case, results_path: Path) -> dict[str, Any]:
         popen_options["start_new_session"] = True
 
     started = time.monotonic()
+    baseline_vram = _read_gpu_memory() if case.measure_vram else None
     process = subprocess.Popen(list(case.command), **popen_options)
     captured: dict[str, str] = {"stdout": "", "stderr": ""}
 
@@ -297,12 +340,19 @@ def run_case(case: Case, results_path: Path) -> dict[str, Any]:
     thread = threading.Thread(target=communicate, daemon=True)
     thread.start()
     peak_memory: int | None = None
+    peak_vram_bytes = baseline_vram[0] if baseline_vram is not None else None
+    total_vram_bytes = baseline_vram[1] if baseline_vram is not None else None
     timed_out = False
     deadline = started + case.timeout_seconds
     while thread.is_alive():
         observed = _read_peak_memory(process.pid)
         if observed is not None:
             peak_memory = max(peak_memory or 0, observed)
+        if case.measure_vram:
+            observed_vram = _read_gpu_memory()
+            if observed_vram is not None:
+                peak_vram_bytes = max(peak_vram_bytes or 0, observed_vram[0])
+                total_vram_bytes = observed_vram[1]
         if time.monotonic() >= deadline:
             timed_out = True
             _terminate_tree(process)
@@ -336,6 +386,14 @@ def run_case(case: Case, results_path: Path) -> dict[str, Any]:
         "exit_code": exit_code,
         "duration_seconds": round(duration, 3),
         "peak_memory_bytes": peak_memory,
+        "vram_baseline_bytes": None if baseline_vram is None else baseline_vram[0],
+        "peak_vram_bytes": peak_vram_bytes,
+        "peak_vram_delta_bytes": (
+            None
+            if baseline_vram is None or peak_vram_bytes is None
+            else max(0, peak_vram_bytes - baseline_vram[0])
+        ),
+        "total_vram_bytes": total_vram_bytes,
         "result": "pass" if passed else "fail",
         "reason": reason,
         "timed_out": timed_out,

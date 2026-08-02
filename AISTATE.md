@@ -246,6 +246,13 @@
   jobs list/config pathのread-only対話メニューと、synthetic 30秒input指定のno-diarization/CPU/quiet
   transcribe dry-runをpipe入力でexit0確認。setup profile切替、Explorer起動、model/job削除確認は
   外部状態変更/UIのため未実施（コード監査のみ）。G1-G12終了、次は事前品質確認後G13 CUDA耐久。
+- G13準備: Windows 90モデル不要tests、ruff/format/mypy合格後、`setup.ps1 -Profile cuda`成功。
+  GTX 1070 Ti 8GiB、CTranslate2/PyTorch cuda:0実kernel、cuDNN/cuBLAS usable、auto=
+  ASR cuda:0/int8 + diar cuda:0。最初の非対話setupはWSL継承PATHEXT=.CPLのためuv/pythonを
+  認識せず、正規SHA検証経路でmanaged ffmpegを追加した後exit1。PATHEXTへ.EXE等を復元してrerun成功。
+- G13 harness: WDDMでper-process VRAMがN/Aのためnvidia-smi GPU全体used/totalをbaseline/peak/delta
+  として0.2秒pollへ追加（現在baseline約4.8GiB）。2時間実input duration=8363.883秒。
+  ASR/diar model load時間はjob JSON logのstage開始→backend load完了差分で測る。test 3 passed/1 skip。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

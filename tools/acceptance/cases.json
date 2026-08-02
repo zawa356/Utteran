@@ -1350,5 +1350,113 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 300
+  },
+  {
+    "id": "G13-01",
+    "group": "G13",
+    "description": "Transcribe the full confidential recording on CUDA without diarization",
+    "command": [
+      "{utteran}", "transcribe", "{actual}",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g13/no-diarization",
+      "--format", "srt,vtt,json,txt,md", "--language", "ja",
+      "--device", "cuda:0", "--no-diarization", "--force", "--quiet"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 7200,
+    "minimum_peak_memory_bytes": 536870912,
+    "measure_vram": true
+  },
+  {
+    "id": "G13-02",
+    "group": "G13",
+    "description": "Validate all full-recording outputs without exposing text",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "formats",
+      "--dir", "{acceptance}/g13/no-diarization",
+      "--stem", "2026-08-01 11-01-55", "--duration", "8363.883"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G13-03",
+    "group": "G13",
+    "description": "Measure full-recording ASR model load from the structured job log",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "performance-log",
+      "--jobs", "{jobs}", "--input", "{actual}"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G13-04",
+    "group": "G13",
+    "description": "Transcribe the full confidential recording on CUDA with diarization",
+    "command": [
+      "{utteran}", "transcribe", "{actual}",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g13/diarization",
+      "--format", "srt,vtt,json,txt,md", "--language", "ja",
+      "--device", "cuda:0", "--force", "--quiet"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 14400,
+    "minimum_peak_memory_bytes": 1073741824,
+    "measure_vram": true
+  },
+  {
+    "id": "G13-05",
+    "group": "G13",
+    "description": "Validate speaker-labelled full-recording outputs without exposing text",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "formats",
+      "--dir", "{acceptance}/g13/diarization",
+      "--stem", "2026-08-01 11-01-55", "--duration", "8363.883", "--expect-speakers"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G13-06",
+    "group": "G13",
+    "description": "Validate full-recording ASR and diarization intermediates statistically",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "job",
+      "--jobs", "{jobs}", "--input", "{actual}",
+      "--json", "{acceptance}/g13/diarization/2026-08-01 11-01-55.json",
+      "--language", "ja", "--min-speakers", "2",
+      "--require-exclusive", "--require-quality"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G13-07",
+    "group": "G13",
+    "description": "Measure ASR and diarization model loads from the full structured job log",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "performance-log",
+      "--jobs", "{jobs}", "--input", "{actual}", "--expect-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G13-08",
+    "group": "G13",
+    "description": "Skip every completed stage when rerunning the full recording",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--contains", "スキップ", "--",
+      "{utteran}", "transcribe", "{actual}",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g13/diarization",
+      "--format", "srt,vtt,json,txt,md", "--language", "ja",
+      "--device", "cuda:0", "--quiet"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
   }
 ]

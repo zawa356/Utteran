@@ -760,6 +760,56 @@ def _run_powershell_front(
     )
 
 
+def validate_performance_log(jobs: Path, input_path: Path, expect_diarization: bool) -> None:
+    """Extract model-load durations and completed stages without transcript text."""
+    job = _find_job(jobs, input_path)
+    manifest = _load(job / "manifest.json")
+    if any(stage["status"] != "done" for stage in manifest["stages"].values()):
+        raise AssertionError("performance job did not complete every pipeline stage")
+    records = [
+        json.loads(line)
+        for line in (job / "utteran.log").read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    starts = [
+        index
+        for index, record in enumerate(records)
+        if record.get("message", "").startswith("ジョブ開始:")
+    ]
+    if not starts:
+        raise AssertionError("performance job log has no job start")
+    current = records[starts[-1] :]
+
+    def elapsed(start_message: str, end_message: str) -> float:
+        start_record = next(
+            (record for record in current if record.get("message") == start_message),
+            None,
+        )
+        end_record = next(
+            (
+                record
+                for record in current
+                if str(record.get("message", "")).startswith(end_message)
+            ),
+            None,
+        )
+        if start_record is None or end_record is None:
+            raise AssertionError(f"performance log is missing {start_message} / {end_message}")
+        start = datetime.fromisoformat(str(start_record["timestamp"]))
+        end = datetime.fromisoformat(str(end_record["timestamp"]))
+        return max(0.0, (end - start).total_seconds())
+
+    timings = {
+        "asr_model_load_seconds": round(elapsed("ステージ開始: asr", "ASRバックエンドをロード"), 3)
+    }
+    if expect_diarization:
+        timings["diarization_model_load_seconds"] = round(
+            elapsed("ステージ開始: diarization", "話者分離バックエンドをロード"),
+            3,
+        )
+    print(json.dumps(timings, sort_keys=True))
+
+
 def _stage_signature(manifest: dict[str, Any]) -> dict[str, str]:
     return {
         stage: json.dumps(manifest["stages"][stage], ensure_ascii=False, sort_keys=True)
@@ -1291,6 +1341,11 @@ def main() -> int:
     start_front.add_argument("--script", type=Path, required=True)
     start_front.add_argument("--testdata", type=Path, required=True)
 
+    performance = subparsers.add_parser("performance-log")
+    performance.add_argument("--jobs", type=Path, required=True)
+    performance.add_argument("--input", type=Path, required=True)
+    performance.add_argument("--expect-diarization", action="store_true")
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -1374,8 +1429,10 @@ def main() -> int:
         validate_readme_commands(args.project, args.utteran, args.testdata, args.config)
     elif args.scenario == "documentation-contracts":
         validate_documentation_contracts(args.readme, args.requirements)
-    else:
+    elif args.scenario == "start-front":
         validate_start_front(args.project, args.script, args.testdata)
+    else:
+        validate_performance_log(args.jobs, args.input, args.expect_diarization)
     return 0
 
 
