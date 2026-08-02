@@ -117,6 +117,10 @@
 - U-001修正: 内部hookの引数名をpyannote 4.xと同じ`file`へ変更し、fake pipelineも`file=`を
   渡す回帰に更新。PCM waveformを直接渡して内蔵デコードを使わないため、pyannote import時の
   TorchCodec不在警告だけを限定的に抑制した。品質ゲート後にG3全ケースをrerunする。
+- U-001修正後のG3全15ケースは合格。auto=内部4話者／出力3話者、固定2/3/4は中間結果が指定どおり、
+  range 2〜5は4話者。通常70 turnsに11 overlap pairs、exclusive 61 turnsは非重複、平均2.278秒、
+  dominant ratio=0.543、UNKNOWN=0。CPU diarizationは105.203〜108.093秒、peak process tree
+  2,601,222,144〜2,671,165,440 bytes。label変更はexport-only 1.172秒。次はG4。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
