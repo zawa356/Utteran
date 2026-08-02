@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ from utteran.errors import JobLockedError
 from utteran.jobs import (
     JobLock,
     JobStore,
+    _process_exists,
     canonical_json,
     fingerprint_input,
     job_id_from_input_hash,
@@ -152,6 +155,18 @@ def test_lock_rejects_live_owner_and_recovers_stale_owner(
     with JobLock(lock_path):
         assert lock_path.is_file()
     assert not lock_path.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PID liveness regression")
+def test_windows_process_probe_detects_live_and_finished_child() -> None:
+    process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        assert _process_exists(process.pid)
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+    assert not _process_exists(process.pid)
 
 
 def test_job_list_and_failed_clean_selection(tmp_path: Path) -> None:

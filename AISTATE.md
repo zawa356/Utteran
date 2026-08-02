@@ -157,6 +157,9 @@
 - G4-11はstale lock誤認を補助で除いた後、競合側が`予期しないエラー: <built-in function kill>
   returned a result with an exception set`でexit1。原因U-003はWindowsの`os.kill(pid, 0)`生存probe。
   失敗をtest commit後、Win32 OpenProcess/GetExitCodeProcessの非破壊probeへ置換しWindows回帰追加。
+- U-003修正: `_process_exists`はWindowsだけ`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)`と
+  `GetExitCodeProcess(STILL_ACTIVE)`を使用。access deniedは安全側でlive、無効handleはstale扱い。
+  Windows限定で実sleep childのlive/terminatedを確認するモデル不要回帰を追加。G4-11再試験待ち。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

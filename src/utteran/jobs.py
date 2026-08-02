@@ -696,9 +696,13 @@ def _read_lock_pid(path: Path) -> int | None:
 
 
 def _process_exists(pid: int) -> bool:
-    """Check process liveness using the standard cross-platform PID probe."""
+    """Check process liveness without sending a terminating Windows signal."""
+    if pid <= 0:
+        return False
     if pid == os.getpid():
         return True
+    if os.name == "nt":
+        return _windows_process_exists(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -708,6 +712,29 @@ def _process_exists(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _windows_process_exists(pid: int) -> bool:
+    """Query a Windows process handle and exit code without using os.kill."""
+    import ctypes
+    from ctypes import wintypes
+
+    loader = getattr(ctypes, "WinDLL", None)
+    if loader is None:
+        return False
+    kernel32 = loader("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel32.OpenProcess(0x1000, False, pid)
+    if not handle:
+        get_last_error = getattr(ctypes, "get_last_error", lambda: 0)
+        return int(get_last_error()) == 5
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return True
+        return int(exit_code.value) == 259
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _directory_size(path: Path) -> int:
