@@ -109,6 +109,11 @@
 - G2のCRLF用configにASR設定がなく、初回は出力だけの変更にもかかわらずASRを再実行した。
   製品のresume判定ではなく受入fixtureの差分が原因。CRLF/BOM用configへ基準と同じCPU/int8 ASR
   設定を追加し、BOM試験はexport-only 1.171秒で完了した。
+- G3初回は15件中G3-11のみ合格、14件失敗。実pyannoteの全実行がexit 3で、後続validatorは
+  成果物不足。原因U-001はpyannote 4.xの`setup_hook`がcallbackを`file=`キーワード付きで呼ぶ一方、
+  `PyannoteBackend.diarize`内部hookの引数名が`_file`でTypeErrorになること。hookなしで同一モデル、
+  正規化PCM、CPUを直接処理すると正常終了したため切り分け済み。指示書どおり失敗結果を先に
+  test commitし、その後hook互換修正・モデル不要回帰・G3再試験を行う。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

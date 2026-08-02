@@ -169,10 +169,14 @@ def validate_json(
 def validate_intermediate(
     asr_path: Path | None,
     diarization_path: Path | None,
+    output_path: Path | None,
     expected_language: str | None,
     exact_speakers: int | None,
     min_speakers: int | None,
     max_speakers: int | None,
+    require_exclusive: bool,
+    require_quality: bool,
+    required_speaker_label: str | None,
 ) -> dict[str, Any]:
     """Validate versioned job intermediates without emitting recognized text."""
     stats: dict[str, Any] = {}
@@ -194,7 +198,10 @@ def validate_intermediate(
             raise AssertionError("invalid diarization intermediate wrapper")
         result = diarization["result"]
         speaker_count = int(result["num_speakers"])
+        regular = result.get("turns") or []
         exclusive = result.get("exclusive_turns") or []
+        if require_exclusive and not exclusive:
+            raise AssertionError("exclusive speaker turns are missing")
         previous_end = -1.0
         durations: list[float] = []
         speaker_durations: Counter[str] = Counter()
@@ -216,12 +223,50 @@ def validate_intermediate(
         mean_turn = sum(durations) / len(durations) if durations else 0.0
         total = sum(speaker_durations.values())
         dominant_ratio = max(speaker_durations.values(), default=0.0) / total if total else 0.0
+        overlap_pairs = 0
+        ordered_regular = sorted(
+            regular,
+            key=lambda turn: (float(turn["start"]), float(turn["end"]), str(turn["speaker"])),
+        )
+        for index, left in enumerate(ordered_regular):
+            left_end = float(left["end"])
+            for right in ordered_regular[index + 1 :]:
+                right_start = float(right["start"])
+                if right_start >= left_end:
+                    break
+                if min(left_end, float(right["end"])) > max(float(left["start"]), right_start):
+                    overlap_pairs += 1
+        if require_quality and mean_turn < 0.5:
+            raise AssertionError(f"mean exclusive turn was too short: {mean_turn:.3f}s")
+        if require_quality and dominant_ratio > 0.99:
+            raise AssertionError(f"dominant speaker ratio was too high: {dominant_ratio:.3f}")
         stats.update(
             {
                 "speaker_count": speaker_count,
+                "regular_turn_count": len(regular),
+                "regular_overlap_pairs": overlap_pairs,
                 "exclusive_turn_count": len(exclusive),
                 "mean_exclusive_turn_seconds": round(mean_turn, 6),
                 "dominant_speaker_ratio": round(dominant_ratio, 6),
+            }
+        )
+    if output_path is not None:
+        output = _load_json(output_path)
+        output_stats = _validate_segments(output, None)
+        segments = output["segments"]
+        unknown_count = sum(segment.get("speaker") in {None, "UNKNOWN"} for segment in segments)
+        unknown_ratio = unknown_count / len(segments) if segments else 0.0
+        if require_quality and unknown_ratio >= 0.2:
+            raise AssertionError(f"unknown speaker ratio was too high: {unknown_ratio:.3f}")
+        speakers = [str(speaker) for speaker in output["speakers"]]
+        if required_speaker_label is not None and required_speaker_label not in speakers:
+            raise AssertionError(f"required speaker label is missing: {required_speaker_label}")
+        stats.update(
+            {
+                "output_segment_count": output_stats["segment_count"],
+                "output_speaker_count": output_stats["speaker_count"],
+                "unknown_speaker_ratio": round(unknown_ratio, 6),
+                "required_speaker_label_present": required_speaker_label is not None,
             }
         )
     print(json.dumps(stats, ensure_ascii=False, sort_keys=True))
@@ -325,10 +370,14 @@ def main() -> int:
     intermediate = subparsers.add_parser("intermediate")
     intermediate.add_argument("--asr", type=Path)
     intermediate.add_argument("--diarization", type=Path)
+    intermediate.add_argument("--json", type=Path)
     intermediate.add_argument("--language")
     intermediate.add_argument("--exact-speakers", type=int)
     intermediate.add_argument("--min-speakers", type=int)
     intermediate.add_argument("--max-speakers", type=int)
+    intermediate.add_argument("--require-exclusive", action="store_true")
+    intermediate.add_argument("--require-quality", action="store_true")
+    intermediate.add_argument("--required-speaker-label")
 
     artifacts = subparsers.add_parser("artifacts")
     artifacts.add_argument("--dir", type=Path, required=True)
@@ -346,10 +395,14 @@ def main() -> int:
     job = subparsers.add_parser("job")
     job.add_argument("--jobs", type=Path, required=True)
     job.add_argument("--input", type=Path, required=True)
+    job.add_argument("--json", type=Path)
     job.add_argument("--language")
     job.add_argument("--exact-speakers", type=int)
     job.add_argument("--min-speakers", type=int)
     job.add_argument("--max-speakers", type=int)
+    job.add_argument("--require-exclusive", action="store_true")
+    job.add_argument("--require-quality", action="store_true")
+    job.add_argument("--required-speaker-label")
 
     args = parser.parse_args()
     if args.command == "formats":
@@ -367,10 +420,14 @@ def main() -> int:
         validate_intermediate(
             args.asr,
             args.diarization,
+            args.json,
             args.language,
             args.exact_speakers,
             args.min_speakers,
             args.max_speakers,
+            args.require_exclusive,
+            args.require_quality,
+            args.required_speaker_label,
         )
     elif args.command == "artifacts":
         validate_artifacts(args.dir, args.stem, args.extensions.split(","))
@@ -384,17 +441,27 @@ def main() -> int:
             find_job_intermediate(args.jobs, args.input, "diarization")
             if any(
                 value is not None
-                for value in (args.exact_speakers, args.min_speakers, args.max_speakers)
+                for value in (
+                    args.exact_speakers,
+                    args.min_speakers,
+                    args.max_speakers,
+                )
             )
+            or args.require_exclusive
+            or args.require_quality
             else None
         )
         validate_intermediate(
             asr_path,
             diarization_path,
+            args.json,
             args.language,
             args.exact_speakers,
             args.min_speakers,
             args.max_speakers,
+            args.require_exclusive,
+            args.require_quality,
+            args.required_speaker_label,
         )
     return 0
 

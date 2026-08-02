@@ -251,5 +251,206 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 60
+  },
+  {
+    "id": "G3-01",
+    "group": "G3",
+    "description": "Run real pyannote diarization with automatic speaker count",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g3/auto", "--format", "json",
+      "--language", "ja", "--device", "cpu"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 3600
+  },
+  {
+    "id": "G3-02",
+    "group": "G3",
+    "description": "Validate automatic diarization quality and exclusive turns",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "job",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--json", "{acceptance}/g3/auto/clip_03m.json",
+      "--min-speakers", "2", "--max-speakers", "20",
+      "--require-exclusive", "--require-quality"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G3-03",
+    "group": "G3",
+    "description": "Run diarization with exactly two speakers",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g3/two", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--num-speakers", "2"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 3600
+  },
+  {
+    "id": "G3-04",
+    "group": "G3",
+    "description": "Validate the exact two-speaker result",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "job",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--json", "{acceptance}/g3/two/clip_03m.json", "--exact-speakers", "2",
+      "--require-exclusive", "--require-quality"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G3-05",
+    "group": "G3",
+    "description": "Run diarization with exactly three speakers",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g3/three", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--num-speakers", "3"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 3600
+  },
+  {
+    "id": "G3-06",
+    "group": "G3",
+    "description": "Validate the exact three-speaker result",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "job",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--json", "{acceptance}/g3/three/clip_03m.json", "--exact-speakers", "3",
+      "--require-exclusive", "--require-quality"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G3-07",
+    "group": "G3",
+    "description": "Run diarization with exactly four speakers",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g3/four", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--num-speakers", "4"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 3600
+  },
+  {
+    "id": "G3-08",
+    "group": "G3",
+    "description": "Validate the exact four-speaker result",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "job",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--json", "{acceptance}/g3/four/clip_03m.json", "--exact-speakers", "4",
+      "--require-exclusive", "--require-quality"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G3-09",
+    "group": "G3",
+    "description": "Run diarization with a two-to-five speaker range",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g3/range", "--format", "json",
+      "--language", "ja", "--device", "cpu",
+      "--min-speakers", "2", "--max-speakers", "5"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 3600
+  },
+  {
+    "id": "G3-10",
+    "group": "G3",
+    "description": "Validate the ranged speaker-count result",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "job",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--json", "{acceptance}/g3/range/clip_03m.json",
+      "--min-speakers", "2", "--max-speakers", "5",
+      "--require-exclusive", "--require-quality"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G3-11",
+    "group": "G3",
+    "description": "Reject exact and ranged speaker constraints used together",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--num-speakers", "2", "--min-speakers", "2"
+    ],
+    "expected_exit_codes": [2],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G3-12",
+    "group": "G3",
+    "description": "Run diarization with an explicit pyannote model ID",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g3/explicit", "--format", "json",
+      "--language", "ja", "--device", "cpu",
+      "--diarization-model", "pyannote/speaker-diarization-community-1"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 3600
+  },
+  {
+    "id": "G3-13",
+    "group": "G3",
+    "description": "Validate explicit-model diarization quality and exclusive turns",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "job",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--json", "{acceptance}/g3/explicit/clip_03m.json",
+      "--min-speakers", "2", "--max-speakers", "20",
+      "--require-exclusive", "--require-quality"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G3-14",
+    "group": "G3",
+    "description": "Re-export the automatic result with a friendly speaker label",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.speaker-labels.toml",
+      "--output-dir", "{acceptance}/g3/labels", "--format", "json",
+      "--language", "ja", "--device", "cpu",
+      "--diarization-model", "pyannote/speaker-diarization-community-1"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G3-15",
+    "group": "G3",
+    "description": "Verify speaker-label replacement in exported JSON",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "job",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--json", "{acceptance}/g3/labels/clip_03m.json",
+      "--min-speakers", "2", "--max-speakers", "20",
+      "--required-speaker-label", "話者A"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
   }
 ]
