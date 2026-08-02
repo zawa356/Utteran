@@ -253,6 +253,18 @@
 - G13 harness: WDDMでper-process VRAMがN/Aのためnvidia-smi GPU全体used/totalをbaseline/peak/delta
   として0.2秒pollへ追加（現在baseline約4.8GiB）。2時間実input duration=8363.883秒。
   ASR/diar model load時間はjob JSON logのstage開始→backend load完了差分で測る。test 3 passed/1 skip。
+- 受入G13完了: G13-01〜08全pass。実inputは8363.861秒（ffprobe 8363.883秒）。
+  - no diar CUDA: 417.734秒、RTF=20.02x、peak process-tree RAM 7,921,729,536 bytes
+    (7.38GiB)、VRAM baseline 5,193,596,928 / peak 6,697,254,912 / delta 1,503,657,984
+    bytes、ASR load 8.846秒。5形式、1934 segments、empty 0、duplicate max2、JP ratio .98063、
+    coverage .623069、speaker0。
+  - diar CUDA: 770.625秒、RTF=10.85x、peak RAM 7,909,371,904 bytes (7.37GiB)、VRAM
+    baseline 5,200,936,960 / peak 7,850,688,512 / delta 2,649,751,552 bytes、ASR load
+    8.186秒、diar load 14.740秒。5形式、output 1280 segments/5 labels、internal speakers4、
+    regular turns2860/overlap pairs205、exclusive2758/mean2.165911秒、dominant .646736、
+    UNKNOWN .000781、empty0、duplicate max2、JP .98063、coverage .651502。
+  - 同一diar設定rerunは2.656秒で全stage skip。job `7be37b2d3fc10277`は保持。
+  transcript本文/固有名はresults/docs/gitへ未記録。次はG14集計・報告・最終security scan。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
