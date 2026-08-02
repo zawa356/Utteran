@@ -14,7 +14,11 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
+from typer.testing import CliRunner
+
+import utteran.cli as cli_module
 from utteran.align import align_transcription
 from utteran.config import Config
 from utteran.jobs import fingerprint_input, job_id_from_input_hash
@@ -284,6 +288,38 @@ def validate_invalid_config(root: Path, utteran: Path) -> None:
     if "設定が不正" not in combined or "Traceback" in combined:
         raise AssertionError("invalid config error was not actionable")
     print(json.dumps({"exit_code": 2, "traceback": False}))
+
+
+def validate_verbose_error(root: Path) -> None:
+    """Expose an unexpected traceback only when --verbose is explicitly set."""
+    root.mkdir(parents=True, exist_ok=True)
+    input_path = root / "synthetic.wav"
+    input_path.write_bytes(b"synthetic media placeholder")
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("synthetic unexpected detail")
+
+    runner = CliRunner()
+    with (
+        patch.object(cli_module, "find_ffmpeg", return_value=Path("ffmpeg")),
+        patch.object(cli_module, "_ensure_configured_models", return_value=None),
+        patch.object(cli_module, "_run_with_progress", side_effect=fail),
+    ):
+        regular = runner.invoke(
+            cli_module.app,
+            ["transcribe", str(input_path), "--no-diarization"],
+        )
+        verbose = runner.invoke(
+            cli_module.app,
+            ["transcribe", str(input_path), "--no-diarization", "--verbose"],
+        )
+    if regular.exit_code != 1 or verbose.exit_code != 1:
+        raise AssertionError("unexpected-error CLI exit code was not 1")
+    if "Traceback" in regular.output or "synthetic unexpected detail" not in regular.output:
+        raise AssertionError("regular unexpected error detail policy is incorrect")
+    if "Traceback" not in verbose.output or "synthetic unexpected detail" not in verbose.output:
+        raise AssertionError("verbose unexpected error did not include diagnostic detail")
+    print(json.dumps({"regular_traceback": False, "verbose_traceback": True}))
 
 
 def _stage_signature(manifest: dict[str, Any]) -> dict[str, str]:
@@ -792,6 +828,9 @@ def main() -> int:
     invalid_config.add_argument("--root", type=Path, required=True)
     invalid_config.add_argument("--utteran", type=Path, required=True)
 
+    verbose_error = subparsers.add_parser("verbose-error")
+    verbose_error.add_argument("--root", type=Path, required=True)
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -863,8 +902,10 @@ def main() -> int:
         validate_config_token_warning(args.root, args.utteran)
     elif args.scenario == "alignment-setting":
         validate_alignment_setting(args.root)
-    else:
+    elif args.scenario == "invalid-config":
         validate_invalid_config(args.root, args.utteran)
+    else:
+        validate_verbose_error(args.root)
     return 0
 
 

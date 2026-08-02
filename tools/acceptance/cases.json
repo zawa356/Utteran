@@ -1130,5 +1130,167 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 60
+  },
+  {
+    "id": "G9-01",
+    "group": "G9",
+    "description": "Return exit code 0 for a completed normal transcription",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g7/cpu", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G9-02",
+    "group": "G9",
+    "description": "Return exit code 2 for mutually exclusive verbosity flags",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "2", "--contains=--verbose", "--contains=--quiet", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4", "--verbose", "--quiet"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G9-03",
+    "group": "G9",
+    "description": "Return exit code 3 with guidance when ffmpeg is undiscoverable",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "3", "--contains", "ffmpeg", "--contains", "PATH", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.g9-noffmpeg.toml",
+      "--no-diarization", "--quiet"
+    ],
+    "environment": {"PATH": "{acceptance}/g9/empty-path"},
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G9-04",
+    "group": "G9",
+    "description": "Return exit code 3 with a download command for a missing model",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--cwd", "{acceptance}/g9/empty-cwd", "--exit", "3",
+      "--contains", "openvino:large-v3-turbo", "--contains", "models download", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--asr-backend", "openvino", "--asr-model", "large-v3-turbo",
+      "--no-diarization", "--quiet"
+    ],
+    "environment": {
+      "UTTERAN_MODEL_DIR": "{acceptance}/g9/empty-models",
+      "HF_HOME": "{acceptance}/g9/empty-hf"
+    },
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G9-05",
+    "group": "G9",
+    "description": "Return exit code 2 when diarization has no token",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--cwd", "{acceptance}/g9/empty-cwd", "--exit", "2",
+      "--contains", "settings/tokens", "--contains", "HF_TOKEN", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--diarization-model", "pyannote/private-missing-model", "--quiet"
+    ],
+    "environment": {
+      "HF_TOKEN": "",
+      "HUGGING_FACE_HUB_TOKEN": "",
+      "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring"
+    },
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G9-06",
+    "group": "G9",
+    "description": "Return exit code 4 for a nonexistent input path",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "4", "--contains", "入力ファイルが見つかりません", "--",
+      "{utteran}", "transcribe", "{testdata}/does-not-exist.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G9-07",
+    "group": "G9",
+    "description": "Return exit code 4 for empty media",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "4", "--contains", "デコードできません", "--",
+      "{utteran}", "transcribe", "{testdata}/empty.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--no-diarization", "--quiet", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G9-08",
+    "group": "G9",
+    "description": "Return exit code 4 for a non-media text file",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "4", "--contains", "デコードできません", "--",
+      "{utteran}", "transcribe", "{testdata}/notmedia.txt",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--no-diarization", "--quiet", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G9-09",
+    "group": "G9",
+    "description": "Return exit code 130 on SIGINT",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "interrupt",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_10m.mp4", "--delay", "3", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_10m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g9/interrupt", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G9-10",
+    "group": "G9",
+    "description": "Return exit code 5 for a partially failed batch",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "5", "--contains", "集計:", "--contains", "失敗 1", "--",
+      "{utteran}", "transcribe", "{testdata}/batch",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g5/main", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G9-11",
+    "group": "G9",
+    "description": "Show unexpected traceback detail only with verbose mode",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "verbose-error",
+      "--root", "{acceptance}/g9/verbose"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
   }
 ]
