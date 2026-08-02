@@ -35,6 +35,7 @@ class Case:
     expected_exit_codes: tuple[int, ...]
     timeout_seconds: float
     environment: dict[str, str]
+    minimum_peak_memory_bytes: int | None
 
 
 def _windows_utteran() -> Path:
@@ -92,6 +93,11 @@ def load_cases(path: Path) -> list[Case]:
                 ),
                 timeout_seconds=float(item.get("timeout_seconds", 600)),
                 environment=environment,
+                minimum_peak_memory_bytes=(
+                    None
+                    if item.get("minimum_peak_memory_bytes") is None
+                    else int(item["minimum_peak_memory_bytes"])
+                ),
             )
         )
     return cases
@@ -113,21 +119,50 @@ def _safe_output_summary(output: str, *, edge_lines: int = 4) -> dict[str, list[
 
 
 def _read_peak_memory(pid: int) -> int | None:
-    """Read peak working-set bytes without adding a psutil dependency."""
+    """Read current process-tree memory; the caller retains the observed peak."""
     if os.name == "nt":
-        return _read_windows_peak_memory(pid)
-    status = Path(f"/proc/{pid}/status")
-    try:
-        for line in status.read_text(encoding="utf-8").splitlines():
-            if line.startswith("VmHWM:"):
-                return int(line.split()[1]) * 1024
-    except (OSError, ValueError, IndexError):
-        return None
-    return None
+        return _read_windows_tree_memory(pid)
+    return _read_posix_tree_memory(pid)
 
 
-def _read_windows_peak_memory(pid: int) -> int | None:
-    """Return PeakWorkingSetSize through Win32 APIs."""
+def _descendant_ids(root_pid: int, parent_by_pid: dict[int, int]) -> set[int]:
+    """Return a root PID and all recursively linked descendants."""
+    selected = {root_pid}
+    changed = True
+    while changed:
+        changed = False
+        for child, parent in parent_by_pid.items():
+            if parent in selected and child not in selected:
+                selected.add(child)
+                changed = True
+    return selected
+
+
+def _read_posix_tree_memory(pid: int) -> int | None:
+    parent_by_pid: dict[int, int] = {}
+    for stat_path in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            parts = stat_path.read_text(encoding="utf-8").split()
+            parent_by_pid[int(parts[0])] = int(parts[3])
+        except (OSError, ValueError, IndexError):
+            continue
+    total = 0
+    observed = False
+    for process_id in _descendant_ids(pid, parent_by_pid):
+        status = Path(f"/proc/{process_id}/status")
+        try:
+            for line in status.read_text(encoding="utf-8").splitlines():
+                if line.startswith("VmRSS:"):
+                    total += int(line.split()[1]) * 1024
+                    observed = True
+                    break
+        except (OSError, ValueError, IndexError):
+            continue
+    return total if observed else None
+
+
+def _read_windows_tree_memory(pid: int) -> int | None:
+    """Sum current working sets for a Windows process and all descendants."""
     try:
         import ctypes
         from ctypes import wintypes
@@ -146,19 +181,52 @@ def _read_windows_peak_memory(pid: int) -> int | None:
                 ("PeakPagefileUsage", ctypes.c_size_t),
             ]
 
+        class ProcessEntry(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD),
+                ("cntUsage", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t),
+                ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", wintypes.LONG),
+                ("dwFlags", wintypes.DWORD),
+                ("szExeFile", wintypes.WCHAR * 260),
+            ]
+
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         psapi = ctypes.WinDLL("psapi", use_last_error=True)
-        handle = kernel32.OpenProcess(0x1000 | 0x0010, False, pid)
-        if not handle:
+        kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+        if snapshot == wintypes.HANDLE(-1).value:
             return None
         try:
-            counters = ProcessMemoryCounters()
-            counters.cb = ctypes.sizeof(counters)
-            if not psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
-                return None
-            return int(counters.PeakWorkingSetSize)
+            entry = ProcessEntry()
+            entry.dwSize = ctypes.sizeof(entry)
+            parent_by_pid: dict[int, int] = {}
+            success = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+            while success:
+                parent_by_pid[int(entry.th32ProcessID)] = int(entry.th32ParentProcessID)
+                success = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
         finally:
-            kernel32.CloseHandle(handle)
+            kernel32.CloseHandle(snapshot)
+        total = 0
+        observed = False
+        for process_id in _descendant_ids(pid, parent_by_pid):
+            handle = kernel32.OpenProcess(0x1000 | 0x0010, False, process_id)
+            if not handle:
+                continue
+            try:
+                counters = ProcessMemoryCounters()
+                counters.cb = ctypes.sizeof(counters)
+                if psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+                    total += int(counters.WorkingSetSize)
+                    observed = True
+            finally:
+                kernel32.CloseHandle(handle)
+        return total if observed else None
     except (AttributeError, OSError, ValueError):
         return None
 
@@ -247,9 +315,14 @@ def run_case(case: Case, results_path: Path) -> dict[str, Any]:
 
     duration = time.monotonic() - started
     exit_code = process.poll()
-    passed = not timed_out and exit_code in case.expected_exit_codes
+    memory_passed = case.minimum_peak_memory_bytes is None or (
+        peak_memory is not None and peak_memory >= case.minimum_peak_memory_bytes
+    )
+    passed = not timed_out and exit_code in case.expected_exit_codes and memory_passed
     if timed_out:
         reason = f"timeout after {case.timeout_seconds:.1f}s; process tree terminated"
+    elif not memory_passed:
+        reason = f"peak memory {peak_memory} below required {case.minimum_peak_memory_bytes} bytes"
     elif passed:
         reason = f"exit code {exit_code} matched {list(case.expected_exit_codes)}"
     else:

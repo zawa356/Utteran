@@ -103,7 +103,9 @@
   validatorはduration=30.016秒、segments=5、empty=0、coverage=0.851、日本語文字比率=0.981、
   duplicate max=1、schema/SRT/VTT/UTF-8/単語時刻を合格判定。本文は永続記録していない。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
-  G1結果を先にtest commitし、process treeのcurrent working set合計ピークへ修正してから後続へ進む。
+  G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
+  set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
+  計測し、PID木のモデル不要回帰を含む83 tests、ruff/format/mypy合格。
 - 利用者の管理済みpyannoteディレクトリを読み取り調査。Hugging Face tree metadata上は約32.1 MiB、
   実体は約1.1 MiBで、`embedding/pytorch_model.bin`（26,646,242 bytes）と
   `segmentation/pytorch_model.bin`（5,906,507 bytes）が欠落。完了metadataも存在しなかった。
