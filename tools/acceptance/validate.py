@@ -228,6 +228,81 @@ def validate_intermediate(
     return stats
 
 
+def validate_artifacts(directory: Path, stem: str, extensions: list[str]) -> dict[str, Any]:
+    files = {
+        extension: _latest_artifact(directory, stem, extension).name for extension in extensions
+    }
+    stats = {"artifact_count": len(files), "files": files}
+    print(json.dumps(stats, ensure_ascii=False, sort_keys=True))
+    return stats
+
+
+def validate_collision(directory: Path, stem: str, extensions: list[str]) -> dict[str, Any]:
+    missing = [
+        name
+        for extension in extensions
+        for name in (f"{stem}.{extension}", f"{stem}_1.{extension}")
+        if not (directory / name).is_file()
+    ]
+    if missing:
+        raise AssertionError(f"collision outputs missing: {', '.join(missing)}")
+    stats = {"base_and_numbered_files": len(extensions) * 2}
+    print(json.dumps(stats, ensure_ascii=False, sort_keys=True))
+    return stats
+
+
+def validate_equivalent(paths: list[Path]) -> dict[str, Any]:
+    summaries: list[dict[str, float | int]] = []
+    for path in paths:
+        payload = _load_json(path)
+        segments = payload["segments"]
+        summaries.append(
+            {
+                "duration": float(payload["input"]["duration"]),
+                "segments": len(segments),
+                "characters": sum(len(str(segment.get("text", ""))) for segment in segments),
+            }
+        )
+    durations = [float(item["duration"]) for item in summaries]
+    segment_counts = [int(item["segments"]) for item in summaries]
+    character_counts = [int(item["characters"]) for item in summaries]
+    if max(durations) - min(durations) > 1.0:
+        raise AssertionError("input duration differs by more than one second")
+    if min(segment_counts, default=0) == 0 or max(segment_counts) / min(segment_counts) > 1.2:
+        raise AssertionError("segment counts differ by more than 20 percent")
+    if min(character_counts, default=0) == 0 or max(character_counts) / min(character_counts) > 1.1:
+        raise AssertionError("recognized character counts differ by more than 10 percent")
+    stats = {
+        "input_count": len(paths),
+        "durations": [round(value, 3) for value in durations],
+        "segment_counts": segment_counts,
+        "character_counts": character_counts,
+    }
+    print(json.dumps(stats, ensure_ascii=False, sort_keys=True))
+    return stats
+
+
+def find_job_intermediate(jobs: Path, input_path: Path, stage: str) -> Path:
+    """Find a stage artifact by manifest input path without printing transcript data."""
+    target = input_path.resolve()
+    matches: list[tuple[int, Path]] = []
+    for manifest_path in jobs.glob("*/manifest.json"):
+        try:
+            manifest = _load_json(manifest_path)
+            recorded = Path(str(manifest["input"]["path"])).resolve()
+            if recorded == target:
+                matches.append((manifest_path.stat().st_mtime_ns, manifest_path.parent))
+        except (AssertionError, KeyError, OSError, TypeError, ValueError):
+            continue
+    if not matches:
+        raise AssertionError(f"job not found for input file: {input_path.name}")
+    job = max(matches)[1]
+    artifact = job / f"{stage}.json"
+    if not artifact.is_file():
+        raise AssertionError(f"missing {stage} intermediate in job {job.name}")
+    return artifact
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -255,6 +330,27 @@ def main() -> int:
     intermediate.add_argument("--min-speakers", type=int)
     intermediate.add_argument("--max-speakers", type=int)
 
+    artifacts = subparsers.add_parser("artifacts")
+    artifacts.add_argument("--dir", type=Path, required=True)
+    artifacts.add_argument("--stem", required=True)
+    artifacts.add_argument("--extensions", required=True)
+
+    collision = subparsers.add_parser("collision")
+    collision.add_argument("--dir", type=Path, required=True)
+    collision.add_argument("--stem", required=True)
+    collision.add_argument("--extensions", required=True)
+
+    equivalent = subparsers.add_parser("equivalent")
+    equivalent.add_argument("paths", type=Path, nargs="+")
+
+    job = subparsers.add_parser("job")
+    job.add_argument("--jobs", type=Path, required=True)
+    job.add_argument("--input", type=Path, required=True)
+    job.add_argument("--language")
+    job.add_argument("--exact-speakers", type=int)
+    job.add_argument("--min-speakers", type=int)
+    job.add_argument("--max-speakers", type=int)
+
     args = parser.parse_args()
     if args.command == "formats":
         validate_formats(args.dir, args.stem, args.duration, args.expect_speakers, args.expect_bom)
@@ -267,10 +363,34 @@ def main() -> int:
             args.min_speakers,
             args.max_speakers,
         )
-    else:
+    elif args.command == "intermediate":
         validate_intermediate(
             args.asr,
             args.diarization,
+            args.language,
+            args.exact_speakers,
+            args.min_speakers,
+            args.max_speakers,
+        )
+    elif args.command == "artifacts":
+        validate_artifacts(args.dir, args.stem, args.extensions.split(","))
+    elif args.command == "collision":
+        validate_collision(args.dir, args.stem, args.extensions.split(","))
+    elif args.command == "equivalent":
+        validate_equivalent(args.paths)
+    else:
+        asr_path = find_job_intermediate(args.jobs, args.input, "asr")
+        diarization_path = (
+            find_job_intermediate(args.jobs, args.input, "diarization")
+            if any(
+                value is not None
+                for value in (args.exact_speakers, args.min_speakers, args.max_speakers)
+            )
+            else None
+        )
+        validate_intermediate(
+            asr_path,
+            diarization_path,
             args.language,
             args.exact_speakers,
             args.min_speakers,

@@ -102,6 +102,13 @@
 - G1-01/02合格。30秒MP4をCPU/int8、話者分離なし、language autoで49.312秒、5形式exit 0。
   validatorはduration=30.016秒、segments=5、empty=0、coverage=0.851、日本語文字比率=0.981、
   duplicate max=1、schema/SRT/VTT/UTF-8/単語時刻を合格判定。本文は永続記録していない。
+- G2-01〜16は全件合格。3分MP4/WAV/M4A、既定／5形式、別output-dir、衝突連番、CRLF、
+  SRT BOM、language ja/autoを検証。3媒体のduration=180.003〜180.011秒、segments=38〜44、
+  認識文字数=693〜723で同等性閾値内、auto判定はja。CPU/int8実推論103.782〜115.328秒、
+  process tree peak=1,882,664,960〜2,091,962,368 bytes。本文は記録していない。
+- G2のCRLF用configにASR設定がなく、初回は出力だけの変更にもかかわらずASRを再実行した。
+  製品のresume判定ではなく受入fixtureの差分が原因。CRLF/BOM用configへ基準と同じCPU/int8 ASR
+  設定を追加し、BOM試験はexport-only 1.171秒で完了した。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

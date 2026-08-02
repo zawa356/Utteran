@@ -1,0 +1,23 @@
+[general]
+job_dir = "./output/_acceptance/jobs"
+
+[asr]
+backend = "faster-whisper"
+model = "large-v3-turbo"
+device = "cpu"
+compute_type = "int8"
+language = "ja"
+vad_filter = true
+condition_on_previous_text = false
+beam_size = 5
+initial_prompt = ""
+
+[output]
+formats = ["srt", "vtt", "json", "txt", "md"]
+srt_bom = true
+newline = "lf"
+show_speaker = true
+speaker_labels = {}
+
+[ffmpeg]
+path = "C:/path/ffmpeg/bin/ffmpeg.exe"

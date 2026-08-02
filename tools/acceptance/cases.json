@@ -53,5 +53,203 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 60
+  },
+  {
+    "id": "G2-01",
+    "group": "G2",
+    "description": "Transcribe the three-minute MP4 with default formats and Japanese language",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g2/default",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 2400
+  },
+  {
+    "id": "G2-02",
+    "group": "G2",
+    "description": "Verify the default SRT, JSON, and Markdown artifact set",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "artifacts",
+      "--dir", "{acceptance}/g2/default", "--stem", "clip_03m",
+      "--extensions", "srt,json,md"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G2-03",
+    "group": "G2",
+    "description": "Validate three-minute MP4 JSON structure and ASR statistics",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "json",
+      "{acceptance}/g2/default/clip_03m.json", "--duration", "180",
+      "--min-segments", "5", "--max-segments", "300"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G2-04",
+    "group": "G2",
+    "description": "Re-export the MP4 to an explicit output directory in all five formats",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g2/all", "--format", "srt,vtt,json,txt,md",
+      "--language", "ja", "--device", "cpu", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G2-05",
+    "group": "G2",
+    "description": "Validate all five MP4 output formats",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "formats",
+      "--dir", "{acceptance}/g2/all", "--stem", "clip_03m", "--duration", "180"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G2-06",
+    "group": "G2",
+    "description": "Change only output newline settings to force collision-safe re-export",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.crlf.toml",
+      "--output-dir", "{acceptance}/g2/all", "--format", "srt,vtt,json,txt,md",
+      "--asr-backend", "faster-whisper", "--asr-model", "large-v3-turbo",
+      "--language", "ja", "--device", "cpu", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G2-07",
+    "group": "G2",
+    "description": "Verify collision outputs use a common numbered stem",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "collision",
+      "--dir", "{acceptance}/g2/all", "--stem", "clip_03m",
+      "--extensions", "srt,vtt,json,txt,md"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G2-08",
+    "group": "G2",
+    "description": "Transcribe the three-minute WAV input",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.wav",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g2/wav", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 2400
+  },
+  {
+    "id": "G2-09",
+    "group": "G2",
+    "description": "Validate WAV JSON structure and ASR statistics",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "json",
+      "{acceptance}/g2/wav/clip_03m.json", "--duration", "180",
+      "--min-segments", "5", "--max-segments", "300"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G2-10",
+    "group": "G2",
+    "description": "Transcribe the three-minute M4A input",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.m4a",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g2/m4a", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 2400
+  },
+  {
+    "id": "G2-11",
+    "group": "G2",
+    "description": "Validate M4A JSON structure and ASR statistics",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "json",
+      "{acceptance}/g2/m4a/clip_03m.json", "--duration", "180",
+      "--min-segments", "5", "--max-segments", "300"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G2-12",
+    "group": "G2",
+    "description": "Compare MP4, WAV, and M4A results using content-free statistics",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "equivalent",
+      "{acceptance}/g2/all/clip_03m.json", "{acceptance}/g2/wav/clip_03m.json",
+      "{acceptance}/g2/m4a/clip_03m.json"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G2-13",
+    "group": "G2",
+    "description": "Transcribe MP4 with automatic language detection",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g2/auto", "--format", "json",
+      "--language", "auto", "--device", "cpu", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 2400
+  },
+  {
+    "id": "G2-14",
+    "group": "G2",
+    "description": "Verify automatic language detection selected Japanese",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "job",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--language", "ja"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G2-15",
+    "group": "G2",
+    "description": "Export an SRT with UTF-8 BOM enabled",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.bom.toml",
+      "--output-dir", "{acceptance}/g2/bom", "--format", "srt",
+      "--asr-backend", "faster-whisper", "--asr-model", "large-v3-turbo",
+      "--language", "auto", "--device", "cpu", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G2-16",
+    "group": "G2",
+    "description": "Verify the SRT UTF-8 BOM bytes",
+    "command": [
+      "{python}", "-c",
+      "from pathlib import Path; p=Path(r'{acceptance}/g2/bom/clip_03m.srt'); raise SystemExit(0 if p.read_bytes().startswith(bytes.fromhex('efbbbf')) else 1)"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
   }
 ]
