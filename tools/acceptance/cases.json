@@ -691,5 +691,18 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 60
+  },
+  {
+    "id": "G5-01",
+    "group": "G5",
+    "description": "Process a folder in name order and continue after broken media",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/batch",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g5/main", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [5],
+    "timeout_seconds": 5400
   }
 ]

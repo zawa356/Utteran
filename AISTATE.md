@@ -165,6 +165,10 @@
   jobs list/show/clean全selector、242-line JSON job log parse/token-patternなしも合格。U-002/U-003解消。
   G4性能peak: large-v3 ASR変更3.55GB、pyannote変更2.69GB、force/no-resume各4.42GB、10m resume
   2.08GB。次はG5 batch。
+- G5-01初回は219.812秒で正常3件を継続完了したが、先頭broken.mp4をAudioDecodeError=skippedとし
+  process exit0だったため、期待するpartial failure exit5に不合格（U-004）。Phase 2要件の
+  「デコード不可はskip例」と最新受入G5の「broken失敗／部分5／全滅1」が衝突。今回の明示受入を
+  最新仕様として優先し、失敗test commit後、要件定義とbatch分類をfailedへ同期して回帰追加する。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
