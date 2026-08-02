@@ -2,10 +2,7 @@
 param(
     [ValidateSet("cpu", "cuda", "intel")]
     [string]$Profile = "cpu",
-    [switch]$SkipModels,
-    [switch]$SkipFfmpeg,
-    [string]$ModelDir,
-    [string[]]$Models = @()
+    [switch]$SkipFfmpeg
 )
 
 Set-StrictMode -Version Latest
@@ -103,7 +100,7 @@ Write-Host "utteran Windows setup"
 Write-Host "Project: $ProjectRoot"
 Write-Host "Profile: $Profile"
 Write-Host "Planned actions: Python/uv check, dependency sync, ffmpeg check, .env helper,"
-Write-Host "                 optional model download, CUDA dependency check, devices report."
+Write-Host "                 CUDA dependency check, devices report."
 Write-Host "No administrator privileges are required. Existing files are not overwritten."
 
 Set-Location -LiteralPath $ProjectRoot
@@ -185,50 +182,6 @@ Write-Host "For pyannote, create a read token at https://huggingface.co/settings
 Write-Host "and accept https://huggingface.co/pyannote/speaker-diarization-community-1,"
 Write-Host "then set HF_TOKEN in .env. The token is never requested or printed by this script."
 
-if ($ModelDir) {
-    $env:UTTERAN_MODEL_DIR = $ModelDir
-    Write-Host "UTTERAN_MODEL_DIR for this setup process: $ModelDir"
-}
-
-Write-Step "Optionally downloading models"
-if ($SkipModels) {
-    Write-Host "Model download skipped by -SkipModels."
-}
-elseif ($null -eq $script:UvCommand) {
-    Write-Warning "Models cannot be downloaded until uv is installed."
-}
-elseif (-not $DependencySyncSucceeded) {
-    Write-Warning "Models were skipped because dependency sync did not complete."
-}
-else {
-    $SelectedModels = [System.Collections.Generic.List[string]]::new()
-    foreach ($Model in $Models) {
-        if (-not [string]::IsNullOrWhiteSpace($Model)) {
-            $SelectedModels.Add($Model.Trim())
-        }
-    }
-    if ($SelectedModels.Count -eq 0 -and [Environment]::UserInteractive) {
-        Write-Host "Available IDs: run 'uv run utteran models list --available' for the full catalog."
-        $Answer = Read-Host "Model IDs to download (comma-separated, blank to skip)"
-        foreach ($Model in ($Answer -split ",")) {
-            if (-not [string]::IsNullOrWhiteSpace($Model)) {
-                $SelectedModels.Add($Model.Trim())
-            }
-        }
-    }
-    foreach ($Model in $SelectedModels) {
-        try {
-            Invoke-Uv -Arguments @("run", "utteran", "models", "download", $Model)
-        }
-        catch {
-            Write-Warning "Model download failed for '$Model': $($_.Exception.Message)"
-        }
-    }
-    if ($SelectedModels.Count -eq 0) {
-        Write-Host "No models selected. Later, run: utteran models download <ID>"
-    }
-}
-
 Write-Step "Checking CUDA libraries and final device selection"
 if ($null -eq $script:UvCommand) {
     Write-Warning "Skipping 'utteran devices' until uv is installed and dependencies are synced."
@@ -291,6 +244,11 @@ if (-not $DependencySyncSucceeded -or
 }
 
 Write-Host "`nutteran setup completed successfully." -ForegroundColor Green
+Write-Host "Models are managed separately after setup. To choose from a numbered list, run:"
+Write-Host "  uv run utteran models download"
+Write-Host "For catalog details or automation with an explicit ID, run:"
+Write-Host "  uv run utteran models list --available"
+Write-Host "  uv run utteran models download <ID>"
 if ($ProjectEnvironment -ne $DefaultProjectEnvironment) {
     Write-Host "Windows and WSL use separate project environments. In a new PowerShell session, run:"
     Write-Host "  `$env:UV_PROJECT_ENVIRONMENT = '$ProjectEnvironment'"

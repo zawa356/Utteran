@@ -33,7 +33,7 @@ from utteran.errors import (
 from utteran.jobs import JobStore
 from utteran.logging import configure_logging, mask_secrets, register_secret
 from utteran.models.catalog import ModelEntry, get_model
-from utteran.models.manager import ModelManager
+from utteran.models.manager import ModelManager, ModelStatus
 from utteran.pipeline import run_pipeline
 from utteran.types import PipelineOutcome, ProgressEvent
 
@@ -253,24 +253,13 @@ def models_list(
         bool, typer.Option("--available", help="未導入を含むカタログ全体を表示")
     ] = False,
 ) -> None:
-    """List installed models or the complete catalog."""
+    """導入済みモデル、または選択可能なカタログ全体を表示します。"""
     try:
         manager = _model_manager()
         statuses = manager.list_status(available=available)
     except UtteranError as exc:
         _exit_expected(exc)
-    table = Table("ID", "導入", "サイズ", "ライセンス", "gated", "保存先")
-    for status in statuses:
-        shown_size = status.size_bytes if status.installed else status.entry.approximate_size_bytes
-        table.add_row(
-            status.entry.key,
-            "yes" if status.installed else "no",
-            _format_size(shown_size),
-            status.entry.license,
-            "yes" if status.entry.gated else "no",
-            str(status.path or "-"),
-        )
-    console.print(table)
+    _print_model_catalog(statuses, numbered=available)
     if not statuses:
         console.print(
             "導入済みモデルはありません。`models list --available` で候補を確認できます。"
@@ -279,19 +268,30 @@ def models_list(
 
 @models_app.command("download")
 def models_download(
-    identifier: Annotated[str, typer.Argument(help="モデル ID または backend:model-id")],
+    identifier: Annotated[
+        str | None,
+        typer.Argument(help="省略時は番号付き一覧から選択。モデル ID も指定可能"),
+    ] = None,
 ) -> None:
-    """Explicitly download one catalog model."""
+    """モデルIDを指定するか、対話一覧から選択して取得します。"""
     try:
         manager = _model_manager()
-        entry = get_model(identifier)
-        existing = manager.status(entry)
-        if existing.installed:
-            console.print(f"導入済み: {existing.path}")
+        entries = [get_model(identifier)] if identifier is not None else _prompt_for_models(manager)
+        if not entries:
+            console.print("モデルは選択されませんでした。")
             return
-        with Progress(console=console) as progress:
-            path = manager.download(entry, progress=RichProgressReporter(progress))
-        console.print(f"取得完了: {path}")
+        for entry in entries:
+            existing = manager.status(entry)
+            if existing.installed:
+                console.print(f"導入済み: {entry.display_name}  {existing.path}")
+                continue
+            console.print(
+                f"取得: {entry.display_name} ({entry.key}, "
+                f"概算 {_format_size(entry.approximate_size_bytes)})"
+            )
+            with Progress(console=console) as progress:
+                path = manager.download(entry, progress=RichProgressReporter(progress))
+            console.print(f"取得完了: {path}")
     except KeyboardInterrupt:
         _exit_expected(CancelledError())
     except UtteranError as exc:
@@ -804,6 +804,71 @@ def _format_size(size: int | None) -> str:
             return f"{value:.1f} {unit}"
         value /= 1024
     return f"{value:.1f} TiB"
+
+
+def _print_model_catalog(statuses: list[ModelStatus], *, numbered: bool) -> None:
+    """Print a human-oriented catalog while retaining exact automation IDs."""
+    for index, status in enumerate(statuses, start=1):
+        entry = status.entry
+        shown_size = status.size_bytes if status.installed else entry.approximate_size_bytes
+        prefix = f"{index}." if numbered else "-"
+        console.print(f"{prefix} [bold]{entry.display_name}[/bold]")
+        console.print(f"   用途: {entry.description}")
+        console.print(
+            f"   状態: {'導入済み' if status.installed else '未導入'} / "
+            f"backend: {entry.backend} / サイズ: {_format_size(shown_size)}"
+        )
+        console.print(f"   ライセンス: {entry.license} / gated: {'yes' if entry.gated else 'no'}")
+        console.print(f"   ID: [cyan]{entry.key}[/cyan]")
+        if status.installed and status.path is not None:
+            console.print(f"   保存先: {status.path}")
+
+
+def _prompt_for_models(manager: ModelManager) -> list[ModelEntry]:
+    """Show the complete catalog and prompt for comma-separated numbers or IDs."""
+    if not _stdin_is_interactive():
+        raise ConfigurationError(
+            "非対話環境ではモデルIDを省略できません。\n"
+            "候補: `utteran models list --available`\n"
+            "`utteran models download <ID>` を実行してください。"
+        )
+    statuses = manager.list_status(available=True)
+    _print_model_catalog(statuses, numbered=True)
+    answer = typer.prompt(
+        "取得する番号またはID (複数はカンマ区切り、Enterで中止)",
+        default="",
+        show_default=False,
+    )
+    return _parse_model_selection(answer, tuple(status.entry for status in statuses))
+
+
+def _parse_model_selection(
+    selection: str,
+    entries: tuple[ModelEntry, ...],
+) -> list[ModelEntry]:
+    """Resolve stable one-based menu numbers or normal catalog identifiers."""
+    selected: list[ModelEntry] = []
+    for raw_token in selection.replace("、", ",").split(","):
+        token = raw_token.strip()
+        if not token:
+            continue
+        if token.isdecimal():
+            index = int(token)
+            if index < 1 or index > len(entries):
+                raise ConfigurationError(
+                    f"モデル番号 {index} は範囲外です。1〜{len(entries)} から選択してください。"
+                )
+            entry = entries[index - 1]
+        else:
+            entry = get_model(token)
+        if entry not in selected:
+            selected.append(entry)
+    return selected
+
+
+def _stdin_is_interactive() -> bool:
+    """Return whether an omitted model ID may safely open a prompt."""
+    return sys.stdin.isatty()
 
 
 def _exit_expected(error: UtteranError) -> Never:

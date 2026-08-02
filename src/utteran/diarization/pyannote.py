@@ -266,7 +266,7 @@ def _select_device(requested: str, torch_module: Any) -> str:
 
 
 def _torch_cuda_usable(torch_module: Any, index: int) -> bool:
-    """Verify PyTorch CUDA initialization with a one-element allocation."""
+    """Verify PyTorch CUDA with a minimal kernel, host copy, and synchronization."""
     try:
         if (
             index < 0

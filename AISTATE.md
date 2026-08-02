@@ -8,6 +8,8 @@
 - Phase 2（実運用機能）: 実装完了、ローカル検証完了。ジョブ／レジューム、フォルダバッチ、
   devices、モデル／ジョブ／設定管理 CLI、Windows setup を実装。Windows実機でcpu/cuda/intelを
   検証済み。gated pyannote／既定 large-v3-turboの実モデルE2Eは未検証として継続管理する。
+- Phase 2 follow-up（モデル導線改善）: 実装・Windows/WSL検証完了。setupからモデル管理を分離し、
+  models CLIへ説明付き一覧、番号選択、従来の明示ID指定を集約した。
 - `docs/utteran_Phase2_指示書.md` 全399行、既存状態、要件定義、変更履歴を読了し、
   コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
@@ -41,8 +43,30 @@
 7. 冪等な Windows `setup.ps1` を作成し、静的検査可能範囲と未検証事項を記録する。
 8. README と必須文書を各作業単位で同期し、ruff、mypy、モデル不要 pytest、CLI 結合確認を行う。
 
+### Phase 2 follow-up（完了）
+
+1. 今回の利用者指示によるsetup／models責務変更を要件定義へ反映する。
+2. setupからモデル関連パラメータと対話取得を除去し、専用CLIの案内だけを表示する。
+3. モデルカタログへ人間向け表示名と用途を追加し、models listを分かりやすくする。
+4. `models download` のID省略時に、複数選択可能な番号／IDプロンプトを実装する。
+5. 対話／非対話／明示IDの回帰テスト、Windows setup実機試験、全品質検査を行う。
+6. README、変更履歴、AISTATEを同期し、問題がなければコミットする。
+
 ## 直近の作業内容と結果
 
+- 利用者実行で通常setupがモデルID入力待ちになる問題を受け、setupからモデル関連パラメータと
+  対話取得処理を削除。環境構築・ffmpeg・秘密設定補助・devices診断だけを行い、完了後に
+  `utteran models` を案内する責務へ変更した。
+- モデルカタログ全5件へ表示名と用途説明を追加。Kotoba-Whisperを日本語向け、pyannoteを話者分離、
+  OpenVINOをPhase 2推論未実装と明示し、80桁端末でも読める縦型一覧へ変更した。
+- `utteran models download` のIDを任意引数化。対話端末で省略すると番号付き一覧を表示し、番号、
+  カタログID、`<backend>:<model-id>`をカンマ区切りで複数選択できる。空入力は無変更終了、重複は
+  除外、範囲外は設定エラー、非対話環境のID省略は取得せず明示コマンドを案内する。
+- WSL Python 3.11でモデル不要79 tests passed、ruff/format/mypy/lock/PowerShell Parser合格。
+  Windows Python 3.12でモデル／CLI重点21 tests passed。
+- Windows実機の新setup cpu初回（CUDA profileからCPU版torchへ切替）と再実行がともにexit 0。
+  モデルプロンプトなしでdevicesまで完走し、再実行は116 packages checkのみ。Windowsのモデル一覧
+  5件表示も確認し、検査後はdev依存を除去してcpu profileへ復帰した。
 - Phase 2 着手時に指定された仕様訂正を反映。`job_id` は入力ハッシュのみ、設定差分は
   ステージ別 config hash で判定し、決定的 JSON 正規化を要求する仕様へ変更した。
 - バッチ一部失敗の終了コード 5、全滅時 1、PID/開始時刻を持つジョブロックと
@@ -77,7 +101,7 @@
 - 実環境 `utteran devices --json` exit 0。CPU 16 logical/8 physical、AVX2、GTX 1070 Ti 8GiB、
   CTranslate2 4.8.1 は CUDAを1台列挙するが cuDNN/cuBLAS未解決のため usable=false、auto=CPU/int8。
   PyTorch/OpenVINO/ffmpeg は現 dev extra 環境で未導入、ONNX Runtime CPU/Azure は検出。
-- Windows `setup.ps1` を作成。cpu/cuda/intel profile、SkipModels/SkipFfmpeg/ModelDir/Models、
+- Windows setup初版を作成。cpu/cuda/intel profile、SkipModels/SkipFfmpeg/ModelDir/Models、
   uv sync、SHA-256 検証付き ffmpeg 配置、.env 非上書き、モデル事前取得、CUDA/全devices 診断を実装。
 - setup初版はWindows PowerShell 5.1 Parser APIで `PowerShell syntax OK`。この時点では実際の
   sync、ネットワーク取得、ffmpeg展開、CUDA DLL解決はWindows実機未実行だったが、後続項目の
@@ -156,8 +180,8 @@
   `uv sync --extra pyannote`、pyannote.audio 4.0.7 API 確認、fake pipeline 結合は実施済み。
 - faster-whisper は tiny/CPU の実モデル E2E 済み。既定 large-v3-turbo と実 CUDA 推論は
   モデル未取得のため未実施。CUDAランタイム、実CUDAカーネル、CTranslate2 CUDA初期化は検証済み。
-- `setup.ps1` のcpu/cuda/intel同期と診断はWindows実機検証済み。明示モデル取得、ffmpeg未導入時の
-  ネットワーク取得、完全オフライン継続は未実施。
+- `setup.ps1` のcpu/cuda/intel同期と診断はWindows実機検証済み。専用models CLIによる実モデル取得、
+  ffmpeg未導入時のネットワーク取得、完全オフライン継続は未実施。
 
 ## 設計上の判断とその理由
 
@@ -190,6 +214,14 @@
   12.6 wheelはGTX 1070 Ti上で実カーネルが成功し、CTranslate2用DLLも同梱することを実測したため。
 - setupのprofile成功条件はコマンドexitだけでなく、cpuは両backend、cudaはCTranslate2とPyTorchの
   実CUDA probe、intelはOpenVINO初期化の成功とした。利用不能なのに成功表示しないため。
+- 今回の利用者指示によりsetupは環境構築専用とし、モデル管理を `utteran models` へ分離する。
+  通常のprofile切替がモデル選択プロンプトで中断せず、一覧・取得・削除の責務と導線を一か所に
+  集約できるため。Phase 2初版のsetup事前取得要件をこの決定で更新した。
+- モデル取得はID省略時に人間向け説明付き番号一覧を出し、番号を複数選択できるようにする。
+  自動化と特殊用途モデルの直接指定を維持するため、従来の明示ID指定も残す。
+- 明示IDは登録済みカタログIDに限定する。任意の未登録Hugging Faceリポジトリはbackend、形式、
+  必須ファイル、runtime解決情報がなく、取得だけ成功しても利用不能になり得るため。日本語向け
+  Kotoba-Whisperは登録済み `faster-whisper:kotoba-whisper-v2.0` として番号／ID双方で選択できる。
 - `models remove` は utteran 管理コピーを優先し、標準 HF cache のみ存在する場合は
   huggingface_hub の cache API で当該 repo の revision を削除する。明示削除要求を満たしつつ、
   パスを推測した再帰削除を避けるため。
@@ -238,7 +270,8 @@
 
 ## 次に着手すべきこと
 
-- Windowsでffmpeg未導入時の取得・SHA-256検証、完全オフライン継続、明示モデル取得を確認する。
+- Windowsでffmpeg未導入時の取得・SHA-256検証、完全オフライン継続、専用models CLIによる
+  gated／大容量実モデル取得を確認する。
 - HF 利用条件へ同意済みのトークンとモデルが得られれば community-1、large-v3-turbo、
   それら実モデルを使うCUDA推論の未検証E2Eを実施する。
 
@@ -268,7 +301,7 @@
 - `uv sync --extra pyannote --extra dev --link-mode=copy`: 成功、pyannote.audio 4.0.7 導入確認。
 - `uv sync --link-mode=copy` と直後の `uv sync --check`: 成功（extra なし49 packages）。
 - 最終環境は `uv sync --extra dev --link-mode=copy` 済み（pyannote extra は現在未導入）。
-- WSL Python 3.11.15: `uv run --no-sync pytest -m "not requires_model"` = 74 passed。
+- WSL Python 3.11.15: `uv run --no-sync pytest -m "not requires_model"` = 79 passed。
 - `uv run --no-sync ruff check`: All checks passed。
 - `uv run --no-sync ruff format --check src tests`: 44 files already formatted。
 - `uv run --no-sync mypy`: Success、30 source files。
@@ -284,8 +317,12 @@
 - Windows PowerShell 5.1 Parser API: `setup.ps1` は `PowerShell syntax OK`。
 - Windows 実機 `setup.ps1 -Profile cpu` 2回: Python 3.12.0／既存 ffmpeg／既存 `.env` を正常検出。
   uv 未導入を明確に案内し、依存する処理を安全にスキップ。永続 PATH と代表配置先に `uv.exe` なし。
-- Windows Python 3.12.0 / uv 0.11.32: `setup.ps1 -Profile cpu|cuda|intel -SkipModels` は
-  初回・同profile再実行ともexit 0。再実行はそれぞれ依存package checkのみ。
+- モデル導線変更前のWindows Python 3.12.0 / uv 0.11.32:
+  `setup.ps1 -Profile cpu|cuda|intel -SkipModels` は初回・同profile再実行ともexit 0。
+  再実行はそれぞれ依存package checkのみ。
+- モデル導線変更後のWindows `setup.ps1 -Profile cpu`: モデル入力なしで初回・冪等再実行・
+  検査後復帰の3回すべてexit 0。`models list --available`で説明付き5件を表示。
+- Windows Python 3.12.0: `tests/test_models.py tests/test_cli.py` = 21 passed。
 - Windows各profile + dev: 全74モデル不要テストpassed。
 - Windows cuda: PyTorch 2.11.0+cu126、GTX 1070 Ti sm_61でCUDAカーネル／同期成功、
   CTranslate2 cuda:0/int8、cuDNN/cuBLAS found、auto diarization=cuda:0。

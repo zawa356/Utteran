@@ -12,6 +12,8 @@ class ModelEntry:
     """One backend-specific downloadable model artifact."""
 
     model_id: str
+    display_name: str
+    description: str
     backend: str
     format: str
     repository_id: str
@@ -36,6 +38,8 @@ _MIB = 1024**2
 CATALOG: tuple[ModelEntry, ...] = (
     ModelEntry(
         model_id="large-v3-turbo",
+        display_name="Whisper large-v3-turbo",
+        description="推奨の多言語ASR。速度と精度のバランスを重視",
         backend="faster-whisper",
         format="CTranslate2",
         repository_id="mobiuslabsgmbh/faster-whisper-large-v3-turbo",
@@ -45,6 +49,8 @@ CATALOG: tuple[ModelEntry, ...] = (
     ),
     ModelEntry(
         model_id="large-v3-turbo",
+        display_name="Whisper large-v3-turbo (OpenVINO)",
+        description="将来のIntel向けASR。Phase 2では推論未実装",
         backend="openvino",
         format="OpenVINO IR",
         repository_id="OpenVINO/whisper-large-v3-turbo-fp16-ov",
@@ -54,6 +60,8 @@ CATALOG: tuple[ModelEntry, ...] = (
     ),
     ModelEntry(
         model_id="large-v3",
+        display_name="Whisper large-v3",
+        description="高精度な多言語ASR。turboより大容量",
         backend="faster-whisper",
         format="CTranslate2",
         repository_id="Systran/faster-whisper-large-v3",
@@ -63,6 +71,8 @@ CATALOG: tuple[ModelEntry, ...] = (
     ),
     ModelEntry(
         model_id="kotoba-whisper-v2.0",
+        display_name="Kotoba-Whisper v2.0",
+        description="日本語音声認識向けASR",
         backend="faster-whisper",
         format="CTranslate2",
         repository_id="kotoba-tech/kotoba-whisper-v2.0-faster",
@@ -72,6 +82,8 @@ CATALOG: tuple[ModelEntry, ...] = (
     ),
     ModelEntry(
         model_id="pyannote/speaker-diarization-community-1",
+        display_name="pyannote community-1",
+        description="話者分離。利用条件への同意とHFトークンが必要",
         backend="pyannote",
         format="pyannote pipeline",
         repository_id="pyannote/speaker-diarization-community-1",

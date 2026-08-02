@@ -24,7 +24,8 @@ Intel GPU/NPU があっても Phase 2 の `auto` は実装済みの faster-whisp
 ## Windows セットアップ
 
 PowerShell でリポジトリ直下から `setup.ps1` を実行します。管理者権限は不要で、既存の
-ffmpeg、`.env`、モデルは再利用するため、繰り返し実行できます。
+ffmpegと`.env`は再利用するため、繰り返し実行できます。モデル管理はセットアップから分離され、
+通常実行中にモデルIDの入力待ちにはなりません。
 
 ```powershell
 .\setup.ps1 -Profile cpu
@@ -42,15 +43,13 @@ ffmpeg、`.env`、モデルは再利用するため、繰り返し実行でき�
 
 ```powershell
 .\setup.ps1 -Profile cpu|cuda|intel
-             -SkipModels
              -SkipFfmpeg
-             -ModelDir C:\path\to\models
-             -Models faster-whisper:large-v3-turbo,pyannote:pyannote/speaker-diarization-community-1
 ```
 
-スクリプトは Python と uv の確認、profile 別 `uv sync`、ffmpeg、`.env`、モデル取得、
-CUDA DLL、`utteran devices` の順で確認します。ネットワーク処理に失敗しても実行可能な項目を
-続け、残りの手順を表示します。ffmpeg は公式ダウンロードページが案内する gyan.dev の
+スクリプトは Python と uv の確認、profile 別 `uv sync`、ffmpeg、`.env`、CUDA DLL、
+`utteran devices` の順で確認します。モデルの一覧・取得・削除は行わず、完了時に専用コマンドを
+案内します。ネットワーク処理に失敗しても実行可能な項目を続け、残りの手順を表示します。
+ffmpeg は公式ダウンロードページが案内する gyan.dev の
 release essentials build を SHA-256 検証後、ユーザーデータ配下の `utteran/bin` に配置します。
 この配布 build は GPLv3 です。バイナリはリポジトリには含まれません。
 
@@ -153,9 +152,15 @@ uv run keyring set utteran huggingface
 `transcribe` は未取得モデルの取得前に確認し、非対話環境では終了コード 3 で取得コマンドを
 案内します。`--yes` は確認を省略して取得する明示的な指定です。
 
+IDを省略すると、表示名、用途、backend、導入状態、概算サイズ、ライセンス、gated状態、正確な
+IDを持つ番号付き一覧を表示します。番号またはIDをカンマ区切りで複数選択でき、Enterだけなら
+何も取得せず終了します。
+
 ```console
+uv run utteran models download
 uv run utteran models list --available
 uv run utteran models download faster-whisper:large-v3-turbo
+uv run utteran models download faster-whisper:kotoba-whisper-v2.0
 uv run utteran models download pyannote:pyannote/speaker-diarization-community-1
 uv run utteran models verify
 uv run utteran models remove faster-whisper:large-v3-turbo
@@ -163,7 +168,9 @@ uv run utteran models path
 ```
 
 同じモデル名が複数 backend にあるため、一意な形式は `<backend>:<model-id>` です。backend と
-モデルの組が一意なら非修飾 ID も使用できます。保存先は
+モデルの組が一意なら非修飾 ID も使用できます。Kotoba-Whisperなど日本語向けの特殊用途モデルも
+番号選択と明示ID指定の両方に対応します。パイプやCIなどの非対話環境ではID省略を拒否し、
+意図しない取得を行いません。保存先は
 `platformdirs.user_cache_dir("utteran") / "models"`、または `UTTERAN_MODEL_DIR` です。
 Phase 1 と同様に Hugging Face の標準キャッシュも検出します。ローカルの CTranslate2／
 pyannote ディレクトリを設定へ直接指定することもできます。

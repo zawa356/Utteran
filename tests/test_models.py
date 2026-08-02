@@ -36,6 +36,14 @@ def test_catalog_keeps_same_model_separate_by_backend() -> None:
         get_model("large-v3-turbo")
 
 
+def test_catalog_has_human_oriented_names_and_japanese_model() -> None:
+    entries = list_models()
+    japanese = get_model("faster-whisper:kotoba-whisper-v2.0")
+
+    assert all(entry.display_name and entry.description for entry in entries)
+    assert "日本語" in japanese.description
+
+
 def test_model_dir_environment_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UTTERAN_MODEL_DIR", str(tmp_path / "custom"))
 

@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from utteran.batch import BatchItemResult, BatchSummary
-from utteran.cli import app
+from utteran.cli import _parse_model_selection, app
 from utteran.devices import (
     AutoSelection,
     CPUReport,
@@ -17,8 +17,9 @@ from utteran.devices import (
     OptionalRuntimeReport,
     TorchReport,
 )
+from utteran.errors import ConfigurationError
 from utteran.jobs import JobStore
-from utteran.models.catalog import ModelEntry, get_model
+from utteran.models.catalog import ModelEntry, get_model, list_models
 from utteran.models.manager import ModelManager, ModelStatus
 
 runner = CliRunner()
@@ -203,11 +204,14 @@ def test_models_cli_list_verify_path_and_remove(
     (path / "model.bin").write_bytes(b"weights")
 
     listed = runner.invoke(app, ["models", "list"])
+    available = runner.invoke(app, ["models", "list", "--available"])
     verified = runner.invoke(app, ["models", "verify", entry.key])
     shown_path = runner.invoke(app, ["models", "path"])
     removed = runner.invoke(app, ["models", "remove", entry.key, "--yes"])
 
-    assert listed.exit_code == 0 and "yes" in listed.output
+    assert listed.exit_code == 0 and "導入済み" in listed.output
+    assert available.exit_code == 0 and "Kotoba-Whisper" in available.output
+    assert "日本語音声認識向け" in available.output
     assert verified.exit_code == 0 and "正常" in verified.output
     assert shown_path.exit_code == 0 and str(model_root) in shown_path.output
     assert removed.exit_code == 0 and "削除しました" in removed.output
@@ -232,3 +236,75 @@ def test_models_download_command_uses_explicit_manager_action(
 
     assert result.exit_code == 0
     assert str(destination) in result.output.replace("\n", "")
+
+
+def test_models_download_without_id_rejects_noninteractive_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("utteran.cli._stdin_is_interactive", lambda: False)
+
+    result = runner.invoke(app, ["models", "download"])
+
+    assert result.exit_code == 2
+    assert "非対話環境ではモデルIDを省略できません" in result.output
+    assert "utteran models list" in result.output
+    assert "--available" in result.output
+
+
+def test_models_download_interactively_selects_multiple_models(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected: list[ModelEntry] = []
+    monkeypatch.setenv("UTTERAN_MODEL_DIR", str(tmp_path / "models"))
+    monkeypatch.setattr("utteran.cli._stdin_is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "utteran.cli.ModelManager.status",
+        lambda _self, entry: ModelStatus(entry, False, None, 0, False),
+    )
+
+    def fake_download(
+        _self: ModelManager,
+        entry: ModelEntry,
+        **_kwargs: object,
+    ) -> Path:
+        selected.append(entry)
+        return tmp_path / entry.backend / entry.model_id.replace("/", "--")
+
+    monkeypatch.setattr("utteran.cli.ModelManager.download", fake_download)
+
+    result = runner.invoke(app, ["models", "download"], input="4,5\n")
+
+    assert result.exit_code == 0
+    assert selected == [
+        get_model("faster-whisper:kotoba-whisper-v2.0"),
+        get_model("pyannote:pyannote/speaker-diarization-community-1"),
+    ]
+    assert "Kotoba-Whisper" in result.output
+    assert "pyannote community-1" in result.output
+
+
+def test_models_download_interactive_blank_cancels(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("utteran.cli._stdin_is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "utteran.cli.ModelManager.status",
+        lambda _self, entry: ModelStatus(entry, False, None, 0, False),
+    )
+
+    result = runner.invoke(app, ["models", "download"], input="\n")
+
+    assert result.exit_code == 0
+    assert "モデルは選択されませんでした" in result.output
+
+
+def test_model_selection_accepts_numbers_ids_and_rejects_invalid_number() -> None:
+    entries = list_models()
+
+    selected = _parse_model_selection(
+        "1、faster-whisper:kotoba-whisper-v2.0,1",
+        entries,
+    )
+
+    assert selected == [entries[0], get_model("faster-whisper:kotoba-whisper-v2.0")]
+    with pytest.raises(ConfigurationError, match="範囲外"):
+        _parse_model_selection("99", entries)
