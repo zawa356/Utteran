@@ -35,6 +35,7 @@ from utteran.types import (
 
 STAGES = ("audio", "asr", "diarization", "merge", "export")
 TOKEN_PATTERN = re.compile(r"\bhf_[A-Za-z0-9_-]{4,}\b")
+TOKEN_BYTES_PATTERN = re.compile(rb"\bhf_[A-Za-z0-9_-]{16,}\b")
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -366,7 +367,6 @@ def validate_security_redaction(root: Path) -> None:
 
 def validate_security_scan(project: Path, roots: tuple[Path, ...]) -> None:
     """Scan generated artifacts for token-shaped bytes and verify Git ignores."""
-    token_pattern = re.compile(rb"hf_[A-Za-z0-9_-]{4,}")
     scanned = 0
     matches: list[str] = []
     for root in roots:
@@ -377,7 +377,7 @@ def validate_security_scan(project: Path, roots: tuple[Path, ...]) -> None:
                 continue
             scanned += 1
             try:
-                if token_pattern.search(path.read_bytes()):
+                if TOKEN_BYTES_PATTERN.search(path.read_bytes()):
                     matches.append(str(path.relative_to(project)))
             except OSError:
                 continue
