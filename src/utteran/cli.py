@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import logging
 import os
@@ -142,6 +143,7 @@ def transcribe(
     quiet: Annotated[bool, typer.Option("--quiet", help="進捗表示を抑制")] = False,
 ) -> None:
     """Transcribe one file or a stable sequential folder batch."""
+    _restore_windows_ctrl_c()
     try:
         if verbose and quiet:
             raise ConfigurationError("--verbose と --quiet は同時に指定できません。")
@@ -616,6 +618,20 @@ def _run_interruptibly(
     if not outcomes:
         raise RuntimeError("処理スレッドが結果を返さず終了しました。")
     return outcomes[0]
+
+
+def _restore_windows_ctrl_c() -> None:
+    """Undo a console launcher's inherited Ctrl+C-ignore flag on Windows."""
+    if os.name != "nt":
+        return
+    loader = getattr(ctypes, "WinDLL", None)
+    if loader is None:
+        return
+    try:
+        kernel32 = loader("kernel32", use_last_error=True)
+        kernel32.SetConsoleCtrlHandler(None, False)
+    except (AttributeError, OSError):
+        logging.getLogger(__name__).debug("Windows Ctrl+C handler state could not be restored")
 
 
 def _ensure_configured_models(

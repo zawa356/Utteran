@@ -148,6 +148,10 @@
   誤認して早期送信し、再度timeout。worker/hard-exit自体はWindows実console probeで130を再確認。
   scenarioは実行前manifest mtime/log sizeを記録し、今回のmanifest更新＋新しい`Processing audio`
   ログを確認後にだけCtrl+Cを送るよう修正した。
+- fresh ASRログ待ち後も`utteran.exe`だけはsignal未応答だが、同一コードの`python -m utteran.cli`は
+  exit130/audio done/asr pendingで合格。実process treeはdistlib `utteran.exe`→venv python.exe→
+  system python.exeの3段で、子PythonがCtrl+C ignore状態を継承していた。`transcribe`開始時に
+  Win32 `SetConsoleCtrlHandler(NULL, FALSE)`でignore flagを解除し既存割り込み経路へ接続する。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
