@@ -159,17 +159,39 @@ def interrupt_asr(
     delay_seconds: float,
     command: list[str],
 ) -> None:
+    try:
+        existing_job = _find_job(jobs, input_path)
+        manifest_path = existing_job / "manifest.json"
+        log_path = existing_job / "utteran.log"
+        initial_manifest_mtime = manifest_path.stat().st_mtime_ns
+        initial_log_size = log_path.stat().st_size if log_path.is_file() else 0
+    except AssertionError:
+        initial_manifest_mtime = -1
+        initial_log_size = 0
     process = _start(command)
 
     def asr_running() -> bool:
         try:
             job = _find_job(jobs, input_path)
-            return _load(job / "manifest.json")["stages"]["asr"]["status"] == "running"
+            current_manifest = job / "manifest.json"
+            if (
+                initial_manifest_mtime >= 0
+                and current_manifest.stat().st_mtime_ns == initial_manifest_mtime
+            ):
+                return False
+            if _load(current_manifest)["stages"]["asr"]["status"] != "running":
+                return False
+            current_log = job / "utteran.log"
+            if not current_log.is_file() or current_log.stat().st_size <= initial_log_size:
+                return False
+            with current_log.open("rb") as stream:
+                stream.seek(initial_log_size)
+                return b"Processing audio with duration" in stream.read()
         except (AssertionError, KeyError, OSError, json.JSONDecodeError):
             return False
 
     try:
-        _wait_for(asr_running, timeout=120, description="ASR running state")
+        _wait_for(asr_running, timeout=120, description="fresh ASR inference log")
         time.sleep(delay_seconds)
         exit_code, _stdout, stderr = _interrupt(process)
     except Exception:

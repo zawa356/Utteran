@@ -144,6 +144,10 @@
   待ち60秒で終了しなかった。実CLI wrapperに限りエラー表示をflushして`os._exit(130)`するよう補強。
   raw running manifestはscenarioがJobStore.openでpendingへ回収できることを確認し、hard-exitは別process
   のモデル不要回帰でreturn code 130を検証する。
+- hard-exit追加後のG4-09再実行は、前回kill由来のraw `asr=running`をscenarioが即座に今回の開始と
+  誤認して早期送信し、再度timeout。worker/hard-exit自体はWindows実console probeで130を再確認。
+  scenarioは実行前manifest mtime/log sizeを記録し、今回のmanifest更新＋新しい`Processing audio`
+  ログを確認後にだけCtrl+Cを送るよう修正した。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
