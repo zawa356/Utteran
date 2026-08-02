@@ -1314,5 +1314,29 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 600
+  },
+  {
+    "id": "G11-01",
+    "group": "G11",
+    "description": "Execute README CLI examples with safe fixture substitutions",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "readme-commands",
+      "--project", "{project}", "--utteran", "{utteran}",
+      "--testdata", "{testdata}",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 900
+  },
+  {
+    "id": "G11-02",
+    "group": "G11",
+    "description": "Compare README options, priorities, exit codes, and settings to code",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "documentation-contracts",
+      "--readme", "{project}/README.md", "--requirements", "{project}/要件定義.md"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
   }
 ]

@@ -224,6 +224,10 @@
   output resultsの3パスをgit check-ignore確認、git statusにもprivate内容なし。`.env`値自体は
   禁止事項に従い未読（標準HF token形状scanで代替）。WSL 88 passed/2 skipped、Windows 90 passed、
   ruff/format/mypy合格。次はG11。
+- G11初回はG11-01/02ともH-005（文書受入器）でfail。CLI parameter introspectionが位置引数
+  `input_path`をoption集合へ含め、README例runnerはexit2の例番号を報告せず原因特定不能。
+  failure commit後、`--`始まりだけをoption比較し、README例番号/subcommandをfailureへ付与する。
+  実文書のconfig field差分判定にはまだ到達していない。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

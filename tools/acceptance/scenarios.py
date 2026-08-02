@@ -12,17 +12,19 @@ import re
 import signal
 import subprocess
 import time
+import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from typer.main import get_command
 from typer.testing import CliRunner
 
 import utteran.cli as cli_module
 from utteran.align import align_transcription
 from utteran.config import Config
-from utteran.jobs import fingerprint_input, job_id_from_input_hash
+from utteran.jobs import JobStore, fingerprint_input, job_id_from_input_hash
 from utteran.logging import job_log, register_secret
 from utteran.types import (
     AlignmentOptions,
@@ -412,6 +414,202 @@ def validate_security_scan(project: Path, roots: tuple[Path, ...]) -> None:
 def _is_private_status_line(line: str) -> bool:
     normalized = line[3:].replace("\\", "/") if len(line) > 3 else line
     return normalized == ".env" or normalized.startswith(("input/", "output/"))
+
+
+def validate_readme_commands(
+    project: Path,
+    utteran: Path,
+    testdata: Path,
+    config_path: Path,
+) -> None:
+    """Execute documented CLI examples with safe fixture substitutions."""
+    prefix = [str(utteran)]
+    file_input = str(testdata / "clip_30s.mp4")
+    audio_input = str(testdata / "clip_03m.wav")
+    batch_input = str(testdata / "batch")
+    commands: list[tuple[list[str], int]] = [
+        ([*prefix, "--help"], 0),
+        ([*prefix, "transcribe", file_input, "--no-diarization", "--dry-run"], 0),
+        (
+            [
+                *prefix,
+                "transcribe",
+                audio_input,
+                "--format",
+                "srt,vtt,json,txt,md",
+                "--num-speakers",
+                "2",
+                "--dry-run",
+            ],
+            0,
+        ),
+        ([*prefix, "transcribe", audio_input, "--no-diarization", "--dry-run"], 0),
+        ([*prefix, "transcribe", batch_input, "--dry-run"], 0),
+        (
+            [
+                *prefix,
+                "transcribe",
+                batch_input,
+                "--recursive",
+                "--include",
+                "**/*.wav",
+                "--include",
+                "**/*.mp4",
+                "--exclude",
+                "**/draft-*",
+                "--dry-run",
+            ],
+            0,
+        ),
+        ([*prefix, "transcribe", batch_input, "--recursive", "--dry-run"], 0),
+        ([*prefix, "transcribe", file_input, "--force", "--dry-run"], 0),
+        ([*prefix, "transcribe", file_input, "--format", "txt", "--dry-run"], 0),
+        ([*prefix, "models", "download"], 2),
+        ([*prefix, "models", "list", "--available"], 0),
+        ([*prefix, "models", "download", "faster-whisper:large-v3-turbo"], 0),
+        ([*prefix, "models", "download", "faster-whisper:kotoba-whisper-v2.0"], 0),
+        (
+            [
+                *prefix,
+                "models",
+                "download",
+                "pyannote:pyannote/speaker-diarization-community-1",
+            ],
+            0,
+        ),
+        ([*prefix, "models", "verify"], 0),
+        ([*prefix, "models", "path"], 0),
+        ([*prefix, "jobs", "list", "--config", str(config_path)], 0),
+        ([*prefix, "devices"], 0),
+        ([*prefix, "devices", "--json"], 0),
+        ([*prefix, "config", "path"], 0),
+        ([*prefix, "config", "show", "--path", str(config_path)], 0),
+    ]
+    store = JobStore(Config.load(config_path=config_path).effective_job_dir)
+    valid_jobs = [item for item in store.list_jobs() if item.status != "corrupt"]
+    if not valid_jobs:
+        raise AssertionError("README jobs show example has no acceptance fixture job")
+    commands.append(
+        ([*prefix, "jobs", "show", valid_jobs[0].job_id, "--config", str(config_path)], 0)
+    )
+    isolated_config = project / "tools" / "acceptance" / "config.g4-clean.toml"
+    commands.extend(
+        [
+            ([*prefix, "jobs", "clean", "--failed", "--config", str(isolated_config)], 0),
+            (
+                [
+                    *prefix,
+                    "jobs",
+                    "clean",
+                    "--older-than",
+                    "30",
+                    "--config",
+                    str(isolated_config),
+                ],
+                0,
+            ),
+            (
+                [
+                    *prefix,
+                    "jobs",
+                    "clean",
+                    "--all",
+                    "--yes",
+                    "--config",
+                    str(isolated_config),
+                ],
+                0,
+            ),
+        ]
+    )
+    for command, exit_code in commands:
+        _run(command, expected_exit=exit_code)
+
+    isolated = project / "output" / "_acceptance" / "g11" / "isolated"
+    isolated.mkdir(parents=True, exist_ok=True)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "UTTERAN_MODEL_DIR": str(isolated / "models"),
+            "HF_HOME": str(isolated / "hf"),
+            "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
+        }
+    )
+    removal = subprocess.run(
+        [*prefix, "models", "remove", "faster-whisper:large-v3-turbo", "--yes"],
+        cwd=isolated,
+        env=environment,
+        check=False,
+        capture_output=True,
+    )
+    if removal.returncode != 0:
+        raise AssertionError("isolated README model remove example failed")
+    target = isolated / "config.toml"
+    target.unlink(missing_ok=True)
+    _run([*prefix, "config", "init", "--path", str(target)])
+    print(json.dumps({"cli_examples_executed": len(commands) + 2}, sort_keys=True))
+
+
+def validate_documentation_contracts(readme: Path, requirements: Path) -> None:
+    """Compare documented options, precedence, exit codes, and settings to code."""
+    readme_text = readme.read_text(encoding="utf-8")
+    requirements_text = requirements.read_text(encoding="utf-8")
+    option_section = readme_text.split("主な `transcribe` オプション:", 1)[1].split("```", 2)[1]
+    documented_options = set(re.findall(r"--[a-z][a-z-]+", option_section))
+    root_command = get_command(cli_module.app)
+    transcribe = root_command.commands["transcribe"]
+    actual_options = {
+        option
+        for parameter in transcribe.params
+        for option in (*getattr(parameter, "opts", ()), *getattr(parameter, "secondary_opts", ()))
+        if option != "--help"
+    }
+    if documented_options != actual_options:
+        raise AssertionError(
+            f"README option mismatch: missing={sorted(actual_options - documented_options)}, "
+            f"extra={sorted(documented_options - actual_options)}"
+        )
+    readme_priority = "CLI 引数 > 環境変数 > .env > config.toml > 既定値"
+    requirements_priority = "CLI 引数  >  環境変数  >  .env  >  config.toml  >  既定値"
+    if readme_priority not in readme_text or requirements_priority not in requirements_text:
+        raise AssertionError("general config priority is not synchronized")
+    if "トークンの優先順位は環境変数、`.env`、OS キーリング" not in readme_text:
+        raise AssertionError("README token-provider priority is missing")
+
+    required_codes = {0, 1, 2, 3, 4, 5, 130}
+    table_codes = {
+        int(value)
+        for value in re.findall(r"^\|\s*(\d+)\s*\|", requirements_text, flags=re.MULTILINE)
+    }
+    if not required_codes.issubset(table_codes):
+        raise AssertionError("requirements exit-code table is incomplete")
+
+    config_block = requirements_text.split("### 5.2 config.toml", 1)[1].split("```toml", 1)[1]
+    config_data = tomllib.loads(config_block.split("```", 1)[0])
+    documented_settings = {
+        f"{section}.{key}" for section, values in config_data.items() for key in values
+    }
+    expected_settings = {
+        f"{section}.{key}"
+        for section in ("general", "asr", "diarization", "output", "ffmpeg", "alignment")
+        for key in type(getattr(Config(), section)).model_fields
+    }
+    if documented_settings != expected_settings:
+        missing_settings = sorted(expected_settings - documented_settings)
+        extra_settings = sorted(documented_settings - expected_settings)
+        raise AssertionError(
+            f"requirements config mismatch: missing={missing_settings}, extra={extra_settings}"
+        )
+    print(
+        json.dumps(
+            {
+                "transcribe_options": len(actual_options),
+                "exit_codes": len(required_codes),
+                "settings": len(expected_settings),
+            },
+            sort_keys=True,
+        )
+    )
 
 
 def _stage_signature(manifest: dict[str, Any]) -> dict[str, str]:
@@ -930,6 +1128,16 @@ def main() -> int:
     security_scan.add_argument("--project", type=Path, required=True)
     security_scan.add_argument("roots", type=Path, nargs="+")
 
+    readme_commands = subparsers.add_parser("readme-commands")
+    readme_commands.add_argument("--project", type=Path, required=True)
+    readme_commands.add_argument("--utteran", type=Path, required=True)
+    readme_commands.add_argument("--testdata", type=Path, required=True)
+    readme_commands.add_argument("--config", type=Path, required=True)
+
+    documentation = subparsers.add_parser("documentation-contracts")
+    documentation.add_argument("--readme", type=Path, required=True)
+    documentation.add_argument("--requirements", type=Path, required=True)
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -1007,8 +1215,12 @@ def main() -> int:
         validate_verbose_error(args.root)
     elif args.scenario == "security-redaction":
         validate_security_redaction(args.root)
-    else:
+    elif args.scenario == "security-scan":
         validate_security_scan(args.project, tuple(args.roots))
+    elif args.scenario == "readme-commands":
+        validate_readme_commands(args.project, args.utteran, args.testdata, args.config)
+    else:
+        validate_documentation_contracts(args.readme, args.requirements)
     return 0
 
 
