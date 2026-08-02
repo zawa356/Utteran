@@ -18,7 +18,8 @@
   Windows MAX_PATHによる取得失敗を修正した。
 - Phase 1/2受入試験: G0〜G14完了。最新115/115ケースpass。開始コミット`57ecbb3`から
   専用branch`test/acceptance-phase2`を作成し、実施結果を`docs/受入試験報告.md`へ集約した。
-  最終profileはCUDAを維持し、2時間job `7be37b2d3fc10277`と約56 MiBの再現fixtureを保持する。
+  試験終了コミットは`982c5f5`。最終profileはCUDAを維持し、2時間job
+  `7be37b2d3fc10277`と約56 MiBの再現fixtureを保持する。
 - `docs/utteran_Phase2_指示書.md` 全399行、既存状態、要件定義、変更履歴を読了し、
   コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
