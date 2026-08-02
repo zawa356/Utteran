@@ -121,6 +121,47 @@ def validate_command_output(
     )
 
 
+def validate_json_output(
+    command: list[str],
+    *,
+    required_keys: tuple[str, ...],
+    expected_values: tuple[str, ...],
+) -> None:
+    """Validate stable dotted keys and selected scalar values in CLI JSON."""
+    completed = _run(command)
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise AssertionError("command did not return valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise AssertionError("JSON root is not an object")
+
+    def lookup(dotted: str) -> object:
+        value: object = payload
+        for component in dotted.split("."):
+            if not isinstance(value, dict) or component not in value:
+                raise AssertionError(f"JSON is missing key: {dotted}")
+            value = value[component]
+        return value
+
+    for key in required_keys:
+        lookup(key)
+    for item in expected_values:
+        key, separator, expected = item.partition("=")
+        if not separator:
+            raise AssertionError(f"invalid expected JSON value: {item}")
+        actual = lookup(key)
+        normalized = json.dumps(actual, ensure_ascii=False).strip('"')
+        if normalized != expected:
+            raise AssertionError(f"JSON value {key} was {normalized}, expected {expected}")
+    print(
+        json.dumps(
+            {"required_keys": len(required_keys), "expected_values": len(expected_values)},
+            sort_keys=True,
+        )
+    )
+
+
 def _stage_signature(manifest: dict[str, Any]) -> dict[str, str]:
     return {
         stage: json.dumps(manifest["stages"][stage], ensure_ascii=False, sort_keys=True)
@@ -604,6 +645,11 @@ def main() -> int:
     command_output.add_argument("--cwd", type=Path)
     command_output.add_argument("command", nargs=argparse.REMAINDER)
 
+    json_output = subparsers.add_parser("json-output")
+    json_output.add_argument("--key", action="append", default=[])
+    json_output.add_argument("--value", action="append", default=[])
+    json_output.add_argument("command", nargs=argparse.REMAINDER)
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -653,13 +699,19 @@ def main() -> int:
         )
     elif args.scenario == "generated-exclusion":
         validate_generated_exclusion(args.output, args.jobs, args.command)
-    else:
+    elif args.scenario == "command-output":
         validate_command_output(
             args.command,
             expected_exit=args.exit,
             expected_text=tuple(args.contains),
             absent_text=tuple(args.absent),
             cwd=args.cwd,
+        )
+    else:
+        validate_json_output(
+            args.command,
+            required_keys=tuple(args.key),
+            expected_values=tuple(args.value),
         )
     return 0
 

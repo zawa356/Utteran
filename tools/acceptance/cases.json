@@ -950,5 +950,105 @@
     },
     "expected_exit_codes": [0],
     "timeout_seconds": 60
+  },
+  {
+    "id": "G7-01",
+    "group": "G7",
+    "description": "Render the human-oriented device report",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--contains", "CPU", "--contains", "CTranslate2",
+      "--contains", "ffmpeg", "--contains", "auto:", "--",
+      "{utteran}", "devices"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G7-02",
+    "group": "G7",
+    "description": "Validate the stable device JSON structure",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "json-output",
+      "--key", "cpu.logical_cores", "--key", "ctranslate2.cuda_devices",
+      "--key", "pytorch.cuda_available", "--key", "openvino.available",
+      "--key", "onnxruntime.values", "--key", "ffmpeg.path",
+      "--key", "backends.faster-whisper", "--key", "auto_selection.asr_device",
+      "--key", "warnings", "--value", "auto_selection.asr_device=cpu", "--",
+      "{utteran}", "devices", "--json"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G7-03",
+    "group": "G7",
+    "description": "Show the final auto backend, device, and compute selection",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--contains", "auto: ASR=faster-whisper/cpu/int8",
+      "--contains", "diarization=pyannote/cpu", "--", "{utteran}", "devices"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G7-04",
+    "group": "G7",
+    "description": "Transcribe with an explicit CPU device",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g7/cpu", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 1200
+  },
+  {
+    "id": "G7-05",
+    "group": "G7",
+    "description": "Reject explicit CUDA under the CPU dependency profile",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "3", "--contains", "cuda:0", "--contains", "cuDNN", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g7/cuda", "--format", "json",
+      "--language", "ja", "--device", "cuda", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G7-06",
+    "group": "G7",
+    "description": "Reject a nonexistent CUDA device index",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "3", "--contains", "cuda:99", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g7/cuda99", "--format", "json",
+      "--language", "ja", "--device", "cuda:99", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G7-07",
+    "group": "G7",
+    "description": "Reject an unavailable ASR backend name",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "3", "--contains", "not-a-backend", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g7/backend", "--format", "json",
+      "--language", "ja", "--asr-backend", "not-a-backend",
+      "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
   }
 ]

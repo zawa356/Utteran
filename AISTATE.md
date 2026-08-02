@@ -202,6 +202,10 @@
   未取得OpenVINOモデルtranscribe=exit3と取得案内を確認。`.env`は未読・未変更。
   カタログにtiny等の小容量モデルがないため取得→検証→削除→再取得は条件不成立（該当なし）。
   既存large-v3-turbo/large-v3/Kotoba/community-1は削除・変更していない。次はG7。
+- 受入G7完了: G7-01〜07全pass。CPU profile devices人間表示/JSONの主要9 key/auto最終値
+  `faster-whisper/cpu/int8`、明示CPUの30秒実推論（32.344秒）、明示cuda:0とcuda:99の
+  exit3、未知ASR backendのexit3を確認。CPU profileではGTX 1070 Tiは列挙されるが
+  CTranslate2 cuDNN/cuBLASなし・PyTorch CPU buildのためautoはCPU。次はG8。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
