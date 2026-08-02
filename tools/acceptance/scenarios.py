@@ -15,7 +15,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from utteran.align import align_transcription
+from utteran.config import Config
 from utteran.jobs import fingerprint_input, job_id_from_input_hash
+from utteran.types import (
+    AlignmentOptions,
+    DiarizationResult,
+    Segment,
+    SpeakerTurn,
+    TranscriptionResult,
+    Word,
+)
 
 STAGES = ("audio", "asr", "diarization", "merge", "export")
 TOKEN_PATTERN = re.compile(r"\bhf_[A-Za-z0-9_-]{4,}\b")
@@ -160,6 +170,120 @@ def validate_json_output(
             sort_keys=True,
         )
     )
+
+
+def validate_config_lifecycle(target: Path, utteran: Path) -> None:
+    """Create, preserve, and display an isolated token-free config file."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.unlink(missing_ok=True)
+    prefix = [str(utteran), "config"]
+    _run([*prefix, "init", "--path", str(target)])
+    original = target.read_bytes()
+    _run([*prefix, "init", "--path", str(target)], expected_exit=2)
+    if target.read_bytes() != original:
+        raise AssertionError("config init overwrote an existing file")
+    shown = _run([*prefix, "show", "--path", str(target)])
+    payload = json.loads(shown.stdout)
+    serialized = json.dumps(payload, ensure_ascii=False).casefold()
+    if "token" in serialized or "hf_" in serialized:
+        raise AssertionError("config show exposed a token field")
+    print(json.dumps({"created": True, "overwrite_refused": True, "show_json": True}))
+
+
+def validate_config_precedence(root: Path) -> None:
+    """Verify defaults < TOML < dotenv < environment < CLI precedence."""
+    root.mkdir(parents=True, exist_ok=True)
+    config_path = root / "priority.toml"
+    dotenv_path = root / "priority.env"
+    _write(config_path, '[asr]\nlanguage = "from-config"\n')
+    _write(dotenv_path, "UTTERAN_ASR__LANGUAGE=from-dotenv\n")
+    variable = "UTTERAN_ASR__LANGUAGE"
+    previous = os.environ.get(variable)
+    try:
+        os.environ[variable] = "from-environment"
+        cli = Config.load(
+            config_path=config_path,
+            dotenv_path=dotenv_path,
+            cli_overrides={"asr": {"language": "from-cli"}},
+        )
+        environment = Config.load(config_path=config_path, dotenv_path=dotenv_path)
+        os.environ.pop(variable, None)
+        dotenv = Config.load(config_path=config_path, dotenv_path=dotenv_path)
+        config = Config.load(config_path=config_path, dotenv_path=root / "absent.env")
+    finally:
+        if previous is None:
+            os.environ.pop(variable, None)
+        else:
+            os.environ[variable] = previous
+    actual = (cli.asr.language, environment.asr.language, dotenv.asr.language, config.asr.language)
+    expected = ("from-cli", "from-environment", "from-dotenv", "from-config")
+    if actual != expected:
+        raise AssertionError(f"config precedence was {actual}, expected {expected}")
+    print(json.dumps({"precedence_levels": 5, "highest": "cli"}, sort_keys=True))
+
+
+def validate_config_token_warning(root: Path, utteran: Path) -> None:
+    """Ensure a dummy token key in TOML is ignored with a warning."""
+    root.mkdir(parents=True, exist_ok=True)
+    config_path = root / "token.toml"
+    dummy = "dummy-token-value"
+    _write(config_path, f'[general]\nhf_token = "{dummy}"\n')
+    completed = _run([str(utteran), "config", "show", "--path", str(config_path)])
+    combined = completed.stdout + completed.stderr
+    if dummy in combined or "安全のため無視" not in combined:
+        raise AssertionError("config token key was not safely ignored with a warning")
+    print(json.dumps({"dummy_exposed": False, "warning": True}))
+
+
+def validate_alignment_setting(root: Path) -> None:
+    """Demonstrate that a TOML alignment threshold changes merge output."""
+    root.mkdir(parents=True, exist_ok=True)
+    config_path = root / "alignment.toml"
+    _write(config_path, "[alignment]\nmerge_gap = 0.0\n")
+    config = Config.load(config_path=config_path, dotenv_path=root / "absent.env")
+    transcription = TranscriptionResult(
+        segments=[
+            Segment(0.0, 1.0, "a", [Word(0.0, 1.0, "a")]),
+            Segment(1.2, 2.0, "b", [Word(1.2, 2.0, "b")]),
+        ],
+        language="ja",
+        duration=2.0,
+        backend="fake",
+        model_id="fake",
+        device="cpu",
+    )
+    diarization = DiarizationResult(
+        turns=[SpeakerTurn(0.0, 2.0, "SPEAKER_00")],
+        exclusive_turns=None,
+        num_speakers=1,
+        backend="fake",
+        model_id="fake",
+        device="cpu",
+    )
+    default = align_transcription(transcription, diarization)
+    configured = align_transcription(
+        transcription,
+        diarization,
+        AlignmentOptions(**config.alignment.model_dump()),
+    )
+    if len(default) != 1 or len(configured) != 2:
+        raise AssertionError("alignment merge_gap did not change the merged result")
+    print(json.dumps({"default_segments": 1, "configured_segments": 2}))
+
+
+def validate_invalid_config(root: Path, utteran: Path) -> None:
+    """Require invalid validated settings to return configuration exit code 2."""
+    root.mkdir(parents=True, exist_ok=True)
+    config_path = root / "invalid.toml"
+    _write(config_path, "[asr]\nbeam_size = 0\n")
+    completed = _run(
+        [str(utteran), "config", "show", "--path", str(config_path)],
+        expected_exit=2,
+    )
+    combined = completed.stdout + completed.stderr
+    if "設定が不正" not in combined or "Traceback" in combined:
+        raise AssertionError("invalid config error was not actionable")
+    print(json.dumps({"exit_code": 2, "traceback": False}))
 
 
 def _stage_signature(manifest: dict[str, Any]) -> dict[str, str]:
@@ -650,6 +774,24 @@ def main() -> int:
     json_output.add_argument("--value", action="append", default=[])
     json_output.add_argument("command", nargs=argparse.REMAINDER)
 
+    config_lifecycle = subparsers.add_parser("config-lifecycle")
+    config_lifecycle.add_argument("--target", type=Path, required=True)
+    config_lifecycle.add_argument("--utteran", type=Path, required=True)
+
+    config_precedence = subparsers.add_parser("config-precedence")
+    config_precedence.add_argument("--root", type=Path, required=True)
+
+    config_token = subparsers.add_parser("config-token")
+    config_token.add_argument("--root", type=Path, required=True)
+    config_token.add_argument("--utteran", type=Path, required=True)
+
+    alignment = subparsers.add_parser("alignment-setting")
+    alignment.add_argument("--root", type=Path, required=True)
+
+    invalid_config = subparsers.add_parser("invalid-config")
+    invalid_config.add_argument("--root", type=Path, required=True)
+    invalid_config.add_argument("--utteran", type=Path, required=True)
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -707,12 +849,22 @@ def main() -> int:
             absent_text=tuple(args.absent),
             cwd=args.cwd,
         )
-    else:
+    elif args.scenario == "json-output":
         validate_json_output(
             args.command,
             required_keys=tuple(args.key),
             expected_values=tuple(args.value),
         )
+    elif args.scenario == "config-lifecycle":
+        validate_config_lifecycle(args.target, args.utteran)
+    elif args.scenario == "config-precedence":
+        validate_config_precedence(args.root)
+    elif args.scenario == "config-token":
+        validate_config_token_warning(args.root, args.utteran)
+    elif args.scenario == "alignment-setting":
+        validate_alignment_setting(args.root)
+    else:
+        validate_invalid_config(args.root, args.utteran)
     return 0
 
 

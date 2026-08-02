@@ -1050,5 +1050,85 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 600
+  },
+  {
+    "id": "G8-01",
+    "group": "G8",
+    "description": "Display the platform config path",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--contains", "config.toml", "--", "{utteran}", "config", "path"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G8-02",
+    "group": "G8",
+    "description": "Initialize, preserve, and display an isolated config",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "config-lifecycle",
+      "--target", "{acceptance}/g8/config.toml", "--utteran", "{utteran}"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G8-03",
+    "group": "G8",
+    "description": "Validate config show JSON structure without token fields",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "json-output",
+      "--key", "general.output_dir", "--key", "asr.language",
+      "--key", "diarization.enabled", "--key", "output.formats",
+      "--key", "ffmpeg.path", "--key", "alignment.merge_gap", "--",
+      "{utteran}", "config", "show", "--path", "{acceptance}/g8/config.toml"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G8-04",
+    "group": "G8",
+    "description": "Verify CLI over environment over dotenv over TOML over defaults",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "config-precedence",
+      "--root", "{acceptance}/g8/precedence"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G8-05",
+    "group": "G8",
+    "description": "Ignore a dummy TOML token key and emit a warning",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "config-token",
+      "--root", "{acceptance}/g8/token", "--utteran", "{utteran}"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G8-06",
+    "group": "G8",
+    "description": "Apply an alignment threshold from TOML to merge results",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "alignment-setting",
+      "--root", "{acceptance}/g8/alignment"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G8-07",
+    "group": "G8",
+    "description": "Return exit code 2 for an invalid validated setting",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "invalid-config",
+      "--root", "{acceptance}/g8/invalid", "--utteran", "{utteran}"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
   }
 ]

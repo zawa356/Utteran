@@ -206,6 +206,10 @@
   `faster-whisper/cpu/int8`、明示CPUの30秒実推論（32.344秒）、明示cuda:0とcuda:99の
   exit3、未知ASR backendのexit3を確認。CPU profileではGTX 1070 Tiは列挙されるが
   CTranslate2 cuDNN/cuBLASなし・PyTorch CPU buildのためautoはCPU。次はG8。
+- 受入G8完了: G8-01〜07全pass。隔離config path/init/show、既存file上書き拒否、show JSON
+  主要6 keyとtoken field非存在、`CLI > env > dotenv > TOML > defaults`の5段階、TOML内
+  dummy `hf_token`の警告付き無視・値非表示、alignment.merge_gap 0.5→0.0で合成segment数
+  1→2、不正beam_size=0のexit2・tracebackなしを確認。repo直下`.env`は未読・未変更。次はG9。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
