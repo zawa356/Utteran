@@ -374,7 +374,8 @@ def validate_security_scan(project: Path, roots: tuple[Path, ...]) -> None:
     for root in roots:
         if not root.exists():
             continue
-        for path in root.rglob("*"):
+        candidates = (root,) if root.is_file() else root.rglob("*")
+        for path in candidates:
             if not path.is_file():
                 continue
             scanned += 1
@@ -409,6 +410,62 @@ def validate_security_scan(project: Path, roots: tuple[Path, ...]) -> None:
         if ignored.returncode != 0:
             raise AssertionError(f"private path is not ignored: {candidate.name}")
     print(json.dumps({"files_scanned": scanned, "token_matches": 0, "git_ignored": 3}))
+
+
+def validate_postflight(
+    results: Path,
+    jobs: Path,
+    input_path: Path,
+    testdata: Path,
+) -> None:
+    """Verify aggregate results and retained state without reading transcript text."""
+    records = [
+        json.loads(line)
+        for line in results.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    latest = {str(record["id"]): record for record in records}
+    expected_groups = {f"G{index}" for index in range(14)}
+    actual_groups = {str(record["group"]) for record in latest.values()}
+    missing_groups = sorted(expected_groups - actual_groups)
+    failures = sorted(
+        case_id
+        for case_id, record in latest.items()
+        if str(record.get("result")) != "pass" and str(record.get("group")) in expected_groups
+    )
+    if missing_groups or failures:
+        raise AssertionError(
+            f"acceptance aggregate is incomplete: missing={missing_groups}, failures={failures}"
+        )
+
+    job = _find_job(jobs, input_path)
+    manifest = _load(job / "manifest.json")
+    incomplete = sorted(
+        stage
+        for stage, state in manifest["stages"].items()
+        if state.get("status") != "done"
+    )
+    if incomplete:
+        raise AssertionError(f"retained endurance job is incomplete: {incomplete}")
+
+    testdata_bytes = sum(
+        path.stat().st_size for path in testdata.rglob("*") if path.is_file()
+    )
+    if testdata_bytes > 100 * 1024 * 1024:
+        raise AssertionError("acceptance fixtures exceed the 100 MiB postflight limit")
+    job_bytes = sum(path.stat().st_size for path in job.rglob("*") if path.is_file())
+    print(
+        json.dumps(
+            {
+                "groups_complete": len(expected_groups),
+                "latest_cases": len(latest),
+                "retained_job": job.name,
+                "retained_job_bytes": job_bytes,
+                "testdata_bytes": testdata_bytes,
+            },
+            sort_keys=True,
+        )
+    )
 
 
 def _is_private_status_line(line: str) -> bool:
@@ -1346,6 +1403,12 @@ def main() -> int:
     performance.add_argument("--input", type=Path, required=True)
     performance.add_argument("--expect-diarization", action="store_true")
 
+    postflight = subparsers.add_parser("postflight")
+    postflight.add_argument("--results", type=Path, required=True)
+    postflight.add_argument("--jobs", type=Path, required=True)
+    postflight.add_argument("--input", type=Path, required=True)
+    postflight.add_argument("--testdata", type=Path, required=True)
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -1431,6 +1494,8 @@ def main() -> int:
         validate_documentation_contracts(args.readme, args.requirements)
     elif args.scenario == "start-front":
         validate_start_front(args.project, args.script, args.testdata)
+    elif args.scenario == "postflight":
+        validate_postflight(args.results, args.jobs, args.input, args.testdata)
     else:
         validate_performance_log(args.jobs, args.input, args.expect_diarization)
     return 0

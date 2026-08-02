@@ -16,6 +16,15 @@ def test_security_token_scan_ignores_config_key_but_finds_token_values() -> None
     assert token_bytes_pattern.search(b"value=hf_acceptanceDummyToken123456") is not None
 
 
+def test_security_scan_accepts_an_individual_file(tmp_path: Path) -> None:
+    namespace = runpy.run_path(Path(__file__).parents[1] / "tools" / "acceptance" / "scenarios.py")
+    validate_security_scan = namespace["validate_security_scan"]
+    report = tmp_path / "report.md"
+    report.write_text("token-free acceptance report", encoding="utf-8")
+
+    validate_security_scan(Path(__file__).parents[1], (report,))
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows console control regression")
 def test_ctrl_c_is_confined_to_the_child_console() -> None:
     probe = """

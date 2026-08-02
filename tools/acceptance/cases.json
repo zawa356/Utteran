@@ -1458,5 +1458,121 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 600
+  },
+  {
+    "id": "G14-01",
+    "group": "G14",
+    "description": "Benchmark the three-minute fixture on CUDA without diarization",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g14/cuda-no-diarization",
+      "--format", "json", "--language", "ja", "--device", "cuda:0",
+      "--no-diarization", "--force", "--quiet"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 1800,
+    "minimum_peak_memory_bytes": 536870912,
+    "measure_vram": true
+  },
+  {
+    "id": "G14-02",
+    "group": "G14",
+    "description": "Validate the three-minute CUDA ASR-only artifact",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "json",
+      "{acceptance}/g14/cuda-no-diarization/clip_03m.json", "--duration", "180",
+      "--min-segments", "5", "--max-segments", "300"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G14-03",
+    "group": "G14",
+    "description": "Measure the three-minute CUDA ASR model load",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "performance-log",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G14-04",
+    "group": "G14",
+    "description": "Benchmark the three-minute fixture on CUDA with diarization",
+    "command": [
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g14/cuda-diarization",
+      "--format", "json", "--language", "ja", "--device", "cuda:0",
+      "--force", "--quiet"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 1800,
+    "minimum_peak_memory_bytes": 1073741824,
+    "measure_vram": true
+  },
+  {
+    "id": "G14-05",
+    "group": "G14",
+    "description": "Validate the three-minute speaker-labelled CUDA artifact",
+    "command": [
+      "{python}", "{project}/tools/acceptance/validate.py", "formats",
+      "--dir", "{acceptance}/g14/cuda-diarization", "--stem", "clip_03m",
+      "--duration", "180", "--extensions", "json", "--expect-speakers"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G14-06",
+    "group": "G14",
+    "description": "Measure the three-minute CUDA ASR and diarization model loads",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "performance-log",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--expect-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G14-07",
+    "group": "G14",
+    "description": "Confirm the retained profile selects both backends on CUDA",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "json-output",
+      "--value", "auto_selection.asr_device=cuda:0",
+      "--value", "auto_selection.diarization_device=cuda:0",
+      "--value", "pytorch.cuda_available=true", "--",
+      "{utteran}", "devices", "--json"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G14-08",
+    "group": "G14",
+    "description": "Aggregate G0-G13 and verify retained endurance state",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "postflight",
+      "--results", "{acceptance}/results.jsonl", "--jobs", "{jobs}",
+      "--input", "{actual}", "--testdata", "{testdata}"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G14-09",
+    "group": "G14",
+    "description": "Perform the final generated-artifact and report token scan",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "security-scan",
+      "--project", "{project}", "{project}/output", "{project}/docs/受入試験報告.md"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
   }
 ]
