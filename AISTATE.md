@@ -99,6 +99,11 @@
   variation=0.572、score=0.907）を選択。30.084秒MP4、180.084秒MP4/WAV/M4A、600.084秒MP4、
   broken/empty/notmediaとbatch fixtureをoutput/_testdataへ生成。原本は未変更、全生成物ignore確認済み。
 - `docs/受入試験報告.md`を作成し、開始環境・commit・branchを記録。文字起こし本文は記載しない。
+- G1-01/02合格。30秒MP4をCPU/int8、話者分離なし、language autoで49.312秒、5形式exit 0。
+  validatorはduration=30.016秒、segments=5、empty=0、coverage=0.851、日本語文字比率=0.981、
+  duplicate max=1、schema/SRT/VTT/UTF-8/単語時刻を合格判定。本文は永続記録していない。
+- harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
+  G1結果を先にtest commitし、process treeのcurrent working set合計ピークへ修正してから後続へ進む。
 - 利用者の管理済みpyannoteディレクトリを読み取り調査。Hugging Face tree metadata上は約32.1 MiB、
   実体は約1.1 MiBで、`embedding/pytorch_model.bin`（26,646,242 bytes）と
   `segmentation/pytorch_model.bin`（5,906,507 bytes）が欠落。完了metadataも存在しなかった。
