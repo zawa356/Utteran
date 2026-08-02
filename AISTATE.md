@@ -121,6 +121,14 @@
   range 2〜5は4話者。通常70 turnsに11 overlap pairs、exclusive 61 turnsは非重複、平均2.278秒、
   dominant ratio=0.543、UNKNOWN=0。CPU diarizationは105.203〜108.093秒、peak process tree
   2,601,222,144〜2,671,165,440 bytes。label変更はexport-only 1.172秒。次はG4。
+- G4-01〜08合格。全skip、export-only、ASR以降、diarization以降、force/no-resume全5段階を
+  manifest record差分で確認。large-v3 ASR変更188.453秒、話者数変更108.172秒、force
+  317.719秒、no-resume 319.188秒。
+- G4-09は10分ASRへWindows CTRL_BREAK_EVENT送信後、audio done/asr pendingは保持したが子exit=1で
+  失敗。G4-10はaudioを再利用しasr以降を281.906秒で再開完了。G4-11では同じcontrol eventが
+  harnessへ伝播してKeyboardInterrupt終了（H-002）。残存processなし、10分jobにstale `.lock`あり。
+  G4-11失敗をresultsへ手動追記。失敗結果をtest commit後、子を独立consoleへ置きhelper自身だけ
+  control eventを無視する方式へ修正し、G4-09/11から再試験する。G4-12〜16は未実施。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

@@ -1,0 +1,5 @@
+[general]
+job_dir = "./output/_acceptance/g4_jobs"
+
+[ffmpeg]
+path = "C:/path/ffmpeg/bin/ffmpeg.exe"

@@ -452,5 +452,244 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 60
+  },
+  {
+    "id": "G4-01",
+    "group": "G4",
+    "description": "Prepare the baseline job while changing only export settings",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--expected", "export", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/base", "--format", "json",
+      "--language", "ja", "--device", "cpu"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G4-02",
+    "group": "G4",
+    "description": "Verify an identical second run skips every stage",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--expected", "", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/base", "--format", "json",
+      "--language", "ja", "--device", "cpu"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G4-03",
+    "group": "G4",
+    "description": "Verify changing output formats reruns only export",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--expected", "export", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/base", "--format", "srt,json",
+      "--language", "ja", "--device", "cpu"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G4-04",
+    "group": "G4",
+    "description": "Verify changing output directory reruns only export",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--expected", "export", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/moved", "--format", "srt,json",
+      "--language", "ja", "--device", "cpu"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G4-05",
+    "group": "G4",
+    "description": "Verify changing the ASR model reruns ASR and downstream stages",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--expected", "asr,merge,export", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/asr-model", "--format", "json",
+      "--asr-model", "large-v3", "--language", "ja", "--device", "cpu"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 3600
+  },
+  {
+    "id": "G4-06",
+    "group": "G4",
+    "description": "Verify changing speaker count reruns diarization and downstream stages",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--expected", "diarization,merge,export", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/speakers", "--format", "json",
+      "--asr-model", "large-v3", "--language", "ja", "--device", "cpu",
+      "--num-speakers", "2"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 3600
+  },
+  {
+    "id": "G4-07",
+    "group": "G4",
+    "description": "Verify force reruns all five stages",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--expected", "audio,asr,diarization,merge,export", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/force", "--format", "json",
+      "--asr-model", "large-v3", "--language", "ja", "--device", "cpu",
+      "--num-speakers", "2", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 5400
+  },
+  {
+    "id": "G4-08",
+    "group": "G4",
+    "description": "Verify no-resume reruns all five stages",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "--expected", "audio,asr,diarization,merge,export", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/no-resume", "--format", "json",
+      "--asr-model", "large-v3", "--language", "ja", "--device", "cpu",
+      "--num-speakers", "2", "--no-resume"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 5400
+  },
+  {
+    "id": "G4-09",
+    "group": "G4",
+    "description": "Interrupt ten-minute ASR with SIGINT and retain completed audio",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "interrupt",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_10m.mp4", "--delay", "8", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_10m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/interrupt", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G4-10",
+    "group": "G4",
+    "description": "Resume the interrupted ten-minute job from ASR",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_10m.mp4",
+      "--expected", "asr,diarization,merge,export", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_10m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/interrupt", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 5400
+  },
+  {
+    "id": "G4-11",
+    "group": "G4",
+    "description": "Reject a concurrent process holding the same job lock",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "concurrent-lock",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_10m.mp4", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_10m.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g4/concurrent", "--format", "json",
+      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G4-12",
+    "group": "G4",
+    "description": "Recover a lock owned by a nonexistent PID",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "artificial-lock",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_30s.mp4", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g1", "--format", "srt,vtt,json,txt,md",
+      "--language", "auto", "--device", "cpu", "--no-diarization"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G4-13",
+    "group": "G4",
+    "description": "Force-unlock a lock owned by a live process",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "artificial-lock",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_30s.mp4", "--live", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir", "{acceptance}/g1", "--format", "srt,vtt,json,txt,md",
+      "--language", "auto", "--device", "cpu", "--no-diarization", "--force-unlock"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
+  },
+  {
+    "id": "G4-14",
+    "group": "G4",
+    "description": "List an intentionally unreadable manifest as corrupt",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "corrupt",
+      "--jobs", "{jobs}", "--",
+      "{utteran}", "jobs", "list",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G4-15",
+    "group": "G4",
+    "description": "Exercise jobs list, show, and every clean selector in isolation",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "jobs-management",
+      "--jobs", "{acceptance}/g4_jobs", "--utteran", "{utteran}",
+      "--config", "{project}/tools/acceptance/config.g4-clean.toml"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G4-16",
+    "group": "G4",
+    "description": "Validate per-job JSON logs and absence of token-like values",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "log",
+      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
   }
 ]
