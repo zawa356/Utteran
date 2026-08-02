@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import _thread
+import threading
+import time
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from utteran.batch import BatchItemResult, BatchSummary
-from utteran.cli import _cli_overrides, _parse_model_selection, app
+from utteran.cli import _cli_overrides, _parse_model_selection, _run_interruptibly, app
 from utteran.devices import (
     AutoSelection,
     CPUReport,
@@ -17,12 +20,41 @@ from utteran.devices import (
     OptionalRuntimeReport,
     TorchReport,
 )
-from utteran.errors import ConfigurationError
+from utteran.errors import CancelledError, ConfigurationError
 from utteran.jobs import JobStore
 from utteran.models.catalog import ModelEntry, get_model, list_models
 from utteran.models.manager import ModelManager, ModelStatus
+from utteran.types import CancelToken
 
 runner = CliRunner()
+
+
+def test_interruptible_worker_returns_a_normal_result() -> None:
+    assert (
+        _run_interruptibly(lambda cancel: "ok" if not cancel.is_cancelled else "cancelled") == "ok"
+    )
+
+
+def test_interruptible_worker_turns_main_thread_interrupt_into_cancellation() -> None:
+    worker_started = threading.Event()
+
+    def operation(cancel: CancelToken) -> None:
+        worker_started.set()
+        while not cancel.is_cancelled:
+            time.sleep(0.01)
+        cancel.raise_if_cancelled()
+
+    def interrupt_when_ready() -> None:
+        assert worker_started.wait(1)
+        _thread.interrupt_main()
+
+    interrupter = threading.Thread(target=interrupt_when_ready, daemon=True)
+    interrupter.start()
+
+    with pytest.raises(CancelledError):
+        _run_interruptibly(operation)
+
+    interrupter.join(1)
 
 
 def test_missing_input_returns_input_exit_code(tmp_path: Path) -> None:

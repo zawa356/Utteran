@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Never
+from typing import Annotated, Never, TypeVar
 
 import typer
 from rich.console import Console
@@ -35,7 +37,9 @@ from utteran.logging import configure_logging, mask_secrets, register_secret
 from utteran.models.catalog import ModelEntry, get_model
 from utteran.models.manager import ModelManager, ModelStatus
 from utteran.pipeline import run_pipeline
-from utteran.types import PipelineOutcome, ProgressEvent
+from utteran.types import CancelToken, PipelineOutcome, ProgressEvent
+
+T = TypeVar("T")
 
 app = typer.Typer(
     name="utteran",
@@ -498,25 +502,31 @@ def _run_with_progress(
     force_unlock: bool,
 ) -> PipelineOutcome:
     """Run one pipeline with optional Rich progress rendering."""
-    if quiet:
-        return run_pipeline(
-            input_path,
-            config,
-            token_provider=token_provider,
-            resume=resume,
-            force=force,
-            force_unlock=force_unlock,
-        )
-    with Progress(console=console) as progress:
-        return run_pipeline(
-            input_path,
-            config,
-            progress=RichProgressReporter(progress),
-            token_provider=token_provider,
-            resume=resume,
-            force=force,
-            force_unlock=force_unlock,
-        )
+
+    def operation(cancel: CancelToken) -> PipelineOutcome:
+        if quiet:
+            return run_pipeline(
+                input_path,
+                config,
+                cancel=cancel,
+                token_provider=token_provider,
+                resume=resume,
+                force=force,
+                force_unlock=force_unlock,
+            )
+        with Progress(console=console) as progress:
+            return run_pipeline(
+                input_path,
+                config,
+                progress=RichProgressReporter(progress),
+                cancel=cancel,
+                token_provider=token_provider,
+                resume=resume,
+                force=force,
+                force_unlock=force_unlock,
+            )
+
+    return _run_interruptibly(operation)
 
 
 def _run_batch_with_progress(
@@ -533,31 +543,69 @@ def _run_batch_with_progress(
     force_unlock: bool,
 ) -> BatchSummary:
     """Run a folder batch with one shared Rich progress reporter."""
-    if quiet:
-        return run_batch(
-            input_path,
-            config,
-            token_provider=token_provider,
-            recursive=recursive,
-            include=include,
-            exclude=exclude,
-            resume=resume,
-            force=force,
-            force_unlock=force_unlock,
-        )
-    with Progress(console=console) as progress:
-        return run_batch(
-            input_path,
-            config,
-            token_provider=token_provider,
-            progress=RichProgressReporter(progress),
-            recursive=recursive,
-            include=include,
-            exclude=exclude,
-            resume=resume,
-            force=force,
-            force_unlock=force_unlock,
-        )
+
+    def operation(cancel: CancelToken) -> BatchSummary:
+        if quiet:
+            return run_batch(
+                input_path,
+                config,
+                cancel=cancel,
+                token_provider=token_provider,
+                recursive=recursive,
+                include=include,
+                exclude=exclude,
+                resume=resume,
+                force=force,
+                force_unlock=force_unlock,
+            )
+        with Progress(console=console) as progress:
+            return run_batch(
+                input_path,
+                config,
+                token_provider=token_provider,
+                progress=RichProgressReporter(progress),
+                cancel=cancel,
+                recursive=recursive,
+                include=include,
+                exclude=exclude,
+                resume=resume,
+                force=force,
+                force_unlock=force_unlock,
+            )
+
+    return _run_interruptibly(operation)
+
+
+def _run_interruptibly(operation: Callable[[CancelToken], T]) -> T:
+    """Keep the main thread responsive while a native backend is running."""
+    cancel = CancelToken()
+    finished = threading.Event()
+    outcomes: list[T] = []
+    failures: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            outcomes.append(operation(cancel))
+        except BaseException as exc:
+            failures.append(exc)
+        finally:
+            finished.set()
+
+    thread = threading.Thread(target=worker, name="utteran-operation", daemon=True)
+    try:
+        thread.start()
+        while not finished.wait(0.1):
+            pass
+    except KeyboardInterrupt:
+        cancel.cancel()
+        finished.wait(1.0)
+        raise CancelledError from None
+
+    if failures:
+        raise failures[0]
+    if not outcomes:
+        raise RuntimeError("処理スレッドが結果を返さず終了しました。")
+    return outcomes[0]
 
 
 def _ensure_configured_models(

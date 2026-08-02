@@ -136,6 +136,10 @@
   startから8秒（`Processing audio`ログ直前）にCtrl+C送信後60秒応答せずhelperがkillし再失敗。
   U-002を確定。raw manifestはaudio done/asr runningだがJobManifest読込時にpendingへ回収される。
   この失敗を先にtest commit後、実推論開始ログを待つscenario改善と製品のsignal/cancel経路を調査。
+- U-002修正: run_pipeline/run_batchをdaemon workerで実行し、main threadは100ms周期で完了待ち。
+  KeyboardInterrupt時はCancelTokenを設定し、最大1秒だけ協調終了を待ってCancelledError(exit130)へ
+  変換する。ネイティブ呼出しが戻らなくてもCLI process終了でworkerを停止し、manifest runningと
+  stale lockは既存の再開処理が回収する。通常結果と`_thread.interrupt_main`のモデル不要回帰を追加。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
