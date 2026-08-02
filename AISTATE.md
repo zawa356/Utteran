@@ -194,6 +194,9 @@
 - H-003修正後: Windows targeted 1 passed、全モデル不要89 passed。WSLは87 passed/
   2 Windows-only skipped、ruff/format/mypyも合格。誤って部分同期されたWSL `.venv` は
   Linux uv 0.12.1 `uv sync --extra dev --link-mode=copy`で正常再構築済み。
+- 受入G5完了: 最新rerunを含むG5-01〜09は全pass。指示書11観点（安定順、失敗後継続、
+  集計、exit 5/1、recursive、include/exclude、dry-run、backend非再load、生成先除外、SIGINT 130）
+  を実環境で確認。次はG6モデル管理。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
