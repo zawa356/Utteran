@@ -218,12 +218,18 @@ def interrupt_asr(
 
 
 def concurrent_lock(jobs: Path, input_path: Path, command: list[str]) -> None:
+    job = _find_job(jobs, input_path)
+    lock_path = job / ".lock"
+    initial_lock = lock_path.read_bytes() if lock_path.is_file() else None
     first = _start(command)
 
     def lock_exists() -> bool:
         try:
-            return (_find_job(jobs, input_path) / ".lock").is_file()
-        except AssertionError:
+            if first.poll() is not None or not lock_path.is_file():
+                return False
+            current = lock_path.read_bytes()
+            return initial_lock is None or current != initial_lock
+        except OSError:
             return False
 
     try:
@@ -231,7 +237,10 @@ def concurrent_lock(jobs: Path, input_path: Path, command: list[str]) -> None:
         second = _run(command, expected_exit=1)
         combined = second.stdout + "\n" + second.stderr
         if "PID" not in combined or "force-unlock" not in combined:
-            raise AssertionError("lock rejection did not identify its owner and recovery option")
+            edge = [line[:300] for line in combined.splitlines() if line.strip()][-6:]
+            raise AssertionError(
+                f"lock rejection did not identify its owner and recovery option; output_tail={edge}"
+            )
         first_exit, _stdout, _stderr = _interrupt(first)
     except Exception:
         if first.poll() is None:
