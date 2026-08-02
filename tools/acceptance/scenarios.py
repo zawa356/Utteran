@@ -184,7 +184,10 @@ def interrupt_asr(
             if any(word in line.casefold() for word in ("error", "failed", "エラー", "失敗"))
         ]
         raise AssertionError(f"SIGINT exit was {exit_code}, expected 130; errors={error_lines[:3]}")
-    manifest = _load(_find_job(jobs, input_path) / "manifest.json")
+    from utteran.jobs import JobStore
+
+    recovered = JobStore(jobs).open(input_path)
+    manifest = recovered.manifest.to_dict()
     if manifest["stages"]["audio"]["status"] != "done":
         raise AssertionError("audio stage was not retained after interruption")
     if manifest["stages"]["asr"]["status"] != "pending":

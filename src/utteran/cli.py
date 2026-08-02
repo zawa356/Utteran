@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import threading
 from collections.abc import Callable
@@ -526,7 +527,7 @@ def _run_with_progress(
                 force_unlock=force_unlock,
             )
 
-    return _run_interruptibly(operation)
+    return _run_interruptibly(operation, hard_exit_on_interrupt=True)
 
 
 def _run_batch_with_progress(
@@ -573,10 +574,14 @@ def _run_batch_with_progress(
                 force_unlock=force_unlock,
             )
 
-    return _run_interruptibly(operation)
+    return _run_interruptibly(operation, hard_exit_on_interrupt=True)
 
 
-def _run_interruptibly(operation: Callable[[CancelToken], T]) -> T:
+def _run_interruptibly(
+    operation: Callable[[CancelToken], T],
+    *,
+    hard_exit_on_interrupt: bool = False,
+) -> T:
     """Keep the main thread responsive while a native backend is running."""
     cancel = CancelToken()
     finished = threading.Event()
@@ -599,6 +604,11 @@ def _run_interruptibly(operation: Callable[[CancelToken], T]) -> T:
     except KeyboardInterrupt:
         cancel.cancel()
         finished.wait(1.0)
+        if hard_exit_on_interrupt:
+            error_console.print(f"[red]エラー:[/red] {CancelledError()}")
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(130)
         raise CancelledError from None
 
     if failures:

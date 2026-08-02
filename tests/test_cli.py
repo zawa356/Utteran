@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import _thread
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -55,6 +57,39 @@ def test_interruptible_worker_turns_main_thread_interrupt_into_cancellation() ->
         _run_interruptibly(operation)
 
     interrupter.join(1)
+
+
+def test_interruptible_worker_hard_exit_returns_130_in_cli_process() -> None:
+    probe = """
+import _thread
+import threading
+import time
+from utteran.cli import _run_interruptibly
+
+started = threading.Event()
+
+def operation(cancel):
+    started.set()
+    while not cancel.is_cancelled:
+        time.sleep(0.01)
+
+def interrupt_when_ready():
+    started.wait(1)
+    _thread.interrupt_main()
+
+threading.Thread(target=interrupt_when_ready, daemon=True).start()
+_run_interruptibly(operation, hard_exit_on_interrupt=True)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 130
+    assert "中断" in completed.stderr
 
 
 def test_missing_input_returns_input_exit_code(tmp_path: Path) -> None:
