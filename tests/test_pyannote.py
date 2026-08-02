@@ -86,6 +86,9 @@ class FakeTorch:
 
 def test_remote_model_requires_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PyannoteBackend, "is_available", classmethod(lambda _cls: True))
+    monkeypatch.setattr(
+        "utteran.diarization.pyannote.find_runtime_model", lambda *_args, **_kwargs: None
+    )
     backend = PyannoteBackend(EmptyTokenProvider())
 
     with pytest.raises(HuggingFaceTokenMissingError, match="settings/tokens"):

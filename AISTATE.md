@@ -189,6 +189,11 @@
 - Windowsモデル不要testは88 passed/1 failed。H-003: `test_remote_model_requires_token`が実機の
   導入済みcommunity-1を発見し、正当なlocal model経路でtoken不要になったため例外を発生させなかった。
   failure commit後、テスト専用model cacheを空directoryへ隔離してremote/token経路を保証する。
+- H-003修正方針を精査し、空のmanaged cacheだけでは標準Hugging Face cacheを引き続き探索するため、
+  `find_runtime_model=None`をmonkeypatchしてremote経路そのものを隔離する。実モデル保存先・.envは不変。
+- H-003修正後: Windows targeted 1 passed、全モデル不要89 passed。WSLは87 passed/
+  2 Windows-only skipped、ruff/format/mypyも合格。誤って部分同期されたWSL `.venv` は
+  Linux uv 0.12.1 `uv sync --extra dev --link-mode=copy`で正常再構築済み。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
