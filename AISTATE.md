@@ -234,6 +234,9 @@
 - G11-01はH-006（Windows acceptance引数渡し）でfail: subprocess listが引用符なしの`**/*.wav`
   をdistlib launcherへ渡すとcwd全体へwildcard展開された。cmd.exeから明示引用したREADME同等commandは
   exit0を確認。failure commit後、受入器のglob値に引用符を保持して全exampleを再試験する。
+- D-001修正: 要件定義5.2へoutput.newline/show_speakerとalignment 5 fieldを追加。
+  READMEはtoken専用3 providerと一般設定5 sourceが別経路である旨を明記し、実装準拠の
+  exit code 0/1/2/3/4/5/130表を追加。H-006はWindowsだけglob引用符を保持するよう修正。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

@@ -427,6 +427,9 @@ def validate_readme_commands(
     file_input = str(testdata / "clip_30s.mp4")
     audio_input = str(testdata / "clip_03m.wav")
     batch_input = str(testdata / "batch")
+    wav_glob = '"**/*.wav"' if os.name == "nt" else "**/*.wav"
+    mp4_glob = '"**/*.mp4"' if os.name == "nt" else "**/*.mp4"
+    draft_glob = '"**/draft-*"' if os.name == "nt" else "**/draft-*"
     commands: list[tuple[list[str], int]] = [
         ([*prefix, "--help"], 0),
         ([*prefix, "transcribe", file_input, "--no-diarization", "--dry-run"], 0),
@@ -452,11 +455,11 @@ def validate_readme_commands(
                 batch_input,
                 "--recursive",
                 "--include",
-                "**/*.wav",
+                wav_glob,
                 "--include",
-                "**/*.mp4",
+                mp4_glob,
                 "--exclude",
-                "**/draft-*",
+                draft_glob,
                 "--dry-run",
             ],
             0,
@@ -577,7 +580,7 @@ def validate_documentation_contracts(readme: Path, requirements: Path) -> None:
     requirements_priority = "CLI 引数  >  環境変数  >  .env  >  config.toml  >  既定値"
     if readme_priority not in readme_text or requirements_priority not in requirements_text:
         raise AssertionError("general config priority is not synchronized")
-    if "トークンの優先順位は環境変数、`.env`、OS キーリング" not in readme_text:
+    if "トークンの参照元は環境変数、`.env`、OS キーリングの3段階" not in readme_text:
         raise AssertionError("README token-provider priority is missing")
 
     required_codes = {0, 1, 2, 3, 4, 5, 130}
