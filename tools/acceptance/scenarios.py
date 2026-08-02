@@ -6,6 +6,7 @@ import argparse
 import ctypes
 import json
 import locale
+import logging
 import os
 import re
 import signal
@@ -22,6 +23,7 @@ import utteran.cli as cli_module
 from utteran.align import align_transcription
 from utteran.config import Config
 from utteran.jobs import fingerprint_input, job_id_from_input_hash
+from utteran.logging import job_log, register_secret
 from utteran.types import (
     AlignmentOptions,
     DiarizationResult,
@@ -320,6 +322,96 @@ def validate_verbose_error(root: Path) -> None:
     if "Traceback" not in verbose.output or "synthetic unexpected detail" not in verbose.output:
         raise AssertionError("verbose unexpected error did not include diagnostic detail")
     print(json.dumps({"regular_traceback": False, "verbose_traceback": True}))
+
+
+def validate_security_redaction(root: Path) -> None:
+    """Inject a dummy token into verbose exceptions and structured job logs."""
+    root.mkdir(parents=True, exist_ok=True)
+    input_path = root / "synthetic.wav"
+    input_path.write_bytes(b"synthetic media placeholder")
+    dummy = "hf_acceptanceDummyToken123456"
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError(f"synthetic backend exception included {dummy}")
+
+    runner = CliRunner()
+    with (
+        patch.dict(os.environ, {"HF_TOKEN": dummy}),
+        patch.object(cli_module, "find_ffmpeg", return_value=Path("ffmpeg")),
+        patch.object(cli_module, "_ensure_configured_models", return_value=None),
+        patch.object(cli_module, "_run_with_progress", side_effect=fail),
+    ):
+        regular = runner.invoke(
+            cli_module.app,
+            ["transcribe", str(input_path), "--no-diarization"],
+        )
+        verbose = runner.invoke(
+            cli_module.app,
+            ["transcribe", str(input_path), "--no-diarization", "--verbose"],
+        )
+    register_secret(dummy)
+    log_path = root / "redaction.log"
+    with job_log(log_path):
+        logging.getLogger(__name__).error("synthetic log secret=%s", dummy)
+    combined = regular.output + verbose.output + log_path.read_text(encoding="utf-8")
+    if dummy in combined or "hf_****" not in combined:
+        raise AssertionError("dummy Hugging Face token was not consistently masked")
+    print(
+        json.dumps(
+            {"console_masked": True, "verbose_masked": True, "job_log_masked": True},
+            sort_keys=True,
+        )
+    )
+
+
+def validate_security_scan(project: Path, roots: tuple[Path, ...]) -> None:
+    """Scan generated artifacts for token-shaped bytes and verify Git ignores."""
+    token_pattern = re.compile(rb"hf_[A-Za-z0-9_-]{4,}")
+    scanned = 0
+    matches: list[str] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            scanned += 1
+            try:
+                if token_pattern.search(path.read_bytes()):
+                    matches.append(str(path.relative_to(project)))
+            except OSError:
+                continue
+    if matches:
+        raise AssertionError(f"token-shaped data found in generated files: {matches[:10]}")
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    ).stdout
+    forbidden = [line for line in status.splitlines() if _is_private_status_line(line)]
+    if forbidden:
+        raise AssertionError("private input/output path appeared in git status")
+    for candidate in (
+        project / ".env",
+        project / "input" / "2026-08-01 11-01-55.mp4",
+        project / "output" / "_acceptance" / "results.jsonl",
+    ):
+        ignored = subprocess.run(
+            ["git", "check-ignore", "--quiet", str(candidate)],
+            cwd=project,
+            check=False,
+        )
+        if ignored.returncode != 0:
+            raise AssertionError(f"private path is not ignored: {candidate.name}")
+    print(json.dumps({"files_scanned": scanned, "token_matches": 0, "git_ignored": 3}))
+
+
+def _is_private_status_line(line: str) -> bool:
+    normalized = line[3:].replace("\\", "/") if len(line) > 3 else line
+    return normalized == ".env" or normalized.startswith(("input/", "output/"))
 
 
 def _stage_signature(manifest: dict[str, Any]) -> dict[str, str]:
@@ -831,6 +923,13 @@ def main() -> int:
     verbose_error = subparsers.add_parser("verbose-error")
     verbose_error.add_argument("--root", type=Path, required=True)
 
+    security_redaction = subparsers.add_parser("security-redaction")
+    security_redaction.add_argument("--root", type=Path, required=True)
+
+    security_scan = subparsers.add_parser("security-scan")
+    security_scan.add_argument("--project", type=Path, required=True)
+    security_scan.add_argument("roots", type=Path, nargs="+")
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -904,8 +1003,12 @@ def main() -> int:
         validate_alignment_setting(args.root)
     elif args.scenario == "invalid-config":
         validate_invalid_config(args.root, args.utteran)
-    else:
+    elif args.scenario == "verbose-error":
         validate_verbose_error(args.root)
+    elif args.scenario == "security-redaction":
+        validate_security_redaction(args.root)
+    else:
+        validate_security_scan(args.project, tuple(args.roots))
     return 0
 
 

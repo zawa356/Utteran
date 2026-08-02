@@ -214,6 +214,9 @@
   cache隔離model不足3、cwd/token/keyring隔離話者分離token不足2、入力なし/empty/nonmedia 4、
   実Ctrl+C 130、batch部分失敗5を確認。全expected errorはactionableかつtracebackなし。
   synthetic unexpected RuntimeErrorは通常tracebackなし、--verboseのみtraceback/detailあり。次はG10。
+- G10-01はdummy HF tokenを通常/verbose例外とJSON job logで原文非表示・`hf_****`化してpass。
+  G10-02初回はH-004（受入scanner偽陽性）でfail: G8のdummy TOMLキー名`hf_token`を
+  token値として検出した。failure commit後、実token相当の十分長いsuffixだけへ検出条件を絞る。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

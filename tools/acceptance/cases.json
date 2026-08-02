@@ -1292,5 +1292,27 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 60
+  },
+  {
+    "id": "G10-01",
+    "group": "G10",
+    "description": "Mask a dummy token in normal, verbose, exception, and job-log output",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "security-redaction",
+      "--root", "{acceptance}/g10/redaction"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G10-02",
+    "group": "G10",
+    "description": "Scan generated artifacts for tokens and verify private Git ignores",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "security-scan",
+      "--project", "{project}", "{project}/output"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 600
   }
 ]
