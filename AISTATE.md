@@ -197,6 +197,11 @@
 - 受入G5完了: 最新rerunを含むG5-01〜09は全pass。指示書11観点（安定順、失敗後継続、
   集計、exit 5/1、recursive、include/exclude、dry-run、backend非再load、生成先除外、SIGINT 130）
   を実環境で確認。次はG6モデル管理。
+- 受入G6完了: G6-01〜09全pass。models list/list --available/path/verify、非対話ID省略、
+  曖昧ID候補、未登録ID、隔離cwd/cacheかつ空token環境でgated取得=exit2、隔離cacheの
+  未取得OpenVINOモデルtranscribe=exit3と取得案内を確認。`.env`は未読・未変更。
+  カタログにtiny等の小容量モデルがないため取得→検証→削除→再取得は条件不成立（該当なし）。
+  既存large-v3-turbo/large-v3/Kotoba/community-1は削除・変更していない。次はG7。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

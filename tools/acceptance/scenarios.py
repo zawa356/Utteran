@@ -77,6 +77,50 @@ def _run(parts: list[str], expected_exit: int = 0) -> subprocess.CompletedProces
     return completed
 
 
+def validate_command_output(
+    command: list[str],
+    *,
+    expected_exit: int,
+    expected_text: tuple[str, ...],
+    absent_text: tuple[str, ...],
+    cwd: Path | None,
+) -> None:
+    """Run a CLI command and validate bounded facts without echoing its output."""
+    selected_cwd = cwd
+    if selected_cwd is not None:
+        selected_cwd.mkdir(parents=True, exist_ok=True)
+    completed = subprocess.run(
+        _command(command),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding=locale.getpreferredencoding(False),
+        errors="replace",
+        cwd=selected_cwd,
+    )
+    combined = completed.stdout + "\n" + completed.stderr
+    if completed.returncode != expected_exit:
+        raise AssertionError(f"command exit was {completed.returncode}, expected {expected_exit}")
+    for value in expected_text:
+        if value not in combined:
+            raise AssertionError(f"command output is missing expected text: {value}")
+    for value in absent_text:
+        if value in combined:
+            raise AssertionError(f"command output included forbidden text: {value}")
+    if "Traceback (most recent call last)" in combined:
+        raise AssertionError("expected CLI error exposed a traceback")
+    print(
+        json.dumps(
+            {
+                "exit_code": completed.returncode,
+                "expected_text_count": len(expected_text),
+                "traceback": False,
+            },
+            sort_keys=True,
+        )
+    )
+
+
 def _stage_signature(manifest: dict[str, Any]) -> dict[str, str]:
     return {
         stage: json.dumps(manifest["stages"][stage], ensure_ascii=False, sort_keys=True)
@@ -553,6 +597,13 @@ def main() -> int:
     generated.add_argument("--jobs", type=Path, required=True)
     generated.add_argument("command", nargs=argparse.REMAINDER)
 
+    command_output = subparsers.add_parser("command-output")
+    command_output.add_argument("--exit", type=int, default=0)
+    command_output.add_argument("--contains", action="append", default=[])
+    command_output.add_argument("--absent", action="append", default=[])
+    command_output.add_argument("--cwd", type=Path)
+    command_output.add_argument("command", nargs=argparse.REMAINDER)
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -600,8 +651,16 @@ def main() -> int:
             tuple(filter(None, args.absent.split(","))),
             args.command,
         )
-    else:
+    elif args.scenario == "generated-exclusion":
         validate_generated_exclusion(args.output, args.jobs, args.command)
+    else:
+        validate_command_output(
+            args.command,
+            expected_exit=args.exit,
+            expected_text=tuple(args.contains),
+            absent_text=tuple(args.absent),
+            cwd=args.cwd,
+        )
     return 0
 
 

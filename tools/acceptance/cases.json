@@ -822,5 +822,133 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 600
+  },
+  {
+    "id": "G6-01",
+    "group": "G6",
+    "description": "List installed models",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--contains", "faster-whisper:large-v3-turbo", "--contains", "pyannote:", "--",
+      "{utteran}", "models", "list"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G6-02",
+    "group": "G6",
+    "description": "List the complete available model catalog",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--contains", "faster-whisper:large-v3-turbo",
+      "--contains", "openvino:large-v3-turbo", "--",
+      "{utteran}", "models", "list", "--available"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "G6-03",
+    "group": "G6",
+    "description": "Display the effective model path",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--contains", "models", "--", "{utteran}", "models", "path"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G6-04",
+    "group": "G6",
+    "description": "Verify all installed models",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--contains", "ok", "--contains", "faster-whisper:large-v3-turbo", "--",
+      "{utteran}", "models", "verify"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 300
+  },
+  {
+    "id": "G6-05",
+    "group": "G6",
+    "description": "Reject omitted download ID on non-interactive stdin",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "2", "--contains", "非対話環境ではモデルIDを省略できません",
+      "--contains", "models list --available", "--",
+      "{utteran}", "models", "download"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G6-06",
+    "group": "G6",
+    "description": "Reject ambiguous model ID and present qualified choices",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "2", "--contains", "faster-whisper:large-v3-turbo",
+      "--contains", "openvino:large-v3-turbo", "--",
+      "{utteran}", "models", "download", "large-v3-turbo"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G6-07",
+    "group": "G6",
+    "description": "Reject an unregistered model ID",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--exit", "2", "--contains", "モデルカタログにありません", "--",
+      "{utteran}", "models", "download", "not-a-real-model"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G6-08",
+    "group": "G6",
+    "description": "Classify gated download without any token",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--cwd", "{acceptance}/g6/empty-cwd", "--exit", "2",
+      "--contains", "settings/tokens", "--contains", "HF_TOKEN", "--",
+      "{utteran}", "models", "download",
+      "pyannote:pyannote/speaker-diarization-community-1"
+    ],
+    "environment": {
+      "HF_TOKEN": "",
+      "HUGGING_FACE_HUB_TOKEN": "",
+      "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
+      "UTTERAN_MODEL_DIR": "{acceptance}/g6/empty-models",
+      "HF_HOME": "{acceptance}/g6/empty-hf"
+    },
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "G6-09",
+    "group": "G6",
+    "description": "Guide non-interactive transcription when a catalog model is missing",
+    "command": [
+      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
+      "--cwd", "{acceptance}/g6/empty-cwd", "--exit", "3",
+      "--contains", "非対話環境では自動取得しません",
+      "--contains", "openvino:large-v3-turbo", "--contains=--yes", "--",
+      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
+      "--config", "{project}/tools/acceptance/config.acceptance.toml",
+      "--asr-backend", "openvino", "--asr-model", "large-v3-turbo",
+      "--no-diarization", "--quiet"
+    ],
+    "environment": {
+      "UTTERAN_MODEL_DIR": "{acceptance}/g6/empty-models",
+      "HF_HOME": "{acceptance}/g6/empty-hf"
+    },
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
   }
 ]
