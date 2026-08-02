@@ -160,6 +160,11 @@
 - U-003修正: `_process_exists`はWindowsだけ`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)`と
   `GetExitCodeProcess(STILL_ACTIVE)`を使用。access deniedは安全側でlive、無効handleはstale扱い。
   Windows限定で実sleep childのlive/terminatedを確認するモデル不要回帰を追加。G4-11再試験待ち。
+- G4最終は最新16ケース全件合格。G4-09 exit130/audio done/asr pending=20.375秒、G4-10 resume
+  asr以降=282.938秒、G4-11 contender exit1/owner exit130=3.922秒。stale/live force unlock、corrupt、
+  jobs list/show/clean全selector、242-line JSON job log parse/token-patternなしも合格。U-002/U-003解消。
+  G4性能peak: large-v3 ASR変更3.55GB、pyannote変更2.69GB、force/no-resume各4.42GB、10m resume
+  2.08GB。次はG5 batch。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
