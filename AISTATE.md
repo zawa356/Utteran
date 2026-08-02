@@ -15,6 +15,9 @@
 - Phase 2 follow-up（不完全モデル検出）: 実装・Windows/WSL検証完了。利用者環境でpyannote
   community-1の重みが欠落した約1.1 MiBの部分取得を「導入済み」「正常」と誤判定する問題と、
   Windows MAX_PATHによる取得失敗を修正した。
+- Phase 1/2受入試験: 進行中。`docs/utteran_受入試験指示書.md`全534行と必須4文書を読了し、
+  開始コミット`57ecbb3`から専用branch`test/acceptance-phase2`を作成。開始時の未追跡指示書を
+  `8b55d5d chore: snapshot before acceptance testing`で記録した。
 - `docs/utteran_Phase2_指示書.md` 全399行、既存状態、要件定義、変更履歴を読了し、
   コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
@@ -74,8 +77,28 @@
 4. カタログ概算サイズと必須文書を実態へ同期する。
 5. WSL／Windows品質ゲートと実キャッシュ表示を検証し、コミットする。
 
+### Phase 1/2受入試験（進行中）
+
+1. Windows環境・入力メタデータを本文非参照で記録し、派生クリップをoutput配下へ生成する。
+2. 再開・個別再実行・timeout・process tree停止・出力抄録・peak memory対応ハーネスを作る。
+3. G1〜G12を順番に実行し、各groupのresults/report/AISTATEをコミットする。
+4. 不具合は失敗結果のtest commit後、回帰テスト・文書とともにfix commitし、再試験する。
+5. 機能試験完了後だけcudaへ切替え、G13の2時間耐久試験を行う。
+6. G14で集計、秘密／Git混入検査、profile判断、必須文書と最終報告を完了する。
+
 ## 直近の作業内容と結果
 
+- 受入開始環境: Windows 11 Pro 10.0.26200、Python 3.12.0、uv 0.11.32、cpu profile、
+  8 physical/16 logical cores、RAM 51,462,012,928 bytes、Cドライブ空き90,454,274,048 bytes。
+  GTX 1070 Ti 8 GiBは列挙されるがcpu profileではauto=CPU/int8。devices JSON exit 0。
+- 実会議MP4はファイル名・サイズ・ffprobe metadataだけを取得。377,645,510 bytes、8,363.883秒、
+  H.264 1920x1080 60fps + AAC 48kHz stereo。原本は未変更で、本文は表示していない。
+- `tools/acceptance`へ再開可能ハーネス、統計／構造validator、音量統計で3分区間を選ぶ素材生成、
+  受入専用token-free configとG1 case定義を追加。結果全文を永続化せずedge/error行だけ記録する。
+- 実素材の6候補を8kHz monoの1秒RMSで比較し、start=4,600.136秒（active ratio=0.850、
+  variation=0.572、score=0.907）を選択。30.084秒MP4、180.084秒MP4/WAV/M4A、600.084秒MP4、
+  broken/empty/notmediaとbatch fixtureをoutput/_testdataへ生成。原本は未変更、全生成物ignore確認済み。
+- `docs/受入試験報告.md`を作成し、開始環境・commit・branchを記録。文字起こし本文は記載しない。
 - 利用者の管理済みpyannoteディレクトリを読み取り調査。Hugging Face tree metadata上は約32.1 MiB、
   実体は約1.1 MiBで、`embedding/pytorch_model.bin`（26,646,242 bytes）と
   `segmentation/pytorch_model.bin`（5,906,507 bytes）が欠落。完了metadataも存在しなかった。

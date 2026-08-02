@@ -1,0 +1,44 @@
+[
+  {
+    "id": "G1-01",
+    "group": "G1",
+    "description": "30-second MP4 transcription without diarization in all five formats",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g1",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--language",
+      "auto",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 1800
+  },
+  {
+    "id": "G1-02",
+    "group": "G1",
+    "description": "Validate the five G1 artifacts and versioned JSON structure",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "formats",
+      "--dir",
+      "{acceptance}/g1",
+      "--stem",
+      "clip_30s",
+      "--duration",
+      "30"
+    ],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 60
+  }
+]
