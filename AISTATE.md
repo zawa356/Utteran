@@ -114,6 +114,9 @@
   `PyannoteBackend.diarize`内部hookの引数名が`_file`でTypeErrorになること。hookなしで同一モデル、
   正規化PCM、CPUを直接処理すると正常終了したため切り分け済み。指示書どおり失敗結果を先に
   test commitし、その後hook互換修正・モデル不要回帰・G3再試験を行う。
+- U-001修正: 内部hookの引数名をpyannote 4.xと同じ`file`へ変更し、fake pipelineも`file=`を
+  渡す回帰に更新。PCM waveformを直接渡して内蔵デコードを使わないため、pyannote import時の
+  TorchCodec不在警告だけを限定的に抑制した。品質ゲート後にG3全ケースをrerunする。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

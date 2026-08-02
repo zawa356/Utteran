@@ -97,7 +97,14 @@ class PyannoteBackend(DiarizationBackend):
 
         try:
             import torch
-            from pyannote.audio import Pipeline
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"\s*torchcodec is not installed correctly.*",
+                    category=UserWarning,
+                )
+                from pyannote.audio import Pipeline
 
             selected_device = _select_device(device, torch)
             pipeline = Pipeline.from_pretrained(model_path, token=token)
@@ -149,10 +156,11 @@ class PyannoteBackend(DiarizationBackend):
         def hook(
             step_name: str,
             _artifact: object,
-            _file: Mapping[str, object] | None = None,
+            file: Mapping[str, object] | None = None,
             total: int | None = None,
             completed: int | None = None,
         ) -> None:
+            del file
             if cancel is not None:
                 cancel.raise_if_cancelled()
             if progress is not None:

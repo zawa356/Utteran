@@ -32,7 +32,13 @@ class FakeAnnotation:
 class FakePipeline:
     def __call__(self, _audio: object, *, hook: Any, **options: object) -> Any:
         assert options == {"num_speakers": 2}
-        hook("segmentation", None, total=2, completed=1)
+        hook(
+            "segmentation",
+            None,
+            file={"uri": "in-memory-audio"},
+            total=2,
+            completed=1,
+        )
         regular = FakeAnnotation([(0.0, 1.0, "SPEAKER_01"), (0.8, 2.0, "SPEAKER_00")])
         exclusive = FakeAnnotation([(0.0, 0.9, "SPEAKER_01"), (0.9, 2.0, "SPEAKER_00")])
         return SimpleNamespace(
