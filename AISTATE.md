@@ -228,6 +228,12 @@
   `input_path`をoption集合へ含め、README例runnerはexit2の例番号を報告せず原因特定不能。
   failure commit後、`--`始まりだけをoption比較し、README例番号/subcommandをfailureへ付与する。
   実文書のconfig field差分判定にはまだ到達していない。
+- H-005修正後G11-02で文書不具合D-001を確定: `要件定義.md` 5.2 config例に実装済み
+  `output.newline/show_speaker`と`alignment` 5 fieldが欠落。README transcribe option集合、
+  general 5段階priority、token provider 3段階priority、終了code集合は一致。
+- G11-01はH-006（Windows acceptance引数渡し）でfail: subprocess listが引用符なしの`**/*.wav`
+  をdistlib launcherへ渡すとcwd全体へwildcard展開された。cmd.exeから明示引用したREADME同等commandは
+  exit0を確認。failure commit後、受入器のglob値に引用符を保持して全exampleを再試験する。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

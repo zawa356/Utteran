@@ -522,8 +522,12 @@ def validate_readme_commands(
             ),
         ]
     )
-    for command, exit_code in commands:
-        _run(command, expected_exit=exit_code)
+    for index, (command, exit_code) in enumerate(commands, start=1):
+        try:
+            _run(command, expected_exit=exit_code)
+        except AssertionError as exc:
+            label = " ".join(command[1:3])
+            raise AssertionError(f"README CLI example #{index} ({label}) failed: {exc}") from exc
 
     isolated = project / "output" / "_acceptance" / "g11" / "isolated"
     isolated.mkdir(parents=True, exist_ok=True)
@@ -562,7 +566,7 @@ def validate_documentation_contracts(readme: Path, requirements: Path) -> None:
         option
         for parameter in transcribe.params
         for option in (*getattr(parameter, "opts", ()), *getattr(parameter, "secondary_opts", ()))
-        if option != "--help"
+        if option.startswith("--") and option != "--help"
     }
     if documented_options != actual_options:
         raise AssertionError(
