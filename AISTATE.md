@@ -132,6 +132,10 @@
 - H-002修正: 試験対象を`CREATE_NEW_CONSOLE`で起動し、scenario processを元consoleから切り離して
   子consoleへAttach、送信側だけCtrl+C無視にして`GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)`を
   送る方式へ変更。親harnessへイベントを伝播させず実際のCtrl+Cを模擬するWindows限定回帰を追加。
+- H-002の独立console最小probeはchild exit130/parent aliveで実機合格。修正後G4-09は、asr stage
+  startから8秒（`Processing audio`ログ直前）にCtrl+C送信後60秒応答せずhelperがkillし再失敗。
+  U-002を確定。raw manifestはaudio done/asr runningだがJobManifest読込時にpendingへ回収される。
+  この失敗を先にtest commit後、実推論開始ログを待つscenario改善と製品のsignal/cancel経路を調査。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
