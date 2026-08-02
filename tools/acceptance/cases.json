@@ -1519,9 +1519,9 @@
     "group": "G14",
     "description": "Validate the three-minute speaker-labelled CUDA artifact",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "formats",
-      "--dir", "{acceptance}/g14/cuda-diarization", "--stem", "clip_03m",
-      "--duration", "180", "--extensions", "json", "--expect-speakers"
+      "{python}", "{project}/tools/acceptance/validate.py", "json",
+      "{acceptance}/g14/cuda-diarization/clip_03m.json", "--duration", "180",
+      "--min-segments", "5", "--max-segments", "300", "--min-speakers", "2"
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 60

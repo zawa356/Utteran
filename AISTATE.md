@@ -270,6 +270,8 @@
   exit 2となった。CUDA処理自体はexit 0で、他の成果物検証、CUDA auto選択、G0〜G13集約、
   2時間job保持、最終token scanはpass。指示書どおり失敗状態を先にcommitし、ケースを既存の
   `json` validatorへ修正してG14-05を再試験する。
+- H-007修正: G14-05を既存の`json` validatorと話者数下限2の検証へ変更し、再試験はexit 0。
+  G14-01〜09の最新結果は全pass。3分CUDAはASRのみ20.844秒、話者分離込み35.859秒。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを
