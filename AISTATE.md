@@ -129,6 +129,9 @@
   harnessへ伝播してKeyboardInterrupt終了（H-002）。残存processなし、10分jobにstale `.lock`あり。
   G4-11失敗をresultsへ手動追記。失敗結果をtest commit後、子を独立consoleへ置きhelper自身だけ
   control eventを無視する方式へ修正し、G4-09/11から再試験する。G4-12〜16は未実施。
+- H-002修正: 試験対象を`CREATE_NEW_CONSOLE`で起動し、scenario processを元consoleから切り離して
+  子consoleへAttach、送信側だけCtrl+C無視にして`GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)`を
+  送る方式へ変更。親harnessへイベントを伝播させず実際のCtrl+Cを模擬するWindows限定回帰を追加。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

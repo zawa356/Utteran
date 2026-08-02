@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import locale
 import os
@@ -124,7 +125,7 @@ def _start(command: list[str]) -> subprocess.Popen[str]:
         "errors": "replace",
     }
     if os.name == "nt":
-        options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
     else:
         options["start_new_session"] = True
     return subprocess.Popen(_command(command), **options)
@@ -132,7 +133,20 @@ def _start(command: list[str]) -> subprocess.Popen[str]:
 
 def _interrupt(process: subprocess.Popen[str]) -> tuple[int, str, str]:
     if os.name == "nt":
-        process.send_signal(signal.CTRL_BREAK_EVENT)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.FreeConsole()
+        if not kernel32.AttachConsole(process.pid):
+            raise OSError(ctypes.get_last_error(), "failed to attach to child console")
+        if not kernel32.SetConsoleCtrlHandler(None, True):
+            raise OSError(ctypes.get_last_error(), "failed to ignore Ctrl+C in signal sender")
+        try:
+            if not kernel32.GenerateConsoleCtrlEvent(0, 0):
+                raise OSError(ctypes.get_last_error(), "failed to send Ctrl+C to child console")
+            stdout, stderr = process.communicate(timeout=60)
+        finally:
+            kernel32.FreeConsole()
+            kernel32.SetConsoleCtrlHandler(None, False)
+        return int(process.returncode or 0), stdout, stderr
     else:
         os.killpg(process.pid, signal.SIGINT)
     stdout, stderr = process.communicate(timeout=60)
@@ -157,14 +171,19 @@ def interrupt_asr(
     try:
         _wait_for(asr_running, timeout=120, description="ASR running state")
         time.sleep(delay_seconds)
-        exit_code, _stdout, _stderr = _interrupt(process)
+        exit_code, _stdout, stderr = _interrupt(process)
     except Exception:
         if process.poll() is None:
             process.kill()
         process.communicate()
         raise
     if exit_code != 130:
-        raise AssertionError(f"SIGINT exit was {exit_code}, expected 130")
+        error_lines = [
+            line[:300]
+            for line in stderr.splitlines()
+            if any(word in line.casefold() for word in ("error", "failed", "エラー", "失敗"))
+        ]
+        raise AssertionError(f"SIGINT exit was {exit_code}, expected 130; errors={error_lines[:3]}")
     manifest = _load(_find_job(jobs, input_path) / "manifest.json")
     if manifest["stages"]["audio"]["status"] != "done":
         raise AssertionError("audio stage was not retained after interruption")
