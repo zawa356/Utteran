@@ -7,7 +7,7 @@ import pytest
 from utteran.asr.base import ASRBackend
 from utteran.batch import discover_inputs, run_batch
 from utteran.config import Config
-from utteran.errors import ModelNotFoundError
+from utteran.errors import AudioDecodeError, ModelNotFoundError
 from utteran.jobs import JobStore
 from utteran.types import (
     ASROptions,
@@ -156,6 +156,40 @@ def test_batch_continues_after_failure_and_returns_partial_exit_code(
     assert summary.failed_count == 1
     assert summary.exit_code == 5
     assert [item.path.name for item in summary.items if item.status == "failed"] == ["bad.wav"]
+
+
+def test_batch_counts_decode_failure_as_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "bad.wav").write_bytes(b"bad")
+    (tmp_path / "good.wav").write_bytes(b"good")
+
+    def normalize_with_decode_failure(
+        input_path: Path,
+        output_path: Path,
+        *,
+        ffmpeg_path: Path | None = None,
+        progress: ProgressCallback | None = None,
+        cancel: CancelToken | None = None,
+    ) -> Path:
+        if input_path.name == "bad.wav":
+            raise AudioDecodeError("decode failed")
+        return fake_normalize(
+            input_path,
+            output_path,
+            ffmpeg_path=ffmpeg_path,
+            progress=progress,
+            cancel=cancel,
+        )
+
+    monkeypatch.setattr("utteran.pipeline.normalize_audio", normalize_with_decode_failure)
+
+    summary = run_batch(tmp_path, _config(tmp_path), asr_backend=CountingASR())
+
+    assert summary.success_count == 1
+    assert summary.failed_count == 1
+    assert summary.skipped_count == 0
+    assert summary.exit_code == 5
 
 
 def test_batch_all_failures_return_general_error(

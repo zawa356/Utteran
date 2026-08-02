@@ -169,6 +169,9 @@
   process exit0だったため、期待するpartial failure exit5に不合格（U-004）。Phase 2要件の
   「デコード不可はskip例」と最新受入G5の「broken失敗／部分5／全滅1」が衝突。今回の明示受入を
   最新仕様として優先し、失敗test commit後、要件定義とbatch分類をfailedへ同期して回帰追加する。
+- U-004修正: batchのAudioDecodeError item statusをfailedへ変更。正常＋decode failureはexit5、
+  全decode failureはexit1、完了済み/dry-runだけskipとするようREADME/要件定義を同期し、
+  fake normalizeがdecode failureを出すモデル不要回帰を追加。G5-01再試験待ち。
 - harnessのWindows peak memory=約5 MiBはconsole launcherだけの値で無効と判明（H-001）。
   G1結果を`68ace70`で先に記録後、Win32 Toolhelp snapshotで全子孫PIDを列挙し、同時点のworking
   set合計をpollして最大値を保持する方式へ修正。100 MiB確保の孫processで137,850,880 bytesを

@@ -178,7 +178,7 @@ def run_batch(
                     status = "skipped"
                 items.append(BatchItemResult(path, status, reason, outcome))
             except AudioDecodeError as exc:
-                items.append(BatchItemResult(path, "skipped", mask_secrets(str(exc))))
+                items.append(BatchItemResult(path, "failed", mask_secrets(str(exc))))
             except (CancelledError, KeyboardInterrupt):
                 raise
             except UtteranError as exc:
