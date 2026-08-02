@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from utteran.config import TokenProvider
-from utteran.diarization.pyannote import PyannoteBackend
+from utteran.diarization.pyannote import PyannoteBackend, _torch_cuda_usable
 from utteran.errors import HuggingFaceTokenMissingError
 from utteran.types import DiarizationOptions, ProgressEvent
 
@@ -41,6 +41,43 @@ class FakePipeline:
         )
 
 
+class FakeCuda:
+    def __init__(self) -> None:
+        self.synchronized: list[int] = []
+
+    def is_available(self) -> bool:
+        return True
+
+    def device_count(self) -> int:
+        return 1
+
+    def synchronize(self, index: int) -> None:
+        self.synchronized.append(index)
+
+
+class FakeCudaTensor:
+    def __add__(self, _value: object) -> FakeCudaTensor:
+        return self
+
+    def cpu(self) -> FakeCudaTensor:
+        return self
+
+    def item(self) -> float:
+        return 2.0
+
+
+class FakeTorch:
+    def __init__(self, *, fail_kernel: bool = False) -> None:
+        self.cuda = FakeCuda()
+        self.fail_kernel = fail_kernel
+
+    def ones(self, _size: int, *, device: str) -> FakeCudaTensor:
+        assert device == "cuda:0"
+        if self.fail_kernel:
+            raise RuntimeError("no kernel image is available")
+        return FakeCudaTensor()
+
+
 def test_remote_model_requires_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PyannoteBackend, "is_available", classmethod(lambda _cls: True))
     backend = PyannoteBackend(EmptyTokenProvider())
@@ -70,3 +107,14 @@ def test_diarize_converts_both_annotation_types(
     assert result.exclusive_turns is not None
     assert result.exclusive_turns[0].end == 0.9
     assert any(event.message == "segmentation" for event in events)
+
+
+def test_torch_cuda_probe_executes_and_synchronizes_a_kernel() -> None:
+    torch = FakeTorch()
+
+    assert _torch_cuda_usable(torch, 0)
+    assert torch.cuda.synchronized == [0]
+
+
+def test_torch_cuda_probe_rejects_allocation_without_compatible_kernel() -> None:
+    assert not _torch_cuda_usable(FakeTorch(fail_kernel=True), 0)

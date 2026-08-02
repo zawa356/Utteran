@@ -37,6 +37,7 @@ def test_missing_hf_token_is_actionable_before_expensive_work(
 ) -> None:
     input_path = tmp_path / "audio.wav"
     input_path.write_bytes(b"audio")
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HF_TOKEN", "")
     monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "")
     monkeypatch.setattr("utteran.config.KeyringTokenProvider.get_token", lambda _self: None)

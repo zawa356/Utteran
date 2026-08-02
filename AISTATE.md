@@ -4,9 +4,10 @@
 
 - Phase 1（骨格と最小動作）: 実装完了、ローカル検証完了（gated pyannote 実モデル E2E を除く）。
 - Phase 1 初回コミット: `83a4b29 feat: implement Phase 1 transcription pipeline`。
+- Phase 2 実装コミット: `54fa46d feat: implement Phase 2 operational workflows`。
 - Phase 2（実運用機能）: 実装完了、ローカル検証完了。ジョブ／レジューム、フォルダバッチ、
-  devices、モデル／ジョブ／設定管理 CLI、Windows setup を実装。Windows 実機 setup と
-  gated pyannote／既定 large-v3-turbo／実 CUDA 推論は環境制約により未検証として継続管理する。
+  devices、モデル／ジョブ／設定管理 CLI、Windows setup を実装。Windows実機でcpu/cuda/intelを
+  検証済み。gated pyannote／既定 large-v3-turboの実モデルE2Eは未検証として継続管理する。
 - `docs/utteran_Phase2_指示書.md` 全399行、既存状態、要件定義、変更履歴を読了し、
   コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
@@ -78,9 +79,28 @@
   PyTorch/OpenVINO/ffmpeg は現 dev extra 環境で未導入、ONNX Runtime CPU/Azure は検出。
 - Windows `setup.ps1` を作成。cpu/cuda/intel profile、SkipModels/SkipFfmpeg/ModelDir/Models、
   uv sync、SHA-256 検証付き ffmpeg 配置、.env 非上書き、モデル事前取得、CUDA/全devices 診断を実装。
-- Windows PowerShell 5.1 Parser API を WSL から実行し `PowerShell syntax OK`。実際の sync、
-  ネットワーク取得、ffmpeg 展開、CUDA DLL 解決は Windows 実機では未実行。
-- `intel` extra に openvino-genai 2025以上2027未満を追加し、`uv lock` は159 packagesで成功。
+- setup初版はWindows PowerShell 5.1 Parser APIで `PowerShell syntax OK`。この時点では実際の
+  sync、ネットワーク取得、ffmpeg展開、CUDA DLL解決はWindows実機未実行だったが、後続項目の
+  とおり現在はcpu/cuda/intelの依存同期とデバイスprobeまで実機検証済み。
+- Windows 実機で `setup.ps1 -Profile cpu` を2回実行。Python 3.12.0 と既存 ffmpeg は正常検出し、
+  `.env` は非上書きだった。`uv` は未導入のため dependency sync、モデル取得、devices 診断を
+  案内付きで安全にスキップし、2回とも同じ結果で終了した。永続 PATH と代表的な配置先も確認し、
+  Python 3.12 実体は存在する一方 `uv.exe` は存在しないため、Python 誤検出ではないと切り分けた。
+- uv導入後のWindows実機試験で、WSL用 `.venv/lib64` をWindows版uvが削除できずexit 2になる問題を
+  再現。setupがLinuxレイアウトを検出した場合は既存 `.venv` を変更せず `.venv-windows` と
+  `UV_PROJECT_ENVIRONMENT` を使うよう修正した。
+- setupのprofileをCPU版PyTorch、CUDA 12.6版PyTorch、CPU版PyTorch＋OpenVINOへ分離。
+  依存同期／devices／選択profile probeの失敗時は成功表示せずexit 1とし、依存する後続処理を省略。
+- Windows APIでCPU 16 logical/8 physical、AVX2=true、AVX-512=falseを検出。仮想環境内の
+  PyTorch/NVIDIA DLLディレクトリを登録し、CTranslate2からcuDNN/cuBLASを利用可能にした。
+- CUDA 12.8版PyTorchはGTX 1070 Tiのsm_61非対応と実測したため、公式CUDA 12.6 indexへ変更。
+  CUDA probeも単なるメモリ確保から、カーネル実行・CPU転送・同期を含む検証へ強化した。
+- Windows Python 3.12.0 / uv 0.11.32でcpu/cuda/intelの初回と同profile再実行がすべてexit 0。
+  2回目はpackage checkのみ。各profile + devでもモデル不要74 tests passed。
+- cuda実測はPyTorch 2.11.0+cu126でGTX 1070 Ti CUDAカーネル成功、CTranslate2 4.8.1は
+  cuda:0/int8、cuDNN/cuBLAS found、pyannote cuda:0を選択。intelはOpenVINO CPU/GPUを検出。
+- `intel` extra にopenvino-genaiを追加し、後続のcpu/cuda/intel依存分離後の`uv.lock`は
+  163 packagesで成功。
 - README を全 Phase 2 CLI、resume/config hash、バッチ集計、Windows setup、Linux 手動導入、
   モデル／ジョブ保存先と削除、devices JSON、ライセンスへ同期。THIRD_PARTY_NOTICES も更新。
 - job ごとの `utteran.log` handler を追加し、JSON Lines と最終 formatter の秘密マスクで段階遷移を
@@ -89,9 +109,9 @@
   破損 manifest のジョブも `corrupt` として一覧・削除対象にできるよう復旧経路を補強した。
 - 一時 Linux 静的 ffmpeg、合成 MP4、cached faster-whisper tiny、話者分離なしで Phase 2 実 E2E。
   初回は5段階、同条件の2回目は全段階 skip、形式変更は export-only、force は全段階再実行を確認。
-- 最終検査: Python 3.12.3 でモデル不要 72 tests passed、ruff check／src・tests format check、
-  mypy strict（30 source files）、`uv lock --check`（159 packages）がすべて成功。
-- Python 3.11.15 の隔離 dev 環境でもモデル不要 72 tests passed。
+- 最終検査: WSL Python 3.11.15とWindows Python 3.12.0でモデル不要74 tests passed。
+  両OSのruff check／mypy strict（30 source files）、src・tests format check、
+  `uv lock --check`（163 packages）がすべて成功。
 - `pyproject.toml`、src パッケージ骨格、MIT ライセンス、依存物の注意書き、
   `.gitignore`、`.env.example` を作成した。
 - ローカル環境は Python 3.12.3。uv 0.12.1 をユーザー領域へ導入。WSL 側のシステム
@@ -135,9 +155,9 @@
 - pyannote 実モデル E2E は HF トークン未設定かつ gated モデル未取得のため未実施。
   `uv sync --extra pyannote`、pyannote.audio 4.0.7 API 確認、fake pipeline 結合は実施済み。
 - faster-whisper は tiny/CPU の実モデル E2E 済み。既定 large-v3-turbo と実 CUDA 推論は
-  モデル／CUDA ランタイム未導入のため未実施。
-- `setup.ps1` は Windows PowerShell 5.1 Parser API による構文検査済みだが、Windows 実機での
-  uv sync、ネットワーク取得、ffmpeg 展開、CUDA DLL 解決を含む一気通貫実行は未実施。
+  モデル未取得のため未実施。CUDAランタイム、実CUDAカーネル、CTranslate2 CUDA初期化は検証済み。
+- `setup.ps1` のcpu/cuda/intel同期と診断はWindows実機検証済み。明示モデル取得、ffmpeg未導入時の
+  ネットワーク取得、完全オフライン継続は未実施。
 
 ## 設計上の判断とその理由
 
@@ -164,6 +184,12 @@
   同梱せず、公開 `.sha256` と照合してからユーザーデータ配下へ配置する。
 - setup の cpu/cuda profile は既定話者分離を利用できるよう pyannote extra を含め、intel は
   pyannote + intel extras とした。profile はハードウェア選択であり ASRだけのlite導入ではないため。
+- 同じcheckoutのWSL用 `.venv` はWindowsと共有不能なため、setup時だけ `.venv-windows` を選び、
+  `UV_PROJECT_ENVIRONMENT` を設定する。既存環境の削除や移動をせず冪等に共存させるため。
+- cuda profileはPyTorch公式CUDA 12.6 indexを使用する。12.8 wheelがsm_61を非対応とする一方、
+  12.6 wheelはGTX 1070 Ti上で実カーネルが成功し、CTranslate2用DLLも同梱することを実測したため。
+- setupのprofile成功条件はコマンドexitだけでなく、cpuは両backend、cudaはCTranslate2とPyTorchの
+  実CUDA probe、intelはOpenVINO初期化の成功とした。利用不能なのに成功表示しないため。
 - `models remove` は utteran 管理コピーを優先し、標準 HF cache のみ存在する場合は
   huggingface_hub の cache API で当該 repo の revision を削除する。明示削除要求を満たしつつ、
   パスを推測した再帰削除を避けるため。
@@ -212,17 +238,17 @@
 
 ## 次に着手すべきこと
 
-- Windows 実機が利用可能になったら `setup.ps1` の cpu/cuda/intel profile、ffmpeg 取得、
-  オフライン継続、冪等な再実行を一気通貫で確認する。
-- HF 利用条件へ同意済みのトークンと対応ランタイムが得られれば community-1、
-  large-v3-turbo、実 CUDA の未検証 E2E を実施する。
-- Phase 2 の変更一式は `feat: implement Phase 2 operational workflows` としてコミットする。
+- Windowsでffmpeg未導入時の取得・SHA-256検証、完全オフライン継続、明示モデル取得を確認する。
+- HF 利用条件へ同意済みのトークンとモデルが得られれば community-1、large-v3-turbo、
+  それら実モデルを使うCUDA推論の未検証E2Eを実施する。
 
 ## 既知の落とし穴・回避方法
 
 - バックエンド固有オブジェクトを pipeline/exporter に渡さず、共通 dataclass へ変換する。
 - Hugging Face トークンは config.toml から無視し、ログと例外をマスクする。
 - pyannote.audio 4.x の出力 API の差異をバックエンド内部で吸収する。
+- WindowsとWSLで同じ `.venv` を共有しない。setupは `.venv-windows` を自動選択し、新しい
+  PowerShellでは表示された `UV_PROJECT_ENVIRONMENT` を設定する。
 
 ## 動作確認環境・手順
 
@@ -242,9 +268,7 @@
 - `uv sync --extra pyannote --extra dev --link-mode=copy`: 成功、pyannote.audio 4.0.7 導入確認。
 - `uv sync --link-mode=copy` と直後の `uv sync --check`: 成功（extra なし49 packages）。
 - 最終環境は `uv sync --extra dev --link-mode=copy` 済み（pyannote extra は現在未導入）。
-- Python 3.12.3: `uv run --no-sync pytest -m "not requires_model"` = 72 passed。
-- Python 3.11.15 隔離環境: `uv run --isolated --python 3.11 --extra dev pytest -m
-  "not requires_model"` = 72 passed（Python 3.11.15）。
+- WSL Python 3.11.15: `uv run --no-sync pytest -m "not requires_model"` = 74 passed。
 - `uv run --no-sync ruff check`: All checks passed。
 - `uv run --no-sync ruff format --check src tests`: 44 files already formatted。
 - `uv run --no-sync mypy`: Success、30 source files。
@@ -258,7 +282,18 @@
 - `utteran devices --json`: exit 0。実環境の CPU／CTranslate2 CUDA 列挙／CUDA ライブラリ不足／
   ONNX Runtime／ffmpeg 不在を JSON 化し、auto=CPU/int8 を確認。
 - Windows PowerShell 5.1 Parser API: `setup.ps1` は `PowerShell syntax OK`。
-- `uv lock --check`: 成功、159 packages 解決済み。
+- Windows 実機 `setup.ps1 -Profile cpu` 2回: Python 3.12.0／既存 ffmpeg／既存 `.env` を正常検出。
+  uv 未導入を明確に案内し、依存する処理を安全にスキップ。永続 PATH と代表配置先に `uv.exe` なし。
+- Windows Python 3.12.0 / uv 0.11.32: `setup.ps1 -Profile cpu|cuda|intel -SkipModels` は
+  初回・同profile再実行ともexit 0。再実行はそれぞれ依存package checkのみ。
+- Windows各profile + dev: 全74モデル不要テストpassed。
+- Windows cuda: PyTorch 2.11.0+cu126、GTX 1070 Ti sm_61でCUDAカーネル／同期成功、
+  CTranslate2 cuda:0/int8、cuDNN/cuBLAS found、auto diarization=cuda:0。
+- Windows intel: OpenVINO 2026.2.1、available devices=CPU/GPU。
+- Windows環境の最終状態は利用者が最初に指定したcpu profileへ復帰済み。
+- WSL/Windows双方でruff checkとmypy（30 source files）成功。mypyを両OSから同じ
+  `.mypy_cache` へ同時実行するとinternal errorになったため、クロスOS検査は逐次実行する。
+- `uv lock --check`: 成功、163 packages 解決済み。
 - `git diff --check`: 問題なし。
 - `要件定義.md` は Phase 1 設計書を基礎に、Phase 2 指示書の訂正5点と実効 output_dir の
   export hash 判断を同期済み。このため設計書原本との差分は意図した仕様更新。

@@ -25,9 +25,24 @@ dependencies = [
 [project.optional-dependencies]
 pyannote = [
   "pyannote.audio>=4,<5",
+  "torch>=2.8,<2.12",
+  "torchaudio>=2.8,<2.12",
+]
+cpu = [
+  "pyannote.audio>=4,<5",
+  "torch>=2.8,<2.12",
+  "torchaudio>=2.8,<2.12",
+]
+cuda = [
+  "pyannote.audio>=4,<5",
+  "torch>=2.8,<2.12",
+  "torchaudio>=2.8,<2.12",
 ]
 intel = [
   "openvino-genai>=2025,<2027",
+  "pyannote.audio>=4,<5",
+  "torch>=2.8,<2.12",
+  "torchaudio>=2.8,<2.12",
 ]
 dev = [
   "mypy>=1.11,<2",
@@ -35,6 +50,46 @@ dev = [
   "pytest-cov>=5,<7",
   "ruff>=0.7,<1",
 ]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "pyannote" },
+    { extra = "cuda" },
+  ],
+  [
+    { extra = "cpu" },
+    { extra = "cuda" },
+  ],
+  [
+    { extra = "intel" },
+    { extra = "cuda" },
+  ],
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "pyannote" },
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu126", extra = "cuda" },
+  { index = "pytorch-cpu", extra = "intel" },
+]
+torchaudio = [
+  { index = "pytorch-cpu", extra = "pyannote" },
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu126", extra = "cuda" },
+  { index = "pytorch-cpu", extra = "intel" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
 
 [project.scripts]
 utteran = "utteran.cli:app"

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from utteran.asr.base import ASRBackend
-from utteran.devices import select_faster_whisper_device
+from utteran.devices import register_cuda_dll_directories, select_faster_whisper_device
 from utteran.errors import (
     BackendUnavailableError,
     CancelledError,
@@ -51,6 +51,7 @@ class FasterWhisperBackend(ASRBackend):
         if not cls.is_available():
             return []
         try:
+            register_cuda_dll_directories()
             import ctranslate2
 
             for index in range(ctranslate2.get_cuda_device_count()):
@@ -67,6 +68,7 @@ class FasterWhisperBackend(ASRBackend):
             raise BackendUnavailableError(
                 "faster-whisper が導入されていません。`uv sync` を実行してください。"
             )
+        register_cuda_dll_directories()
         from faster_whisper import WhisperModel
 
         selection = select_faster_whisper_device(device, compute_type)

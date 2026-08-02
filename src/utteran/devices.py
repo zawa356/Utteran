@@ -8,6 +8,8 @@ import os
 import platform
 import shutil
 import subprocess
+import sysconfig
+import warnings
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -15,6 +17,8 @@ from typing import Any
 
 from utteran.audio import find_ffmpeg
 from utteran.errors import BackendUnavailableError, FfmpegNotFoundError
+
+_DLL_DIRECTORY_HANDLES: list[Any] = []
 
 
 @dataclass(frozen=True)
@@ -165,6 +169,8 @@ def detect_devices(
     probes: DeviceProbeSet | None = None,
 ) -> DeviceReport:
     """Run independent probes and derive the current auto-mode decision."""
+    if probes is None:
+        register_cuda_dll_directories()
     selected_probes = probes or system_probes()
     cpu = selected_probes.cpu()
     raw_ctranslate2 = selected_probes.ctranslate2()
@@ -204,6 +210,8 @@ def select_faster_whisper_device(
     report: CTranslate2Report | None = None,
 ) -> FasterWhisperSelection:
     """Validate explicit choices and safely resolve auto compute fallbacks."""
+    if report is None:
+        register_cuda_dll_directories()
     runtime = report or _apply_cuda_library_status(
         detect_ctranslate2(),
         detect_cuda_libraries(),
@@ -277,6 +285,7 @@ def detect_cpu() -> CPUReport:
 
 def detect_ctranslate2() -> CTranslate2Report:
     """Probe CTranslate2 devices by requesting their supported compute types."""
+    register_cuda_dll_directories()
     if importlib.util.find_spec("ctranslate2") is None:
         return CTranslate2Report(False, None, (), 0, (), "未導入")
     try:
@@ -317,7 +326,8 @@ def detect_ctranslate2() -> CTranslate2Report:
 
 
 def detect_torch() -> TorchReport:
-    """Probe PyTorch CUDA by allocating a minimal tensor on each device."""
+    """Probe PyTorch CUDA with a minimal kernel, host copy, and synchronization."""
+    register_cuda_dll_directories()
     if importlib.util.find_spec("torch") is None:
         return TorchReport(False, None, False, (), "未導入")
     try:
@@ -327,9 +337,15 @@ def detect_torch() -> TorchReport:
         if torch.cuda.is_available():
             for index in range(torch.cuda.device_count()):
                 try:
-                    properties = torch.cuda.get_device_properties(index)
-                    probe = torch.empty(1, device=f"cuda:{index}")
-                    del probe
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", UserWarning)
+                        properties = torch.cuda.get_device_properties(index)
+                        probe = torch.ones(1, device=f"cuda:{index}")
+                        result = (probe + 1).cpu()
+                        torch.cuda.synchronize(index)
+                    if float(result.item()) != 2.0:
+                        raise RuntimeError("CUDA probe returned an unexpected result")
+                    del probe, result
                     devices.append(
                         AcceleratorDevice(
                             index,
@@ -509,6 +525,8 @@ def _apply_cuda_library_status(
 
 def _cpu_flags() -> set[str] | None:
     """Read CPU flags from Linux procfs or macOS sysctl when available."""
+    if platform.system() == "Windows":
+        return _windows_cpu_flags()
     cpuinfo = Path("/proc/cpuinfo")
     if cpuinfo.is_file():
         try:
@@ -535,6 +553,8 @@ def _cpu_flags() -> set[str] | None:
 
 def _physical_cpu_count() -> int | None:
     """Count unique Linux physical/core IDs; return unknown elsewhere."""
+    if platform.system() == "Windows":
+        return _windows_physical_cpu_count()
     cpuinfo = Path("/proc/cpuinfo")
     if not cpuinfo.is_file():
         return None
@@ -606,7 +626,105 @@ def _find_shared_library(names: tuple[str, ...], globs: tuple[str, ...]) -> str 
             match = next(directory.glob(pattern), None)
             if match is not None:
                 return str(match)
+    for directory in _cuda_dependency_directories():
+        for pattern in globs:
+            match = next(directory.glob(pattern), None)
+            if match is not None:
+                return str(match)
     return None
+
+
+def register_cuda_dll_directories() -> tuple[Path, ...]:
+    """Register CUDA DLL directories shipped inside the active Windows environment."""
+    directories = _cuda_dependency_directories()
+    add_directory = getattr(os, "add_dll_directory", None)
+    if platform.system() != "Windows" or add_directory is None:
+        return directories
+    registered = {str(getattr(handle, "path", "")) for handle in _DLL_DIRECTORY_HANDLES}
+    for directory in directories:
+        if str(directory) in registered:
+            continue
+        try:
+            _DLL_DIRECTORY_HANDLES.append(add_directory(str(directory)))
+        except OSError:
+            continue
+    return directories
+
+
+def _cuda_dependency_directories() -> tuple[Path, ...]:
+    """Find package-local CUDA DLL directories without importing heavy runtimes."""
+    candidates: list[Path] = []
+    try:
+        purelib = Path(sysconfig.get_paths()["purelib"])
+        candidates.extend(
+            (
+                purelib / "nvidia" / "cublas" / "bin",
+                purelib / "nvidia" / "cudnn" / "bin",
+                purelib / "nvidia" / "cuda_nvrtc" / "bin",
+            )
+        )
+    except (KeyError, OSError):
+        pass
+    try:
+        torch_spec = importlib.util.find_spec("torch")
+        if torch_spec is not None and torch_spec.origin is not None:
+            candidates.append(Path(torch_spec.origin).parent / "lib")
+    except (ImportError, ModuleNotFoundError, ValueError):
+        pass
+    unique: list[Path] = []
+    for candidate in candidates:
+        if candidate.is_dir() and candidate not in unique:
+            unique.append(candidate)
+    return tuple(unique)
+
+
+def _windows_cpu_flags() -> set[str] | None:
+    """Read AVX feature flags through the Windows processor feature API."""
+    try:
+        loader_name = "WinDLL"
+        kernel32 = getattr(ctypes, loader_name)("kernel32", use_last_error=True)
+        feature_present = kernel32.IsProcessorFeaturePresent
+        feature_present.argtypes = [ctypes.c_uint]
+        feature_present.restype = ctypes.c_bool
+        features = {
+            name
+            for name, feature_id in (("avx2", 40), ("avx512f", 41))
+            if feature_present(feature_id)
+        }
+        return features
+    except (AttributeError, OSError):
+        return None
+
+
+def _windows_physical_cpu_count() -> int | None:
+    """Count Windows processor-core relationship records via Kernel32."""
+    try:
+        loader_name = "WinDLL"
+        kernel32 = getattr(ctypes, loader_name)("kernel32", use_last_error=True)
+        get_information = kernel32.GetLogicalProcessorInformationEx
+        get_information.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+        get_information.restype = ctypes.c_bool
+        length = ctypes.c_uint32(0)
+        get_information(0, None, ctypes.byref(length))
+        if length.value < 8:
+            return None
+        buffer = ctypes.create_string_buffer(length.value)
+        if not get_information(0, buffer, ctypes.byref(length)):
+            return None
+        raw = buffer.raw[: length.value]
+        count = 0
+        offset = 0
+        while offset + 8 <= len(raw):
+            relationship = int.from_bytes(raw[offset : offset + 4], "little")
+            size = int.from_bytes(raw[offset + 4 : offset + 8], "little")
+            if size < 8 or offset + size > len(raw):
+                return None
+            if relationship == 0:
+                count += 1
+            offset += size
+        return count or None
+    except (AttributeError, OSError):
+        return None
 
 
 def _bounded_error(error: Exception) -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import importlib.util
 import logging
+import warnings
 import wave
 from collections.abc import Mapping
 from pathlib import Path
@@ -273,8 +274,14 @@ def _torch_cuda_usable(torch_module: Any, index: int) -> bool:
             or index >= torch_module.cuda.device_count()
         ):
             return False
-        probe = torch_module.empty(1, device=f"cuda:{index}")
-        del probe
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            probe = torch_module.ones(1, device=f"cuda:{index}")
+            result = (probe + 1).cpu()
+            torch_module.cuda.synchronize(index)
+        if float(result.item()) != 2.0:
+            return False
+        del probe, result
         return True
     except Exception:
         return False

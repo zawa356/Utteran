@@ -32,6 +32,12 @@ ffmpeg、`.env`、モデルは再利用するため、繰り返し実行でき�
 .\setup.ps1 -Profile intel
 ```
 
+| Profile | 導入内容 |
+|---|---|
+| `cpu` | faster-whisper、pyannote、CPU版PyTorch |
+| `cuda` | faster-whisper、pyannote、CUDA 12.6版PyTorch。CUDA wheelは約2.4 GiB |
+| `intel` | `cpu`相当とOpenVINO GenAI。Phase 2では検出のみ |
+
 主なパラメーター:
 
 ```powershell
@@ -47,6 +53,18 @@ CUDA DLL、`utteran devices` の順で確認します。ネットワーク処理
 続け、残りの手順を表示します。ffmpeg は公式ダウンロードページが案内する gyan.dev の
 release essentials build を SHA-256 検証後、ユーザーデータ配下の `utteran/bin` に配置します。
 この配布 build は GPLv3 です。バイナリはリポジトリには含まれません。
+
+WSLとWindowsから同じcheckoutを使い、`.venv` がLinux用だった場合、スクリプトは既存環境を
+変更せず `.venv-windows` を使用します。実行したPowerShellではその環境が選択されます。
+新しいPowerShellで `uv run` を使う場合は、スクリプト末尾に表示されるとおり設定します。
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = 'C:\path\to\Utteran\.venv-windows'
+uv run utteran devices
+```
+
+依存同期または選択profileの実デバイスprobeに失敗した場合、後続のモデル／devices処理を
+重ねて実行せず、`setup.ps1` は不完全と表示して終了コード1を返します。
 
 PowerShell の実行ポリシーで止まる場合は、現在のプロセスだけ許可して実行できます。
 
@@ -67,11 +85,23 @@ uv sync
 uv run utteran transcribe audio.wav --no-diarization
 ```
 
-pyannote.audio と PyTorch を含む推奨構成:
+pyannote.audio とCPU版PyTorchを含む構成:
 
 ```console
 uv sync --extra pyannote
 ```
+
+Windows setupと同じ明示profileを手動で選ぶ場合:
+
+```console
+uv sync --extra cpu
+uv sync --extra cuda
+uv sync --extra intel
+```
+
+`cpu`、`cuda`、`intel` は相互に切り替えて使用します。`cuda` はCUDA 12.6版PyTorchを使用し、
+仮想環境内のcuDNN/cuBLAS DLLを自動登録します。GPUがCUDA wheelのcompute capabilityに
+非対応の場合は、メモリ確保だけでなく実CUDAカーネルの実行・同期probeで不適合と判定します。
 
 Intel runtime の検出も有効にする構成（OpenVINO ASR 自体は Phase 3）:
 
@@ -261,7 +291,8 @@ uv run utteran devices --json
 CPU コア／AVX、CTranslate2 CUDA GPU／VRAM／compute type、cuDNN/cuBLAS、PyTorch CUDA、
 OpenVINO devices、ONNX Runtime providers、ffmpeg と backend 導入状況を表示します。末尾には
 現在の `auto` が実際に選ぶ ASR／話者分離 backend、device、compute type とフォールバック理由を
-表示します。`--json` は将来の GUI から利用できる安定した構造化出力です。
+表示します。Windowsでは物理コア数とAVXをWin32 APIで取得し、PyTorch CUDAは実カーネル実行と
+同期まで確認します。`--json` は将来の GUI から利用できる安定した構造化出力です。
 
 ## 設定
 
@@ -317,8 +348,8 @@ uv lock --check
 
 ## ライセンス
 
-utteran のコードは [MIT License](LICENSE) です。Whisper、Kotoba Whisper、pyannote、
-OpenVINO 配布モデル、ffmpeg などには個別のライセンスと利用条件があります。特に pyannote
+utteran のコードは [MIT License](LICENSE) です。Whisper、Kotoba Whisper、PyTorch、NVIDIA
+CUDAライブラリ、pyannote、OpenVINO 配布モデル、ffmpeg などには個別のライセンスと利用条件があります。特に pyannote
 community-1 は CC-BY-4.0 で、利用前にモデル利用条件への同意が必要です。Windows setup が
 取得する gyan.dev の FFmpeg essentials build は GPLv3 です。詳細は
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) と各モデルページを確認してください。

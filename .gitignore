@@ -5,6 +5,7 @@
 
 # Python environments and bytecode
 .venv/
+.venv-windows/
 venv/
 __pycache__/
 *.py[cod]
