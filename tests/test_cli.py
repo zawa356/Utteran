@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from utteran.batch import BatchItemResult, BatchSummary
-from utteran.cli import _parse_model_selection, app
+from utteran.cli import _cli_overrides, _parse_model_selection, app
 from utteran.devices import (
     AutoSelection,
     CPUReport,
@@ -33,6 +33,37 @@ def test_missing_input_returns_input_exit_code(tmp_path: Path) -> None:
     assert "Traceback" not in result.output
 
 
+def test_cli_overrides_support_language_auto_and_diarization_model() -> None:
+    overrides = _cli_overrides(
+        format_names=None,
+        output_dir=None,
+        asr_backend="auto",
+        asr_model="large-v3-turbo",
+        diarization_backend="pyannote",
+        diarization_model="local-pyannote",
+        device="auto",
+        language="auto",
+        num_speakers=None,
+        min_speakers=None,
+        max_speakers=None,
+        no_diarization=False,
+        verbose=False,
+        quiet=False,
+    )
+
+    assert overrides["asr"] == {
+        "backend": "auto",
+        "model": "large-v3-turbo",
+        "device": "auto",
+        "language": None,
+    }
+    assert overrides["diarization"] == {
+        "backend": "pyannote",
+        "model": "local-pyannote",
+        "device": "auto",
+    }
+
+
 def test_missing_hf_token_is_actionable_before_expensive_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -42,6 +73,9 @@ def test_missing_hf_token_is_actionable_before_expensive_work(
     monkeypatch.setenv("HF_TOKEN", "")
     monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "")
     monkeypatch.setattr("utteran.config.KeyringTokenProvider.get_token", lambda _self: None)
+    monkeypatch.setattr(
+        "utteran.diarization.registry.find_runtime_model", lambda *_args, **_kwargs: None
+    )
 
     result = runner.invoke(app, ["transcribe", str(input_path), "--quiet"])
 

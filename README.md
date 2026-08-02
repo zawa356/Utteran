@@ -72,6 +72,33 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup.ps1 -Profile cpu
 ```
 
+## Windows対話フロント
+
+セットアップ後は、リポジトリ直下で次を実行すると番号メニューだけで操作できます。
+
+```powershell
+.\start.ps1
+```
+
+音声・動画を `input` フォルダへ置き、文字起こしメニューでファイルまたはフォルダ一括を選びます。
+既定の出力先は `output` です。両フォルダは空の状態でもGitに残りますが、利用者が置いた入力と
+生成出力は拡張子を問わずGit対象外です。任意の入力／出力パスも指定できます。
+
+文字起こしウィザードでは次を選択し、実行前に要約と実際のCLIコマンドを確認できます。
+
+- ASR backend（auto / faster-whisper）とWhisper／Kotoba／任意の登録済みモデルまたはローカルパス
+- auto / CPU / CUDAデバイス
+- 日本語、英語、言語自動判定、任意の言語コード
+- pyannote話者分離の有無、モデル、話者数の自動／固定／範囲指定
+- SRT / VTT / JSON / TXT / Markdownの組み合わせ
+- フォルダ再帰、include/exclude glob、resume/no-resume/force、lock解除、config、ログ詳細度
+- 実行前のdry-run
+
+メインメニューからモデルの一覧／取得／削除／検証、デバイス診断、ジョブ管理、設定管理、
+setup profile切替、input/outputフォルダをExplorerで開く操作も実行できます。未実装のbackendは
+選択肢に表示しません。入力したパスやglobはコマンド文字列として再評価せず、引数配列でCLIへ
+渡します。
+
 ## uv による手動インストール
 
 [uv](https://docs.astral.sh/uv/) と Python 3.11 または 3.12 を用意し、リポジトリ直下で
@@ -178,6 +205,12 @@ pyannote ディレクトリを設定へ直接指定することもできます�
 gated モデルの取得エラーは、トークン未設定、利用条件未同意／権限不足、無効トークンに分けて
 対処先を表示します。
 
+`models list` は必須ファイルが欠けた部分取得を「不完全」と表示します。`models verify` は欠落した
+ファイル名を報告し、同じIDで `models download` を実行すると既存ディレクトリを消さずに不足分の
+取得を再開します。pyannote community-1の完全なスナップショットは現在約32 MiBで、設定ファイル
+など約1 MiBだけの状態は正常な導入ではありません。WindowsではHugging Faceの長い一時ファイル名
+が従来の260文字制限を超えても取得できるよう、ダウンロード時にextended-length pathを使用します。
+
 ## ffmpeg の準備
 
 [ffmpeg](https://ffmpeg.org/download.html) を別途用意してください。バイナリは本リポジトリに
@@ -252,8 +285,9 @@ uv run utteran transcribe meeting.mp4 --format txt
 --asr-backend auto|faster-whisper
 --asr-model ID_OR_PATH
 --diarization-backend pyannote
+--diarization-model ID_OR_PATH
 --device auto|cpu|cuda|cuda:N
---language CODE
+--language CODE|auto
 --num-speakers N
 --min-speakers N
 --max-speakers N

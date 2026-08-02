@@ -10,6 +10,11 @@
   検証済み。gated pyannote／既定 large-v3-turboの実モデルE2Eは未検証として継続管理する。
 - Phase 2 follow-up（モデル導線改善）: 実装・Windows/WSL検証完了。setupからモデル管理を分離し、
   models CLIへ説明付き一覧、番号選択、従来の明示ID指定を集約した。
+- Phase 2 follow-up（Windows対話フロント）: 実装・Windows/WSL検証完了。input/output運用と、
+  start.ps1からtranscribe・models・devices・jobs・config・setupへ到達する番号メニューを実装した。
+- Phase 2 follow-up（不完全モデル検出）: 実装・Windows/WSL検証完了。利用者環境でpyannote
+  community-1の重みが欠落した約1.1 MiBの部分取得を「導入済み」「正常」と誤判定する問題と、
+  Windows MAX_PATHによる取得失敗を修正した。
 - `docs/utteran_Phase2_指示書.md` 全399行、既存状態、要件定義、変更履歴を読了し、
   コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
@@ -52,8 +57,57 @@
 5. 対話／非対話／明示IDの回帰テスト、Windows setup実機試験、全品質検査を行う。
 6. README、変更履歴、AISTATEを同期し、問題がなければコミットする。
 
+### Phase 2 follow-up / Windows対話フロント（完了）
+
+1. start.ps1、input/output、言語autoの追加仕様を要件定義へ反映する。
+2. input/outputの内容を除外しつつ、各 `.gitkeep` を追跡する。
+3. 実装済みbackendだけを使う文字起こしウィザードをPowerShell引数配列で構築する。
+4. models/devices/jobs/config/setupとフォルダを開く管理メニューを接続する。
+5. PowerShell Parser、メニュー終了、dry-runコマンド構築、Python品質ゲートを検証する。
+6. README、変更履歴、AISTATEを同期し、コミット可能な差分として整える。
+
+### Phase 2 follow-up / 不完全モデル検出（完了）
+
+1. 利用者のpyannote保存先とHugging Face tree metadataを読み取り、期待ファイルと実体を比較する。
+2. 完全／部分取得の候補を区別し、形式別必須ファイルを検証して欠落名を返す。
+3. 部分取得を一覧・verify・remove・download再開へ接続し、回帰テストを追加する。
+4. カタログ概算サイズと必須文書を実態へ同期する。
+5. WSL／Windows品質ゲートと実キャッシュ表示を検証し、コミットする。
+
 ## 直近の作業内容と結果
 
+- 利用者の管理済みpyannoteディレクトリを読み取り調査。Hugging Face tree metadata上は約32.1 MiB、
+  実体は約1.1 MiBで、`embedding/pytorch_model.bin`（26,646,242 bytes）と
+  `segmentation/pytorch_model.bin`（5,906,507 bytes）が欠落。完了metadataも存在しなかった。
+- 原因はpyannote pipelineの導入判定が`config.yaml`の存在だけを見ており、verifyも同じ弱い判定を
+  再利用していたこと。部分取得も候補として保持し、必須ファイル不足を明示する実装へ変更した。
+- 再取得のWindows実機試験で、Hugging Faceのembedding一時ファイルパスがちょうど260文字となり
+  `FileNotFoundError`になる第二原因を特定。snapshot downloadに`\\?\` extended-length pathを
+  渡すと不足していた全10ファイルの取得が成功したため、managerへ恒久対策を追加した。
+- 部分取得は一覧で「不完全」と表示し、downloadは既存保存先へ不足分を取得、removeは明示操作時に
+  部分取得も削除できる。pyannoteの概算サイズを現行treeに合わせ100 MiBから34 MiBへ変更した。
+- Windows実キャッシュで修正前の一覧=不完全1.1 MiB、verify=failed/exit 1を確認。extended-length
+  pathで不足していた約31 MiBを再取得後、一覧=導入済み32.1 MiB、全モデルverify=exit 0、
+  `PyannoteBackend.load(..., "cpu")` とunload=exit 0を確認。利用者の音声・動画は使用していない。
+- 部分取得／再開とWindows path変換の回帰テストを追加。WSLモデル不要82 tests passed、
+  ruff/format/mypy/lock/diff check合格。
+- `input/.gitkeep`、`output/.gitkeep`を追加し、各フォルダ直下の任意内容をGit除外。既存の利用者
+  入力1件は内容を読まず保持し、ignore対象であることだけ確認した。
+- UTF-8 BOM付き`start.ps1`を実装。文字起こし、モデル、devices、jobs、config、setup profile、
+  input/output Explorer起動へ番号メニューから到達できる。`.venv-windows`／Windows `.venv`の
+  `utteran.exe`を優先し、未構築時はsetupを案内する。
+- 文字起こしウィザードにinput一覧／一括／任意パス、output、実装済みASR backend、Whisper／
+  Kotoba／任意登録ID・ローカルパス、device、言語、pyannoteモデル、話者数自動／固定／範囲、
+  5形式、再帰・glob、resume／force、lock、config、ログ、dry-runを接続した。
+- CLIに`--diarization-model`を追加。`--language auto`は設定上書きの`None`へ変換し、
+  faster-whisperの言語自動判定を選べるようにした。引数変換の回帰テストを追加。
+- Windows PowerShell 5.1でstart/setup Parser合格。startの終了、auto＋話者分離なし、Kotoba＋CPU＋
+  話者3人＋5形式＋glob＋forceの2種dry-runがexit 0。models一覧、devices、jobs一覧、config pathの
+  各メニュー接続もexit 0。
+- WSL Python 3.11でモデル不要80 tests passed、ruff/format/mypy/lock/diff check合格。
+  Windows Python 3.12でmodels/CLI重点22 tests passed。検査後はcpu profileへ復帰済み。
+- 利用者環境にpyannote実モデルが導入されたことで、トークン不足テストがローカルモデルを解決し
+  次段階へ進む環境依存を検出。テストではfind_runtime_modelを未取得へ固定して隔離した。
 - 利用者実行で通常setupがモデルID入力待ちになる問題を受け、setupからモデル関連パラメータと
   対話取得処理を削除。環境構築・ffmpeg・秘密設定補助・devices診断だけを行い、完了後に
   `utteran models` を案内する責務へ変更した。
@@ -222,6 +276,15 @@
 - 明示IDは登録済みカタログIDに限定する。任意の未登録Hugging Faceリポジトリはbackend、形式、
   必須ファイル、runtime解決情報がなく、取得だけ成功しても利用不能になり得るため。日本語向け
   Kotoba-Whisperは登録済み `faster-whisper:kotoba-whisper-v2.0` として番号／ID双方で選択できる。
+- start.ps1はPython側のpipelineや管理処理を再実装せず、対話結果を引数配列として既存CLIへ渡す。
+  パスやglobに空白・記号があってもシェル再評価を起こさず、CLIとフロントの挙動差を抑えるため。
+- start.ps1はUTF-8 BOM付きで追跡する。Windows PowerShell 5.1がBOMなしUTF-8の日本語をANSIとして
+  誤読し、文字化けだけでなく構文エラーを起こすため。BOMを除去するformatterは使用しない。
+- モデルの「導入済み」はディレクトリや設定ファイル1個の存在ではなく、形式別必須ファイルの
+  完備で判定する。途中失敗を再開可能にするため部分ディレクトリは自動削除せず、状態と欠落名を
+  表示して同じlocal_dirへのsnapshot downloadを再実行する。
+- Windowsのモデル保存先そのものは通常表記を維持し、Hugging Faceへ渡すlocal_dirだけ絶対パスの
+  extended-length表記へ変換する。これによりUIへ`\\?\`を漏らさず一時名のMAX_PATH超過を防ぐ。
 - `models remove` は utteran 管理コピーを優先し、標準 HF cache のみ存在する場合は
   huggingface_hub の cache API で当該 repo の revision を削除する。明示削除要求を満たしつつ、
   パスを推測した再帰削除を避けるため。
@@ -282,6 +345,8 @@
 - pyannote.audio 4.x の出力 API の差異をバックエンド内部で吸収する。
 - WindowsとWSLで同じ `.venv` を共有しない。setupは `.venv-windows` を自動選択し、新しい
   PowerShellでは表示された `UV_PROJECT_ENVIRONMENT` を設定する。
+- `start.ps1`の先頭UTF-8 BOMを保持する。PowerShell 7だけで検査せず、Windows PowerShell 5.1
+  Parser APIと実行の双方を確認する。
 
 ## 動作確認環境・手順
 
@@ -301,7 +366,7 @@
 - `uv sync --extra pyannote --extra dev --link-mode=copy`: 成功、pyannote.audio 4.0.7 導入確認。
 - `uv sync --link-mode=copy` と直後の `uv sync --check`: 成功（extra なし49 packages）。
 - 最終環境は `uv sync --extra dev --link-mode=copy` 済み（pyannote extra は現在未導入）。
-- WSL Python 3.11.15: `uv run --no-sync pytest -m "not requires_model"` = 79 passed。
+- WSL Python 3.11.15: `uv run --no-sync pytest -m "not requires_model"` = 82 passed。
 - `uv run --no-sync ruff check`: All checks passed。
 - `uv run --no-sync ruff format --check src tests`: 44 files already formatted。
 - `uv run --no-sync mypy`: Success、30 source files。
@@ -314,7 +379,9 @@
   初回5段階実行、同一 job ID の2回目全 skip、format 変更時 export-only、force 時全段階実行を確認。
 - `utteran devices --json`: exit 0。実環境の CPU／CTranslate2 CUDA 列挙／CUDA ライブラリ不足／
   ONNX Runtime／ffmpeg 不在を JSON 化し、auto=CPU/int8 を確認。
-- Windows PowerShell 5.1 Parser API: `setup.ps1` は `PowerShell syntax OK`。
+- Windows PowerShell 5.1 Parser API: `setup.ps1` と `start.ps1` は `PowerShell syntax OK`。
+- Windows PowerShell 5.1: `start.ps1` の終了、2種類の文字起こしdry-run、models／devices／jobs／
+  configのread-onlyメニュー接続はいずれもexit 0。
 - Windows 実機 `setup.ps1 -Profile cpu` 2回: Python 3.12.0／既存 ffmpeg／既存 `.env` を正常検出。
   uv 未導入を明確に案内し、依存する処理を安全にスキップ。永続 PATH と代表配置先に `uv.exe` なし。
 - モデル導線変更前のWindows Python 3.12.0 / uv 0.11.32:
@@ -322,7 +389,7 @@
   再実行はそれぞれ依存package checkのみ。
 - モデル導線変更後のWindows `setup.ps1 -Profile cpu`: モデル入力なしで初回・冪等再実行・
   検査後復帰の3回すべてexit 0。`models list --available`で説明付き5件を表示。
-- Windows Python 3.12.0: `tests/test_models.py tests/test_cli.py` = 21 passed。
+- Windows Python 3.12.0: `tests/test_models.py tests/test_cli.py` = 22 passed。
 - Windows各profile + dev: 全74モデル不要テストpassed。
 - Windows cuda: PyTorch 2.11.0+cu126、GTX 1070 Ti sm_61でCUDAカーネル／同期成功、
   CTranslate2 cuda:0/int8、cuDNN/cuBLAS found、auto diarization=cuda:0。

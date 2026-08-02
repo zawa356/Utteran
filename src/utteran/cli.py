@@ -97,8 +97,13 @@ def transcribe(
     diarization_backend: Annotated[
         str | None, typer.Option("--diarization-backend", help="話者分離バックエンド")
     ] = None,
+    diarization_model: Annotated[
+        str | None, typer.Option("--diarization-model", help="話者分離モデル ID またはローカルパス")
+    ] = None,
     device: Annotated[str | None, typer.Option("--device", help="cpu、cuda、cuda:N、auto")] = None,
-    language: Annotated[str | None, typer.Option("--language", help="言語コード")] = None,
+    language: Annotated[
+        str | None, typer.Option("--language", help="言語コードまたは auto (自動判定)")
+    ] = None,
     num_speakers: Annotated[
         int | None, typer.Option("--num-speakers", min=1, help="既知の話者数")
     ] = None,
@@ -141,6 +146,7 @@ def transcribe(
             asr_backend=asr_backend,
             asr_model=asr_model,
             diarization_backend=diarization_backend,
+            diarization_model=diarization_model,
             device=device,
             language=language,
             num_speakers=num_speakers,
@@ -285,6 +291,8 @@ def models_download(
             if existing.installed:
                 console.print(f"導入済み: {entry.display_name}  {existing.path}")
                 continue
+            if existing.path is not None:
+                console.print(f"不完全なモデルを再取得: {entry.display_name}  {existing.path}")
             console.print(
                 f"取得: {entry.display_name} ({entry.key}, "
                 f"概算 {_format_size(entry.approximate_size_bytes)})"
@@ -308,10 +316,13 @@ def models_remove(
         manager = _model_manager()
         entry = get_model(identifier)
         status = manager.status(entry)
-        if not status.installed:
+        if status.path is None:
             console.print(f"未導入: {entry.key}")
             return
-        console.print(f"削除対象: {entry.key}  {_format_size(status.size_bytes)}  {status.path}")
+        state = "導入済み" if status.installed else "不完全"
+        console.print(
+            f"削除対象: {entry.key}  {state}  {_format_size(status.size_bytes)}  {status.path}"
+        )
         if not yes and not typer.confirm("削除しますか?"):
             console.print("キャンセルしました。")
             return
@@ -736,6 +747,7 @@ def _cli_overrides(
     asr_backend: str | None,
     asr_model: str | None,
     diarization_backend: str | None,
+    diarization_model: str | None,
     device: str | None,
     language: str | None,
     num_speakers: int | None,
@@ -766,9 +778,12 @@ def _cli_overrides(
         asr["device"] = device
         diarization["device"] = device
     if language is not None:
-        asr["language"] = language
+        normalized_language = language.strip()
+        asr["language"] = None if normalized_language.casefold() == "auto" else normalized_language
     if diarization_backend is not None:
         diarization["backend"] = diarization_backend
+    if diarization_model is not None:
+        diarization["model"] = diarization_model
     if num_speakers is not None:
         diarization["num_speakers"] = num_speakers
     if min_speakers is not None:
@@ -810,17 +825,17 @@ def _print_model_catalog(statuses: list[ModelStatus], *, numbered: bool) -> None
     """Print a human-oriented catalog while retaining exact automation IDs."""
     for index, status in enumerate(statuses, start=1):
         entry = status.entry
-        shown_size = status.size_bytes if status.installed else entry.approximate_size_bytes
+        shown_size = status.size_bytes if status.path is not None else entry.approximate_size_bytes
+        state = "導入済み" if status.installed else "不完全" if status.path else "未導入"
         prefix = f"{index}." if numbered else "-"
         console.print(f"{prefix} [bold]{entry.display_name}[/bold]")
         console.print(f"   用途: {entry.description}")
         console.print(
-            f"   状態: {'導入済み' if status.installed else '未導入'} / "
-            f"backend: {entry.backend} / サイズ: {_format_size(shown_size)}"
+            f"   状態: {state} / backend: {entry.backend} / サイズ: {_format_size(shown_size)}"
         )
         console.print(f"   ライセンス: {entry.license} / gated: {'yes' if entry.gated else 'no'}")
         console.print(f"   ID: [cyan]{entry.key}[/cyan]")
-        if status.installed and status.path is not None:
+        if status.path is not None:
             console.print(f"   保存先: {status.path}")
 
 

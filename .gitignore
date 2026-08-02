@@ -27,9 +27,11 @@ dist/
 site/
 
 # utteran runtime data
-/input/
+/input/*
+!/input/.gitkeep
 /inputs/
-/output/
+/output/*
+!/output/.gitkeep
 /jobs/
 /models/
 *.log

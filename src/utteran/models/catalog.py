@@ -87,7 +87,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         backend="pyannote",
         format="pyannote pipeline",
         repository_id="pyannote/speaker-diarization-community-1",
-        approximate_size_bytes=100 * _MIB,
+        approximate_size_bytes=34 * _MIB,
         license="CC-BY-4.0",
         gated=True,
     ),
