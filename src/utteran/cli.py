@@ -261,7 +261,11 @@ def devices_command(
     """Display hardware, runtimes, dependencies, and actual auto choices."""
     try:
         config = Config.load(config_path=config_path)
-        report = detect_devices(config.ffmpeg.path)
+        report = detect_devices(
+            config.ffmpeg.path,
+            venv_dir=config.general.venv_dir,
+            native_dir=config.general.native_dir,
+        )
     except UtteranError as exc:
         _exit_expected(exc)
     if json_output:
@@ -928,7 +932,30 @@ def _print_device_report(report: DeviceReport) -> None:
             "available" if available else "unavailable",
             "-",
         )
+    table.add_row(
+        "Vulkan (build)",
+        "available" if report.vulkan.build_available else "unavailable",
+        report.vulkan.build_error or "glslc found",
+    )
+    table.add_row(
+        "Vulkan (runtime)",
+        "available" if report.vulkan.runtime_available else "unavailable",
+        report.vulkan.runtime_device or report.vulkan.runtime_error or "-",
+    )
+    for name, runnable in report.native.variants.items():
+        table.add_row(
+            f"native: {name}",
+            "runnable" if runnable else "not built",
+            report.native.whisper_cpp_tag or "-",
+        )
     console.print(table)
+    console.print(
+        f"プロファイル: 現在={report.profile.current or '不明'} / "
+        + ", ".join(
+            f"{item.name}={'作成済み' if item.exists else '未作成'}"
+            for item in report.profile.profiles
+        )
+    )
     selected = report.auto_selection
     console.print(
         "auto: "

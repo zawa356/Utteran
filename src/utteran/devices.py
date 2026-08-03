@@ -106,6 +106,48 @@ class AutoSelection:
 
 
 @dataclass(frozen=True)
+class ProfileSummary:
+    """One profile's presence and freshness, without launching its Python."""
+
+    name: str
+    exists: bool
+    updated_at: str | None
+
+
+@dataclass(frozen=True)
+class ProfileReport:
+    """Phase 3a environment-separation view: active profile and its siblings."""
+
+    current: str | None
+    profiles: tuple[ProfileSummary, ...]
+
+
+@dataclass(frozen=True)
+class VulkanReport:
+    """Vulkan build and runtime prerequisites, reported separately.
+
+    A machine can satisfy one without the other (confirmed while
+    implementing native.py - see AISTATE.md I-3), so `devices` must not
+    collapse them into a single available/unavailable flag.
+    """
+
+    build_available: bool
+    build_error: str | None
+    runtime_available: bool
+    runtime_device: str | None
+    runtime_error: str | None
+
+
+@dataclass(frozen=True)
+class NativeReport:
+    """whisper.cpp native build status from the shared native_dir manifest."""
+
+    built: bool
+    whisper_cpp_tag: str | None
+    variants: dict[str, bool]
+
+
+@dataclass(frozen=True)
 class DeviceReport:
     """Complete machine-readable devices command payload."""
 
@@ -119,6 +161,9 @@ class DeviceReport:
     backends: dict[str, bool]
     auto_selection: AutoSelection
     warnings: tuple[str, ...]
+    profile: ProfileReport
+    vulkan: VulkanReport
+    native: NativeReport
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable report for future GUI consumers."""
@@ -137,6 +182,9 @@ class DeviceProbeSet:
     onnxruntime: Callable[[], OptionalRuntimeReport]
     ffmpeg: Callable[[Path | None], FfmpegReport]
     backends: Callable[[], dict[str, bool]]
+    profile: Callable[[], ProfileReport]
+    vulkan: Callable[[], VulkanReport]
+    native: Callable[[], NativeReport]
 
 
 @dataclass(frozen=True)
@@ -149,7 +197,11 @@ class FasterWhisperSelection:
     note: str | None = None
 
 
-def system_probes() -> DeviceProbeSet:
+def system_probes(
+    *,
+    venv_dir: Path | None = None,
+    native_dir: Path | None = None,
+) -> DeviceProbeSet:
     """Create the real environment probe collection."""
     return DeviceProbeSet(
         cpu=detect_cpu,
@@ -160,18 +212,23 @@ def system_probes() -> DeviceProbeSet:
         onnxruntime=detect_onnxruntime,
         ffmpeg=detect_ffmpeg,
         backends=detect_backends,
+        profile=lambda: detect_profile_report(venv_dir),
+        vulkan=detect_vulkan,
+        native=lambda: detect_native_report(native_dir),
     )
 
 
 def detect_devices(
     ffmpeg_path: Path | None = None,
     *,
+    venv_dir: Path | None = None,
+    native_dir: Path | None = None,
     probes: DeviceProbeSet | None = None,
 ) -> DeviceReport:
     """Run independent probes and derive the current auto-mode decision."""
     if probes is None:
         register_cuda_dll_directories()
-    selected_probes = probes or system_probes()
+    selected_probes = probes or system_probes(venv_dir=venv_dir, native_dir=native_dir)
     cpu = selected_probes.cpu()
     raw_ctranslate2 = selected_probes.ctranslate2()
     libraries = selected_probes.libraries()
@@ -181,6 +238,9 @@ def detect_devices(
     onnxruntime = selected_probes.onnxruntime()
     ffmpeg = selected_probes.ffmpeg(ffmpeg_path)
     backends = selected_probes.backends()
+    profile = selected_probes.profile()
+    vulkan = selected_probes.vulkan()
+    native = selected_probes.native()
     auto_selection, warnings = _auto_selection(ctranslate2, torch, openvino)
     if ctranslate2.cuda_device_count and not any(
         device.usable for device in ctranslate2.cuda_devices
@@ -200,6 +260,9 @@ def detect_devices(
         backends=backends,
         auto_selection=auto_selection,
         warnings=tuple(warnings),
+        profile=profile,
+        vulkan=vulkan,
+        native=native,
     )
 
 
@@ -440,6 +503,57 @@ def detect_backends() -> dict[str, bool]:
         "openvino": _module_available("openvino"),
         "sherpa-onnx": _module_available("sherpa_onnx"),
     }
+
+
+def detect_profile_report(venv_dir: Path | None = None) -> ProfileReport:
+    """Report the active profile (if any) and every profile's presence.
+
+    Only reads directory existence and mtimes for the non-current
+    profiles - launching each one's Python is unnecessary for this view
+    and would make `devices` slow.
+    """
+    from utteran.profiles import current_profile_name, list_profile_statuses, resolve_venv_root
+
+    root = resolve_venv_root(Path.cwd(), configured=venv_dir)
+    statuses = list_profile_statuses(root)
+    return ProfileReport(
+        current=current_profile_name(),
+        profiles=tuple(
+            ProfileSummary(status.name, status.exists, status.updated_at) for status in statuses
+        ),
+    )
+
+
+def detect_vulkan() -> VulkanReport:
+    """Report Vulkan build (glslc) and runtime (vulkaninfo) prerequisites separately."""
+    from utteran.native import probe_glslc, probe_vulkan_runtime
+
+    build = probe_glslc()
+    runtime, device = probe_vulkan_runtime()
+    return VulkanReport(
+        build_available=build.available,
+        build_error=None if build.available else build.detail,
+        runtime_available=runtime.available,
+        runtime_device=device,
+        runtime_error=None if runtime.available else runtime.detail,
+    )
+
+
+def detect_native_report(native_dir: Path | None = None) -> NativeReport:
+    """Report the shared whisper.cpp native build manifest and runnable variants."""
+    from utteran.native import VARIANT_NAMES, NativeBuilder, resolve_native_dir
+
+    builder = NativeBuilder(resolve_native_dir(native_dir))
+    status = builder.status()
+    manifest = status["manifest"]
+    whisper_cpp = manifest.get("whisper_cpp") if isinstance(manifest, dict) else None
+    tag = whisper_cpp.get("tag") if isinstance(whisper_cpp, dict) else None
+    runnable = status["runnable"] if isinstance(status["runnable"], dict) else {}
+    return NativeReport(
+        built=bool(manifest),
+        whisper_cpp_tag=tag,
+        variants={name: bool(runnable.get(name, False)) for name in VARIANT_NAMES},
+    )
 
 
 def _auto_selection(

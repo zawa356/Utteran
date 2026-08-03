@@ -25,8 +25,11 @@ from utteran.devices import (
     DeviceReport,
     FfmpegReport,
     LibraryReport,
+    NativeReport,
     OptionalRuntimeReport,
+    ProfileReport,
     TorchReport,
+    VulkanReport,
 )
 from utteran.errors import CancelledError, ConfigurationError
 from utteran.jobs import JobStore
@@ -194,8 +197,11 @@ def test_devices_json_is_machine_readable(monkeypatch: pytest.MonkeyPatch) -> No
             "cpu",
         ),
         warnings=(),
+        profile=ProfileReport(current="cpu", profiles=()),
+        vulkan=VulkanReport(False, "no glslc", False, None, "no vulkaninfo"),
+        native=NativeReport(built=False, whisper_cpp_tag=None, variants={}),
     )
-    monkeypatch.setattr("utteran.cli.detect_devices", lambda _path: report)
+    monkeypatch.setattr("utteran.cli.detect_devices", lambda _path, **_kwargs: report)
 
     result = runner.invoke(app, ["devices", "--json"])
 
