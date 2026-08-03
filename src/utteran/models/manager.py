@@ -235,6 +235,21 @@ class ModelManager:
             return VerificationResult(entry, False, path, size, "モデルディレクトリが空です")
         if entry.format == "CTranslate2":
             _verify_alignment_heads(path)
+        if entry.format == "GGML" and entry.model_size and entry.artifact_filename:
+            ir_root = self.root / "openvino-encoder" / entry.model_size
+            canonical_xml = ir_root / f"ggml-{entry.model_size}-encoder-openvino.xml"
+            canonical_bin = canonical_xml.with_suffix(".bin")
+            if canonical_xml.exists() != canonical_bin.exists():
+                return VerificationResult(entry, False, path, size, "OpenVINO IRのXML/BINが不整合")
+            if canonical_xml.is_file():
+                alias_xml = path / (
+                    Path(entry.artifact_filename).stem + "-encoder-openvino.xml"
+                )
+                alias_bin = alias_xml.with_suffix(".bin")
+                if not alias_xml.is_file() or not alias_bin.is_file():
+                    return VerificationResult(
+                        entry, False, path, size, "OpenVINO IR aliasがありません"
+                    )
         return VerificationResult(entry, True, path, size, "正常")
 
 

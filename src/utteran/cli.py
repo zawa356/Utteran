@@ -392,6 +392,64 @@ def models_path() -> None:
     typer.echo(_model_manager().root)
 
 
+@models_app.command("prepare-openvino")
+def models_prepare_openvino(
+    identifier: Annotated[str, typer.Argument(help="whisper-cppモデルID")],
+    device: Annotated[str, typer.Option("--device", help="実行時OpenVINO device")] = "GPU",
+    purge_cache: Annotated[bool, typer.Option("--purge-cache")] = False,
+    yes: Annotated[bool, typer.Option("--yes", help="大容量重み取得の確認を省略")] = False,
+) -> None:
+    """OpenAI重みからwhisper.cpp用OpenVINO encoder IRを生成します。"""
+    try:
+        entry = get_model(identifier, backend="whisper-cpp")
+        console.print(
+            f"{entry.model_size}のOpenAI PyTorch重み(最大約3GB)を別途取得してIRへ変換します。"
+        )
+        console.print(f"実行時OpenVINO device: {device}")
+        if not yes and not typer.confirm("変換を続行しますか?"):
+            console.print("キャンセルしました。")
+            return
+        from utteran.models.openvino import OpenVINOManager
+
+        status = OpenVINOManager(_model_manager()).prepare(identifier, purge_cache=purge_cache)
+        console.print(f"OpenVINO IRを生成しました: {status.xml_path}")
+    except UtteranError as exc:
+        _exit_expected(exc)
+
+
+@models_app.command("list-openvino")
+def models_list_openvino() -> None:
+    """変換済みOpenVINO encoder IRを一覧表示します。"""
+    from utteran.models.openvino import OpenVINOManager
+
+    table = Table("モデルサイズ", "状態", "XML")
+    for status in OpenVINOManager(_model_manager()).list():
+        table.add_row(
+            status.model_size,
+            "ok" if status.installed else "未生成",
+            str(status.xml_path),
+        )
+    console.print(table)
+
+
+@models_app.command("remove-openvino")
+def models_remove_openvino(
+    identifier: Annotated[str, typer.Argument(help="whisper-cppモデルID")],
+    yes: Annotated[bool, typer.Option("--yes", help="確認を省略")] = False,
+) -> None:
+    """モデルサイズに対応するOpenVINO encoder IRを削除します。"""
+    if not yes and not typer.confirm("OpenVINO IRを削除しますか?"):
+        console.print("キャンセルしました。")
+        return
+    try:
+        from utteran.models.openvino import OpenVINOManager
+
+        removed = OpenVINOManager(_model_manager()).remove(identifier)
+        console.print("削除しました。" if removed else "変換済みIRはありません。")
+    except UtteranError as exc:
+        _exit_expected(exc)
+
+
 @jobs_app.command("list")
 def jobs_list(
     config_path: Annotated[Path | None, typer.Option("--config")] = None,

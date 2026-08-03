@@ -9,6 +9,11 @@
   (`f049fff...`)の`cli.cpp`はOpenVINO deviceの`--ov-e-device`だけを公開し、IR pathには
   `nullptr`を渡す。`whisper.cpp:3350-3578`でGGML名から`-encoder-openvino.xml`を導出するため、
   量子化違いには規約名リンク（不可ならコピー）が必要と判断した。
+- Phase 3b Step 3調査: upstream v1.9.1変換scriptと参考実装をdiffし、upstreamには
+  `from openvino.runtime import serialize`（現行OpenVINOでは不可）と、Windowsでexporterが
+  file handleを遅延解放した際に`shutil.rmtree`が変換後に失敗する問題が残存すると確認した。
+  `from openvino import serialize`と`ignore_errors=True`の2修正を持つscriptをvendor同梱した。
+  モデル不要のIR命名・量子化alias試験は合格。実IR変換はStep 7で大容量重みを用いて検証する。
 
 - Phase 1（骨格と最小動作）: 実装完了。受入試験でfaster-whisperとgated pyannoteの
   CPU/CUDA実モデルE2E、5形式出力を検証済み。
