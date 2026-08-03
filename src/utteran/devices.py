@@ -57,13 +57,15 @@ class CTranslate2Report:
 
 @dataclass(frozen=True)
 class TorchReport:
-    """PyTorch availability and actually initializable CUDA devices."""
+    """PyTorch availability and actually initializable CUDA/XPU devices."""
 
     available: bool
     version: str | None
     cuda_available: bool
     cuda_devices: tuple[AcceleratorDevice, ...]
     error: str | None = None
+    xpu_available: bool = False
+    xpu_devices: tuple[AcceleratorDevice, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -389,7 +391,7 @@ def detect_ctranslate2() -> CTranslate2Report:
 
 
 def detect_torch() -> TorchReport:
-    """Probe PyTorch CUDA with a minimal kernel, host copy, and synchronization."""
+    """Probe PyTorch CUDA and XPU with a real kernel and synchronization."""
     register_cuda_dll_directories()
     if importlib.util.find_spec("torch") is None:
         return TorchReport(False, None, False, (), "未導入")
@@ -427,11 +429,38 @@ def detect_torch() -> TorchReport:
                         )
                     )
         usable = any(device.usable for device in devices)
+        xpu_devices: list[AcceleratorDevice] = []
+        xpu = getattr(torch, "xpu", None)
+        if xpu is not None and xpu.is_available():
+            for index in range(xpu.device_count()):
+                try:
+                    properties = xpu.get_device_properties(index)
+                    probe = torch.ones(1, device=f"xpu:{index}")
+                    result = (probe + 1).cpu()
+                    xpu.synchronize(index)
+                    if float(result.item()) != 2.0:
+                        raise RuntimeError("XPU probe returned an unexpected result")
+                    del probe, result
+                    memory = getattr(properties, "total_memory", None)
+                    xpu_devices.append(
+                        AcceleratorDevice(
+                            index,
+                            str(getattr(properties, "name", xpu.get_device_name(index))),
+                            None if memory is None else int(memory),
+                            usable=True,
+                        )
+                    )
+                except Exception as exc:
+                    xpu_devices.append(
+                        AcceleratorDevice(index, f"XPU {index}", None, error=_bounded_error(exc))
+                    )
         return TorchReport(
             True,
             str(getattr(torch, "__version__", "unknown")),
             usable,
             tuple(devices),
+            xpu_available=any(device.usable for device in xpu_devices),
+            xpu_devices=tuple(xpu_devices),
         )
     except Exception as exc:
         return TorchReport(False, None, False, (), _bounded_error(exc))
@@ -598,7 +627,16 @@ def _auto_selection(
         asr_backend, asr_device, asr_compute = "faster-whisper", "cpu", "int8"
         notes.append("GPU向け構成を利用できないためfaster-whisper CPUを選択しました。")
     torch_cuda = next((device for device in torch.cuda_devices if device.usable), None)
-    diarization_device = f"cuda:{torch_cuda.index}" if torch_cuda is not None else "cpu"
+    torch_xpu = next((device for device in torch.xpu_devices if device.usable), None)
+    if torch_cuda is not None:
+        diarization_device = f"cuda:{torch_cuda.index}"
+        notes.append("PyTorch CUDAが利用可能なため話者分離にcudaを選択しました。")
+    elif torch_xpu is not None:
+        diarization_device = f"xpu:{torch_xpu.index}"
+        notes.append("PyTorch XPUが利用可能なため話者分離にxpuを選択しました。")
+    else:
+        diarization_device = "cpu"
+        notes.append("CUDA/XPUを利用できないため話者分離にCPUを選択しました。")
     intel_accelerators = tuple(
         item for item in openvino.values if item.upper().startswith(("GPU", "NPU"))
     )

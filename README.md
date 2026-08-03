@@ -407,6 +407,12 @@ OpenVINO devices、ONNX Runtime providers、ffmpeg と backend 導入状況を�
 表示します。Windowsでは物理コア数とAVXをWin32 APIで取得し、PyTorch CUDAは実カーネル実行と
 同期まで確認します。
 
+`intel`プロファイルではPyTorch XPUも実カーネル実行まで確認し、利用できる場合は話者分離の
+autoが`xpu:0`を選びます。優先順位はCUDA、XPU、CPUです。Arc内蔵GPUのメモリはシステムRAMとの
+共有であり、長時間音声では通常のdGPU VRAM不足ではなくRAM不足として現れる場合があります。
+XPUを明示する場合は`--device xpu`または`xpu:N`を使用し、他profileではintel profileの作成を
+案内して拒否します。
+
 現在のプロファイル名と作成済みの他プロファイル一覧（存在・最終更新のみ、他プロファイルの
 Pythonは起動しません）、Vulkanのビルド前提（`glslc`）とランタイム（`vulkaninfo`）を区別した
 検出結果、`utteran native build` によるネイティブビルドの状態（whisper.cppタグと各構成の

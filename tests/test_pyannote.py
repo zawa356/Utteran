@@ -7,8 +7,14 @@ from typing import Any
 import pytest
 
 from utteran.config import TokenProvider
-from utteran.diarization.pyannote import PyannoteBackend, _torch_cuda_usable
-from utteran.errors import HuggingFaceTokenMissingError
+from utteran.diarization.pyannote import (
+    PyannoteBackend,
+    _raise_backend_error,
+    _select_device,
+    _torch_cuda_usable,
+    _torch_xpu_usable,
+)
+from utteran.errors import BackendUnavailableError, HuggingFaceTokenMissingError, VramExhaustedError
 from utteran.types import DiarizationOptions, ProgressEvent
 
 
@@ -84,6 +90,28 @@ class FakeTorch:
         return FakeCudaTensor()
 
 
+class FakeXpu(FakeCuda):
+    def get_device_name(self, index: int) -> str:
+        assert index == 0
+        return "Arc"
+
+    def empty_cache(self) -> None:
+        pass
+
+
+class FakeXpuTorch(FakeTorch):
+    def __init__(self, *, fail_kernel: bool = False) -> None:
+        super().__init__(fail_kernel=fail_kernel)
+        self.cuda = SimpleNamespace(is_available=lambda: False)
+        self.xpu = FakeXpu()
+
+    def ones(self, _size: int, *, device: str) -> FakeCudaTensor:
+        assert device == "xpu:0"
+        if self.fail_kernel:
+            raise RuntimeError("XPU kernel failed")
+        return FakeCudaTensor()
+
+
 def test_remote_model_requires_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PyannoteBackend, "is_available", classmethod(lambda _cls: True))
     monkeypatch.setattr(
@@ -127,3 +155,25 @@ def test_torch_cuda_probe_executes_and_synchronizes_a_kernel() -> None:
 
 def test_torch_cuda_probe_rejects_allocation_without_compatible_kernel() -> None:
     assert not _torch_cuda_usable(FakeTorch(fail_kernel=True), 0)
+
+
+def test_torch_xpu_probe_and_auto_priority() -> None:
+    torch = FakeXpuTorch()
+
+    assert _torch_xpu_usable(torch, 0)
+    assert _select_device("auto", torch) == "xpu:0"
+    assert torch.xpu.synchronized == [0, 0]
+
+
+def test_explicit_xpu_profile_mismatch_does_not_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UTTERAN_PROFILE", "cpu")
+
+    with pytest.raises(BackendUnavailableError, match=r"setup\.ps1 -Profile intel"):
+        _select_device("xpu", FakeXpuTorch())
+
+
+def test_xpu_out_of_memory_mentions_shared_system_ram() -> None:
+    with pytest.raises(VramExhaustedError, match="システムRAM"):
+        _raise_backend_error("話者分離", RuntimeError("XPU out of memory"))

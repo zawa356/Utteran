@@ -2,6 +2,15 @@
 
 ## 現在のフェーズと進捗
 
+- Phase 3c Step 0（2026-08-03、分岐A）: 有効な`.env`トークンを値非参照のまま使用して
+  community-1完全モデルを取得。Arc 140Tで`Pipeline.to(xpu:0)`と30秒実音声の実pipelineが
+  環境変数fallbackなしで完走した。CPU/XPUはいずれも1話者・5区間で境界まで完全一致し、
+  XPU同一条件2回も完全一致。推論秒はCPU 12.438、XPU初回10.676、同一process再実行3.300。
+  pyannote XPU対応を実装する分岐Aに確定した。実データの内容は記録していない。
+- Phase 3c Step 1/2着手: PyTorch XPU実kernel probe、CUDA→XPU→CPUの話者分離auto選択、
+  `xpu`/`xpu:N`解析、intel profile不整合案内、auto時だけのload失敗CPU退避、共有RAMを説明する
+  XPU OOM変換、`unload()`のXPU cache解放、devices JSON/表示を実装。対象14テスト、ruff、mypy合格。
+
 - Phase 3b（whisper.cpp ASR）: `feature/phase3b-whisper-cpp`でStep 1〜7を実装・Intel実機検証済み。
   pyannote gated実モデルとの結合比較だけは本機のモデル/token不在で保留。最終品質ゲート中。
 - Phase 3b Step 2調査: 2026-08-03にHugging Face APIの`ggerganov/whisper.cpp` siblingsを

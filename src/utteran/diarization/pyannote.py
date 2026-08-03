@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import importlib.util
 import logging
+import os
 import warnings
 import wave
 from collections.abc import Mapping
@@ -57,7 +58,7 @@ class PyannoteBackend(DiarizationBackend):
 
     @classmethod
     def available_devices(cls) -> list[DeviceInfo]:
-        """Report CPU and CUDA devices visible to PyTorch."""
+        """Report CPU, CUDA, and XPU devices visible to PyTorch."""
         if not cls.is_available():
             return []
         devices = [DeviceInfo(id="cpu", kind="cpu", name="CPU")]
@@ -67,6 +68,14 @@ class PyannoteBackend(DiarizationBackend):
             for index in range(torch.cuda.device_count()):
                 name = torch.cuda.get_device_name(index)
                 devices.append(DeviceInfo(id=f"cuda:{index}", kind="cuda", name=name))
+            xpu = getattr(torch, "xpu", None)
+            if xpu is not None and xpu.is_available():
+                for index in range(xpu.device_count()):
+                    devices.append(
+                        DeviceInfo(
+                            id=f"xpu:{index}", kind="xpu", name=xpu.get_device_name(index)
+                        )
+                    )
         except Exception:
             pass
         return devices
@@ -113,9 +122,11 @@ class PyannoteBackend(DiarizationBackend):
             try:
                 pipeline.to(torch.device(selected_device))
             except Exception:
-                if device == "auto" and selected_device.startswith("cuda"):
+                if device == "auto" and selected_device.startswith(("cuda", "xpu")):
+                    accelerator = "XPU" if selected_device.startswith("xpu") else "CUDA"
                     logging.getLogger(__name__).warning(
-                        "CUDA で pyannote を初期化できないため CPU へフォールバックします。"
+                        "%s で pyannote を初期化できないため CPU へフォールバックします。",
+                        accelerator,
                     )
                     selected_device = "cpu"
                     pipeline.to(torch.device(selected_device))
@@ -197,7 +208,7 @@ class PyannoteBackend(DiarizationBackend):
         )
 
     def unload(self) -> None:
-        """Release pipeline memory and clear the CUDA allocator when used."""
+        """Release pipeline memory and clear the active accelerator allocator."""
         self._pipeline = None
         gc.collect()
         if self._device.startswith("cuda"):
@@ -205,6 +216,13 @@ class PyannoteBackend(DiarizationBackend):
                 import torch
 
                 torch.cuda.empty_cache()
+            except Exception:
+                pass
+        if self._device.startswith("xpu"):
+            try:
+                import torch
+
+                torch.xpu.empty_cache()
             except Exception:
                 pass
 
@@ -248,15 +266,24 @@ def _resolve_cached_model(model_id: str, token: str) -> Path:
 
 
 def _select_device(requested: str, torch_module: Any) -> str:
-    """Resolve CPU/CUDA after a minimal real CUDA allocation probe."""
+    """Resolve CPU/CUDA/XPU after a minimal real accelerator probe."""
     if requested == "auto":
         if _torch_cuda_usable(torch_module, 0):
             return "cuda:0"
+        if _torch_xpu_usable(torch_module, 0):
+            return "xpu:0"
         if torch_module.cuda.is_available():
             logging.getLogger(__name__).info("PyTorch CUDA を初期化できないため CPU を使用します。")
+        xpu = getattr(torch_module, "xpu", None)
+        if xpu is not None and xpu.is_available():
+            logging.getLogger(__name__).warning(
+                "PyTorch XPU を初期化できないため CPU へフォールバックします。"
+            )
         return "cpu"
     if requested == "cuda":
         requested = "cuda:0"
+    if requested == "xpu":
+        requested = "xpu:0"
     if requested == "cpu":
         return requested
     if requested.startswith("cuda:"):
@@ -270,6 +297,24 @@ def _select_device(requested: str, torch_module: Any) -> str:
                 "自動フォールバックは行いません。"
             )
         return f"cuda:{index}"
+    if requested.startswith("xpu:"):
+        profile = os.environ.get("UTTERAN_PROFILE", "").casefold()
+        if profile and profile != "intel":
+            raise BackendUnavailableError(
+                f"xpu は intel プロファイルでのみ利用できます (現在: {profile})。"
+                "`setup.ps1 -Profile intel` を実行してください。"
+            )
+        try:
+            index = int(requested.partition(":")[2])
+        except ValueError:
+            raise BackendUnavailableError(f"不正な XPU デバイス指定です: {requested}") from None
+        if not _torch_xpu_usable(torch_module, index):
+            raise BackendUnavailableError(
+                f"明示指定された xpu:{index} を PyTorch で初期化できません。"
+                "intel プロファイルとIntel GPUドライバーを確認してください。"
+                "自動フォールバックは行いません。"
+            )
+        return f"xpu:{index}"
     raise BackendUnavailableError(f"pyannote が対応していないデバイスです: {requested}")
 
 
@@ -287,6 +332,23 @@ def _torch_cuda_usable(torch_module: Any, index: int) -> bool:
             probe = torch_module.ones(1, device=f"cuda:{index}")
             result = (probe + 1).cpu()
             torch_module.cuda.synchronize(index)
+        if float(result.item()) != 2.0:
+            return False
+        del probe, result
+        return True
+    except Exception:
+        return False
+
+
+def _torch_xpu_usable(torch_module: Any, index: int) -> bool:
+    """Verify PyTorch XPU with a minimal kernel, host copy, and synchronization."""
+    try:
+        xpu = getattr(torch_module, "xpu", None)
+        if xpu is None or index < 0 or not xpu.is_available() or index >= xpu.device_count():
+            return False
+        probe = torch_module.ones(1, device=f"xpu:{index}")
+        result = (probe + 1).cpu()
+        xpu.synchronize(index)
         if float(result.item()) != 2.0:
             return False
         del probe, result
@@ -328,6 +390,11 @@ def _raise_backend_error(operation: str, error: Exception) -> None:
     """Translate pyannote/Torch errors into stable public exceptions."""
     detail = str(error).casefold()
     if "out of memory" in detail or "cuda_error_out_of_memory" in detail:
+        if "xpu" in detail or "sycl" in detail or "level zero" in detail:
+            raise VramExhaustedError(
+                f"{operation}中に XPU の共有メモリが不足しました。Arc内蔵GPUはシステムRAMを"
+                "共有します。CPUを指定するか、他のプロセスのRAM使用量を減らしてください。"
+            ) from None
         raise VramExhaustedError(
             f"{operation}中に VRAM が不足しました。"
             "CPU を指定するか、他の GPU 使用量を減らしてください。"
@@ -336,6 +403,11 @@ def _raise_backend_error(operation: str, error: Exception) -> None:
         raise BackendUnavailableError(
             f"{operation}で CUDA を初期化できません。"
             "PyTorch、CUDA、NVIDIA ドライバーを確認してください。"
+        ) from None
+    if any(name in detail for name in ("xpu", "sycl", "level zero")):
+        raise BackendUnavailableError(
+            f"{operation}で XPU を初期化できません。intelプロファイル、PyTorch XPU、"
+            "Intel GPUドライバーを確認してください。"
         ) from None
     raise BackendUnavailableError(
         f"pyannote の{operation}に失敗しました。モデル、入力音声、実行デバイスを確認してください。"

@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Event
 from typing import Any, Literal, TypeAlias
 
-DeviceKind: TypeAlias = Literal["cpu", "cuda", "other"]
+DeviceKind: TypeAlias = Literal["cpu", "cuda", "xpu", "other"]
 
 
 @dataclass(frozen=True)

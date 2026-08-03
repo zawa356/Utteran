@@ -116,7 +116,9 @@ def transcribe(
     diarization_model: Annotated[
         str | None, typer.Option("--diarization-model", help="話者分離モデル ID またはローカルパス")
     ] = None,
-    device: Annotated[str | None, typer.Option("--device", help="cpu、cuda、cuda:N、auto")] = None,
+    device: Annotated[
+        str | None, typer.Option("--device", help="cpu、cuda、cuda:N、xpu、xpu:N、auto")
+    ] = None,
     language: Annotated[
         str | None, typer.Option("--language", help="言語コードまたは auto (自動判定)")
     ] = None,
@@ -991,6 +993,18 @@ def _print_device_report(report: DeviceReport) -> None:
             f"PyTorch cuda:{device.index}",
             "usable" if device.usable else "unusable",
             f"{device.name}, VRAM={_format_size(device.memory_bytes)} {device.error or ''}",
+        )
+    table.add_row(
+        "PyTorch XPU",
+        "usable" if torch.xpu_available else "unavailable",
+        f"version={torch.version}, devices={len(torch.xpu_devices)}",
+    )
+    for device in torch.xpu_devices:
+        table.add_row(
+            f"PyTorch xpu:{device.index}",
+            "usable" if device.usable else "unusable",
+            f"{device.name}, shared memory={_format_size(device.memory_bytes)} "
+            f"{device.error or ''}",
         )
     table.add_row(
         "OpenVINO",

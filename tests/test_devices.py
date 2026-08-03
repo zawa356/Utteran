@@ -111,7 +111,14 @@ def test_auto_prefers_openvino_vulkan_when_cuda_is_unavailable(tmp_path: Path) -
         cpu=lambda: CPUReport(8, 4, True, False),
         ctranslate2=lambda: CTranslate2Report(True, "test", ("int8",), 0, ()),
         libraries=lambda: LibraryReport(None, None),
-        torch=lambda: TorchReport(True, "test", False, ()),
+        torch=lambda: TorchReport(
+            True,
+            "test+xpu",
+            False,
+            (),
+            xpu_available=True,
+            xpu_devices=(AcceleratorDevice(0, "Arc", 32 * 1024**3, usable=True),),
+        ),
         openvino=lambda: OptionalRuntimeReport(True, ("CPU", "GPU.0")),
         onnxruntime=lambda: OptionalRuntimeReport(False, ()),
         ffmpeg=lambda _path: FfmpegReport(True, str(tmp_path / "ffmpeg"), "test"),
@@ -131,6 +138,8 @@ def test_auto_prefers_openvino_vulkan_when_cuda_is_unavailable(tmp_path: Path) -
         "whisper-cpp",
         "openvino_vulkan",
     )
+    assert selected.diarization_device == "xpu:0"
+    assert any("XPU" in note for note in selected.notes)
 
 
 def test_detect_profile_report_reflects_current_and_created_profiles(
