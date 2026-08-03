@@ -497,8 +497,11 @@ def detect_ffmpeg(configured_path: Path | None = None) -> FfmpegReport:
 
 def detect_backends() -> dict[str, bool]:
     """Report current and future backend package availability."""
+    from utteran.asr.whisper_cpp import WhisperCppBackend
+
     return {
         "faster-whisper": _module_available("faster_whisper"),
+        "whisper-cpp": WhisperCppBackend.is_available(),
         "pyannote": _module_available("pyannote.audio"),
         "openvino": _module_available("openvino"),
         "sherpa-onnx": _module_available("sherpa_onnx"),

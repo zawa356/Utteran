@@ -21,6 +21,9 @@
 - Phase 3b Step 5: devices auto選択をCUDA→ovvk→vk→ov→faster-whisper CPUへ拡張。
   v1.9.1/OpenVINO/Vulkanの限定した初期化失敗patternだけを対象に、auto時に次のGPU構成へ
   1回だけ退避する。明示variantは退避しない。注入probe/model不要試験でovvk選択を確認。
+- Phase 3b Step 6: `models list --json`を追加。start.ps1はactive profileを表示し、devices JSONの
+  backend/auto/native/CUDA可用性とmodels JSONの導入済み状態から選択肢を動的生成する。
+  空の場合はnative buildまたはmodels downloadを案内する。PowerShell Parser検査合格。
 
 - Phase 1（骨格と最小動作）: 実装完了。受入試験でfaster-whisperとgated pyannoteの
   CPU/CUDA実モデルE2E、5形式出力を検証済み。

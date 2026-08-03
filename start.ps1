@@ -173,6 +173,35 @@ function Invoke-Utteran {
     }
 }
 
+function Get-UtteranJson {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+
+    $Launcher = Get-UtteranLauncher
+    $env:UTTERAN_PROFILE = $Launcher.Profile
+    $Raw = & $Launcher.Command @Arguments 2>$null | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        throw "診断情報を取得できませんでした: utteran $($Arguments -join ' ')"
+    }
+    return ($Raw | ConvertFrom-Json)
+}
+
+function Select-DynamicValue {
+    param(
+        [Parameter(Mandatory = $true)][string]$Title,
+        [Parameter(Mandatory = $true)][object[]]$Items,
+        [Parameter(Mandatory = $true)][scriptblock]$Label,
+        [Parameter(Mandatory = $true)][scriptblock]$Value
+    )
+    if ($Items.Count -eq 0) { return $null }
+    Write-Host "`n$Title" -ForegroundColor Cyan
+    for ($Index = 0; $Index -lt $Items.Count; $Index++) {
+        Write-Host "  $($Index + 1). $(& $Label $Items[$Index])"
+    }
+    $Valid = @(1..$Items.Count | ForEach-Object { [string]$_ })
+    $Choice = Read-MenuChoice -Prompt "選択 [1]" -ValidChoices $Valid -Default "1"
+    return (& $Value $Items[[int]$Choice - 1])
+}
+
 function Format-CommandArgument {
     param([Parameter(Mandatory = $true)][string]$Value)
 
@@ -405,13 +434,58 @@ function Start-TranscriptionWizard {
     $SelectedOutputPath = Select-OutputPath
     $InputIsDirectory = Test-Path -LiteralPath $SelectedInputPath -PathType Container
 
-    Write-Host "`nASRバックエンドを選択してください。" -ForegroundColor Cyan
-    Write-Host "  1. auto（現在はfaster-whisperを使用）"
-    Write-Host "  2. faster-whisper"
-    $BackendChoice = Read-MenuChoice -Prompt "選択 [1]" -ValidChoices @("1", "2") -Default "1"
-    $SelectedASRBackend = if ($BackendChoice -eq "1") { "auto" } else { "faster-whisper" }
-    $SelectedASRModel = Select-ASRModel
-    $SelectedDevice = Select-Device
+    try {
+        $DeviceReport = Get-UtteranJson -Arguments @("devices", "--json")
+        $ModelReport = @(Get-UtteranJson -Arguments @("models", "list", "--json"))
+    }
+    catch {
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        Write-Host "devices/models情報を確認してから再実行してください。" -ForegroundColor Yellow
+        return
+    }
+    $ActiveProfile = Resolve-ActiveProfile
+    Write-Host "`n現在のプロファイル: $ActiveProfile" -ForegroundColor Cyan
+    $BackendItems = @([pscustomobject]@{
+        Name = "auto"
+        Label = "auto ($($DeviceReport.auto_selection.asr_backend) / $($DeviceReport.auto_selection.asr_device))"
+    })
+    if ($DeviceReport.backends.'faster-whisper') {
+        $BackendItems += [pscustomobject]@{ Name = "faster-whisper"; Label = "faster-whisper" }
+    }
+    if ($DeviceReport.backends.'whisper-cpp') {
+        $BackendItems += [pscustomobject]@{ Name = "whisper-cpp"; Label = "whisper-cpp" }
+    }
+    $SelectedASRBackend = Select-DynamicValue -Title "ASRバックエンドを選択してください。" `
+        -Items $BackendItems -Label { param($Item) $Item.Label } -Value { param($Item) $Item.Name }
+    $EffectiveBackend = if ($SelectedASRBackend -eq "auto") {
+        $DeviceReport.auto_selection.asr_backend
+    } else { $SelectedASRBackend }
+    $Models = @($ModelReport | Where-Object { $_.installed -and $_.backend -eq $EffectiveBackend })
+    if ($Models.Count -eq 0) {
+        Write-Host "利用可能な $EffectiveBackend モデルがありません。" -ForegroundColor Red
+        Write-Host "モデル管理から取得してください: utteran models list --available" -ForegroundColor Yellow
+        return
+    }
+    $SelectedASRModel = Select-DynamicValue -Title "ASRモデルを選択してください。" `
+        -Items $Models -Label { param($Item) "$($Item.display_name) [$($Item.model_id)]" } `
+        -Value { param($Item) $Item.model_id }
+    if ($EffectiveBackend -eq "whisper-cpp") {
+        $DeviceItems = @("auto") + @(
+            $DeviceReport.native.variants.psobject.Properties |
+                Where-Object { $_.Value } | ForEach-Object { $_.Name }
+        )
+    }
+    else {
+        $DeviceItems = @("auto", "cpu") + @(
+            $DeviceReport.ctranslate2.cuda_devices |
+                Where-Object { $_.usable } | ForEach-Object { "cuda:$($_.index)" }
+        )
+    }
+    $DeviceObjects = @($DeviceItems | Select-Object -Unique | ForEach-Object {
+        [pscustomobject]@{ Name = $_ }
+    })
+    $SelectedDevice = Select-DynamicValue -Title "実行デバイス／構成を選択してください。" `
+        -Items $DeviceObjects -Label { param($Item) $Item.Name } -Value { param($Item) $Item.Name }
     $SelectedLanguage = Select-Language
 
     $UseDiarization = Read-YesNo -Prompt "話者分離を使用しますか?" -DefaultYes $true

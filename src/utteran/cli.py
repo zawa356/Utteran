@@ -282,6 +282,7 @@ def models_list(
     all_models: Annotated[
         bool, typer.Option("--all", help="英語専用を含む全カタログを表示")
     ] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで表示")] = False,
 ) -> None:
     """導入済みモデル、または選択可能なカタログ全体を表示します。"""
     try:
@@ -289,6 +290,25 @@ def models_list(
         statuses = manager.list_status(available=available, all_models=all_models)
     except UtteranError as exc:
         _exit_expected(exc)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                [
+                    {
+                        "key": status.entry.key,
+                        "model_id": status.entry.model_id,
+                        "display_name": status.entry.display_name,
+                        "backend": status.entry.backend,
+                        "installed": status.installed,
+                        "path": None if status.path is None else str(status.path),
+                    }
+                    for status in statuses
+                ],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
     _print_model_catalog(statuses, numbered=available)
     if not statuses:
         console.print(

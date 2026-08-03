@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import _thread
+import json
 import subprocess
 import sys
 import threading
@@ -329,6 +330,16 @@ def test_models_cli_list_verify_path_and_remove(
     assert shown_path.exit_code == 0 and str(model_root) in shown_path.output
     assert removed.exit_code == 0 and "削除しました" in removed.output
     assert not path.exists()
+
+
+def test_models_list_json_is_machine_readable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("utteran.cli._model_manager", lambda: ModelManager(Path("missing")))
+
+    result = runner.invoke(app, ["models", "list", "--available", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload and {"key", "backend", "installed"} <= payload[0].keys()
 
 
 def test_models_download_command_uses_explicit_manager_action(
