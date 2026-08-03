@@ -28,6 +28,9 @@ CONFIG_TEMPLATE = """[general]
 output_dir = "./output"
 job_dir = ""
 log_level = "info"
+venv_dir = ""
+native_dir = ""
+default_profile = ""
 
 [asr]
 backend = "auto"
@@ -79,10 +82,19 @@ class GeneralConfig(BaseModel):
     output_dir: Path = Path("./output")
     job_dir: Path | None = None
     log_level: LogLevel = "info"
+    venv_dir: Path | None = None
+    native_dir: Path | None = None
+    default_profile: str | None = None
 
-    @field_validator("job_dir", mode="before")
+    @field_validator("job_dir", "venv_dir", "native_dir", mode="before")
     @classmethod
-    def empty_job_dir_uses_default(cls, value: object) -> object:
+    def empty_path_uses_default(cls, value: object) -> object:
+        """Translate the documented empty-string sentinel to None."""
+        return None if value == "" else value
+
+    @field_validator("default_profile", mode="before")
+    @classmethod
+    def empty_default_profile_is_unset(cls, value: object) -> object:
         """Translate the documented empty-string sentinel to None."""
         return None if value == "" else value
 

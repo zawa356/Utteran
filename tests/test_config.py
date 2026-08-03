@@ -84,6 +84,34 @@ def test_documented_empty_path_sentinels_use_platform_defaults(tmp_path: Path) -
     assert config.ffmpeg.path is None
 
 
+def test_venv_native_dir_and_default_profile_empty_sentinels(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[general]\nvenv_dir = ''\nnative_dir = ''\ndefault_profile = ''\n",
+        encoding="utf-8",
+    )
+
+    config = Config.load(config_path=config_path, dotenv_path=tmp_path / "missing")
+
+    assert config.general.venv_dir is None
+    assert config.general.native_dir is None
+    assert config.general.default_profile is None
+
+
+def test_venv_native_dir_and_default_profile_explicit_values(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[general]\nvenv_dir = 'C:/venvs'\nnative_dir = 'C:/native'\ndefault_profile = 'cuda'\n",
+        encoding="utf-8",
+    )
+
+    config = Config.load(config_path=config_path, dotenv_path=tmp_path / "missing")
+
+    assert config.general.venv_dir == Path("C:/venvs")
+    assert config.general.native_dir == Path("C:/native")
+    assert config.general.default_profile == "cuda"
+
+
 def test_config_init_does_not_overwrite_existing_file(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
 
