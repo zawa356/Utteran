@@ -8,9 +8,9 @@ $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $InputDirectory = Join-Path $ProjectRoot "input"
 $OutputDirectory = Join-Path $ProjectRoot "output"
 $SetupScript = Join-Path $ProjectRoot "setup.ps1"
-$WindowsEnvironment = Join-Path $ProjectRoot ".venv-windows"
-$DefaultEnvironment = Join-Path $ProjectRoot ".venv"
+$AllProfiles = @("cpu", "cuda", "intel", "vulkan")
 $script:LastUtteranExitCode = 0
+$script:SelectedProfile = $null
 
 New-Item -ItemType Directory -Path $InputDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
@@ -92,39 +92,71 @@ function Resolve-FrontPath {
     return $FullPath
 }
 
+function Get-VenvRoot {
+    if ($env:UTTERAN_VENV_DIR) {
+        return [IO.Path]::GetFullPath($env:UTTERAN_VENV_DIR)
+    }
+    return Join-Path $ProjectRoot ".venvs"
+}
+
+function Get-ExistingProfiles {
+    $Root = Get-VenvRoot
+    return @($AllProfiles | Where-Object {
+        Test-Path -LiteralPath (Join-Path $Root "win-$_" "Scripts\python.exe") -PathType Leaf
+    })
+}
+
+function Get-DefaultProfileFromConfig {
+    $ConfigPath = Join-Path $env:LOCALAPPDATA "utteran\utteran\config.toml"
+    if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
+        return $null
+    }
+    $Match = Select-String -LiteralPath $ConfigPath -Pattern '^\s*default_profile\s*=\s*"([^"]*)"' |
+        Select-Object -First 1
+    if ($null -ne $Match -and $Match.Matches[0].Groups[1].Value) {
+        return $Match.Matches[0].Groups[1].Value
+    }
+    return $null
+}
+
+function Resolve-ActiveProfile {
+    # Session selection (from the profile menu) wins, then config.toml's
+    # default_profile, then the sole existing profile. Ambiguity is
+    # surfaced as $null so callers can prompt rather than guess.
+    if ($script:SelectedProfile) {
+        return $script:SelectedProfile
+    }
+    $ConfiguredDefault = Get-DefaultProfileFromConfig
+    if ($ConfiguredDefault -and (Get-ExistingProfiles) -contains $ConfiguredDefault) {
+        return $ConfiguredDefault
+    }
+    $Existing = Get-ExistingProfiles
+    if ($Existing.Count -eq 1) {
+        return $Existing[0]
+    }
+    return $null
+}
+
 function Get-UtteranLauncher {
-    $Candidates = @(
-        (Join-Path $WindowsEnvironment "Scripts\utteran.exe"),
-        (Join-Path $DefaultEnvironment "Scripts\utteran.exe")
-    )
-    foreach ($Candidate in $Candidates) {
-        if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
-            return [pscustomobject]@{
-                Command = $Candidate
-                Prefix = [string[]]@()
-            }
+    $Active = Resolve-ActiveProfile
+    if ($null -eq $Active) {
+        $Existing = Get-ExistingProfiles
+        if ($Existing.Count -eq 0) {
+            throw "作成済みのプロファイルがありません。先に .\setup.ps1 -Profile cpu|cuda|intel|vulkan を実行してください。"
         }
+        throw (
+            "既定プロファイルが未設定で、複数のプロファイルが存在します ($($Existing -join ', '))。" +
+            "メインメニューの「プロファイル管理」で選択してください。"
+        )
     }
-
-    $SelectedEnvironment = $null
-    if (Test-Path -LiteralPath (Join-Path $WindowsEnvironment "Scripts\python.exe") -PathType Leaf) {
-        $SelectedEnvironment = $WindowsEnvironment
+    $VenvPath = Join-Path (Get-VenvRoot) "win-$Active"
+    $Executable = Join-Path $VenvPath "Scripts\utteran.exe"
+    if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
+        throw "プロファイル '$Active' の venv が見つかりません: $VenvPath"
     }
-    elseif (Test-Path -LiteralPath (Join-Path $DefaultEnvironment "Scripts\python.exe") -PathType Leaf) {
-        $SelectedEnvironment = $DefaultEnvironment
-    }
-    if ($null -eq $SelectedEnvironment) {
-        throw "Windows実行環境がありません。先に .\setup.ps1 -Profile cpu|cuda|intel を実行してください。"
-    }
-
-    $UvCommand = Get-Command uv -ErrorAction SilentlyContinue
-    if ($null -eq $UvCommand) {
-        throw "utteran.exe と uv が見つかりません。setup.ps1 を実行してください。"
-    }
-    $env:UV_PROJECT_ENVIRONMENT = $SelectedEnvironment
     return [pscustomobject]@{
-        Command = $UvCommand.Source
-        Prefix = [string[]]@("run", "--no-sync", "utteran")
+        Command = $Executable
+        Profile = $Active
     }
 }
 
@@ -132,8 +164,7 @@ function Invoke-Utteran {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
     $Launcher = Get-UtteranLauncher
-    $InvocationArguments = @($Launcher.Prefix) + $Arguments
-    & $Launcher.Command @InvocationArguments
+    & $Launcher.Command @Arguments
     $script:LastUtteranExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
     if ($script:LastUtteranExitCode -ne 0) {
         Write-Host "utteran は終了コード $script:LastUtteranExitCode で終了しました。" `
@@ -650,33 +681,125 @@ function Show-ConfigMenu {
     }
 }
 
-function Invoke-SetupMenu {
-    Write-Host "`n===== セットアップ／profile切替 =====" -ForegroundColor Cyan
-    Write-Host "  1. CPU"
-    Write-Host "  2. NVIDIA CUDA"
-    Write-Host "  3. Intel/OpenVINO準備（Phase 2では検出のみ）"
-    Write-Host "  0. 戻る"
-    $Choice = Read-MenuChoice -Prompt "選択" -ValidChoices @("0", "1", "2", "3")
-    if ($Choice -eq "0") { return }
-    $Profile = switch ($Choice) {
-        "1" { "cpu" }
-        "2" { "cuda" }
-        "3" { "intel" }
-    }
-    $SkipFfmpeg = Read-YesNo -Prompt "ffmpegの確認／取得を省略しますか?" -DefaultYes $false
+function Invoke-HostedSetup {
+    param([Parameter(Mandatory = $true)][string[]]$SetupArguments)
+
     $HostExecutable = (Get-Process -Id $PID).Path
-    $SetupArguments = @(
-        "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
-        "-File", $SetupScript, "-Profile", $Profile
-    )
-    if ($SkipFfmpeg) {
-        $SetupArguments += "-SkipFfmpeg"
-    }
-    & $HostExecutable @SetupArguments
+    $FullArguments = @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $SetupScript) +
+        $SetupArguments
+    & $HostExecutable @FullArguments
     if ($LASTEXITCODE -ne 0) {
         Write-Host "setup.ps1 は終了コード $LASTEXITCODE で終了しました。" -ForegroundColor Red
     }
-    Pause-Front
+}
+
+function Show-ProfileMenu {
+    while ($true) {
+        $Active = Resolve-ActiveProfile
+        $Existing = Get-ExistingProfiles
+        Write-Host "`n===== プロファイル管理 =====" -ForegroundColor Cyan
+        Write-Host "現在のセッション選択: $(if ($script:SelectedProfile) { $script:SelectedProfile } else { '未選択（既定解決を使用）' })"
+        Write-Host "作成済み: $(if ($Existing.Count -gt 0) { $Existing -join ', ' } else { 'なし' })"
+        Write-Host "  1. 一覧を表示（サイズ・パッケージ・最終更新）"
+        Write-Host "  2. このセッションで使うプロファイルを選択"
+        Write-Host "  3. 新規プロファイルを作成／更新"
+        Write-Host "  4. 既定プロファイルを設定"
+        Write-Host "  5. プロファイルを削除"
+        Write-Host "  0. 戻る"
+        $Choice = Read-MenuChoice -Prompt "選択" -ValidChoices @("0", "1", "2", "3", "4", "5")
+        if ($Choice -eq "0") { return }
+        switch ($Choice) {
+            "1" {
+                Invoke-HostedSetup -SetupArguments @("-List")
+                Pause-Front
+            }
+            "2" {
+                if ($Existing.Count -eq 0) {
+                    Write-Host "作成済みのプロファイルがありません。先に作成してください。" -ForegroundColor Yellow
+                    Pause-Front
+                    continue
+                }
+                for ($Index = 0; $Index -lt $Existing.Count; $Index++) {
+                    Write-Host "  $($Index + 1). $($Existing[$Index])"
+                }
+                $Answer = (Read-Host "選択（Enterで既定解決に戻す）").Trim()
+                if ([string]::IsNullOrWhiteSpace($Answer)) {
+                    $script:SelectedProfile = $null
+                    continue
+                }
+                $Number = 0
+                if ([int]::TryParse($Answer, [ref]$Number) -and $Number -ge 1 -and $Number -le $Existing.Count) {
+                    $script:SelectedProfile = $Existing[$Number - 1]
+                }
+                else {
+                    Write-Host "選択が正しくありません。" -ForegroundColor Yellow
+                }
+            }
+            "3" {
+                Write-Host "`n作成／更新するプロファイルを選択してください。" -ForegroundColor Cyan
+                Write-Host "  1. cpu"
+                Write-Host "  2. cuda (NVIDIA)"
+                Write-Host "  3. intel (XPU / OpenVINO / whisper.cpp)"
+                Write-Host "  4. vulkan (whisper.cpp Vulkanビルド向け)"
+                $ProfileChoice = Read-MenuChoice -Prompt "選択" -ValidChoices @("1", "2", "3", "4")
+                $NewProfile = switch ($ProfileChoice) {
+                    "1" { "cpu" }
+                    "2" { "cuda" }
+                    "3" { "intel" }
+                    "4" { "vulkan" }
+                }
+                $SkipFfmpeg = Read-YesNo -Prompt "ffmpegの確認／取得を省略しますか?" -DefaultYes $false
+                $SetupArguments = @("-Profile", $NewProfile)
+                if ($SkipFfmpeg) {
+                    $SetupArguments += "-SkipFfmpeg"
+                }
+                Invoke-HostedSetup -SetupArguments $SetupArguments
+                Pause-Front
+            }
+            "4" {
+                if ($Existing.Count -eq 0) {
+                    Write-Host "作成済みのプロファイルがありません。" -ForegroundColor Yellow
+                    Pause-Front
+                    continue
+                }
+                for ($Index = 0; $Index -lt $Existing.Count; $Index++) {
+                    Write-Host "  $($Index + 1). $($Existing[$Index])"
+                }
+                $Number = Read-PositiveInteger -Prompt "既定にする番号"
+                if ($Number -ge 1 -and $Number -le $Existing.Count) {
+                    Invoke-HostedSetup -SetupArguments @("-SetDefault", $Existing[$Number - 1])
+                }
+                else {
+                    Write-Host "選択が正しくありません。" -ForegroundColor Yellow
+                }
+                Pause-Front
+            }
+            "5" {
+                if ($Existing.Count -eq 0) {
+                    Write-Host "作成済みのプロファイルがありません。" -ForegroundColor Yellow
+                    Pause-Front
+                    continue
+                }
+                for ($Index = 0; $Index -lt $Existing.Count; $Index++) {
+                    Write-Host "  $($Index + 1). $($Existing[$Index])"
+                }
+                $Number = Read-PositiveInteger -Prompt "削除する番号"
+                if ($Number -ge 1 -and $Number -le $Existing.Count) {
+                    $TargetProfile = $Existing[$Number - 1]
+                    if (Read-YesNo -Prompt "プロファイル '$TargetProfile' を削除しますか?" -DefaultYes $false) {
+                        Invoke-HostedSetup -SetupArguments @("-Remove", $TargetProfile, "-Yes")
+                        if ($script:SelectedProfile -eq $TargetProfile) {
+                            $script:SelectedProfile = $null
+                        }
+                    }
+                }
+                else {
+                    Write-Host "選択が正しくありません。" -ForegroundColor Yellow
+                }
+                Pause-Front
+            }
+        }
+    }
 }
 
 function Open-FrontFolder {
@@ -691,13 +814,15 @@ Write-Host "入力: $InputDirectory"
 Write-Host "出力: $OutputDirectory"
 
 while ($true) {
+    $ActiveProfileDisplay = Resolve-ActiveProfile
     Write-Host "`n===== メインメニュー =====" -ForegroundColor Green
+    Write-Host "プロファイル: $(if ($ActiveProfileDisplay) { $ActiveProfileDisplay } else { '未設定（複数存在／未作成）' })"
     Write-Host "  1. 文字起こしを開始"
     Write-Host "  2. モデル管理"
     Write-Host "  3. デバイス／バックエンド確認"
     Write-Host "  4. ジョブ管理"
     Write-Host "  5. 設定管理"
-    Write-Host "  6. setup／実行profile切替"
+    Write-Host "  6. プロファイル管理（作成／切替／削除／既定設定）"
     Write-Host "  7. inputフォルダを開く"
     Write-Host "  8. outputフォルダを開く"
     Write-Host "  0. 終了"
@@ -714,7 +839,7 @@ while ($true) {
             "3" { Show-DevicesMenu }
             "4" { Show-JobsMenu }
             "5" { Show-ConfigMenu }
-            "6" { Invoke-SetupMenu }
+            "6" { Show-ProfileMenu }
             "7" { Open-FrontFolder -Path $InputDirectory }
             "8" { Open-FrontFolder -Path $OutputDirectory }
         }
