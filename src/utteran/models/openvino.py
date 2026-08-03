@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from utteran.errors import DependencyError, ModelNotFoundError
+from utteran.logging import mask_secrets
 from utteran.models.catalog import get_model, list_models
 from utteran.models.manager import ModelManager
 
@@ -54,6 +55,7 @@ class OpenVINOManager:
                 encoding="utf-8",
                 errors="replace",
                 capture_output=True,
+                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
                 check=False,
             )
             generated_xml = work / f"ggml-{model_size}-encoder-openvino.xml"
@@ -61,7 +63,8 @@ class OpenVINOManager:
             if result.returncode != 0 or not generated_xml.is_file() or not generated_bin.is_file():
                 raise DependencyError(
                     "OpenVINO encoder IRの変換に失敗しました。"
-                    "空き容量とopenvino extraを確認してください。"
+                    "空き容量とopenvino extraを確認してください。詳細: "
+                    + mask_secrets((result.stderr or result.stdout)[-1000:])
                 )
             shutil.move(generated_xml, target.xml_path)
             shutil.move(generated_bin, target.bin_path)

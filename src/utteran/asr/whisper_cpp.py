@@ -7,6 +7,7 @@ import logging
 import os
 import queue
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -118,10 +119,12 @@ class WhisperCppBackend(ASRBackend):
         if self._entry is None or self._model_path is None or self._executable is None:
             raise BackendUnavailableError("whisper.cppバックエンドがloadされていません。")
         with tempfile.TemporaryDirectory(prefix="utteran-whisper-cpp-") as temporary:
-            output_prefix = Path(temporary) / "result"
+            temporary_path = Path(temporary)
+            output_prefix = temporary_path / "result"
+            staged_model = _stage_model(self._model_path, temporary_path / "model")
             command = build_command(
                 self._executable,
-                self._model_path,
+                staged_model,
                 audio_path,
                 output_prefix,
                 self._entry,
@@ -147,7 +150,7 @@ class WhisperCppBackend(ASRBackend):
                 self._executable = Path(str(backend["executable"]))
                 command = build_command(
                     self._executable,
-                    self._model_path,
+                    staged_model,
                     audio_path,
                     output_prefix,
                     self._entry,
@@ -197,9 +200,19 @@ def build_command(
 ) -> list[str]:
     """Build only arguments verified against whisper.cpp v1.9.1 cli.cpp."""
     command = [
-        str(executable), "-m", str(model), "-f", str(audio), "-l",
-        options.language or "auto", "-bs", str(options.beam_size), "-ojf", "-of",
-        str(output_prefix), "-pp",
+        str(executable),
+        "-m",
+        str(model),
+        "-f",
+        str(audio),
+        "-l",
+        options.language or "auto",
+        "-bs",
+        str(options.beam_size),
+        "-ojf",
+        "-of",
+        str(output_prefix),
+        "-pp",
     ]
     if settings.threads:
         command.extend(["-t", str(settings.threads)])
@@ -249,9 +262,7 @@ def _run_process(
     runtime_dirs = resolve_runtime_library_dirs(variant)
     if runtime_dirs:
         environment["PATH"] = (
-            os.pathsep.join(map(str, runtime_dirs))
-            + os.pathsep
-            + environment.get("PATH", "")
+            os.pathsep.join(map(str, runtime_dirs)) + os.pathsep + environment.get("PATH", "")
         )
     process = subprocess.Popen(
         command,
@@ -312,6 +323,26 @@ def _terminate_tree(process: subprocess.Popen[str]) -> None:
         process.kill()
 
 
+def _stage_model(source: Path, directory: Path) -> Path:
+    """Expose GGML and adjacent IR through an ASCII-safe temporary path on Windows."""
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / source.name
+    _link_or_copy(source, destination)
+    stem = source.stem + "-encoder-openvino"
+    for suffix in (".xml", ".bin"):
+        companion = source.with_name(stem + suffix)
+        if companion.is_file():
+            _link_or_copy(companion, directory / companion.name)
+    return destination
+
+
+def _link_or_copy(source: Path, destination: Path) -> None:
+    try:
+        os.link(source, destination)
+    except OSError:
+        shutil.copy2(source, destination)
+
+
 def _convert_result(
     data: dict[str, Any], entry: ModelEntry, device: str, requested_words: bool
 ) -> TranscriptionResult:
@@ -324,9 +355,7 @@ def _convert_result(
         tokens = raw.get("tokens", [])
         dtw_found = dtw_found or has_dtw_timestamps(tokens)
         words = (
-            tokens_to_words(tokens, segment_start=start, segment_end=end)
-            if requested_words
-            else []
+            tokens_to_words(tokens, segment_start=start, segment_end=end) if requested_words else []
         )
         segments.append(Segment(start, end, str(raw.get("text", "")), words))
     if requested_words and not dtw_found:

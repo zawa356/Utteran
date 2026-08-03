@@ -43,18 +43,14 @@ def test_space_prefixed_tokens_start_english_words() -> None:
 
 
 def test_missing_dtw_uses_millisecond_offsets() -> None:
-    words = tokens_to_words(
-        [token(" test", -1, 250, 750)], segment_start=0.0, segment_end=1.0
-    )
+    words = tokens_to_words([token(" test", -1, 250, 750)], segment_start=0.0, segment_end=1.0)
     assert (words[0].start, words[0].end) == pytest.approx((0.25, 0.75))
     assert not has_dtw_timestamps([token(" test", -1, 250, 750)])
     assert has_dtw_timestamps([token(" test", 25, 250, 750)])
 
 
 def test_invalid_times_are_clamped_to_segment() -> None:
-    words = tokens_to_words(
-        [token(" test", 0, 0, 9000)], segment_start=1.0, segment_end=2.0
-    )
+    words = tokens_to_words([token(" test", 0, 0, 9000)], segment_start=1.0, segment_end=2.0)
     assert words[0].start == 1.0
     assert words[0].end == 2.0
 

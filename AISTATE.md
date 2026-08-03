@@ -2,8 +2,8 @@
 
 ## 現在のフェーズと進捗
 
-- Phase 3b（whisper.cpp ASR）: `feature/phase3b-whisper-cpp`で着手。Step 1の仕様記録と
-  トークン→単語変換基盤を実装中。
+- Phase 3b（whisper.cpp ASR）: `feature/phase3b-whisper-cpp`でStep 1〜7を実装・Intel実機検証済み。
+  pyannote gated実モデルとの結合比較だけは本機のモデル/token不在で保留。最終品質ゲート中。
 - Phase 3b Step 2調査: 2026-08-03にHugging Face APIの`ggerganov/whisper.cpp` siblingsを
   取得し、実在するGGML 33ファイルとbyteサイズを確認して登録した。v1.9.1
   (`f049fff...`)の`cli.cpp`はOpenVINO deviceの`--ov-e-device`だけを公開し、IR pathには
@@ -24,6 +24,25 @@
 - Phase 3b Step 6: `models list --json`を追加。start.ps1はactive profileを表示し、devices JSONの
   backend/auto/native/CUDA可用性とmodels JSONの導入済み状態から選択肢を動的生成する。
   空の場合はnative buildまたはmodels downloadを案内する。PowerShell Parser検査合格。
+- Phase 3b Step 7実機（ZL-PC0010 / Core Ultra 7 255H / Arc 140T / Windows 11）:
+  - 既定native保存先のPhase 3a成果物が現存しなかったため再buildし、cpu/openvino/vulkan/
+    openvino_vulkan全4構成成功（493.4秒）。v1.9.1 commit一致、全exe runnable。
+  - large-v3-turbo-q5_0（実ファイル574,041,195 bytes）を取得。OpenVINO IR変換中、PyTorch
+    exporterがUnicode記号をcp932へ出せず失敗する新規問題を発見し、subprocessをUTF-8固定して
+    修正。再試行52.9秒でIR生成、q5_0 aliasを`models verify`で正常確認。
+  - 日本語ユーザー名を含む既定model pathで4構成とも0xC0000409終了する新規問題を発見。
+    GGMLと隣接IRを推論中だけASCII-safe temporaryへhardlink（不可時copy）して修正。CPU再試験と
+    残り3構成がすべて完走。
+  - 10.745秒TTS合成日本語で4構成とも3 segments/46 words、segment外単語時刻0件。
+    raw full JSONは通常token 42件に実`t_dtw`を持ち、範囲28〜984、最終segment end 9860ms。
+    v1.9.1ソースの`t_dtw/100`表示と実範囲が一致し、**t_dtwは10ms tick**と確定。
+    faster-whisperは同音声39 wordsでwhisper.cppは約18%多いだけのためalignment閾値は維持。
+  - 180秒合成fixtureのend-to-end秒（TSあり/なし）: cpu 463.352/391.030、openvino
+    62.719/57.674、vulkan 40.863/30.699、ovvk 33.585/26.421。全exit 0。faster-whisper CPU
+    （既存どおりTSあり）は178.344秒。ovvkのTSなしはありより約21%高速。
+  - 実機`devices`はautoをwhisper-cpp/openvino_vulkanと理由付き選択し、auto E2Eも成功。
+  - community-1モデルと有効gated tokenが本機にないため、pyannote実モデルとの結合比較だけは
+    未実施。segment fallbackと結合経路はモデル不要試験で確認済みとして保留する。
 
 - Phase 1（骨格と最小動作）: 実装完了。受入試験でfaster-whisperとgated pyannoteの
   CPU/CUDA実モデルE2E、5形式出力を検証済み。
@@ -876,10 +895,9 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
   `cuda`プロファイルの実機検証（NVIDIA GPU搭載機が必要）、`intel`/`vulkan`プロファイルの
   フルセットアップ実機検証、`start.ps1`プロファイル管理メニューの対話実行確認、
   4プロファイル同時作成時のディスク使用量実測が推奨される。
-- Phase 3b（whisper.cppを使った実際の文字起こし、ggmlモデルのカタログ登録、OpenVINO
-  エンコーダIR変換）は本セッションの範囲外。着手時はI-2（DTW有効化に`--no-flash-attn`が
-  必須、日本語トークン粒度、large-v3-turbo実モデルでの`--dtw large.v3.turbo`未検証）を
-  参照すること。
+- Phase 3bは実装・Intel実機検証完了。次は保留したcommunity-1との結合E2Eを有効token環境で
+  実施するか、Phase 3c（torch XPU話者分離）へ進む。Phase 3a専用の形式的受入報告は引き続き
+  未作成だが、Phase 3bでIntel native 4構成と既存faster-whisper回帰は実測済み。
 - Phase 3c（torch XPUによる話者分離）着手時はI-6（community-1実パイプラインの
   XPU完全E2E未検証）を参照すること。
 
@@ -909,6 +927,10 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
   （`...\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe`）が使える。
   `utteran native build`はビルド前提としてcmakeの存在だけを確認し、由来は問わない。
 - Vulkanの`glslc`（ビルド前提）と`vulkaninfo`（ランタイム）は独立した検出対象。
+- whisper.cpp v1.9.1 Windows buildは非ASCIIのGGMLパスで0xC0000409終了しうる。backendは
+  推論中だけGGML/IRをtemporaryへhardlinkするため、このstagingを外さない。
+- PyTorch ONNX exporterは成功記号を出力するため、日本語cp932環境のconverter subprocessは
+  `PYTHONIOENCODING=utf-8`必須。外すとIR変換がUnicodeEncodeErrorで失敗する。
   一方だけが利用可能な環境があるため、両方を確認しないと「ビルドできるが動かない」
   「動くがビルドできない」状態を見落とす。
 - **PowerShellの`.ps1`スクリプトへ引用符なしのカンマ区切り値（例: `--format srt,vtt,json`）を

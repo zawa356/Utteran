@@ -28,9 +28,7 @@ def convert_encoder(hparams, encoder, model_name):
     ov_model = frontend.convert(frontend.load(onnx_path))
     serialize(
         ov_model,
-        xml_path=os.path.join(
-            os.path.dirname(__file__), f"ggml-{model_name}-encoder-openvino.xml"
-        ),
+        xml_path=os.path.join(os.path.dirname(__file__), f"ggml-{model_name}-encoder-openvino.xml"),
     )
     shutil.rmtree(onnx_folder, ignore_errors=True)
 

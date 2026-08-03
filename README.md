@@ -511,6 +511,25 @@ export UTTERAN_DIARIZATION__NUM_SPEAKERS=2
 
 ## 実測性能の目安
 
+### Phase 3b Intel実機（whisper.cpp）
+
+Windows 11、Intel Core Ultra 7 255H、Intel Arc 140T iGPU、large-v3-turbo-q5_0、
+180秒の合成日本語音声でのend-to-end時間です。単語TSありはDTWのためflash attentionを
+無効化しています。
+
+| 構成 | 単語TSあり | 単語TSなし |
+|---|---:|---:|
+| whisper-cpp / CPU | 463.352秒 | 391.030秒 |
+| whisper-cpp / OpenVINO | 62.719秒 | 57.674秒 |
+| whisper-cpp / Vulkan | 40.863秒 | 30.699秒 |
+| whisper-cpp / OpenVINO+Vulkan | 33.585秒 | 26.421秒 |
+| faster-whisper / CPU | 178.344秒 | 非対応（既存経路は常時取得） |
+
+OpenVINO+Vulkanが最速で、単語TSなしはありより約21%高速でした。CPU auto fallbackを
+faster-whisperのままにする判断とも整合します。
+
+### Phase 1/2 NVIDIA実機
+
 Windows 11、GTX 1070 Ti 8 GiB、8 physical / 16 logical core CPU、large-v3-turbo/int8、
 pyannote community-1での受入試験値です。音声内容、モデル、他processのGPU使用量で変動します。
 

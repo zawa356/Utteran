@@ -4,6 +4,7 @@ from pathlib import Path
 
 from utteran.asr.whisper_cpp import (
     _convert_result,
+    _stage_model,
     build_command,
     is_gpu_initialization_failure,
     parse_progress,
@@ -48,6 +49,23 @@ def test_gpu_initialization_failure_patterns_are_bounded() -> None:
     assert is_gpu_initialization_failure("failed to initialize Vulkan device")
     assert is_gpu_initialization_failure("in openvino encoder compile routine: exception")
     assert not is_gpu_initialization_failure("model file has invalid magic")
+
+
+def test_model_and_openvino_ir_are_staged_together(tmp_path: Path) -> None:
+    source_dir = tmp_path / "日本語"
+    source_dir.mkdir()
+    model = source_dir / "ggml-base-q5_1.bin"
+    xml = source_dir / "ggml-base-q5_1-encoder-openvino.xml"
+    binary = source_dir / "ggml-base-q5_1-encoder-openvino.bin"
+    model.write_bytes(b"model")
+    xml.write_text("xml", encoding="utf-8")
+    binary.write_bytes(b"ir")
+
+    staged = _stage_model(model, tmp_path / "ascii-stage")
+
+    assert staged.read_bytes() == b"model"
+    assert (staged.parent / xml.name).read_text(encoding="utf-8") == "xml"
+    assert (staged.parent / binary.name).read_bytes() == b"ir"
 
 
 def test_convert_result_discards_words_when_dtw_was_silently_disabled() -> None:

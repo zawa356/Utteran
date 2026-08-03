@@ -584,9 +584,7 @@ def _auto_selection(
             notes.append(str(exc))
             asr_backend, asr_device, asr_compute = "faster-whisper", "cpu", "int8"
     elif (
-        vulkan.runtime_available
-        and openvino_gpu
-        and native.variants.get("openvino_vulkan", False)
+        vulkan.runtime_available and openvino_gpu and native.variants.get("openvino_vulkan", False)
     ):
         asr_backend, asr_device, asr_compute = "whisper-cpp", "openvino_vulkan", "ggml"
         notes.append("VulkanとOpenVINO GPUが利用可能なためopenvino_vulkanを選択しました。")

@@ -174,6 +174,10 @@ class ModelManager:
         _write_metadata(downloaded, entry)
         if entry.format == "CTranslate2":
             _verify_alignment_heads(downloaded)
+        elif entry.format == "GGML" and entry.model_size:
+            from utteran.models.openvino import OpenVINOManager
+
+            OpenVINOManager(self).refresh_aliases(entry.model_size)
         if progress is not None:
             progress(
                 ProgressEvent(
@@ -242,9 +246,7 @@ class ModelManager:
             if canonical_xml.exists() != canonical_bin.exists():
                 return VerificationResult(entry, False, path, size, "OpenVINO IRのXML/BINが不整合")
             if canonical_xml.is_file():
-                alias_xml = path / (
-                    Path(entry.artifact_filename).stem + "-encoder-openvino.xml"
-                )
+                alias_xml = path / (Path(entry.artifact_filename).stem + "-encoder-openvino.xml")
                 alias_bin = alias_xml.with_suffix(".bin")
                 if not alias_xml.is_file() or not alias_bin.is_file():
                     return VerificationResult(
