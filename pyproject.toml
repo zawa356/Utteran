@@ -23,11 +23,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pyannote = [
-  "pyannote.audio>=4,<5",
-  "torch>=2.8,<2.12",
-  "torchaudio>=2.8,<2.12",
-]
+# torch build-selecting extras: exactly one of these three may be installed at
+# once (see [tool.uv] conflicts below). Each pulls pyannote.audio plus the
+# matching torch/torchaudio wheel from an explicit per-build index.
 cpu = [
   "pyannote.audio>=4,<5",
   "torch>=2.8,<2.12",
@@ -38,12 +36,24 @@ cuda = [
   "torch>=2.8,<2.12",
   "torchaudio>=2.8,<2.12",
 ]
-intel = [
-  "openvino-genai>=2025,<2027",
+xpu = [
   "pyannote.audio>=4,<5",
   "torch>=2.8,<2.12",
   "torchaudio>=2.8,<2.12",
+  # torch's xpu wheel depends transitively on triton-xpu, but uv only
+  # resolves indexed sources (see [tool.uv.sources] below) for packages
+  # listed directly in a conflicting extra's own optional-dependencies -
+  # a transitive-only requirement is rejected with "Source entry ... was
+  # not found under the project.optional-dependencies section for that
+  # extra". Windows-only: no non-Windows torch+xpu combination has been
+  # verified (see AISTATE.md I-4/I-5).
+  "triton-xpu; sys_platform == 'win32'",
 ]
+# Feature-adding extras: composable with any of the above, and with each
+# other. Not part of the torch conflict set.
+whisper-cpp = ["cmake>=3.28,<5"]
+openvino = ["openvino>=2025,<2027", "openai-whisper>=20250625", "onnxscript>=0.2,<1"]
+onnx = ["onnxruntime>=1.19,<2"]
 dev = [
   "mypy>=1.11,<2",
   "pytest>=8.3,<9",
@@ -52,34 +62,20 @@ dev = [
 ]
 
 [tool.uv]
-conflicts = [
-  [
-    { extra = "pyannote" },
-    { extra = "cuda" },
-  ],
-  [
-    { extra = "cpu" },
-    { extra = "cuda" },
-  ],
-  [
-    { extra = "intel" },
-    { extra = "cuda" },
-  ],
-]
+conflicts = [[{ extra = "cpu" }, { extra = "cuda" }, { extra = "xpu" }]]
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cpu", extra = "pyannote" },
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cu126", extra = "cuda" },
-  { index = "pytorch-cpu", extra = "intel" },
+  { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchaudio = [
-  { index = "pytorch-cpu", extra = "pyannote" },
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cu126", extra = "cuda" },
-  { index = "pytorch-cpu", extra = "intel" },
+  { index = "pytorch-xpu", extra = "xpu" },
 ]
+triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -89,6 +85,11 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
 explicit = true
 
 [project.scripts]
