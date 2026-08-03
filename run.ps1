@@ -25,17 +25,34 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+function ConvertTo-FlatArgument {
+    param($Value)
+
+    # PowerShell parses an unquoted comma list on a .ps1 script's command
+    # line (e.g. --format srt,vtt,json,txt,md) as an array literal, not a
+    # single string - confirmed this happens only for .ps1 invocation, not
+    # a direct utteran.exe call. By the time it reaches $args, each such
+    # slot is an array whose elements must be rejoined with "," to recover
+    # the value the user actually typed; otherwise it collapses to a
+    # space-joined string ("srt vtt json txt md") the CLI rejects.
+    if ($Value -is [array]) {
+        return ($Value -join ",")
+    }
+    return [string]$Value
+}
+
 $SelectedProfile = $null
 $PassThroughArguments = [System.Collections.Generic.List[string]]::new()
 $RawArguments = $args
 $Index = 0
 while ($Index -lt $RawArguments.Count) {
-    if ($RawArguments[$Index] -eq "-Profile" -and ($Index + 1) -lt $RawArguments.Count) {
-        $SelectedProfile = $RawArguments[$Index + 1]
+    $Current = ConvertTo-FlatArgument $RawArguments[$Index]
+    if ($Current -eq "-Profile" -and ($Index + 1) -lt $RawArguments.Count) {
+        $SelectedProfile = ConvertTo-FlatArgument $RawArguments[$Index + 1]
         $Index += 2
         continue
     }
-    $PassThroughArguments.Add($RawArguments[$Index])
+    $PassThroughArguments.Add($Current)
     $Index += 1
 }
 
@@ -112,5 +129,6 @@ if (-not (Test-Path -LiteralPath $Launcher -PathType Leaf)) {
 }
 
 Write-Host "[run.ps1] profile: $SelectedProfile" -ForegroundColor DarkGray
+$env:UTTERAN_PROFILE = $SelectedProfile
 & $Launcher @PassThroughArguments
 exit $LASTEXITCODE

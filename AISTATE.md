@@ -656,6 +656,30 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
   だったが、本書には既に15〜18章が存在するため「既存章番号を変更せず末尾に追加する」という
   指示書の原則を優先し19/20とした）。14章をextras新構成へ更新。README/変更履歴/本ファイルを
   同期した。
+- Phase 3a最終回帰確認（cpuプロファイル、実機・実モデル）: `faster-whisper:large-v3-turbo`
+  （1.6 GiB）を`run.ps1 models download`で実取得し、`models verify`のalignment_heads
+  プローブがokで完走することを確認。合成日本語音声（TTS生成、11.140秒）で
+  `run.ps1 transcribe ... --no-diarization --format srt,vtt,json,txt,md`を実行し、
+  5形式すべて生成・schema_version 1・speakers=[]・processing.diarization=nullを確認。
+  同一コマンドの2回目実行は全5ステージが`ステージ再利用`となりexit 0で完走（レジューム動作）。
+  `run.ps1 models list` / `jobs list` / `config show` / `devices`も実機で確認した。
+  話者分離付き文字起こしは、本機にpyannote community-1の有効なgatedトークンがなく
+  （`.env`の値は未参照、`default_token_provider().get_token()`がFalseを返すことのみ確認）、
+  `models download pyannote:...`が想定どおり「トークン未設定」exit 2で失敗することを確認した
+  にとどまる。pyannote.audio 4.0.7・torch 2.11.0+cpuはcpuプロファイルで正しくimport可能で
+  `PyannoteBackend.is_available()`はTrueであり、コード経路自体は健全と判断した
+  （実パイプライン実行はトークン制約により未検証）。
+- 回帰確認中に2件の実行時不具合を発見・修正した（いずれもコミット前に自己検出）。
+  1) `run.ps1`は`.ps1`スクリプトとして起動されるため、`--format srt,vtt,json,txt,md`のように
+     引用符なしのカンマ区切り値を渡すと、PowerShellが呼び出し時点でバラの配列
+     （`@("srt","vtt","json","txt","md")`）として解釈し、文字列化時に空白区切り
+     （`"srt vtt json txt md"`）へ変わってしまうことを実機で発見した。同じ引数を
+     `utteran.exe`へ直接渡した場合はこの問題が起きないため、`.ps1`起動特有の挙動である。
+     `run.ps1`の引数解析へ、配列型要素を`,`で再結合してから引き渡す処理を追加して修正した。
+  2) `run.ps1`・`start.ps1`はどちらも選択したプロファイルで`utteran`を起動する際に
+     `UTTERAN_PROFILE`環境変数を子プロセスへ設定しておらず、`utteran profiles current`や
+     `devices`の現在プロファイル表示が常に「不明」になっていた。両スクリプトの起動直前に
+     `$env:UTTERAN_PROFILE`を設定するよう修正し、実機で正しく反映されることを確認した。
 
 ## 未解決の課題・保留事項
 
@@ -667,13 +691,21 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
 - G12のExplorer起動、setup profile切替、破壊的確認はコード監査と非破壊dry-runまで。
 - 約2時間19分のCPU耐久はCUDA成功時には不要という指示に従い未実施。
 - 実文字起こし本文の意味的評価は利用者確認事項。構造・時刻・言語・重複・空欄・話者統計は合格。
-- Phase 3aはPhase 1/2のような専用受入試験（G0〜G14相当）を実施していない。個別モジュールの
-  モデル不要回帰と、setup.ps1/run.ps1/native.pyの実機end-to-end検証は行ったが、
-  start.ps1のプロファイル管理メニュー自体の対話実行、`cuda`/`intel`/`vulkan`各プロファイルの
-  実機フルセットアップ（本機はNVIDIA GPUなしのためcuda未検証、intel/vulkanはビルドと
-  一部prob eのみ検証）は未実施。次セッションでの受入試験を推奨。
+- Phase 3aはPhase 1/2のような専用受入試験（G0〜G14相当）を実施していない。cpuプロファイルの
+  実モデルend-to-end（実取得・ASR実行・レジューム・models/jobs/config/devices）は
+  `run.ps1`経由で実機確認済み（上記参照）。一方、start.ps1のプロファイル管理メニュー自体の
+  対話実行、`cuda`/`intel`/`vulkan`各プロファイルの実機フルセットアップ（本機はNVIDIA GPU
+  なしのためcuda未検証、intel/vulkanはネイティブビルドと一部probeのみ検証）は未実施。
+  次セッションでの正式な受入試験を推奨。
 - `cuda`プロファイルは本機（NVIDIA GPUなし）ではvenv作成してもprobeが必ず失敗するため、
   利用者確認のうえ作成・検証しなかった（未検証のまま）。
+- 話者分離付き文字起こしの実パイプライン実行は、本機に有効なpyannote community-1の
+  gatedトークンがなく未検証。`models download`が「トークン未設定」exit 2で正しく失敗する
+  ことと、pyannote.audio 4.0.7・torch 2.11.0+cpuがcpuプロファイルで正常にimportでき
+  `PyannoteBackend.is_available()`がTrueであることは確認した。Phase 1/2の受入試験
+  （別マシン、G3等）でこの経路自体は実モデルE2E検証済みのため、Phase 3aの環境分離が
+  この経路を壊していないと判断する根拠は十分とみるが、実トークンでの最終確認は
+  次セッションを推奨する。
 - pyannote 4.0.7のtorch XPU上での完全E2E（community-1実パイプライン）は本機に有効な
   gatedモデルトークンがなく未検証（I-6参照）。基本演算（Conv1d/LSTM/InstanceNorm1d）の
   XPU実行は実機確認済み。Phase 3cの課題として残す。
@@ -856,6 +888,14 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
 - Vulkanの`glslc`（ビルド前提）と`vulkaninfo`（ランタイム）は独立した検出対象。
   一方だけが利用可能な環境があるため、両方を確認しないと「ビルドできるが動かない」
   「動くがビルドできない」状態を見落とす。
+- **PowerShellの`.ps1`スクリプトへ引用符なしのカンマ区切り値（例: `--format srt,vtt,json`）を
+  渡すと、呼び出し時点でPowerShellがバラの配列として解釈し、文字列化時に空白区切りへ
+  変わってしまう。** `utteran.exe`を直接呼ぶ場合はこの問題が起きない（.ps1起動特有）。
+  `run.ps1`のような透過的な引数パススルーを書く場合は、各要素の型が`[array]`かどうかを
+  確認し、配列なら`,`で再結合してから次へ渡すこと。`$args`をそのまま信用しない。
+- `run.ps1` / `start.ps1`は、選択・解決したプロファイルで`utteran`を起動する直前に
+  必ず`$env:UTTERAN_PROFILE`を設定すること。設定を忘れると`utteran profiles current`や
+  `devices`の現在プロファイル表示が常に「不明」になる（実際に起きた不具合）。
 
 ## 動作確認環境・手順
 

@@ -164,6 +164,7 @@ function Invoke-Utteran {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
     $Launcher = Get-UtteranLauncher
+    $env:UTTERAN_PROFILE = $Launcher.Profile
     & $Launcher.Command @Arguments
     $script:LastUtteranExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
     if ($script:LastUtteranExitCode -ne 0) {
