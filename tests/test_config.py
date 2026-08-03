@@ -13,6 +13,14 @@ from utteran.config import (
 from utteran.errors import ConfigurationError
 
 
+def test_whisper_cpp_defaults() -> None:
+    config = Config()
+
+    assert config.asr.word_timestamps == "auto"
+    assert config.asr.whisper_cpp.variant == "auto"
+    assert config.asr.whisper_cpp.dtw == "auto"
+
+
 def test_config_priority_cli_env_dotenv_toml_defaults(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

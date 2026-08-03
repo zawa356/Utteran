@@ -42,6 +42,12 @@ vad_filter = true
 condition_on_previous_text = false
 beam_size = 5
 initial_prompt = ""
+word_timestamps = "auto"
+
+[asr.whisper_cpp]
+variant = "auto"
+dtw = "auto"
+threads = 0
 
 [diarization]
 enabled = true
@@ -99,6 +105,14 @@ class GeneralConfig(BaseModel):
         return None if value == "" else value
 
 
+class WhisperCppConfig(BaseModel):
+    """whisper.cpp-specific process and alignment settings."""
+
+    variant: Literal["auto", "cpu", "openvino", "vulkan", "openvino_vulkan"] = "auto"
+    dtw: str = "auto"
+    threads: int = Field(default=0, ge=0)
+
+
 class ASRConfig(BaseModel):
     """Automatic speech recognition settings."""
 
@@ -111,6 +125,8 @@ class ASRConfig(BaseModel):
     condition_on_previous_text: bool = False
     beam_size: int = Field(default=5, ge=1)
     initial_prompt: str | None = ""
+    word_timestamps: Literal["auto", "always", "never"] = "auto"
+    whisper_cpp: WhisperCppConfig = Field(default_factory=WhisperCppConfig)
 
 
 class DiarizationConfig(BaseModel):

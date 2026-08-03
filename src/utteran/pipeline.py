@@ -425,13 +425,18 @@ def _export_result(
 
 def _asr_options(config: Config) -> ASROptions:
     """Build backend-neutral ASR options from effective settings."""
+    word_timestamps = True
+    if config.asr.backend == "whisper-cpp":
+        word_timestamps = config.asr.word_timestamps == "always" or (
+            config.asr.word_timestamps == "auto" and config.diarization.enabled
+        )
     return ASROptions(
         language=config.asr.language,
         initial_prompt=config.asr.initial_prompt,
         vad_filter=config.asr.vad_filter,
         beam_size=config.asr.beam_size,
         condition_on_previous_text=config.asr.condition_on_previous_text,
-        word_timestamps=True,
+        word_timestamps=word_timestamps,
     )
 
 

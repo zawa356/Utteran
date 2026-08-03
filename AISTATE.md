@@ -2,6 +2,9 @@
 
 ## 現在のフェーズと進捗
 
+- Phase 3b（whisper.cpp ASR）: `feature/phase3b-whisper-cpp`で着手。Step 1の仕様記録と
+  トークン→単語変換基盤を実装中。
+
 - Phase 1（骨格と最小動作）: 実装完了。受入試験でfaster-whisperとgated pyannoteの
   CPU/CUDA実モデルE2E、5形式出力を検証済み。
 - Phase 1 初回コミット: `83a4b29 feat: implement Phase 1 transcription pipeline`。
