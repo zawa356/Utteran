@@ -28,6 +28,143 @@
   コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
 - コード着手前の必須4文書を作成。
+- Phase 3a（実行環境分離・whisper.cppネイティブビルド機構・Phase 3b事前調査）: 着手。
+  作業branch `feature/phase3a-environments`。Step 0事前調査は完了、Step 1以降を実装中。
+
+## 事前調査結果（Phase 3a Step 0）
+
+**指示書の前提と異なる点（最重要）**: 本調査は受入試験時と別のWindows実機
+（`ZL-PC0010`、Intel Core Ultra 7 255H、**Intel Arc 140T iGPU（32 GiB共有VRAM表示）**、
+NVIDIA GPUなし、RAM 68,161,626,112 bytes、Windows 11 Business 10.0.26200、Cドライブ空き
+約168 GiB）で実施した。既存の`.venv`・`.venv-windows`は本機に存在しない（削除禁止の対象が
+そもそも無い）。uvは本機未導入だったため、公式スタンドアロンインストーラーで
+`%USERPROFILE%\.local\bin`へ導入した（利用者にuv導入方針を確認し承認を得た。uv 0.12.1、
+PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）とVS同梱のCMake
+3.31.6-msvc6／Ninjaが利用可能。Vulkan SDK 1.4.350.0が導入済みで`glslc`／`vulkaninfo`とも
+利用可能。この実機の性質上、cuda profileはvenv作成のみ可能でprobeは必ず失敗するため、
+利用者確認のうえ**作成せず「未検証」として扱う**。
+
+- **I-1（whisper.cppバージョン選定）**: 最新安定タグは`v1.9.1`
+  （commit `f049fff95a089aa9969deb009cdd4892b3e74916`、2026-06-19）。参考実装の`v1.8.6`
+  （`23ee03506a91ac3d3f0071b40e66a430eebdfa1d`）より新しい。利用者確認のうえ`v1.9.1`を採用。
+  実際に`--branch v1.9.1 --depth 1`でclone、CPU/Vulkan双方の`whisper-cli`ビルドに成功し、
+  実推論も正常動作したため後退の必要なし。**採用: v1.9.1**。
+- **I-2（単語レベルタイムスタンプ）**: 実機で検証済み。
+  - `--dtw`プリセット一覧はソース確認（`examples/cli/cli.cpp`）で
+    `tiny(.en)/base(.en)/small(.en)/medium(.en)/large.v1/v2/v3/v3.turbo`の12種。
+    **`large-v3-turbo`用プリセット`large.v3.turbo`は存在する**
+    （`WHISPER_AHEADS_LARGE_V3_TURBO`、layer 2〜3の6 head、`src/whisper.cpp:395,409`）。
+    turboのdecoder層数（圧縮後で浅い）に対し参照層番号が小さく収まっており、
+    ソースを読む限りU-005（CTranslate2/kotoba-whisper-v2.0のalignment_heads不整合による
+    ネイティブクラッシュ）と同種の層番号超過は見当たらない。ただし実際のlarge-v3-turbo
+    ggmlモデルでの実行確認はPhase 3aの範囲外（時間・帯域の都合、確認は今後）。
+  - **重大な非自明挙動**: `whisper-cli`は`flash_attn`が既定で`true`
+    （`examples/cli/cli.cpp:79`）であり、**`--dtw <preset>`を指定してもflash attention有効時は
+    警告ログ`dtw_token_timestamps is not supported with flash_attn - disabling`を出して
+    無言でDTWを無効化する**（エラーにならない）。`--dtw base --no-gpu`のみでは
+    `t_dtw`が全トークンで`-1`のままだったが、`--no-flash-attn`（`-nfa`）を追加すると
+    `alignment heads masks size = 256 B`のログが出て`t_dtw`に実値が入ることを実機確認した。
+    **Phase 3bでは単語タイムスタンプ利用時に`--no-flash-attn`を必須で付与すること。**
+    指示書はこの依存関係に触れていない。
+  - `-ojf`（`--output-json-full`）のJSON構造を合成日本語音声（後述）で実測。
+    トップレベルキー: `systeminfo, model, params, result, transcription`。
+    各segmentは`timestamps{from,to}(文字列 "HH:MM:SS,mmm"), offsets{from,to}(ms整数),
+    text, tokens[]`を持つ。各tokenは`text, timestamps, offsets, id, p, t_dtw`を持つ
+    （`t_dtw`は非text特殊token（`[_BEG_]`等）では常に`-1`、DTW無効時は全token`-1`）。
+  - 日本語のトークン粒度: base多言語モデルのBPEトークナイザーは、かな・漢字1文字未満の
+    UTF-8バイト断片単位でトークン化される場合が多く（1トークン=1文字ではない）、
+    `whisper-cli`自身はデフォルトでトークンを単語へ統合しない。単語単位化には
+    `--split-on-word`（`-sow`）と`--max-len N>0`の併用が必要（`cli.cpp`確認）。
+    `align.py`の単語数ベース閾値（`min_segment_words`等）にPhase 3bで影響するため、
+    Phase 3bでは生トークンではなく`-sow`併用時の単語単位出力を基礎にする設計が必要。
+  - 使用モデルはOpenAI公式`large-v3-turbo`ではなく`ggml-base.bin`
+    （帯域・時間の都合、構造検証目的で代用）。JSON構造・DTW有効化条件はモデル非依存の
+    はずだが、large-v3-turbo実機での最終確認はPhase 3bで行うこと。
+- **I-3（Vulkanビルド前提条件）**: 実機で完全ビルド・実推論に成功。
+  - `-DGGML_VULKAN=ON`のCMake configureで`Vulkan found`と共に
+    `glslc`／`glslangValidator`のcomponentが要求される
+    （`find_package(Vulkan ... COMPONENTS glslc glslangValidator)`相当、
+    ログ: `Found Vulkan: ...vulkan-1.lib (found version "1.4.350") found components: glslc glslangValidator`）。
+    **`glslc`はビルド時に必須**。入手経路はVulkan SDK（本機は`C:\VulkanSDK\1.4.350.0`、
+    環境変数`VULKAN_SDK`設定済み）。SDK同梱の`glslc`のみで確認、他経路は未調査。
+  - 指示書の懸念どおり、**`vulkaninfo`の存在だけではビルド前提を確認できない**
+    （`vulkaninfo`はランタイム確認、ビルドには別途SDKのCMake/glslcコンポーネントが必要）。
+    実際には本機は両方導入済みのため、ビルド前提の欠如を単独では再現できなかった。
+  - ビルドは`Ninja`ジェネレータ、VS2022同梱MSVC 19.44で実施。359ターゲット中、
+    shader-gen関連が大半（359ステップ）。ビルド成果物サイズ: `cpu`構成35 MiB、
+    `vulkan`構成559 MiB（大量の`.comp`シェーダーオブジェクト）。
+  - 実推論確認: `whisper-cli --device 0`でVulkan0（Intel Arc 140T）を検出・使用し、
+    exit 0で完走（load 282ms、encode 1494ms、total 4056ms、30語程度の短い日本語音声）。
+- **I-4（uvのconflicting extras / explicit index）**: 独立検証プロジェクトで実機確認。
+  - `[tool.uv] conflicts`と`[[tool.uv.index]] explicit = true`、
+    `[tool.uv.sources]`のextra別ルーティングはuv 0.12.1で仕様どおり動作する。
+    `cpu`/`cuda`/`xpu`を`conflicts`に登録した状態で単一`uv.lock`が生成でき
+    （102 packages resolved）、`uv lock --check`も合格。
+  - **同時指定は正しく拒否される**: `uv sync --extra cpu --extra cuda`は
+    `error: Extras \`cpu\` and \`cuda\` are incompatible with the declared conflicts`で
+    exit 2。
+  - プロファイル別venv分離も実機確認: `UV_PROJECT_ENVIRONMENT`を切替えて`--extra cpu`のみを
+    別venvへsyncすると、他venv（xpu等）に影響せずtorch cpu版だけが入ることを確認。
+  - **重大な非自明な制約（未文書化のuv要件）**: torch xpu版は`triton-xpu`パッケージに
+    transitiveに依存するが、`torch`/`torchaudio`同様に`tool.uv.sources`で`pytorch-xpu`
+    explicit indexへルーティングしても、**`triton-xpu`が`xpu`extraの
+    `project.optional-dependencies`に直接列挙されていない限りuvはエラーで拒否する**
+    （`Source entry for 'triton-xpu' only applies to extra 'xpu', but 'triton-xpu' was not
+    found under the project.optional-dependencies section for that extra`）。
+    実装では`xpu = [..., "triton-xpu; sys_platform == 'win32'"]`のように明示追加し、
+    対応する`tool.uv.sources`エントリも追加する必要がある（Linux版wheelも存在するが
+    Windows専用切り分けの要否は未検証のため`win32`条件を付与）。指示書のI-4/Step 1の
+    実装例にはこの追加が欠落しており、そのままでは`uv lock`が失敗する。
+  - `pytorch-triton-xpu`（旧来torch xpu版が依存していた別名パッケージ）はPyPI上に存在せず、
+    Windows向けwheelも確認できなかった。torch>=2.11.0+xpuでは`triton-xpu`（ハイフン区切り、
+    別パッケージ名）が正しい依存名である。
+- **I-5（torch XPUとopenai-whisperの依存衝突）**: 実機確認、衝突なし。
+  `xpu + openvino + whisper-cpp`相当のextra組み合わせ（`torch==2.11.0+xpu`、
+  `openai-whisper`、`onnxscript`等54 packages）を同一venvへsyncし、`torch`が
+  CPU版へ上書きされないことをsync後のパッケージ一覧で確認した（`torch==2.11.0+xpu`のまま）。
+- **I-6（pyannote 4.0.7のXPU動作可否）**: 部分確認（Phase 3cの課題として残置）。
+  - `torch.xpu.is_available()`は`True`、`torch.xpu.get_device_name(0)`は
+    実機の`Intel(R) Arc(TM) 140T GPU (32GB)`を返す。基本ランタイム初期化は正常。
+  - pyannoteのsegmentationモデルが使う代表的な層（`Conv1d`, 双方向`LSTM`,
+    `InstanceNorm1d`）をXPUデバイス上で直接実行し、forward計算・CPUへの転送まで
+    エラーなく成功した（未対応オペレーターは検出されなかった）。
+  - **community-1実パイプラインでの完全E2Eは未確認**。本機の`.env`にはgatedモデルの
+    有効なHFトークンが設定されておらず（`.env`は内容を読まず、取得の成否だけで判定。
+    プロジェクト規約に従い値は不参照）、`Pipeline.from_pretrained(...)`が
+    `GatedRepoError`で失敗した。基本演算は動作することが分かった一方、実モデルの
+    重み・グラフ構造まで含めた完全な動作保証はできない。**Phase 3cで有効なトークン環境
+    にて再検証が必要**。
+- **I-7（ディスク使用量の実測）**: 部分実測。`xpu + openvino`相当のvenv（pyannoteなし）で
+  約4.9 GiB。実際のutteranプロファイル（pyannote等コア依存を含む）はこれより大きくなる
+  見込みで、正確な値はStep 3の`setup.ps1`実機検証時に確定する。whisper.cppソース
+  checkout（`.git`込み）は約188 MiB、ネイティブビルド成果物は`cpu`構成35 MiB、
+  `vulkan`構成559 MiB（シェーダー生成物が大半）。全体では指示書見積り6〜8 GiBと
+  大きく相反しない見込みだが、intel profile（xpu+openvino+whisper-cpp+pyannote）の
+  最終確定値は未計測。
+- **参考実装の所在訂正**: 指示書は参考実装を`_tmp/`と記載しているが、実際は
+  `.tmp/TranscriptTool_v2-feature-gui-app.zip`に配置されていた
+  （`.tmp/extracted/`へ展開して`native.py`／`transcription/selector.py`／
+  `transcription/whisper_cpp.py`を確認）。
+  - `native.py`の`_openvino_paths()`は`getattr(openvino, "get_cmake_path", None)`が
+    `None`の場合`package_dir / "cmake"`へフォールバックする防御的実装だった。
+    **実機のopenvino 2026.2.1には`get_cmake_path()`属性自体が存在しない**
+    （`AttributeError: module 'openvino' has no attribute 'get_cmake_path'`）ことを確認。
+    フォールバック先`<package_dir>/cmake/OpenVINOConfig.cmake`は実在したため、
+    utteranの実装でも同じ防御的フォールバックを踏襲する（指示書の記述は
+    `get_cmake_path()`を前提としており、実際にはフォールバック必須）。
+  - OpenVINO構成のビルド自体も本機で実施し成功した（`-DWHISPER_OPENVINO=ON`、
+    `-DOpenVINO_DIR=<venv>/site-packages/openvino/cmake`、38ターゲット、exit 0）。
+    **実行時の重大な制約を確認**: ビルドした`whisper-cli.exe`は、OpenVINOランタイムDLL
+    ディレクトリ（`<venv>/site-packages/openvino/libs`）がPATHに無い状態では
+    `error while loading shared libraries: ggml.dll: cannot open shared object file`
+    という誤解を招くエラーで起動不能（exit 127）になる。同ディレクトリをPATHへ追加すると
+    正常起動する。これは指示書が要求する「実行時ライブラリのディレクトリを実行時に
+    現在の環境から動的に解決する」設計（`_environment()`でPATH注入）が必須であることを
+    実機で裏付けた。OpenVINO GPU encoderの実際の推論（`--ov-e-device GPU`）は、
+    事前に`ggml-*-encoder-openvino.xml/.bin`（Phase 3bで実装するIR変換の成果物）が
+    必要で、本調査時点では未変換のため`Could not open the file`で初期化失敗する
+    ログを確認したのみ（クラッシュはせず、明確なエラーメッセージで失敗することを確認）。
+    IR変換自体はPhase 3bの範囲。
 
 ## 実装計画
 
