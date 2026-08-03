@@ -1,8 +1,15 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("cpu", "cuda", "intel")]
-    [string]$Profile = "cpu",
-    [switch]$SkipFfmpeg
+    [ValidateSet("cpu", "cuda", "intel", "vulkan")]
+    [string]$Profile,
+    [switch]$List,
+    [ValidateSet("cpu", "cuda", "intel", "vulkan")]
+    [string]$Remove,
+    [ValidateSet("cpu", "cuda", "intel", "vulkan")]
+    [string]$SetDefault,
+    [switch]$SkipFfmpeg,
+    [string]$VenvDir,
+    [switch]$Yes
 )
 
 Set-StrictMode -Version Latest
@@ -14,26 +21,190 @@ $BinDir = Join-Path $DataRoot "bin"
 $BundledFfmpeg = Join-Path $BinDir "ffmpeg.exe"
 $EnvPath = Join-Path $ProjectRoot ".env"
 $EnvExample = Join-Path $ProjectRoot ".env.example"
-$DefaultProjectEnvironment = Join-Path $ProjectRoot ".venv"
-$WindowsProjectEnvironment = Join-Path $ProjectRoot ".venv-windows"
-$ProjectEnvironment = $DefaultProjectEnvironment
+$LegacyDefaultEnvironment = Join-Path $ProjectRoot ".venv"
+$LegacyWindowsEnvironment = Join-Path $ProjectRoot ".venv-windows"
 $FfmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 $FfmpegChecksumUrl = "$FfmpegUrl.sha256"
-$DependencySyncSucceeded = $false
-$DeviceVerificationSucceeded = $false
-$ProfileVerificationSucceeded = $false
+
+# Profile -> extras, matching src/utteran/profiles.py's PROFILE_EXTRAS. Kept
+# in sync manually since this script has no Python runtime available before
+# the first `uv sync` completes.
+$ProfileExtras = @{
+    "cpu"    = @("cpu")
+    "cuda"   = @("cuda")
+    "intel"  = @("xpu", "whisper-cpp", "openvino")
+    "vulkan" = @("cpu", "whisper-cpp")
+}
+$AllProfiles = @("cpu", "cuda", "intel", "vulkan")
 
 function Write-Step {
     param([string]$Message)
     Write-Host "`n==> $Message" -ForegroundColor Cyan
 }
 
-function Invoke-Uv {
-    param([string[]]$Arguments)
-    & $script:UvCommand.Source @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "uv $($Arguments -join ' ') failed (exit $LASTEXITCODE)"
+function Get-VenvRoot {
+    if ($VenvDir) {
+        return [IO.Path]::GetFullPath($VenvDir)
     }
+    if ($env:UTTERAN_VENV_DIR) {
+        return [IO.Path]::GetFullPath($env:UTTERAN_VENV_DIR)
+    }
+    return Join-Path $ProjectRoot ".venvs"
+}
+
+function Get-ProfileVenvPath {
+    param([Parameter(Mandatory = $true)][string]$ProfileName, [Parameter(Mandatory = $true)][string]$Root)
+    # Directory name mirrors profiles.venv_dir_name(): "<os>-<profile>". This
+    # script only runs on Windows, so the OS slug is always "win" here.
+    return Join-Path $Root "win-$ProfileName"
+}
+
+function Get-DirectorySize {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        return 0
+    }
+    $Items = Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue
+    if ($null -eq $Items) {
+        return 0
+    }
+    return ($Items | Measure-Object -Property Length -Sum).Sum
+}
+
+function Format-ByteSize {
+    param([double]$Bytes)
+    $Units = "B", "KiB", "MiB", "GiB", "TiB"
+    $Value = [double]$Bytes
+    foreach ($Unit in $Units) {
+        if ($Value -lt 1024 -or $Unit -eq "TiB") {
+            return "{0:N1} {1}" -f $Value, $Unit
+        }
+        $Value /= 1024
+    }
+}
+
+function Get-MainPackageVersions {
+    param([Parameter(Mandatory = $true)][string]$VenvPath)
+    # Read dist-info directory names directly instead of launching that
+    # venv's Python: -List only needs to report presence and versions, not
+    # start an interpreter per profile.
+    $SitePackages = Join-Path $VenvPath "Lib\site-packages"
+    if (-not (Test-Path -LiteralPath $SitePackages -PathType Container)) {
+        return "-"
+    }
+    $Watched = "torch", "pyannote.audio", "openvino", "faster-whisper"
+    $Found = [System.Collections.Generic.List[string]]::new()
+    foreach ($Name in $Watched) {
+        $Pattern = ($Name -replace "\.", "_" -replace "-", "_") + "-*.dist-info"
+        $Match = Get-ChildItem -LiteralPath $SitePackages -Filter $Pattern -Directory -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($null -ne $Match -and $Match.Name -match "^(.+)-([^-]+)\.dist-info$") {
+            $Found.Add("$Name=$($Matches[2])")
+        }
+    }
+    if ($Found.Count -eq 0) {
+        return "-"
+    }
+    return ($Found -join ", ")
+}
+
+function Show-ProfileList {
+    $Root = Get-VenvRoot
+    Write-Host "venv ルート: $Root"
+    $Table = foreach ($Name in $AllProfiles) {
+        $Path = Get-ProfileVenvPath -ProfileName $Name -Root $Root
+        $Exists = Test-Path -LiteralPath $Path -PathType Container
+        [pscustomobject]@{
+            Profile   = $Name
+            Extras    = ($ProfileExtras[$Name] -join ",")
+            State     = if ($Exists) { "作成済み" } else { "未作成" }
+            Size      = if ($Exists) { Format-ByteSize (Get-DirectorySize -Path $Path) } else { "-" }
+            Packages  = if ($Exists) { Get-MainPackageVersions -VenvPath $Path } else { "-" }
+            UpdatedAt = if ($Exists) { (Get-Item -LiteralPath $Path).LastWriteTime } else { "-" }
+        }
+    }
+    $Table | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+}
+
+function Remove-ProfileVenv {
+    param([Parameter(Mandatory = $true)][string]$ProfileName)
+    $Root = Get-VenvRoot
+    $Path = Get-ProfileVenvPath -ProfileName $ProfileName -Root $Root
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        Write-Host "プロファイル '$ProfileName' は作成されていません: $Path"
+        return
+    }
+    $Size = Get-DirectorySize -Path $Path
+    Write-Host "削除対象: $Path ($(Format-ByteSize $Size) 解放されます)"
+    if (-not $Yes) {
+        $Answer = Read-Host "削除しますか? [y/N]"
+        if ($Answer.Trim().ToLowerInvariant() -notin @("y", "yes")) {
+            Write-Host "キャンセルしました。"
+            return
+        }
+    }
+    Remove-Item -LiteralPath $Path -Recurse -Force
+    Write-Host "削除しました: $Path" -ForegroundColor Green
+}
+
+function Get-AnyExistingProfileVenv {
+    $Root = Get-VenvRoot
+    foreach ($Name in $AllProfiles) {
+        $Path = Get-ProfileVenvPath -ProfileName $Name -Root $Root
+        if (Test-Path -LiteralPath (Join-Path $Path "Scripts\python.exe") -PathType Leaf) {
+            return $Path
+        }
+    }
+    return $null
+}
+
+function Set-DefaultProfileInConfig {
+    param([Parameter(Mandatory = $true)][string]$ProfileName)
+    $AnyVenv = Get-AnyExistingProfileVenv
+    if ($null -eq $AnyVenv) {
+        throw "既定プロファイルを設定するには、先に少なくとも1つのプロファイルを作成してください。"
+    }
+    $env:UV_PROJECT_ENVIRONMENT = $AnyVenv
+    $UvCommand = Get-Command uv -ErrorAction SilentlyContinue
+    if ($null -eq $UvCommand) {
+        throw "uv が見つかりません。"
+    }
+    $ConfigPathText = (& $UvCommand.Source run --no-sync utteran config path | Out-String).Trim()
+    if (-not (Test-Path -LiteralPath $ConfigPathText -PathType Leaf)) {
+        & $UvCommand.Source run --no-sync utteran config init | Out-Null
+    }
+    $Content = Get-Content -LiteralPath $ConfigPathText -Raw -Encoding UTF8
+    if ($Content -match '(?m)^\s*default_profile\s*=.*$') {
+        $Content = $Content -replace '(?m)^\s*default_profile\s*=.*$', "default_profile = `"$ProfileName`""
+    }
+    elseif ($Content -match '(?m)^\[general\]\s*$') {
+        $Content = $Content -replace '(?m)^\[general\]\s*$', "[general]`ndefault_profile = `"$ProfileName`""
+    }
+    else {
+        $Content = "[general]`ndefault_profile = `"$ProfileName`"`n`n" + $Content
+    }
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($ConfigPathText, $Content, $Utf8NoBom)
+    Write-Host "既定プロファイルを '$ProfileName' に設定しました: $ConfigPathText" -ForegroundColor Green
+}
+
+function Show-LegacyEnvironmentNotice {
+    $LegacyFound = @()
+    if (Test-Path -LiteralPath $LegacyWindowsEnvironment -PathType Container) {
+        $LegacyFound += $LegacyWindowsEnvironment
+    }
+    if (Test-Path -LiteralPath $LegacyDefaultEnvironment -PathType Container) {
+        $LegacyFound += $LegacyDefaultEnvironment
+    }
+    if ($LegacyFound.Count -eq 0) {
+        return
+    }
+    Write-Host "`n旧方式の環境が見つかりました（変更していません）:" -ForegroundColor Yellow
+    foreach ($Path in $LegacyFound) {
+        Write-Host "  $Path"
+    }
+    Write-Host "新しいプロファイル別 venv (.venvs\win-<profile>) が動作することを確認したら、"
+    Write-Host "上記フォルダは手動で削除できます: Remove-Item -Recurse -Force <パス>"
 }
 
 function Install-Ffmpeg {
@@ -96,162 +267,212 @@ function Install-Ffmpeg {
     }
 }
 
-Write-Host "utteran Windows setup"
-Write-Host "Project: $ProjectRoot"
-Write-Host "Profile: $Profile"
-Write-Host "Planned actions: Python/uv check, dependency sync, ffmpeg check, .env helper,"
-Write-Host "                 CUDA dependency check, devices report."
-Write-Host "No administrator privileges are required. Existing files are not overwritten."
-
-Set-Location -LiteralPath $ProjectRoot
-
-Write-Step "Checking Python 3.11 / 3.12"
-$PythonCommand = Get-Command python -ErrorAction SilentlyContinue
-if ($null -eq $PythonCommand) {
-    Write-Warning "python was not found on PATH. Install Python 3.11/3.12 or let uv manage it."
-}
-else {
-    $PythonVersion = & $PythonCommand.Source --version 2>&1
-    Write-Host $PythonVersion
-    if ($PythonVersion -notmatch "Python 3\.(11|12)\.") {
-        Write-Warning "utteran supports Python 3.11 and 3.12."
+function Show-EnvHelper {
+    if (Test-Path -LiteralPath $EnvPath -PathType Leaf) {
+        Write-Host ".env already exists; leaving it unchanged."
     }
-}
-
-Write-Step "Checking uv and syncing the selected profile"
-$DefaultHasWindowsPython = Test-Path -LiteralPath `
-    (Join-Path $DefaultProjectEnvironment "Scripts\python.exe") -PathType Leaf
-$DefaultHasPosixLayout = (
-    (Test-Path -LiteralPath (Join-Path $DefaultProjectEnvironment "bin") -PathType Container) -or
-    (Test-Path -LiteralPath (Join-Path $DefaultProjectEnvironment "lib64"))
-)
-$WindowsEnvironmentExists = Test-Path -LiteralPath $WindowsProjectEnvironment -PathType Container
-if ($WindowsEnvironmentExists -or
-    ((Test-Path -LiteralPath $DefaultProjectEnvironment -PathType Container) -and
-     -not $DefaultHasWindowsPython -and $DefaultHasPosixLayout)) {
-    $ProjectEnvironment = $WindowsProjectEnvironment
-    if ($DefaultHasPosixLayout -and -not $DefaultHasWindowsPython) {
-        Write-Warning ".venv is a Linux/WSL environment and cannot be shared with Windows."
-        Write-Host "Using a separate Windows environment without modifying .venv:"
+    elseif (Test-Path -LiteralPath $EnvExample -PathType Leaf) {
+        Copy-Item -LiteralPath $EnvExample -Destination $EnvPath
+        Write-Host "Created $EnvPath from .env.example."
     }
-}
-$env:UV_PROJECT_ENVIRONMENT = $ProjectEnvironment
-Write-Host "Project environment: $ProjectEnvironment"
-
-$script:UvCommand = Get-Command uv -ErrorAction SilentlyContinue
-if ($null -eq $script:UvCommand) {
-    Write-Warning "uv was not found. Install it without administrator rights, then rerun setup:"
-    Write-Host "  winget install --id=astral-sh.uv -e"
-    Write-Host "  https://docs.astral.sh/uv/getting-started/installation/"
-}
-else {
-    Write-Host (& $script:UvCommand.Source --version)
-    $SyncArgs = [System.Collections.Generic.List[string]]::new()
-    $SyncArgs.Add("sync")
-    $SyncArgs.Add("--locked")
-    $SyncArgs.Add("--extra")
-    $SyncArgs.Add($Profile)
-    if ($Profile -eq "cuda") {
-        Write-Host "CUDA profile uses the PyTorch CUDA 12.6 wheel (approximately 2.4 GiB)."
+    else {
+        Write-Warning ".env.example was not found; .env was not created."
     }
-    try {
-        Invoke-Uv -Arguments ([string[]]$SyncArgs)
-        $DependencySyncSucceeded = $true
+    Write-Host "For pyannote, create a read token at https://huggingface.co/settings/tokens"
+    Write-Host "and accept https://huggingface.co/pyannote/speaker-diarization-community-1,"
+    Write-Host "then set HF_TOKEN in .env. The token is never requested or printed by this script."
+}
+
+function Invoke-VulkanPrerequisiteCheck {
+    param([Parameter(Mandatory = $true)][string]$VenvPath)
+    $PythonExe = Join-Path $VenvPath "Scripts\python.exe"
+    $Probe = @"
+from utteran.native import probe_glslc, probe_vulkan_runtime
+build = probe_glslc()
+runtime, device = probe_vulkan_runtime()
+print(f"BUILD={build.available}|{build.detail or ''}")
+print(f"RUNTIME={runtime.available}|{device or runtime.detail or ''}")
+"@
+    $Result = & $PythonExe -c $Probe 2>&1
+    $BuildLine = $Result | Where-Object { $_ -like "BUILD=*" }
+    $RuntimeLine = $Result | Where-Object { $_ -like "RUNTIME=*" }
+    $BuildOk = $BuildLine -like "BUILD=True*"
+    $RuntimeOk = $RuntimeLine -like "RUNTIME=True*"
+    if ($BuildOk) {
+        Write-Host "Vulkanビルド前提 (glslc): 利用可能" -ForegroundColor Green
     }
-    catch {
-        Write-Warning "Dependency sync failed: $($_.Exception.Message)"
-        Write-Host "If this machine is offline, reconnect and run: uv $($SyncArgs -join ' ')"
+    else {
+        Write-Warning "Vulkanビルド前提 (glslc) が利用できません: $BuildLine"
+        Write-Host "Vulkan SDK (https://vulkan.lunarg.com/) を導入してください。"
     }
+    if ($RuntimeOk) {
+        Write-Host "Vulkanランタイム: 利用可能 ($RuntimeLine)" -ForegroundColor Green
+    }
+    else {
+        Write-Warning "Vulkanランタイムが利用できません: $RuntimeLine"
+    }
+    return $BuildOk -and $RuntimeOk
 }
 
-Write-Step "Checking ffmpeg"
-Install-Ffmpeg
+function Invoke-ProfileSetup {
+    param([Parameter(Mandatory = $true)][string]$ProfileName)
 
-Write-Step "Preparing .env without exposing a token"
-if (Test-Path -LiteralPath $EnvPath -PathType Leaf) {
-    Write-Host ".env already exists; leaving it unchanged."
-}
-elseif (Test-Path -LiteralPath $EnvExample -PathType Leaf) {
-    Copy-Item -LiteralPath $EnvExample -Destination $EnvPath
-    Write-Host "Created $EnvPath from .env.example."
-}
-else {
-    Write-Warning ".env.example was not found; .env was not created."
-}
-Write-Host "For pyannote, create a read token at https://huggingface.co/settings/tokens"
-Write-Host "and accept https://huggingface.co/pyannote/speaker-diarization-community-1,"
-Write-Host "then set HF_TOKEN in .env. The token is never requested or printed by this script."
+    $Root = Get-VenvRoot
+    $VenvPath = Get-ProfileVenvPath -ProfileName $ProfileName -Root $Root
+    $Extras = $ProfileExtras[$ProfileName]
 
-Write-Step "Checking CUDA libraries and final device selection"
-if ($null -eq $script:UvCommand) {
-    Write-Warning "Skipping 'utteran devices' until uv is installed and dependencies are synced."
-}
-elseif (-not $DependencySyncSucceeded) {
-    Write-Warning "Skipping 'utteran devices' because dependency sync did not complete."
-}
-else {
-    try {
-        $DeviceText = (& $script:UvCommand.Source run utteran devices --json | Out-String)
-        if ($LASTEXITCODE -ne 0) {
-            throw "utteran devices --json failed (exit $LASTEXITCODE)"
+    Write-Host "utteran Windows setup"
+    Write-Host "Project: $ProjectRoot"
+    Write-Host "Profile: $ProfileName (extras: $($Extras -join ', '))"
+    Write-Host "venv: $VenvPath"
+    Write-Host "No administrator privileges are required. Existing files are not overwritten."
+    Write-Host "This profile's venv is independent; other profiles are not affected."
+
+    Set-Location -LiteralPath $ProjectRoot
+    Show-LegacyEnvironmentNotice
+
+    Write-Step "Checking Python 3.11 / 3.12"
+    $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -eq $PythonCommand) {
+        Write-Warning "python was not found on PATH. Install Python 3.11/3.12 or let uv manage it."
+    }
+    else {
+        $PythonVersion = & $PythonCommand.Source --version 2>&1
+        Write-Host $PythonVersion
+        if ($PythonVersion -notmatch "Python 3\.(11|12)\.") {
+            Write-Warning "utteran supports Python 3.11 and 3.12."
         }
-        $DeviceData = $DeviceText | ConvertFrom-Json
-        if ($Profile -eq "cpu") {
-            $ProfileVerificationSucceeded = (
-                $DeviceData.backends.'faster-whisper' -and $DeviceData.backends.pyannote
-            )
+    }
+
+    Write-Step "Checking uv and syncing profile '$ProfileName'"
+    $DependencySyncSucceeded = $false
+    $script:UvCommand = Get-Command uv -ErrorAction SilentlyContinue
+    if ($null -eq $script:UvCommand) {
+        Write-Warning "uv was not found. Install it without administrator rights, then rerun setup:"
+        Write-Host "  winget install --id=astral-sh.uv -e"
+        Write-Host "  https://docs.astral.sh/uv/getting-started/installation/"
+    }
+    else {
+        Write-Host (& $script:UvCommand.Source --version)
+        $env:UV_PROJECT_ENVIRONMENT = $VenvPath
+        $SyncArgs = [System.Collections.Generic.List[string]]::new()
+        $SyncArgs.Add("sync")
+        $SyncArgs.Add("--locked")
+        foreach ($Extra in $Extras) {
+            $SyncArgs.Add("--extra")
+            $SyncArgs.Add($Extra)
         }
-        elseif ($Profile -eq "cuda") {
-            $UsableCTranslate2Cuda = @(
-                $DeviceData.ctranslate2.cuda_devices | Where-Object { $_.usable }
-            ).Count -gt 0
-            $UsableTorchCuda = [bool]$DeviceData.pytorch.cuda_available
-            $ProfileVerificationSucceeded = $UsableCTranslate2Cuda -and $UsableTorchCuda
-            if (-not $UsableCTranslate2Cuda) {
-                Write-Warning "CUDA profile: faster-whisper cannot initialize CTranslate2 CUDA."
-                Write-Host "Install CUDA 12 compatible cuDNN 9 and cuBLAS, ensure their DLL directories"
-                Write-Host "are available, then rerun setup. See README.md and NVIDIA documentation."
+        if ($ProfileName -eq "cuda") {
+            Write-Host "CUDA profile uses the PyTorch CUDA 12.6 wheel (approximately 2.4 GiB)."
+        }
+        try {
+            & $script:UvCommand.Source @SyncArgs
+            if ($LASTEXITCODE -ne 0) {
+                throw "uv $($SyncArgs -join ' ') failed (exit $LASTEXITCODE)"
             }
-            if (-not $UsableTorchCuda) {
-                Write-Warning "CUDA profile: pyannote cannot execute the PyTorch CUDA probe kernel."
-                Write-Host "Check the NVIDIA driver, GPU compatibility, and the CUDA PyTorch build."
+            $DependencySyncSucceeded = $true
+        }
+        catch {
+            Write-Warning "Dependency sync failed: $($_.Exception.Message)"
+            Write-Host "If this machine is offline, reconnect and run: uv $($SyncArgs -join ' ')"
+        }
+    }
+
+    Write-Step "Checking ffmpeg"
+    Install-Ffmpeg
+
+    Write-Step "Preparing .env without exposing a token"
+    Show-EnvHelper
+
+    Write-Step "Verifying profile '$ProfileName'"
+    $ProfileVerificationSucceeded = $false
+    if (-not $DependencySyncSucceeded) {
+        Write-Warning "Skipping verification because dependency sync did not complete."
+    }
+    else {
+        try {
+            $DeviceText = (& $script:UvCommand.Source run --no-sync utteran devices --json | Out-String)
+            if ($LASTEXITCODE -ne 0) {
+                throw "utteran devices --json failed (exit $LASTEXITCODE)"
+            }
+            $DeviceData = $DeviceText | ConvertFrom-Json
+            if ($ProfileName -eq "cpu") {
+                $ProfileVerificationSucceeded = (
+                    $DeviceData.backends.'faster-whisper' -and $DeviceData.backends.pyannote
+                )
+            }
+            elseif ($ProfileName -eq "cuda") {
+                $UsableCTranslate2Cuda = @(
+                    $DeviceData.ctranslate2.cuda_devices | Where-Object { $_.usable }
+                ).Count -gt 0
+                $UsableTorchCuda = [bool]$DeviceData.pytorch.cuda_available
+                $ProfileVerificationSucceeded = $UsableCTranslate2Cuda -and $UsableTorchCuda
+                if (-not $UsableCTranslate2Cuda) {
+                    Write-Warning "CUDA profile: faster-whisper cannot initialize CTranslate2 CUDA."
+                    Write-Host "Install CUDA 12 compatible cuDNN 9 and cuBLAS, then rerun setup."
+                }
+                if (-not $UsableTorchCuda) {
+                    Write-Warning "CUDA profile: pyannote cannot execute the PyTorch CUDA probe kernel."
+                }
+            }
+            elseif ($ProfileName -eq "intel") {
+                $OpenVinoOk = [bool]$DeviceData.openvino.available
+                $XpuProbe = & (Join-Path $VenvPath "Scripts\python.exe") -c `
+                    "import torch; print(torch.xpu.is_available())" 2>&1
+                $XpuOk = ($XpuProbe -match "True")
+                $ProfileVerificationSucceeded = $OpenVinoOk
+                if (-not $OpenVinoOk) {
+                    Write-Warning "Intel profile: OpenVINO could not initialize."
+                }
+                if ($XpuOk) {
+                    Write-Host "torch XPU: 利用可能" -ForegroundColor Green
+                }
+                else {
+                    Write-Host "torch XPU: 未検出 ($XpuProbe)"
+                }
+            }
+            else {
+                # vulkan
+                $ProfileVerificationSucceeded = Invoke-VulkanPrerequisiteCheck -VenvPath $VenvPath
+            }
+            & $script:UvCommand.Source run --no-sync utteran devices
+            if ($LASTEXITCODE -ne 0) {
+                throw "utteran devices failed (exit $LASTEXITCODE)"
             }
         }
-        else {
-            $ProfileVerificationSucceeded = [bool]$DeviceData.openvino.available
-            if (-not $ProfileVerificationSucceeded) {
-                Write-Warning "Intel profile: OpenVINO could not initialize."
-            }
+        catch {
+            Write-Warning "Verification could not complete: $($_.Exception.Message)"
         }
-        & $script:UvCommand.Source run utteran devices
-        if ($LASTEXITCODE -ne 0) {
-            throw "utteran devices failed (exit $LASTEXITCODE)"
-        }
-        $DeviceVerificationSucceeded = $true
     }
-    catch {
-        Write-Warning "Device verification could not complete: $($_.Exception.Message)"
-        Write-Host "After dependencies are available, run: uv run utteran devices"
+
+    if (-not $DependencySyncSucceeded -or -not $ProfileVerificationSucceeded) {
+        Write-Host "`nutteran setup (profile: $ProfileName) is incomplete. Resolve the warnings above and rerun." `
+            -ForegroundColor Red
+        exit 1
     }
+
+    Write-Host "`nutteran setup completed successfully for profile '$ProfileName'." -ForegroundColor Green
+    Write-Host "Models are managed separately after setup. To choose from a numbered list, run:"
+    Write-Host "  .\run.ps1 -Profile $ProfileName models download"
+    Write-Host "To run transcription with this profile:"
+    Write-Host "  .\run.ps1 -Profile $ProfileName transcribe <入力ファイル>"
+    Write-Host "Or, if this is your only profile, simply:"
+    Write-Host "  .\run.ps1 transcribe <入力ファイル>"
 }
 
-if (-not $DependencySyncSucceeded -or
-    -not $DeviceVerificationSucceeded -or
-    -not $ProfileVerificationSucceeded) {
-    Write-Host "`nutteran setup is incomplete. Resolve the warnings above and rerun setup." `
-        -ForegroundColor Red
-    exit 1
+if ($Remove) {
+    Remove-ProfileVenv -ProfileName $Remove
+    exit 0
 }
-
-Write-Host "`nutteran setup completed successfully." -ForegroundColor Green
-Write-Host "Models are managed separately after setup. To choose from a numbered list, run:"
-Write-Host "  uv run utteran models download"
-Write-Host "For catalog details or automation with an explicit ID, run:"
-Write-Host "  uv run utteran models list --available"
-Write-Host "  uv run utteran models download <ID>"
-if ($ProjectEnvironment -ne $DefaultProjectEnvironment) {
-    Write-Host "Windows and WSL use separate project environments. In a new PowerShell session, run:"
-    Write-Host "  `$env:UV_PROJECT_ENVIRONMENT = '$ProjectEnvironment'"
-    Write-Host "before using 'uv run utteran ...', or execute:"
-    Write-Host "  $ProjectEnvironment\Scripts\utteran.exe"
+if ($List) {
+    Show-ProfileList
+    exit 0
 }
+if ($SetDefault) {
+    Set-DefaultProfileInConfig -ProfileName $SetDefault
+    exit 0
+}
+if (-not $Profile) {
+    $Profile = "cpu"
+}
+Invoke-ProfileSetup -ProfileName $Profile
