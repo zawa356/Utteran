@@ -68,7 +68,7 @@ class BackendPool:
         if self._asr is not None and self._asr_key is not None:
             self._asr.unload()
             self._asr = None
-        self._asr = self._asr or create_asr_backend(config.asr.backend)
+        self._asr = self._asr or create_asr_backend(config.asr.backend, config)
         self._asr.load(config.asr.model, config.asr.device, config.asr.compute_type)
         self._asr_key = key
         logging.getLogger(__name__).info("ASRバックエンドをロード: %s/%s/%s/%s", *key)

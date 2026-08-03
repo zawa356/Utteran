@@ -14,6 +14,10 @@
   file handleを遅延解放した際に`shutil.rmtree`が変換後に失敗する問題が残存すると確認した。
   `from openvino import serialize`と`ignore_errors=True`の2修正を持つscriptをvendor同梱した。
   モデル不要のIR命名・量子化alias試験は合格。実IR変換はStep 7で大容量重みを用いて検証する。
+- Phase 3b Step 4: whisper.cpp backend本体を実装。v1.9.1 `cli.cpp`で確認した`-m/-f/-l/-bs/
+  -ojf/-of/-pp/-t/--prompt/-oved/--device/--no-gpu/--dtw/--no-flash-attn`だけを使用する。
+  stderr進捗、Windows process tree停止、秘密値mask、動的OpenVINO DLL、temporary JSON、共通型変換、
+  DTW全`-1`時の単語破棄を実装。実モデルE2EはStep 7で実施する。
 
 - Phase 1（骨格と最小動作）: 実装完了。受入試験でfaster-whisperとgated pyannoteの
   CPU/CUDA実モデルE2E、5形式出力を検証済み。

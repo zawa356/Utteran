@@ -424,10 +424,10 @@ uv run utteran profiles path       # venv ルートパス
 Pythonプロセス内でプロファイルを切り替えて再実行する機能はありません。切り替えは
 `run.ps1` の責務です。
 
-## ネイティブビルド（whisper.cpp、基盤のみ）
+## whisper.cppバックエンドとネイティブビルド
 
 `intel` / `vulkan` プロファイルでは、whisper.cppをソースから取得して複数構成でビルドできます。
-**このビルド機構自体は基盤の実装であり、実際の文字起こしへの利用は今後の対応です。**
+ビルド後はGGMLモデルを取得し、`--asr-backend whisper-cpp`で文字起こしできます。
 
 ```console
 uv run utteran native build                       # 前提を満たす全構成を試行
@@ -435,6 +435,10 @@ uv run utteran native build --variant cpu,vulkan  # 構成を絞る
 uv run utteran native status                      # ビルド状態を表示
 uv run utteran native clean --variant vulkan      # 1構成だけ削除
 uv run utteran native clean --all                 # 全構成を削除
+uv run utteran models list --available             # 推奨GGMLモデル
+uv run utteran models list --available --all       # 英語専用を含む全GGMLモデル
+uv run utteran models download whisper-cpp:large-v3-turbo-q5_0
+uv run utteran transcribe input.wav --asr-backend whisper-cpp --asr-model large-v3-turbo-q5_0
 ```
 
 | 構成 | 前提条件 |
@@ -451,6 +455,19 @@ uv run utteran native clean --all                 # 全構成を削除
 （例: `openvino_vulkan` → `ovvk`）。OpenVINOランタイムのDLLパスはビルド成果物に焼き込まず、
 実行時にアクティブな環境から動的に解決します。**Vulkanのビルドは長時間かかることがあります**
 （特にシェーダー生成）。進捗が表示されますが、応答がないように見える時間帯があります。
+
+`[asr].word_timestamps`は`auto`（話者分離時だけ、既定）/`always`/`never`です。単語時刻を
+取得する場合はDTWのためflash attentionを無効化するので低速になります。whisper.cppは
+サブプロセス方式のため、バッチでもファイルごとにGGMLモデルをロードします。
+
+OpenVINO構成では、GGMLとは別に最大約3GBのOpenAI PyTorch重みを一時取得してencoder IRを
+準備します。IRはモデルサイズごとに1組で、q5_0など量子化違いにも共有されます。
+
+```console
+uv run utteran models prepare-openvino whisper-cpp:large-v3-turbo-q5_0 --device GPU
+uv run utteran models list-openvino
+uv run utteran models remove-openvino whisper-cpp:large-v3-turbo-q5_0
+```
 
 ## 設定
 

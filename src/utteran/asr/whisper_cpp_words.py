@@ -80,10 +80,9 @@ def _decode_pieces(
     pieces: list[_Piece] = []
     pending: list[Mapping[str, Any]] = []
     pending_bytes = b""
-    for token in tokens:
+    ordinary = [token for token in tokens if not _is_special(str(token.get("text", "")))]
+    for index, token in enumerate(ordinary):
         text = str(token.get("text", ""))
-        if _is_special(text):
-            continue
         raw = _token_bytes(text)
         pending.append(token)
         pending_bytes += raw
@@ -93,7 +92,8 @@ def _decode_pieces(
             if error.reason == "unexpected end of data":
                 continue
             decoded = pending_bytes.decode("utf-8", errors="replace")
-        pieces.append(_piece(decoded, pending, segment_start, segment_end))
+        next_token = ordinary[index + 1] if index + 1 < len(ordinary) else None
+        pieces.append(_piece(decoded, pending, next_token, segment_start, segment_end))
         pending = []
         pending_bytes = b""
     if pending:
@@ -101,6 +101,7 @@ def _decode_pieces(
             _piece(
                 pending_bytes.decode("utf-8", errors="replace"),
                 pending,
+                None,
                 segment_start,
                 segment_end,
             )
@@ -111,11 +112,16 @@ def _decode_pieces(
 def _piece(
     text: str,
     tokens: Sequence[Mapping[str, Any]],
+    next_token: Mapping[str, Any] | None,
     segment_start: float,
     segment_end: float,
 ) -> _Piece:
     start = _token_time(tokens[0], "from", segment_start)
-    end = _token_time(tokens[-1], "to", segment_end)
+    end = (
+        _token_time(next_token, "from", segment_end)
+        if next_token is not None
+        else _offset_time(tokens[-1], "to", segment_end)
+    )
     start = min(max(start, segment_start), segment_end)
     end = min(max(end, start), segment_end)
     probabilities = [float(token["p"]) for token in tokens if token.get("p") is not None]
@@ -128,6 +134,10 @@ def _token_time(token: Mapping[str, Any], edge: str, fallback: float) -> float:
     if dtw >= 0:
         # whisper_token_data::t_dtw uses the same 10 ms tick as t0/t1.
         return dtw * DTW_SECONDS_PER_TICK
+    return _offset_time(token, edge, fallback)
+
+
+def _offset_time(token: Mapping[str, Any], edge: str, fallback: float) -> float:
     offsets = token.get("offsets")
     if isinstance(offsets, Mapping) and offsets.get(edge) is not None:
         return float(offsets[edge]) / 1000.0

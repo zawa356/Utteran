@@ -29,7 +29,7 @@ def test_special_tokens_are_ignored_and_utf8_fragments_are_joined() -> None:
 
     assert [word.text for word in words] == ["あ。"]
     assert words[0].start == pytest.approx(0.1)
-    assert words[0].end == pytest.approx(0.13)
+    assert words[0].end == pytest.approx(0.14)
     assert words[0].probability == pytest.approx(0.8)
 
 
@@ -56,7 +56,7 @@ def test_invalid_times_are_clamped_to_segment() -> None:
         [token(" test", 0, 0, 9000)], segment_start=1.0, segment_end=2.0
     )
     assert words[0].start == 1.0
-    assert words[0].end == 1.0
+    assert words[0].end == 2.0
 
 
 def test_probability_is_mean_of_constituent_byte_tokens() -> None:
