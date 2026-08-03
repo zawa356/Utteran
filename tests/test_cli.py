@@ -11,7 +11,13 @@ import pytest
 from typer.testing import CliRunner
 
 from utteran.batch import BatchItemResult, BatchSummary
-from utteran.cli import _cli_overrides, _parse_model_selection, _run_interruptibly, app
+from utteran.cli import (
+    _cli_overrides,
+    _parse_model_selection,
+    _parse_variant_selection,
+    _run_interruptibly,
+    app,
+)
 from utteran.devices import (
     AutoSelection,
     CPUReport,
@@ -409,3 +415,149 @@ def test_model_selection_accepts_numbers_ids_and_rejects_invalid_number() -> Non
     assert selected == [entries[0], get_model("faster-whisper:kotoba-whisper-v2.0")]
     with pytest.raises(ConfigurationError, match="範囲外"):
         _parse_model_selection("99", entries)
+
+
+def test_profiles_list_reports_one_created_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("UTTERAN_VENV_DIR", raising=False)
+    (tmp_path / "win-cpu").mkdir()
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f"[general]\nvenv_dir = '{tmp_path.as_posix()}'\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["profiles", "list", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "cpu" in result.output
+    assert "作成済み" in result.output
+    assert "未作成" in result.output  # cuda/intel/vulkan were not created
+
+
+def test_profiles_current_reflects_the_run_ps1_environment_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("UTTERAN_PROFILE", raising=False)
+    unset = runner.invoke(app, ["profiles", "current"])
+
+    monkeypatch.setenv("UTTERAN_PROFILE", "cuda")
+    set_result = runner.invoke(app, ["profiles", "current"])
+
+    assert unset.exit_code == 0 and "不明" in unset.output
+    assert set_result.exit_code == 0 and "cuda" in set_result.output
+
+
+def test_profiles_path_prints_the_resolved_venv_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("UTTERAN_VENV_DIR", raising=False)
+    config_path = tmp_path / "config.toml"
+    venv_root = tmp_path / "custom-venvs"
+    config_path.write_text(
+        f"[general]\nvenv_dir = '{venv_root.as_posix()}'\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["profiles", "path", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert str(venv_root) in result.output
+
+
+def test_native_build_reports_success_and_skips(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = {
+        "backends": {"cpu": {"executable": "/fake/whisper-cli"}},
+        "errors": {"vulkan": "no glslc"},
+    }
+
+    class FakeBuilder:
+        def __init__(self, _native_dir: object) -> None:
+            pass
+
+        def build_all(self, *, variants: object, force: bool) -> dict[str, object]:
+            return manifest
+
+    monkeypatch.setattr("utteran.cli.NativeBuilder", FakeBuilder)
+
+    result = runner.invoke(app, ["native", "build", "--variant", "cpu,vulkan"])
+
+    assert result.exit_code == 0
+    assert "構築成功" in result.output
+    assert "スキップ" in result.output
+
+
+def test_native_build_exits_nonzero_when_nothing_builds(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeBuilder:
+        def __init__(self, _native_dir: object) -> None:
+            pass
+
+        def build_all(self, *, variants: object, force: bool) -> dict[str, object]:
+            return {"backends": {}, "errors": {"cpu": "no cmake"}}
+
+    monkeypatch.setattr("utteran.cli.NativeBuilder", FakeBuilder)
+
+    result = runner.invoke(app, ["native", "build", "--variant", "cpu"])
+
+    assert result.exit_code == 3
+
+
+def test_native_build_rejects_unknown_variant_name() -> None:
+    result = runner.invoke(app, ["native", "build", "--variant", "cpu,rocm"])
+
+    assert result.exit_code == 2
+    assert "rocm" in result.output
+
+
+def test_native_status_reports_no_manifest_when_never_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeBuilder:
+        def __init__(self, _native_dir: object) -> None:
+            pass
+
+        def status(self) -> dict[str, object]:
+            return {"manifest": {}, "runnable": {}}
+
+    monkeypatch.setattr("utteran.cli.NativeBuilder", FakeBuilder)
+
+    result = runner.invoke(app, ["native", "status"])
+
+    assert result.exit_code == 0
+    assert "未実行" in result.output
+
+
+def test_native_clean_requires_exactly_one_selector() -> None:
+    neither = runner.invoke(app, ["native", "clean"])
+    both = runner.invoke(app, ["native", "clean", "--all", "--variant", "cpu"])
+
+    assert neither.exit_code == 2
+    assert both.exit_code == 2
+
+
+def test_native_clean_removes_one_variant(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str | None] = []
+
+    class FakeBuilder:
+        def __init__(self, _native_dir: object) -> None:
+            pass
+
+        def clean(self, *, variant: str | None) -> None:
+            calls.append(variant)
+
+    monkeypatch.setattr("utteran.cli.NativeBuilder", FakeBuilder)
+
+    result = runner.invoke(app, ["native", "clean", "--variant", "cpu"])
+
+    assert result.exit_code == 0
+    assert calls == ["cpu"]
+
+
+def test_parse_variant_selection_defaults_and_validates() -> None:
+    from utteran.native import VARIANT_NAMES
+
+    assert _parse_variant_selection(None) == VARIANT_NAMES
+    assert _parse_variant_selection("cpu, vulkan") == ("cpu", "vulkan")
+    with pytest.raises(ConfigurationError, match="rocm"):
+        _parse_variant_selection("cpu,rocm")

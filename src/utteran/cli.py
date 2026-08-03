@@ -10,7 +10,7 @@ import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Never, TypeVar
+from typing import Annotated, Never, TypeVar, cast
 
 import typer
 from rich.console import Console
@@ -38,7 +38,13 @@ from utteran.jobs import JobStore
 from utteran.logging import configure_logging, mask_secrets, register_secret
 from utteran.models.catalog import ModelEntry, get_model
 from utteran.models.manager import ModelManager, ModelStatus
+from utteran.native import VARIANT_NAMES, NativeBuilder, resolve_native_dir
 from utteran.pipeline import run_pipeline
+from utteran.profiles import (
+    current_profile_name,
+    list_profile_statuses,
+    resolve_venv_root,
+)
 from utteran.types import CancelToken, PipelineOutcome, ProgressEvent
 
 T = TypeVar("T")
@@ -51,9 +57,13 @@ app = typer.Typer(
 models_app = typer.Typer(help="推論モデルを明示的に管理します。", no_args_is_help=True)
 jobs_app = typer.Typer(help="保存済みジョブを確認・削除します。", no_args_is_help=True)
 config_app = typer.Typer(help="utteran の設定ファイルを管理します。", no_args_is_help=True)
+profiles_app = typer.Typer(help="実行環境プロファイル (venv) を確認します。", no_args_is_help=True)
+native_app = typer.Typer(help="whisper.cpp ネイティブビルドを管理します。", no_args_is_help=True)
 app.add_typer(models_app, name="models")
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(config_app, name="config")
+app.add_typer(profiles_app, name="profiles")
+app.add_typer(native_app, name="native")
 
 console = Console()
 error_console = Console(stderr=True)
@@ -492,6 +502,147 @@ def config_show(
 def config_path_command() -> None:
     """Print the platform-specific default config.toml path."""
     typer.echo(default_config_path())
+
+
+@profiles_app.command("list")
+def profiles_list_command(
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """List every known profile's presence, disk usage, and last update."""
+    try:
+        config = Config.load(config_path=config_path)
+        root = resolve_venv_root(Path.cwd(), configured=config.general.venv_dir)
+        statuses = list_profile_statuses(root)
+    except UtteranError as exc:
+        _exit_expected(exc)
+    table = Table("プロファイル", "extras", "状態", "サイズ", "最終更新")
+    for status in statuses:
+        table.add_row(
+            status.name,
+            ",".join(status.extras),
+            "作成済み" if status.exists else "未作成",
+            _format_size(status.size_bytes) if status.exists else "-",
+            status.updated_at or "-",
+        )
+    console.print(table)
+    console.print(f"venv ルート: {root}")
+
+
+@profiles_app.command("current")
+def profiles_current_command() -> None:
+    """Print the profile run.ps1 recorded via UTTERAN_PROFILE, or 'unknown'."""
+    name = current_profile_name()
+    console.print(name or "不明 (run.ps1 以外から起動、または UTTERAN_PROFILE 未設定)")
+
+
+@profiles_app.command("path")
+def profiles_path_command(
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """Print the resolved venv root directory."""
+    try:
+        config = Config.load(config_path=config_path)
+        root = resolve_venv_root(Path.cwd(), configured=config.general.venv_dir)
+    except UtteranError as exc:
+        _exit_expected(exc)
+    typer.echo(root)
+
+
+@native_app.command("build")
+def native_build_command(
+    variant: Annotated[
+        str | None,
+        typer.Option("--variant", help="cpu,vulkan,... のカンマ区切り。省略時は全構成を試行"),
+    ] = None,
+    force: Annotated[
+        bool, typer.Option("--force", help="同一設定でも既存ビルドを再構築する")
+    ] = False,
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """Build whisper.cpp variants whose prerequisites are currently satisfied."""
+    try:
+        config = Config.load(config_path=config_path)
+        native_dir = resolve_native_dir(config.general.native_dir)
+        variants = _parse_variant_selection(variant)
+        console.print(f"ネイティブビルド先: {native_dir}")
+        builder = NativeBuilder(native_dir)
+        manifest = builder.build_all(variants=variants, force=force)
+    except UtteranError as exc:
+        _exit_expected(exc)
+    errors = cast(dict[str, str], manifest.get("errors", {}))
+    backends = cast(dict[str, object], manifest.get("backends", {}))
+    for name in variants:
+        if name in backends:
+            entry = cast(dict[str, object], backends[name])
+            console.print(f"[green]構築成功:[/green] {name} -> {entry['executable']}")
+        elif name in errors:
+            console.print(f"[yellow]スキップ:[/yellow] {name}: {errors[name]}")
+    if not backends:
+        error_console.print("[red]エラー:[/red] 構築できた構成がありません。")
+        raise typer.Exit(code=3)
+
+
+@native_app.command("status")
+def native_status_command(
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """Show the native build manifest and whether each variant is runnable now."""
+    try:
+        config = Config.load(config_path=config_path)
+        native_dir = resolve_native_dir(config.general.native_dir)
+        status = NativeBuilder(native_dir).status()
+    except UtteranError as exc:
+        _exit_expected(exc)
+    manifest = cast(dict[str, object], status["manifest"])
+    if not manifest:
+        console.print("ネイティブビルドは未実行です。`utteran native build` を実行してください。")
+        return
+    whisper_cpp = cast(dict[str, str], manifest.get("whisper_cpp", {}))
+    console.print(f"whisper.cpp: {whisper_cpp.get('tag', '-')} ({whisper_cpp.get('commit', '-')})")
+    console.print(f"構築日時: {manifest.get('built_at', '-')}")
+    backends = cast(dict[str, dict[str, object]], manifest.get("backends", {}))
+    errors = cast(dict[str, str], manifest.get("errors", {}))
+    runnable = cast(dict[str, bool], status["runnable"])
+    table = Table("構成", "実行可能", "詳細")
+    for name in VARIANT_NAMES:
+        if name in backends:
+            detail = str(backends[name].get("executable", "-"))
+            table.add_row(name, "yes" if runnable.get(name) else "no", detail)
+        else:
+            table.add_row(name, "no", errors.get(name, "未試行"))
+    console.print(table)
+
+
+@native_app.command("clean")
+def native_clean_command(
+    all_variants: Annotated[bool, typer.Option("--all", help="全構成を削除")] = False,
+    variant: Annotated[str | None, typer.Option("--variant", help="削除する構成名")] = None,
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """Remove one native build variant, or the entire platform build tree."""
+    try:
+        if sum((all_variants, variant is not None)) != 1:
+            raise ConfigurationError("--all または --variant のいずれか1つを指定してください。")
+        config = Config.load(config_path=config_path)
+        native_dir = resolve_native_dir(config.general.native_dir)
+        builder = NativeBuilder(native_dir)
+        builder.clean(variant=None if all_variants else variant)
+    except UtteranError as exc:
+        _exit_expected(exc)
+    console.print("削除しました: " + ("すべての構成" if all_variants else str(variant)))
+
+
+def _parse_variant_selection(raw: str | None) -> tuple[str, ...]:
+    """Validate a comma-separated --variant option against known variant names."""
+    if raw is None:
+        return VARIANT_NAMES
+    requested = tuple(item.strip() for item in raw.split(",") if item.strip())
+    unknown = [item for item in requested if item not in VARIANT_NAMES]
+    if unknown:
+        raise ConfigurationError(
+            f"未知の構成です: {', '.join(unknown)} (既知: {', '.join(VARIANT_NAMES)})"
+        )
+    return requested or VARIANT_NAMES
 
 
 def _run_with_progress(

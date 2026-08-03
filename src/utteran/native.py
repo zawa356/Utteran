@@ -118,13 +118,23 @@ class ProcessRunner:
         env: Mapping[str, str] | None = None,
         timeout: float | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        """Run one command, always capturing text output and never raising on exit code."""
+        """Run one command, always capturing text output and never raising on exit code.
+
+        cmake/git/vswhere output is decoded as UTF-8 with lossy replacement
+        rather than `text=True`'s locale-dependent default: on a Japanese
+        (cp932) Windows console, that default fails with `UnicodeDecodeError`
+        deep inside a subprocess reader thread the moment the child writes
+        any byte sequence cp932 can't parse (observed with a real MSVC/CMake
+        build - see AISTATE.md Step 5), silently losing the process's output
+        without raising in the calling thread.
+        """
         return subprocess.run(
             list(command),
             cwd=str(cwd) if cwd is not None else None,
             env=dict(env) if env is not None else None,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=False,
         )
