@@ -113,9 +113,12 @@ class ModelManager:
             managed=managed,
         )
 
-    def list_status(self, *, available: bool = False) -> list[ModelStatus]:
+    def list_status(
+        self, *, available: bool = False, all_models: bool = False
+    ) -> list[ModelStatus]:
         """List local complete/partial entries, or the complete catalog when requested."""
-        statuses = [self.status(entry) for entry in list_models()]
+        entries = list_models(recommended_only=available and not all_models)
+        statuses = [self.status(entry) for entry in entries]
         return statuses if available else [status for status in statuses if status.path is not None]
 
     def download(
@@ -142,13 +145,23 @@ class ModelManager:
                 )
             )
         try:
-            from huggingface_hub import snapshot_download
+            if entry.format == "GGML" and entry.artifact_filename:
+                from huggingface_hub import hf_hub_download
 
-            snapshot_download(
-                repo_id=entry.repository_id,
-                token=token,
-                local_dir=_snapshot_download_path(destination),
-            )
+                hf_hub_download(
+                    repo_id=entry.repository_id,
+                    filename=entry.artifact_filename,
+                    token=token,
+                    local_dir=_snapshot_download_path(destination),
+                )
+            else:
+                from huggingface_hub import snapshot_download
+
+                snapshot_download(
+                    repo_id=entry.repository_id,
+                    token=token,
+                    local_dir=_snapshot_download_path(destination),
+                )
             downloaded = destination
         except Exception as exc:
             _raise_download_error(entry, exc)
@@ -262,6 +275,10 @@ def _missing_required_files(entry: ModelEntry, path: Path) -> tuple[str, ...]:
         return ("<model-directory>",)
     if entry.format == "CTranslate2":
         return tuple(name for name in ("config.json", "model.bin") if not (path / name).is_file())
+    if entry.format == "GGML":
+        filename = entry.artifact_filename or "<ggml-file>"
+        candidate = path / filename
+        return () if candidate.is_file() and candidate.stat().st_size > 0 else (filename,)
     if entry.format == "OpenVINO IR":
         missing = []
         if not any(path.glob("*.xml")):

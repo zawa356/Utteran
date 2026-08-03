@@ -20,6 +20,12 @@ class ModelEntry:
     approximate_size_bytes: int
     license: str
     gated: bool
+    artifact_filename: str | None = None
+    model_size: str | None = None
+    quantization: str | None = None
+    dtw_preset: str | None = None
+    recommended: bool = True
+    english_only: bool = False
 
     @property
     def key(self) -> str:
@@ -35,7 +41,7 @@ class ModelEntry:
 _GIB = 1024**3
 _MIB = 1024**2
 
-CATALOG: tuple[ModelEntry, ...] = (
+_CORE_CATALOG: tuple[ModelEntry, ...] = (
     ModelEntry(
         model_id="large-v3-turbo",
         display_name="Whisper large-v3-turbo",
@@ -93,10 +99,94 @@ CATALOG: tuple[ModelEntry, ...] = (
     ),
 )
 
+_GGML_FILES: tuple[tuple[str, int], ...] = (
+    ("ggml-tiny.bin", 77691713),
+    ("ggml-tiny-q5_1.bin", 32152673),
+    ("ggml-tiny-q8_0.bin", 43537433),
+    ("ggml-base.bin", 147951465),
+    ("ggml-base-q5_1.bin", 59707625),
+    ("ggml-base-q8_0.bin", 81768585),
+    ("ggml-small.bin", 487601967),
+    ("ggml-small-q5_1.bin", 190085487),
+    ("ggml-small-q8_0.bin", 264464607),
+    ("ggml-medium.bin", 1533763059),
+    ("ggml-medium-q5_0.bin", 539212467),
+    ("ggml-medium-q8_0.bin", 823369779),
+    ("ggml-large-v1.bin", 3094623691),
+    ("ggml-large-v2.bin", 3094623691),
+    ("ggml-large-v2-q5_0.bin", 1080732091),
+    ("ggml-large-v2-q8_0.bin", 1656129691),
+    ("ggml-large-v3.bin", 3095033483),
+    ("ggml-large-v3-q5_0.bin", 1081140203),
+    ("ggml-large-v3-turbo.bin", 1624555275),
+    ("ggml-large-v3-turbo-q5_0.bin", 574041195),
+    ("ggml-large-v3-turbo-q8_0.bin", 874188075),
+    ("ggml-tiny.en.bin", 77704715),
+    ("ggml-tiny.en-q5_1.bin", 32166155),
+    ("ggml-tiny.en-q8_0.bin", 43550795),
+    ("ggml-base.en.bin", 147964211),
+    ("ggml-base.en-q5_1.bin", 59721011),
+    ("ggml-base.en-q8_0.bin", 81781811),
+    ("ggml-small.en.bin", 487614201),
+    ("ggml-small.en-q5_1.bin", 190098681),
+    ("ggml-small.en-q8_0.bin", 264477561),
+    ("ggml-medium.en.bin", 1533774781),
+    ("ggml-medium.en-q5_0.bin", 539225533),
+    ("ggml-medium.en-q8_0.bin", 823382461),
+)
 
-def list_models(*, backend: str | None = None) -> tuple[ModelEntry, ...]:
+_RECOMMENDED_GGML = {
+    "large-v3-turbo",
+    "large-v3-turbo-q5_0",
+    "large-v3",
+    "large-v3-q5_0",
+    "medium-q5_0",
+    "base",
+}
+
+
+def _ggml_entry(filename: str, size: int) -> ModelEntry:
+    stem = filename.removeprefix("ggml-").removesuffix(".bin")
+    english_only = ".en" in stem
+    model_size = stem.split("-q", 1)[0]
+    quantization = "f16" if "-q" not in stem else "q" + stem.rsplit("-q", 1)[1]
+    dtw_name = model_size.replace("large-v", "large.v")
+    if model_size == "large-v3-turbo":
+        dtw_name = "large.v3.turbo"
+    return ModelEntry(
+        model_id=stem,
+        display_name=f"Whisper.cpp {stem}",
+        description=f"whisper.cpp多言語ASR ({quantization})",
+        backend="whisper-cpp",
+        format="GGML",
+        repository_id="ggerganov/whisper.cpp",
+        approximate_size_bytes=size,
+        license="MIT",
+        gated=False,
+        artifact_filename=filename,
+        model_size=model_size,
+        quantization=quantization,
+        dtw_preset=dtw_name,
+        recommended=stem in _RECOMMENDED_GGML,
+        english_only=english_only,
+    )
+
+
+CATALOG: tuple[ModelEntry, ...] = _CORE_CATALOG + tuple(
+    _ggml_entry(filename, size) for filename, size in _GGML_FILES
+)
+
+
+def list_models(
+    *, backend: str | None = None, recommended_only: bool = False
+) -> tuple[ModelEntry, ...]:
     """Return catalog entries in stable declaration order."""
-    return tuple(entry for entry in CATALOG if backend is None or entry.backend == backend)
+    return tuple(
+        entry
+        for entry in CATALOG
+        if (backend is None or entry.backend == backend)
+        and (not recommended_only or entry.backend != "whisper-cpp" or entry.recommended)
+    )
 
 
 def get_model(identifier: str, *, backend: str | None = None) -> ModelEntry:

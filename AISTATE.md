@@ -4,6 +4,11 @@
 
 - Phase 3b（whisper.cpp ASR）: `feature/phase3b-whisper-cpp`で着手。Step 1の仕様記録と
   トークン→単語変換基盤を実装中。
+- Phase 3b Step 2調査: 2026-08-03にHugging Face APIの`ggerganov/whisper.cpp` siblingsを
+  取得し、実在するGGML 33ファイルとbyteサイズを確認して登録した。v1.9.1
+  (`f049fff...`)の`cli.cpp`はOpenVINO deviceの`--ov-e-device`だけを公開し、IR pathには
+  `nullptr`を渡す。`whisper.cpp:3350-3578`でGGML名から`-encoder-openvino.xml`を導出するため、
+  量子化違いには規約名リンク（不可ならコピー）が必要と判断した。
 
 - Phase 1（骨格と最小動作）: 実装完了。受入試験でfaster-whisperとgated pyannoteの
   CPU/CUDA実モデルE2E、5形式出力を検証済み。

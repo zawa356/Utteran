@@ -279,11 +279,14 @@ def models_list(
     available: Annotated[
         bool, typer.Option("--available", help="未導入を含むカタログ全体を表示")
     ] = False,
+    all_models: Annotated[
+        bool, typer.Option("--all", help="英語専用を含む全カタログを表示")
+    ] = False,
 ) -> None:
     """導入済みモデル、または選択可能なカタログ全体を表示します。"""
     try:
         manager = _model_manager()
-        statuses = manager.list_status(available=available)
+        statuses = manager.list_status(available=available, all_models=all_models)
     except UtteranError as exc:
         _exit_expected(exc)
     _print_model_catalog(statuses, numbered=available)

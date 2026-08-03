@@ -20,6 +20,32 @@ from utteran.models.manager import ModelManager, _extend_windows_path, resolve_m
 from utteran.types import ProgressEvent
 
 
+def test_whisper_cpp_catalog_uses_verified_artifact_names() -> None:
+    entries = list_models(backend="whisper-cpp")
+
+    assert len(entries) == 33
+    turbo = get_model("whisper-cpp:large-v3-turbo-q5_0")
+    assert turbo.artifact_filename == "ggml-large-v3-turbo-q5_0.bin"
+    assert turbo.quantization == "q5_0"
+    assert turbo.dtw_preset == "large.v3.turbo"
+    assert turbo.recommended
+    assert all(entry.license == "MIT" for entry in entries)
+
+
+def test_recommended_catalog_hides_nonrecommended_and_english_models() -> None:
+    entries = list_models(backend="whisper-cpp", recommended_only=True)
+
+    assert {entry.model_id for entry in entries} == {
+        "large-v3-turbo",
+        "large-v3-turbo-q5_0",
+        "large-v3",
+        "large-v3-q5_0",
+        "medium-q5_0",
+        "base",
+    }
+    assert not any(entry.english_only for entry in entries)
+
+
 class StaticTokenProvider(TokenProvider):
     def __init__(self, token: str | None) -> None:
         self.token = token
@@ -39,7 +65,11 @@ def _write_partial_pyannote(path: Path) -> None:
 def test_catalog_keeps_same_model_separate_by_backend() -> None:
     turbo = [entry for entry in list_models() if entry.model_id == "large-v3-turbo"]
 
-    assert {entry.backend for entry in turbo} == {"faster-whisper", "openvino"}
+    assert {entry.backend for entry in turbo} == {
+        "faster-whisper",
+        "openvino",
+        "whisper-cpp",
+    }
     assert get_model("faster-whisper:large-v3-turbo").format == "CTranslate2"
     assert get_model("large-v3-turbo", backend="openvino").format == "OpenVINO IR"
     with pytest.raises(ConfigurationError, match="複数"):
