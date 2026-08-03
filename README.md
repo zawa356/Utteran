@@ -6,7 +6,9 @@ Python 製 CLI ツールです。会議、インタビュー、講演の記録�
 
 Phase 2 では、単一ファイルとフォルダの逐次処理、段階別レジューム、モデル／ジョブ管理、
 実行デバイス診断を提供します。文字起こしは faster-whisper、話者分離は
-pyannote.audio 4.x、出力は SRT / VTT / JSON / TXT / Markdown に対応します。
+pyannote.audio 4.x、出力は SRT / VTT / JSON / TXT / Markdown に対応します。Phase 3aでは、
+ハードウェアごとに独立した実行環境（venv）プロファイルと、whisper.cppのネイティブビルド
+基盤を追加しました。
 
 ## 対応環境
 
@@ -15,13 +17,19 @@ pyannote.audio 4.x、出力は SRT / VTT / JSON / TXT / Markdown に対応しま
 - Python 3.11 / 3.12
 - CPU
 - NVIDIA GPU（CUDA 12、cuDNN 9、cuBLAS、および対応ドライバーが必要）
-- Intel GPU/NPU（`devices` で検出可能。OpenVINO ASR の実装は Phase 3）
+- Intel GPU/NPU（`devices` で検出可能。OpenVINO ASR の実装は今後の対応）
+- AMD GPU等（Vulkan経由。`vulkan` プロファイルでwhisper.cppのビルドのみ対応、実行は今後）
 
-OpenVINO ASR、sherpa-onnx 話者分離、AMD 向け推論、長時間音声の分割処理は未実装です。
-Intel GPU/NPU があっても Phase 2 の `auto` は実装済みの faster-whisper CPU を使用し、
+OpenVINO ASR、sherpa-onnx 話者分離、whisper.cppを使った実際の文字起こし、長時間音声の
+分割処理は未実装です。Intel GPU/NPUがあっても`auto`は実装済みのfaster-whisper CPUを使用し、
 将来の高速化候補を `devices` の警告に表示します。
 
-## Windows セットアップ
+## Windows セットアップ（プロファイル別 venv）
+
+PyTorchはCPU版・CUDA版・XPU版が同一パッケージ名の別ビルドで、1つの仮想環境には1種類しか
+導入できません。そのため utteran は**プロファイルごとに独立した venv**
+（`.venvs\win-<profile>`）を持ちます。プロファイルを切り替えても他のプロファイルの
+venvは変更されず、CUDA環境とIntel環境を同時に保持できます。
 
 PowerShell でリポジトリ直下から `setup.ps1` を実行します。管理者権限は不要で、既存の
 ffmpegと`.env`は再利用するため、繰り返し実行できます。モデル管理はセットアップから分離され、
@@ -31,45 +39,92 @@ ffmpegと`.env`は再利用するため、繰り返し実行できます。モ�
 .\setup.ps1 -Profile cpu
 .\setup.ps1 -Profile cuda
 .\setup.ps1 -Profile intel
+.\setup.ps1 -Profile vulkan
 ```
 
-| Profile | 導入内容 |
-|---|---|
-| `cpu` | faster-whisper、pyannote、CPU版PyTorch |
-| `cuda` | faster-whisper、pyannote、CUDA 12.6版PyTorch。CUDA wheelは約2.4 GiB |
-| `intel` | `cpu`相当とOpenVINO GenAI。Phase 2では検出のみ |
+| Profile | 導入内容 | 想定環境 |
+|---|---|---|
+| `cpu` | faster-whisper、pyannote、CPU版PyTorch | GPUなし |
+| `cuda` | faster-whisper、pyannote、CUDA 12.6版PyTorch。CUDA wheelは約2.4 GiB | NVIDIA |
+| `intel` | faster-whisper、pyannote、XPU版PyTorch、OpenVINO、whisper.cppビルド用cmake | Intel CPU/Arc/NPU |
+| `vulkan` | faster-whisper、pyannote（CPU版PyTorch）、whisper.cppビルド用cmake | AMD等（OpenVINOなし） |
 
-主なパラメーター:
+プロファイル管理用の追加パラメーター:
 
 ```powershell
-.\setup.ps1 -Profile cpu|cuda|intel
+.\setup.ps1 -Profile cpu|cuda|intel|vulkan   # 作成または更新
              -SkipFfmpeg
+             -VenvDir <パス>                 # venv配置場所の上書き
+.\setup.ps1 -List                             # 作成済みプロファイルの一覧
+.\setup.ps1 -Remove <profile> [-Yes]          # 指定プロファイルの削除
+.\setup.ps1 -SetDefault <profile>             # 既定プロファイルの設定
 ```
 
-スクリプトは Python と uv の確認、profile 別 `uv sync`、ffmpeg、`.env`、CUDA DLL、
-`utteran devices` の順で確認します。モデルの一覧・取得・削除は行わず、完了時に専用コマンドを
-案内します。ネットワーク処理に失敗しても実行可能な項目を続け、残りの手順を表示します。
-ffmpeg は公式ダウンロードページが案内する gyan.dev の
+`-Profile` はPythonとuvの確認、そのプロファイルだけの`uv sync`、ffmpeg、`.env`、
+プロファイル別の検証（下記）の順で実行します。モデルの一覧・取得・削除は行わず、完了時に
+専用コマンドを案内します。ネットワーク処理に失敗しても実行可能な項目を続け、残りの手順を
+表示します。ffmpeg は公式ダウンロードページが案内する gyan.dev の
 release essentials build を SHA-256 検証後、ユーザーデータ配下の `utteran/bin` に配置します。
 この配布 build は GPLv3 です。バイナリはリポジトリには含まれません。
 
-WSLとWindowsから同じcheckoutを使い、`.venv` がLinux用だった場合、スクリプトは既存環境を
-変更せず `.venv-windows` を使用します。実行したPowerShellではその環境が選択されます。
-新しいPowerShellで `uv run` を使う場合は、スクリプト末尾に表示されるとおり設定します。
+プロファイル別の検証内容:
 
-```powershell
-$env:UV_PROJECT_ENVIRONMENT = 'C:\path\to\Utteran\.venv-windows'
-uv run utteran devices
+- `cpu` / `cuda`: `devices --json` でfaster-whisper/pyannoteの実バックエンド初期化を確認
+- `intel`: OpenVINOの初期化、torch XPUの検出（`torch.xpu.is_available()`）
+- `vulkan`: Vulkanビルド前提（`glslc`）とランタイム（`vulkaninfo`）を個別に確認。
+  一方だけが利用可能な場合があります
+
+依存同期またはプロファイル別の実デバイス検証に失敗した場合、`setup.ps1` は不完全と表示して
+終了コード1を返します。
+
+WSLとWindowsから同じcheckoutを使う場合、venvディレクトリ名にOS識別子（`win-`/`linux-`）を
+含むため、双方が独立して動作します。旧`.venv` / `.venv-windows`が存在する場合は変更・削除せず、
+検出したことと手動削除の手順を表示します。
+
+```console
+Remove-Item -Recurse -Force .\.venv-windows   # 新方式の動作確認後、任意で実行
 ```
 
-依存同期または選択profileの実デバイスprobeに失敗した場合、後続のモデル／devices処理を
-重ねて実行せず、`setup.ps1` は不完全と表示して終了コード1を返します。
+ディスク使用量の目安（`intel`プロファイルはxpu+openvino+whisper-cpp相当で約5 GiB、
+実測値は導入パッケージの組み合わせで変動します。全プロファイルを作成すると6〜8 GiB程度）:
+
+| プロファイル | venvサイズの目安 |
+|---|---:|
+| `cpu` | 約1.0 GiB |
+| `cuda` | CUDA wheel込みで数GiB（CUDA extraは約2.4 GiB） |
+| `intel` | 約4.9 GiB（xpu + openvino相当。pyannote込みでさらに増加） |
+| `vulkan` | `cpu`相当 + cmake |
+
+`.\setup.ps1 -List` で作成済みプロファイルの実サイズ・主要パッケージのバージョン・
+最終更新日時を確認できます。
 
 PowerShell の実行ポリシーで止まる場合は、現在のプロセスだけ許可して実行できます。
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\setup.ps1 -Profile cpu
+```
+
+## `run.ps1`（プロファイル指定の実行）
+
+セットアップ後は `run.ps1` でプロファイルの venv内の `utteran` を直接実行できます。
+
+```powershell
+.\run.ps1 transcribe .\input\a.mp4                    # 既定プロファイル
+.\run.ps1 -Profile cuda transcribe .\input\a.mp4      # 明示指定
+```
+
+既定プロファイルは `config.toml` の `[general].default_profile`、未設定なら作成済み
+プロファイルが1つの場合はそれを使用します。複数存在し既定も未設定の場合はエラーになるため、
+`-Profile` を指定するか `.\setup.ps1 -SetDefault <profile>` を実行してください。
+終了コードは `utteran` の終了コードをそのまま返します。
+
+`uv run utteran ...` を直接使う場合は、対象プロファイルの `UV_PROJECT_ENVIRONMENT` を
+設定します。
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = 'C:\path\to\Utteran\.venvs\win-cpu'
+uv run utteran devices
 ```
 
 ## Windows対話フロント
@@ -94,51 +149,46 @@ Set-ExecutionPolicy -Scope Process Bypass
 - フォルダ再帰、include/exclude glob、resume/no-resume/force、lock解除、config、ログ詳細度
 - 実行前のdry-run
 
-メインメニューからモデルの一覧／取得／削除／検証、デバイス診断、ジョブ管理、設定管理、
-setup profile切替、input/outputフォルダをExplorerで開く操作も実行できます。未実装のbackendは
-選択肢に表示しません。入力したパスやglobはコマンド文字列として再評価せず、引数配列でCLIへ
-渡します。
+メインメニューには使用中のプロファイルを表示し、モデルの一覧／取得／削除／検証、デバイス診断、
+ジョブ管理、設定管理、input/outputフォルダをExplorerで開く操作を実行できます。
+「プロファイル管理」メニューから、作成済みプロファイルの一覧表示、セッション内での切替、
+新規作成／更新、既定プロファイルの設定、削除ができます。未実装のbackendは選択肢に
+表示しません。入力したパスやglobはコマンド文字列として再評価せず、引数配列でCLIへ渡します。
 
 ## uv による手動インストール
 
 [uv](https://docs.astral.sh/uv/) と Python 3.11 または 3.12 を用意し、リポジトリ直下で
-必要な構成を同期します。
+必要な構成を同期します。`cpu`/`cuda`/`xpu` は同一venvへ同時導入できない排他extrasです。
 
-文字起こしのみの軽量構成（話者分離なし）:
+文字起こしのみの軽量構成（話者分離なし、torch非依存）:
 
 ```console
 uv sync
 uv run utteran transcribe audio.wav --no-diarization
 ```
 
-pyannote.audio とCPU版PyTorchを含む構成:
-
-```console
-uv sync --extra pyannote
-```
-
-Windows setupと同じ明示profileを手動で選ぶ場合:
+Windows setupと同じ明示profile相当を手動で選ぶ場合:
 
 ```console
 uv sync --extra cpu
 uv sync --extra cuda
-uv sync --extra intel
+uv sync --extra xpu --extra whisper-cpp --extra openvino   # intel profile相当
+uv sync --extra cpu --extra whisper-cpp                    # vulkan profile相当
 ```
 
-`cpu`、`cuda`、`intel` は相互に切り替えて使用します。`cuda` はCUDA 12.6版PyTorchを使用し、
-仮想環境内のcuDNN/cuBLAS DLLを自動登録します。GPUがCUDA wheelのcompute capabilityに
-非対応の場合は、メモリ確保だけでなく実CUDAカーネルの実行・同期probeで不適合と判定します。
+`cuda` はCUDA 12.6版PyTorchを使用し、仮想環境内のcuDNN/cuBLAS DLLを自動登録します。
+GPUがCUDA wheelのcompute capabilityに非対応の場合は、メモリ確保だけでなく実CUDAカーネルの
+実行・同期probeで不適合と判定します。`xpu`はtorchの推移的依存である`triton-xpu`をWindows限定で
+同梱します（他プラットフォームのtorch+xpu組合せは未検証）。
 
-Intel runtime の検出も有効にする構成（OpenVINO ASR 自体は Phase 3）:
-
-```console
-uv sync --extra pyannote --extra intel
-```
+`whisper-cpp`（`utteran native build`用のcmake）、`openvino`（OpenVINO GenAI相当。ASR自体は
+Phase 3b以降）、`onnx`（将来のsherpa-onnx話者分離向けonnxruntime）は排他extrasと自由に
+組み合わせられます。
 
 開発ツールも導入する場合:
 
 ```console
-uv sync --extra pyannote --extra dev
+uv sync --extra cpu --extra dev
 ```
 
 Linux では上記 `uv sync` を実行し、ディストリビューションのパッケージ管理機能で ffmpeg を
@@ -355,7 +405,52 @@ CPU コア／AVX、CTranslate2 CUDA GPU／VRAM／compute type、cuDNN/cuBLAS、P
 OpenVINO devices、ONNX Runtime providers、ffmpeg と backend 導入状況を表示します。末尾には
 現在の `auto` が実際に選ぶ ASR／話者分離 backend、device、compute type とフォールバック理由を
 表示します。Windowsでは物理コア数とAVXをWin32 APIで取得し、PyTorch CUDAは実カーネル実行と
-同期まで確認します。`--json` は将来の GUI から利用できる安定した構造化出力です。
+同期まで確認します。
+
+現在のプロファイル名と作成済みの他プロファイル一覧（存在・最終更新のみ、他プロファイルの
+Pythonは起動しません）、Vulkanのビルド前提（`glslc`）とランタイム（`vulkaninfo`）を区別した
+検出結果、`utteran native build` によるネイティブビルドの状態（whisper.cppタグと各構成の
+実行可否）も表示します。`--json` は将来の GUI から利用できる安定した構造化出力で、既存の
+キー構造は保ったまま `profile` / `vulkan` / `native` を追加しています。
+
+CLIから直接プロファイルの状態だけを確認する場合:
+
+```console
+uv run utteran profiles list       # 作成済みプロファイルと状態
+uv run utteran profiles current    # 現在実行中のプロファイル（UTTERAN_PROFILE）
+uv run utteran profiles path       # venv ルートパス
+```
+
+Pythonプロセス内でプロファイルを切り替えて再実行する機能はありません。切り替えは
+`run.ps1` の責務です。
+
+## ネイティブビルド（whisper.cpp、基盤のみ）
+
+`intel` / `vulkan` プロファイルでは、whisper.cppをソースから取得して複数構成でビルドできます。
+**このビルド機構自体は基盤の実装であり、実際の文字起こしへの利用は今後の対応です。**
+
+```console
+uv run utteran native build                       # 前提を満たす全構成を試行
+uv run utteran native build --variant cpu,vulkan  # 構成を絞る
+uv run utteran native status                      # ビルド状態を表示
+uv run utteran native clean --variant vulkan      # 1構成だけ削除
+uv run utteran native clean --all                 # 全構成を削除
+```
+
+| 構成 | 前提条件 |
+|---|---|
+| `cpu` | なし |
+| `openvino` | `openvino` パッケージ、OpenVINO GPUの認識 |
+| `vulkan` | Vulkan SDKの `glslc`（シェーダーコンパイラ） |
+| `openvino_vulkan` | 上記両方（エンコーダをOpenVINO、デコーダをVulkanにオフロード） |
+
+前提を満たさない構成は理由を記録してスキップし、要求した構成が1つもビルドできなかった場合
+だけ終了コード3を返します。whisper.cppは `v1.9.1` に固定して取得します。ビルド成果物は
+`~/.utteran/native`（`[general].native_dir` / `UTTERAN_NATIVE_DIR` で変更可）へ全プロファイル
+共有で配置し、パス長対策のため構成ごとの内部ディレクトリ名は短縮しています
+（例: `openvino_vulkan` → `ovvk`）。OpenVINOランタイムのDLLパスはビルド成果物に焼き込まず、
+実行時にアクティブな環境から動的に解決します。**Vulkanのビルドは長時間かかることがあります**
+（特にシェーダー生成）。進捗が表示されますが、応答がないように見える時間帯があります。
 
 ## 設定
 

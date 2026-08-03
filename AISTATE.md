@@ -28,8 +28,10 @@
   コード着手前の指定仕様訂正5点を要件定義へ反映済み。
 - `docs/utteran_設計書.md` 全715行を読了。
 - コード着手前の必須4文書を作成。
-- Phase 3a（実行環境分離・whisper.cppネイティブビルド機構・Phase 3b事前調査）: 着手。
-  作業branch `feature/phase3a-environments`。Step 0事前調査は完了、Step 1以降を実装中。
+- Phase 3a（実行環境分離・whisper.cppネイティブビルド機構・Phase 3b事前調査）: 実装完了。
+  作業branch `feature/phase3a-environments`。Step 0〜6すべて完了し、実機で個別・end-to-end
+  双方を検証済み（詳細は「直近の作業内容と結果」）。受入試験（G0〜G14相当の専用試験）は
+  本セッションでは未実施。次セッションでの受入試験実施が前提。
 
 ## 事前調査結果（Phase 3a Step 0）
 
@@ -228,6 +230,22 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
 4. 不具合は失敗結果のtest commit後、回帰テスト・文書とともにfix commitし、再試験する。
 5. 機能試験完了後だけcudaへ切替え、G13の2時間耐久試験を行う。
 6. G14で集計、秘密／Git混入検査、profile判断、必須文書と最終報告を完了する。
+
+### Phase 3a（実装完了、受入試験は次セッション）
+
+1. Step 0事前調査（I-1〜I-7）を実機で実施し、`AISTATE.md`の専用節に記録する（最優先）。
+2. Step 1: `pyproject.toml`のextrasをtorchビルド排他extras（cpu/cuda/xpu）と
+   非排他extras（whisper-cpp/openvino/onnx）へ再編し、`uv lock`で検証する。
+3. Step 2＋5基盤: `profiles.py`（venvレイアウト・既定プロファイル解決）と
+   `native.py`（whisper.cppビルド機構）を実装し、モデル不要テストを追加する。
+4. Step 3: `setup.ps1`を`-Profile`/`-List`/`-Remove`/`-SetDefault`対応へ全面改修する。
+5. Step 4: `run.ps1`を新規作成し、`utteran profiles` CLIを接続し、`start.ps1`へ
+   プロファイル管理メニューを追加する。
+6. Step 5: `utteran native build/status/clean` CLIを接続する。
+7. Step 6: `utteran devices`へプロファイル横断表示・Vulkan検出・ネイティブビルド状態を
+   追加する（既存JSON構造は維持）。
+8. 要件定義19/20章の新設と14章の更新、README／変更履歴／AISTATEの同期、
+   cpu profileでの回帰確認（品質ゲート・実機native build）を行う。
 
 ## 直近の作業内容と結果
 
@@ -595,6 +613,49 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
   毎回のCPUモデルロードを避ける。`subprocess.run`をモックしたモデル不要回帰6件を追加。
   ruff/format/mypy/pytest（96 passed、既存の環境依存Ctrl+C harness試験1件は今回の変更と無関係に
   Git Bash端末実行時のみ失敗）で確認した。
+- Phase 3a Step 1: `pyproject.toml`のextrasを`cpu`/`cuda`/`xpu`（`[tool.uv] conflicts`）と
+  `whisper-cpp`/`openvino`/`onnx`（非排他）へ再編した。`xpu`は`triton-xpu`（Windows限定）を
+  直接列挙しないと`uv lock`が失敗するというI-4の発見を反映した。`uv lock`で214 packages解決、
+  `uv lock --check`合格、`uv sync --extra cpu --extra cuda`の同時指定拒否を実機確認した。
+- Phase 3a Step 2＋5基盤: `src/utteran/profiles.py`（プロファイル定義、venvレイアウト
+  `<venv_root>/<os>-<profile>`、`UTTERAN_VENV_DIR`/`[general].venv_dir`解決、既定プロファイル
+  決定、`UTTERAN_PROFILE`読み取り）と`src/utteran/native.py`（whisper.cpp v1.9.1固定取得、
+  cpu/openvino/vulkan/openvino_vulkan構成ビルド、前提条件probe、manifest記録、実行時
+  ライブラリディレクトリ動的解決）を実装。`config.py`へ`venv_dir`/`native_dir`/
+  `default_profile`を追加。モデル不要回帰32件（test_profiles.py 16件、test_native.py 16件）。
+- 実機検証（native.py）: 実際にwhisper.cpp v1.9.1をclone、cpu/openvino/vulkan/openvino_vulkan
+  の4構成すべてをビルドし成功（`utteran.native`経由、fakeでなく実cmake/git/glslc/OpenVINO）。
+  `openvino_vulkan`実行ファイルを実際に起動し、OpenVINOパッケージを持つ環境からは
+  正常完走（encode 83ms、CPU版の約9倍高速）、持たない環境からはDLL未検出で安全に失敗する
+  ことを確認し、manifestに絶対パスを焼き込まない設計が機能することを実証した。
+- 実機検証中に`native.py`の`ProcessRunner`が`subprocess.run(text=True)`のロケール依存
+  デコード（cp932）でcmake/git出力の`UnicodeDecodeError`をsubprocess読み取りスレッド内で
+  発生させ、出力が失われる不具合を発見。`encoding="utf-8", errors="replace"`明示指定で修正。
+- Phase 3a Step 3: `setup.ps1`を全面改修。`-Profile`はプロファイル別`UV_PROJECT_ENVIRONMENT`で
+  `uv sync`し、プロファイル別検証（cpu/cuda: 既存devices probe、intel: OpenVINO+torch XPU、
+  vulkan: glslcビルド前提とvulkaninfoランタイムを別々に確認）を行う。`-List`/`-Remove -Yes`/
+  `-SetDefault`（config.tomlへ`default_profile`をin-place書き込み）を追加。実機で
+  `-List`・`-SetDefault cpu`・ダミープロファイルへの`-Remove`・`-Profile cpu`の冪等再実行
+  （exit 0、devices probe合格）をすべて確認した。実装当初`uv sync`呼び出しに`sync`引数を
+  二重指定するバグがあり、実機テストで発見・修正した。
+- Phase 3a Step 4: `run.ps1`を新規追加。`-Profile`を名前付きパラメータとして`param()`で
+  宣言すると、`-Profile`省略時にPowerShellの自動位置バインドが最初の裸引数
+  （例:`transcribe`）を`$Profile`へ誤って束縛することを実機確認し、`$args`を手動解析する
+  方式へ変更して回避した。既定プロファイル解決（config.toml既定→唯一の既存プロファイル→
+  曖昧エラー）を実機で全パターン確認。`utteran profiles list/current/path`と
+  `utteran native build/status/clean` CLIを追加し、モデル不要回帰10件を追加。
+  `start.ps1`は同じ解決ロジックをプロファイル管理メニュー（一覧・セッション内選択・
+  作成/更新・既定設定・削除）とともに実装し、関数を実プロジェクトディレクトリから
+  単体で呼び出して動作確認した（対話ループ自体はこの環境がNonInteractiveのため
+  Parser API検証とコード監査に留める。G12受入時と同じ扱い）。
+- Phase 3a Step 6: `utteran devices`へ`profile`（現在プロファイル、他プロファイル一覧）、
+  `vulkan`（build/runtime別）、`native`（manifest状態、構成別実行可否）を追加した
+  （既存JSON構造は変更せず追加のみ）。実機で新フィールドの表示・JSON出力を確認した。
+  モデル不要回帰3件を追加。
+- 要件定義に19章「実行環境の分離」・20章「ネイティブビルド」を新設（本来の指示は「15./16.」
+  だったが、本書には既に15〜18章が存在するため「既存章番号を変更せず末尾に追加する」という
+  指示書の原則を優先し19/20とした）。14章をextras新構成へ更新。README/変更履歴/本ファイルを
+  同期した。
 
 ## 未解決の課題・保留事項
 
@@ -606,6 +667,20 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
 - G12のExplorer起動、setup profile切替、破壊的確認はコード監査と非破壊dry-runまで。
 - 約2時間19分のCPU耐久はCUDA成功時には不要という指示に従い未実施。
 - 実文字起こし本文の意味的評価は利用者確認事項。構造・時刻・言語・重複・空欄・話者統計は合格。
+- Phase 3aはPhase 1/2のような専用受入試験（G0〜G14相当）を実施していない。個別モジュールの
+  モデル不要回帰と、setup.ps1/run.ps1/native.pyの実機end-to-end検証は行ったが、
+  start.ps1のプロファイル管理メニュー自体の対話実行、`cuda`/`intel`/`vulkan`各プロファイルの
+  実機フルセットアップ（本機はNVIDIA GPUなしのためcuda未検証、intel/vulkanはビルドと
+  一部prob eのみ検証）は未実施。次セッションでの受入試験を推奨。
+- `cuda`プロファイルは本機（NVIDIA GPUなし）ではvenv作成してもprobeが必ず失敗するため、
+  利用者確認のうえ作成・検証しなかった（未検証のまま）。
+- pyannote 4.0.7のtorch XPU上での完全E2E（community-1実パイプライン）は本機に有効な
+  gatedモデルトークンがなく未検証（I-6参照）。基本演算（Conv1d/LSTM/InstanceNorm1d）の
+  XPU実行は実機確認済み。Phase 3cの課題として残す。
+- `device = "auto"`のまま複数プロファイルで同一ジョブを共有した場合、config_hashが
+  実際に使用されるハードウェアの変化を検知できない制約（19.5節）は、レジューム機構への
+  影響範囲を考慮し今回は解消せず、要件定義への明記のみで対応した。利用者が実運用で
+  複数プロファイルを併用する場合は、`device`/`backend`の明示指定を推奨する。
 
 ## 設計上の判断とその理由
 
@@ -705,20 +780,62 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
   一度だけ試行し、プロセスの生死（exit code）という外部から観測可能な信号で判定する設計とした。
   クラッシュ確定時のみ書き換え、判定不能（Python例外）時は書き換えない非対称な扱いにしたのは、
   誤検知でモデルを不必要に壊すより、まれに古い壊れた設定を見逃す方を安全側と判断したため。
+- Phase 3aのwhisper.cppバージョンは指示書既定のv1.8.6ではなくv1.9.1を採用した。実機で
+  I-1〜I-3を検証した結果、v1.9.1がCPU/OpenVINO/Vulkan/OpenVINO+Vulkanの全構成で
+  ビルド・実推論に成功したため。利用者に事前確認のうえ判断した。
+- `cpu`/`cuda`/`xpu`extraのtriton-xpu依存は、uvの`explicit = true` indexが対象extraの
+  `project.optional-dependencies`に直接列挙されたパッケージにしか適用されないという
+  未文書化の制約（I-4）に対応するため、`triton-xpu`を`xpu` extraへ`sys_platform == 'win32'`
+  条件付きで直接追加した。Linux版のtorch+xpu wheelも存在するが実機未検証のため、
+  安全側でWindows限定のマーカーとした。
+- `openvino.get_cmake_path()`は本機のopenvino 2026.2.1に存在しないため、
+  参考実装と同じ`<package_dir>/cmake`へのフォールバック＋`OpenVINOConfig.cmake`存在確認を
+  `native.py`に実装した。指示書は`get_cmake_path()`の存在を前提とした記述だったため、
+  実機検証結果を優先しフォールバックを必須にした。
+- Windowsのネイティブビルドは、Ninja生成器ではなくマルチコンフィグの
+  `Visual Studio 17 2022`生成器を使う。実機検証でNinjaはコンパイラ環境
+  （`vcvars64.bat`）を事前に読み込んでいないと構成に失敗する一方、VS生成器は
+  vswhereと同じ機構でMSVCを自力検出できることを確認した。`utteran native build`が
+  「Developer PowerShell」でなくても動作することを優先した。
+- native.pyの`ProcessRunner`は`subprocess.run`に`text=True`ではなく明示的に
+  `encoding="utf-8", errors="replace"`を指定する。日本語（cp932）ロケールのWindowsで
+  `text=True`のロケール依存デコードがcmake/git出力の`UnicodeDecodeError`で出力を
+  失う実障害を実機で確認したため。
+- `run.ps1`は`-Profile`をparam()の名前付きパラメータとして宣言せず、`$args`を手動解析する。
+  PowerShellの自動位置バインドは、`-Profile`省略時に最初の裸引数（`transcribe`等）を
+  誤って`$Profile`へ束縛することを実機確認したため、この落とし穴を避ける設計とした。
+- `device = "auto"`のままプロファイルを切り替えた場合のconfig_hash不変の制約（19.5節）は、
+  ハッシュ計算ロジックを変更せず、要件定義への明記と利用者への明示指定の推奨だけで対応した。
+  ジョブ・レジューム機構は受入試験済みの中核機能であり、変更に伴う回帰リスクが
+  Phase 3aで解決すべき利益を上回ると判断したため。
+- 要件定義の新章番号は指示書の「15./16.」ではなく19/20とした。本書には既に15〜18章が
+  実在するため、「既存の章番号を変更せず末尾に追加する」という指示書自身の原則を、
+  例示された章番号自体より優先した。
 
 ## 次に着手すべきこと
 
 - 受入報告に記載した品質確認用成果物を、必要に応じて利用者が意味的に目視確認する。
 - Phase 3へ進む場合は、`docs/受入試験報告.md`の性能値・未実施事項と本ファイルを起点にする。
 - `output/_testdata/`は再試験不要になった時点で削除可能。2時間jobは指示により削除しない。
+- Phase 3aの専用受入試験（G0〜G14に相当する形式的な試験・報告書）は未実施。特に
+  `cuda`プロファイルの実機検証（NVIDIA GPU搭載機が必要）、`intel`/`vulkan`プロファイルの
+  フルセットアップ実機検証、`start.ps1`プロファイル管理メニューの対話実行確認、
+  4プロファイル同時作成時のディスク使用量実測が推奨される。
+- Phase 3b（whisper.cppを使った実際の文字起こし、ggmlモデルのカタログ登録、OpenVINO
+  エンコーダIR変換）は本セッションの範囲外。着手時はI-2（DTW有効化に`--no-flash-attn`が
+  必須、日本語トークン粒度、large-v3-turbo実モデルでの`--dtw large.v3.turbo`未検証）を
+  参照すること。
+- Phase 3c（torch XPUによる話者分離）着手時はI-6（community-1実パイプラインの
+  XPU完全E2E未検証）を参照すること。
 
 ## 既知の落とし穴・回避方法
 
 - バックエンド固有オブジェクトを pipeline/exporter に渡さず、共通 dataclass へ変換する。
 - Hugging Face トークンは config.toml から無視し、ログと例外をマスクする。
 - pyannote.audio 4.x の出力 API の差異をバックエンド内部で吸収する。
-- WindowsとWSLで同じ `.venv` を共有しない。setupは `.venv-windows` を自動選択し、新しい
-  PowerShellでは表示された `UV_PROJECT_ENVIRONMENT` を設定する。
+- WindowsとWSLで同じ `.venv` を共有しない。Phase 3a以降はプロファイル別
+  `.venvs/<os>-<profile>`がOS識別子でこれを恒久的に回避する。旧`.venv-windows`は
+  互換のため残置しているが新規作成はしない。
 - `start.ps1`の先頭UTF-8 BOMを保持する。PowerShell 7だけで検査せず、Windows PowerShell 5.1
   Parser APIと実行の双方を確認する。
 - 第三者配布のCTranslate2モデル（特に蒸留系）は`config.json`の`alignment_heads`が
@@ -727,6 +844,18 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
 - `tools/acceptance`のCtrl+C系試験はWindows実コンソール（PowerShell/cmd.exe）前提。
   Git BashやConPTY経由で`pytest`を実行すると`test_ctrl_c_is_confined_to_the_child_console`が
   タイムアウトすることがある。製品側の不具合ではなく、試験ハーネスの実行環境依存。
+- 日本語（cp932）ロケールのWindowsでは、上記と別にサブプロセスの`text=True`が
+  ロケール依存デコードになり、Ctrl+C系以外のテスト（例:
+  `test_interruptible_worker_hard_exit_returns_130_in_cli_process`）も、実行元コンソールの
+  コードページによってどちらか一方だけがまれに失敗することがある（`native.py`で
+  実際に踏んだ問題と同種）。製品コードでサブプロセス出力を扱う場合は`text=True`ではなく
+  `encoding="utf-8", errors="replace"`を明示する。
+- `cmake`をPATHに直接置くだけでなく、Visual Studio同梱のcmake
+  （`...\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe`）が使える。
+  `utteran native build`はビルド前提としてcmakeの存在だけを確認し、由来は問わない。
+- Vulkanの`glslc`（ビルド前提）と`vulkaninfo`（ランタイム）は独立した検出対象。
+  一方だけが利用可能な環境があるため、両方を確認しないと「ビルドできるが動かない」
+  「動くがビルドできない」状態を見落とす。
 
 ## 動作確認環境・手順
 
