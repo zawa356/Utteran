@@ -241,7 +241,7 @@ def detect_devices(
     profile = selected_probes.profile()
     vulkan = selected_probes.vulkan()
     native = selected_probes.native()
-    auto_selection, warnings = _auto_selection(ctranslate2, torch, openvino)
+    auto_selection, warnings = _auto_selection(ctranslate2, torch, openvino, vulkan, native)
     if ctranslate2.cuda_device_count and not any(
         device.usable for device in ctranslate2.cuda_devices
     ):
@@ -560,19 +560,42 @@ def _auto_selection(
     ctranslate2: CTranslate2Report,
     torch: TorchReport,
     openvino: OptionalRuntimeReport,
+    vulkan: VulkanReport,
+    native: NativeReport,
 ) -> tuple[AutoSelection, list[str]]:
-    """Select implemented backends and explain Phase 3 acceleration opportunities."""
+    """Apply the documented CUDA, Intel/Vulkan, then CPU ASR priority."""
     notes: list[str] = []
-    try:
-        asr = select_faster_whisper_device("auto", "auto", report=ctranslate2)
-        if asr.note:
-            notes.append(asr.note)
-        asr_device = f"cuda:{asr.device_index}" if asr.device == "cuda" else "cpu"
-        asr_compute = asr.compute_type
-    except BackendUnavailableError as exc:
-        asr_device = "unavailable"
-        asr_compute = "unavailable"
-        notes.append(str(exc))
+    cuda_usable = any(device.usable for device in ctranslate2.cuda_devices)
+    openvino_gpu = openvino.available and any(
+        item.upper().startswith("GPU") for item in openvino.values
+    )
+    if cuda_usable:
+        try:
+            asr = select_faster_whisper_device("auto", "auto", report=ctranslate2)
+            if asr.note:
+                notes.append(asr.note)
+            asr_device = f"cuda:{asr.device_index}"
+            asr_compute = asr.compute_type
+            asr_backend = "faster-whisper"
+        except BackendUnavailableError as exc:
+            notes.append(str(exc))
+            asr_backend, asr_device, asr_compute = "faster-whisper", "cpu", "int8"
+    elif (
+        vulkan.runtime_available
+        and openvino_gpu
+        and native.variants.get("openvino_vulkan", False)
+    ):
+        asr_backend, asr_device, asr_compute = "whisper-cpp", "openvino_vulkan", "ggml"
+        notes.append("VulkanとOpenVINO GPUが利用可能なためopenvino_vulkanを選択しました。")
+    elif vulkan.runtime_available and native.variants.get("vulkan", False):
+        asr_backend, asr_device, asr_compute = "whisper-cpp", "vulkan", "ggml"
+        notes.append("Vulkanが利用可能なためvulkanを選択しました。")
+    elif openvino_gpu and native.variants.get("openvino", False):
+        asr_backend, asr_device, asr_compute = "whisper-cpp", "openvino", "ggml"
+        notes.append("OpenVINO GPUが利用可能なためopenvinoを選択しました。")
+    else:
+        asr_backend, asr_device, asr_compute = "faster-whisper", "cpu", "int8"
+        notes.append("GPU向け構成を利用できないためfaster-whisper CPUを選択しました。")
     torch_cuda = next((device for device in torch.cuda_devices if device.usable), None)
     diarization_device = f"cuda:{torch_cuda.index}" if torch_cuda is not None else "cpu"
     intel_accelerators = tuple(
@@ -581,12 +604,12 @@ def _auto_selection(
     warnings: list[str] = []
     if asr_device == "cpu" and intel_accelerators:
         warnings.append(
-            "Intel GPU / NPU が検出されました。ASR は OpenVINO で高速化できますが、"
-            "Phase 2 の実装済み ASR は faster-whisper CPU、話者分離は pyannote CPU です。"
+            "Intel GPU / NPU は検出されましたが実行可能なwhisper.cpp構成がありません。"
+            "`utteran native build`を確認してください。"
         )
     return (
         AutoSelection(
-            asr_backend="faster-whisper",
+            asr_backend=asr_backend,
             asr_device=asr_device,
             asr_compute_type=asr_compute,
             diarization_backend="pyannote",

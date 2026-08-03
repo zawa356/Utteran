@@ -106,6 +106,33 @@ def test_device_detection_is_injectable_and_json_serializable(tmp_path: Path) ->
     assert '"logical_cores": 8' in encoded
 
 
+def test_auto_prefers_openvino_vulkan_when_cuda_is_unavailable(tmp_path: Path) -> None:
+    probes = DeviceProbeSet(
+        cpu=lambda: CPUReport(8, 4, True, False),
+        ctranslate2=lambda: CTranslate2Report(True, "test", ("int8",), 0, ()),
+        libraries=lambda: LibraryReport(None, None),
+        torch=lambda: TorchReport(True, "test", False, ()),
+        openvino=lambda: OptionalRuntimeReport(True, ("CPU", "GPU.0")),
+        onnxruntime=lambda: OptionalRuntimeReport(False, ()),
+        ffmpeg=lambda _path: FfmpegReport(True, str(tmp_path / "ffmpeg"), "test"),
+        backends=lambda: {"faster-whisper": True, "openvino": True},
+        profile=lambda: ProfileReport(current="intel", profiles=()),
+        vulkan=lambda: VulkanReport(True, None, True, "Arc", None),
+        native=lambda: NativeReport(
+            True,
+            "v1.9.1",
+            {"cpu": True, "openvino": True, "vulkan": True, "openvino_vulkan": True},
+        ),
+    )
+
+    selected = detect_devices(probes=probes).auto_selection
+
+    assert (selected.asr_backend, selected.asr_device) == (
+        "whisper-cpp",
+        "openvino_vulkan",
+    )
+
+
 def test_detect_profile_report_reflects_current_and_created_profiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

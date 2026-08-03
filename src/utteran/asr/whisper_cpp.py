@@ -39,13 +39,19 @@ class WhisperCppBackend(ASRBackend):
 
     name: ClassVar[str] = "whisper-cpp"
 
-    def __init__(self, settings: WhisperCppConfig | None = None) -> None:
+    def __init__(
+        self, settings: WhisperCppConfig | None = None, *, allow_fallback: bool | None = None
+    ) -> None:
         self.settings = settings or WhisperCppConfig()
+        self._allow_fallback = (
+            self.settings.variant == "auto" if allow_fallback is None else allow_fallback
+        )
         self._entry: ModelEntry | None = None
         self._model_path: Path | None = None
         self._executable: Path | None = None
         self._variant = ""
         self._device = ""
+        self._backends: dict[str, Any] = {}
 
     @classmethod
     def is_available(cls) -> bool:
@@ -100,6 +106,7 @@ class WhisperCppBackend(ASRBackend):
         self._executable = Path(str(executable))
         self._variant = requested
         self._device = requested
+        self._backends = backends
 
     def transcribe(
         self,
@@ -122,7 +129,33 @@ class WhisperCppBackend(ASRBackend):
                 self._variant,
                 options,
             )
-            stderr = _run_process(command, self._variant, progress, cancel)
+            try:
+                stderr = _run_process(command, self._variant, progress, cancel)
+            except BackendUnavailableError as error:
+                fallback = self._fallback_variant(str(error))
+                if fallback is None:
+                    raise
+                logging.getLogger(__name__).warning(
+                    "%s初期化失敗のため%sへ1回だけフォールバックします。理由: %s",
+                    self._variant,
+                    fallback,
+                    mask_secrets(str(error)),
+                )
+                self._variant = fallback
+                self._device = fallback
+                backend = self._backends[fallback]
+                self._executable = Path(str(backend["executable"]))
+                command = build_command(
+                    self._executable,
+                    self._model_path,
+                    audio_path,
+                    output_prefix,
+                    self._entry,
+                    self.settings,
+                    fallback,
+                    options,
+                )
+                stderr = _run_process(command, fallback, progress, cancel)
             output_path = output_prefix.with_suffix(".json")
             if not output_path.is_file():
                 raise BackendUnavailableError(
@@ -135,6 +168,21 @@ class WhisperCppBackend(ASRBackend):
         self._entry = None
         self._model_path = None
         self._executable = None
+        self._backends = {}
+
+    def _fallback_variant(self, detail: str) -> str | None:
+        if not self._allow_fallback or not is_gpu_initialization_failure(detail):
+            return None
+        order = ("openvino_vulkan", "vulkan", "openvino")
+        try:
+            start = order.index(self._variant) + 1
+        except ValueError:
+            return None
+        for name in order[start:]:
+            entry = self._backends.get(name)
+            if isinstance(entry, dict) and Path(str(entry.get("executable", ""))).is_file():
+                return name
+        return None
 
 
 def build_command(
@@ -173,6 +221,22 @@ def build_command(
 def parse_progress(line: str) -> int | None:
     match = _PROGRESS.search(line)
     return None if match is None else min(int(match.group(1)), 100)
+
+
+def is_gpu_initialization_failure(detail: str) -> bool:
+    """Recognize bounded v1.9.1/OpenVINO/Vulkan initialization diagnostics."""
+    folded = detail.casefold()
+    return any(
+        marker in folded
+        for marker in (
+            "failed to initialize",
+            "failed to create",
+            "vulkan device",
+            "openvino encoder",
+            "could not open the file",
+            "in openvino encoder compile routine",
+        )
+    )
 
 
 def _run_process(

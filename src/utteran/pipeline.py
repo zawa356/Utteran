@@ -215,12 +215,7 @@ def _run_stages(
                 hashes["asr"],
                 executed_stages,
                 cancel,
-                lambda: pool.asr(config).transcribe(
-                    job.audio_path,
-                    _asr_options(config),
-                    progress,
-                    cancel,
-                ),
+                lambda: _transcribe_asr(pool, config, job.audio_path, progress, cancel),
                 lambda value: [
                     job.write_intermediate("asr", cast(TranscriptionResult, value).to_dict())
                 ],
@@ -423,10 +418,10 @@ def _export_result(
     return output_paths
 
 
-def _asr_options(config: Config) -> ASROptions:
+def _asr_options(config: Config, backend_name: str | None = None) -> ASROptions:
     """Build backend-neutral ASR options from effective settings."""
     word_timestamps = True
-    if config.asr.backend == "whisper-cpp":
+    if (backend_name or config.asr.backend) == "whisper-cpp":
         word_timestamps = config.asr.word_timestamps == "always" or (
             config.asr.word_timestamps == "auto" and config.diarization.enabled
         )
@@ -437,6 +432,23 @@ def _asr_options(config: Config) -> ASROptions:
         beam_size=config.asr.beam_size,
         condition_on_previous_text=config.asr.condition_on_previous_text,
         word_timestamps=word_timestamps,
+    )
+
+
+def _transcribe_asr(
+    pool: BackendPool,
+    config: Config,
+    audio_path: Path,
+    progress: ProgressCallback | None,
+    cancel: CancelToken | None,
+) -> TranscriptionResult:
+    """Resolve the pooled backend once so reuse logging and options stay accurate."""
+    backend = pool.asr(config)
+    return backend.transcribe(
+        audio_path,
+        _asr_options(config, backend.name),
+        progress,
+        cancel,
     )
 
 

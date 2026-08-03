@@ -18,6 +18,9 @@
   -ojf/-of/-pp/-t/--prompt/-oved/--device/--no-gpu/--dtw/--no-flash-attn`だけを使用する。
   stderr進捗、Windows process tree停止、秘密値mask、動的OpenVINO DLL、temporary JSON、共通型変換、
   DTW全`-1`時の単語破棄を実装。実モデルE2EはStep 7で実施する。
+- Phase 3b Step 5: devices auto選択をCUDA→ovvk→vk→ov→faster-whisper CPUへ拡張。
+  v1.9.1/OpenVINO/Vulkanの限定した初期化失敗patternだけを対象に、auto時に次のGPU構成へ
+  1回だけ退避する。明示variantは退避しない。注入probe/model不要試験でovvk選択を確認。
 
 - Phase 1（骨格と最小動作）: 実装完了。受入試験でfaster-whisperとgated pyannoteの
   CPU/CUDA実モデルE2E、5形式出力を検証済み。

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from utteran.asr.whisper_cpp import _convert_result, build_command, parse_progress
+from utteran.asr.whisper_cpp import (
+    _convert_result,
+    build_command,
+    is_gpu_initialization_failure,
+    parse_progress,
+)
 from utteran.config import WhisperCppConfig
 from utteran.models.catalog import get_model
 from utteran.types import ASROptions
@@ -37,6 +42,12 @@ def test_build_command_enables_dtw_only_when_words_requested(tmp_path: Path) -> 
 def test_parse_progress_is_injectable() -> None:
     assert parse_progress("whisper_print_progress_callback: progress =  42%") == 42
     assert parse_progress("unrelated") is None
+
+
+def test_gpu_initialization_failure_patterns_are_bounded() -> None:
+    assert is_gpu_initialization_failure("failed to initialize Vulkan device")
+    assert is_gpu_initialization_failure("in openvino encoder compile routine: exception")
+    assert not is_gpu_initialization_failure("model file has invalid magic")
 
 
 def test_convert_result_discards_words_when_dtw_was_silently_disabled() -> None:
