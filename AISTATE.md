@@ -6,6 +6,9 @@
   Python CLIの日本語JSON／非ASCIIユーザーパスを誤デコードし、profile検証と既定profile設定が
   失敗する問題を検出。子processをUTF-8固定し環境変数を復元する修正を行い、CPU/Intel/Vulkanの
   setup、既定変更、Vulkan削除・復元、torch profile非干渉を実機で再確認した。CUDAは作成していない。
+  P3ではmanifestにprofile固有OpenVINO絶対パスが残る問題と、部分native buildが未指定構成を
+  manifestから消す問題を検出・修正。4構成復元、CPU force build、CPU clean→build後も全4構成が
+  runnableで、manifestはv1.9.1 commit一致・profile固有OpenVINOパスなしを確認した。
 - 運用改善（2026-08-04）: pipelineの各実行ステージを`perf_counter`で計測し、正常完了時に
   audio/asr/diarization/merge/exportと実行フェーズ合計を`HH:MM:SS.mmm`で最終表示するよう変更。
   resume再利用ステージは除外し、フォルダ一括は成功ジョブ分をステージ別に合算する。

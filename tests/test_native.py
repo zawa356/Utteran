@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -182,6 +183,75 @@ def test_build_all_cpu_only_writes_a_manifest_without_baked_library_paths(
     # Unrequested variants are neither built nor reported as failed.
     assert "openvino" not in manifest["errors"]
     assert "vulkan" not in manifest["errors"]
+
+
+def test_openvino_manifest_replaces_profile_specific_cmake_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if "rev-parse" in command:
+            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+        if "--build" in command:
+            _touch_fake_cli(Path(command[command.index("--build") + 1]))
+        return _ok()
+
+    profile_path = tmp_path / "win-intel" / "Lib" / "site-packages" / "openvino" / "cmake"
+    monkeypatch.setattr(
+        "utteran.native.probe_openvino_gpu",
+        lambda: (PrerequisiteCheck(True, "GPU"), "GPU"),
+    )
+    monkeypatch.setattr("utteran.native.resolve_openvino_cmake_dir", lambda: profile_path)
+    builder = _make_builder(tmp_path / "native", FakeRunner(handler))
+
+    first = builder.build_all(variants=("openvino",))
+    second = builder.build_all(variants=("openvino",))
+
+    expected = [
+        "-DWHISPER_OPENVINO=ON",
+        "-DGGML_VULKAN=OFF",
+        "-DOpenVINO_DIR=<resolved-at-build-time>",
+    ]
+    assert first["backends"]["openvino"]["cmake_flags"] == expected
+    assert second["backends"]["openvino"]["cmake_flags"] == expected
+    assert str(profile_path) not in json.dumps(second)
+
+
+def test_partial_force_build_preserves_unrequested_manifest_entries(tmp_path: Path) -> None:
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if "rev-parse" in command:
+            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+        if "--build" in command:
+            _touch_fake_cli(Path(command[command.index("--build") + 1]))
+        return _ok()
+
+    builder = _make_builder(tmp_path, FakeRunner(handler))
+    builder.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    builder.manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "platform": builder.platform,
+                "whisper_cpp": {
+                    "tag": "v1.9.1",
+                    "commit": "f049fff95a089aa9969deb009cdd4892b3e74916",
+                },
+                "backends": {
+                    "vulkan": {
+                        "executable": "shared/vulkan/whisper-cli.exe",
+                        "cmake_flags": ["-DGGML_VULKAN=ON"],
+                        "requires": ["vulkan"],
+                    }
+                },
+                "errors": {"openvino": "previous prerequisite failure"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = builder.build_all(variants=("cpu",), force=True)
+
+    assert set(manifest["backends"]) == {"cpu", "vulkan"}
+    assert manifest["errors"] == {"openvino": "previous prerequisite failure"}
 
 
 def test_build_all_records_prerequisite_failures_for_requested_gpu_variants(

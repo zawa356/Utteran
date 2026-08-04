@@ -43,6 +43,19 @@ from typing import Any
 from utteran.errors import DependencyError
 
 MANIFEST_SCHEMA_VERSION = 1
+_OPENVINO_DIR_FLAG = "-DOpenVINO_DIR="
+
+
+def _portable_cmake_flags(flags: Sequence[str]) -> tuple[str, ...]:
+    """Remove profile-specific paths before comparing or persisting flags."""
+    return tuple(
+        f"{_OPENVINO_DIR_FLAG}<resolved-at-build-time>"
+        if flag.startswith(_OPENVINO_DIR_FLAG)
+        else flag
+        for flag in flags
+    )
+
+
 WHISPER_CPP_TAG = "v1.9.1"
 WHISPER_CPP_COMMIT = "f049fff95a089aa9969deb009cdd4892b3e74916"
 WHISPER_CPP_REPOSITORY = "https://github.com/ggml-org/whisper.cpp.git"
@@ -368,20 +381,48 @@ class NativeBuilder:
             elif "openvino_vulkan" not in errors:
                 errors["openvino_vulkan"] = "OpenVINOまたはVulkanの前提条件が揃っていません。"
 
+        existing_backends = existing.get("backends", {})
+        preserved_backends = (
+            {
+                name: {
+                    **entry,
+                    "cmake_flags": list(
+                        _portable_cmake_flags(
+                            tuple(str(flag) for flag in entry.get("cmake_flags", []))
+                        )
+                    ),
+                }
+                for name, entry in existing_backends.items()
+                if name not in requested and isinstance(entry, dict)
+            }
+            if isinstance(existing_backends, dict)
+            else {}
+        )
+        preserved_backends.update(
+            {
+                name: {
+                    "executable": str(result.executable),
+                    "cmake_flags": list(_portable_cmake_flags(result.cmake_flags)),
+                    "requires": list(result.requires),
+                }
+                for name, result in results.items()
+            }
+        )
+        existing_errors = existing.get("errors", {})
+        preserved_errors = (
+            {name: detail for name, detail in existing_errors.items() if name not in requested}
+            if isinstance(existing_errors, dict)
+            else {}
+        )
+        preserved_errors.update(errors)
+
         manifest: dict[str, Any] = {
             "schema_version": MANIFEST_SCHEMA_VERSION,
             "platform": self.platform,
             "whisper_cpp": {"tag": WHISPER_CPP_TAG, "commit": WHISPER_CPP_COMMIT},
             "built_at": _now(),
-            "backends": {
-                name: {
-                    "executable": str(result.executable),
-                    "cmake_flags": list(result.cmake_flags),
-                    "requires": list(result.requires),
-                }
-                for name, result in results.items()
-            },
-            "errors": errors,
+            "backends": preserved_backends,
+            "errors": preserved_errors,
         }
         self._write_manifest(manifest)
         return manifest
@@ -496,7 +537,10 @@ class NativeBuilder:
             current = existing_backends.get(name)
             if isinstance(current, dict):
                 executable = Path(str(current.get("executable", "")))
-                if executable.is_file() and tuple(current.get("cmake_flags", [])) == flags:
+                current_flags = tuple(str(flag) for flag in current.get("cmake_flags", []))
+                if executable.is_file() and _portable_cmake_flags(
+                    current_flags
+                ) == _portable_cmake_flags(flags):
                     return BuildResult(name, executable, flags, requires)
 
         build_dir = self.build_dir(name)
