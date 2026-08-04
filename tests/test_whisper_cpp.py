@@ -125,3 +125,35 @@ def test_convert_result_discards_words_when_dtw_was_silently_disabled() -> None:
 
     assert result.segments[0].words == []
     assert result.language == "ja"
+
+
+def test_convert_result_discards_zero_length_segments_and_words() -> None:
+    entry = get_model("whisper-cpp:base")
+    data = {
+        "result": {"language": "ja"},
+        "transcription": [
+            {
+                "offsets": {"from": 500, "to": 500},
+                "text": "ignored",
+                "tokens": [],
+            },
+            {
+                "offsets": {"from": 1000, "to": 2000},
+                "text": "kept",
+                "tokens": [
+                    {
+                        "text": " word",
+                        "t_dtw": 100,
+                        "offsets": {"from": 1000, "to": 1000},
+                        "p": 0.9,
+                    }
+                ],
+            },
+        ],
+    }
+
+    result = _convert_result(data, entry, "cpu", True)
+
+    assert len(result.segments) == 1
+    assert (result.segments[0].start, result.segments[0].end) == (1.0, 2.0)
+    assert result.segments[0].words == []

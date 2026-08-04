@@ -351,16 +351,29 @@ def _convert_result(
 ) -> TranscriptionResult:
     segments: list[Segment] = []
     dtw_found = False
+    discarded_segments = 0
+    discarded_words = 0
     for raw in data.get("transcription", []):
         offsets = raw.get("offsets", {})
         start = float(offsets.get("from", 0)) / 1000.0
         end = float(offsets.get("to", 0)) / 1000.0
+        if end <= start:
+            discarded_segments += 1
+            continue
         tokens = raw.get("tokens", [])
         dtw_found = dtw_found or has_dtw_timestamps(tokens)
-        words = (
+        converted_words = (
             tokens_to_words(tokens, segment_start=start, segment_end=end) if requested_words else []
         )
+        words = [word for word in converted_words if word.end > word.start]
+        discarded_words += len(converted_words) - len(words)
         segments.append(Segment(start, end, str(raw.get("text", "")), words))
+    if discarded_segments or discarded_words:
+        logging.getLogger(__name__).warning(
+            "whisper.cppのゼロ長時刻を除外しました: segments=%d, words=%d",
+            discarded_segments,
+            discarded_words,
+        )
     if requested_words and not dtw_found:
         logging.getLogger(__name__).warning(
             "DTWが有効にならずt_dtwが全て-1のため、単語時刻を破棄してsegment単位へ退避します。"
