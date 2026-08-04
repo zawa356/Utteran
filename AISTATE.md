@@ -1,15 +1,27 @@
 # AI 作業状態
 
-## Phase 3d 是正（2026-08-04、作業中）
+## Phase 3d 是正（2026-08-04、完了）
 
 - 固定checkoutの`examples/cli/cli.cpp`で`--max-context`、Sileroモデル必須の`--vad`、
   entropy/logprob/no-speech閾値、温度fallbackの正確な名前と既定を確認した。
-- 単語TS切替ではDTWとflash attentionが同時に変わるため、既存P14だけでは一方を根因と断定
-  できない。前文脈遮断とdecoder閾値を設定化し、反復保険を無効化・閾値変更可能にした。
+- 24分46秒実会議WAV、Vulkan、large-v3-turbo-q5_0、反復保険無効で切り分けた。B1
+  （flash有効/DTWなし）は103.293秒・324 segments・5559文字・最大反復3、B2
+  （flash無効/DTWなし）は144.523秒・297・5606・最大2、B3（flash無効/DTWあり）は
+  143.477秒・297・5606・最大2。B2/B3の統計一致から出力差はDTWでなくflash無効化が要因。
+- C0対策なしは289.935秒・571 segments・7186文字・最大150連続・反復追加343。C1前文脈遮断のみ
+  110.497秒・313・5521・最大3・追加3、C2 VADのみ103.582秒・191・5659・最大2・追加2、
+  C3 entropy 2.4のみ193.247秒・480・6284・最大31・追加90、C4 logprob -1.0のみ301.209秒、
+  C5 no-speech 0.6のみ292.881秒で後二者はC0と出力統計一致。全既定組合せC6は86.473秒・
+  280・5425・最大2・追加1。日本語文字比0.969以上、空segment比0。閾値は各1点測定。
+- 実測から`no_context=true`とdecoder既定を維持、VADは有効だがsegment構成変化と追加modelのため
+  opt-in、反復保険は4から10へ緩和。Silero v6.2.0をカタログ/download/verifyへ統合した。VAD実測で
+  非ASCII model pathのnative crashと不正UTF-8 JSONを検出し、ASCII stagingと置換warningで修正。
 - Intel profile（Python 3.12.13）、Arc 140T、180秒WAV、large-v3-turbo-q5_0、単語TSなしで
   warmup 1 + 3回測定。中央値はVulkan 20.488秒（8.787x）、ovvk 32.564秒（5.528x）。
-- モデル不要試験179件、ruff、mypyは合格。R-1の長時間対策別効果測定、R-4統合ハーネス、
-  R-5の25/50/100/150分測定は未完了であり、Phase 3d完了とは扱わない。
+- 音声連結実測: Vulkan ASR 25/50/100分は102.946/220.690/443.087秒、peak RAM
+  1.470/1.738/2.277 GB。XPU話者分離は212.523/401.551/811.918秒、5.407/5.584/6.097 GB。
+  CPU話者分離25/50分は655.909/1128.586秒、2.753/2.907 GB。150分は時間制約で省略し、
+  100分までからXPU 120分約6.3 GB、150分約6.6 GBと外挿。68 GB RAM本機で2時間級OOM見込みなし。
 
 ## 現在のフェーズと進捗
 

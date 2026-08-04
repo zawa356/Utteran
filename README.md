@@ -595,8 +595,16 @@ uv lock --check
 
 whisper.cppでは無音時の反復を抑えるため、既定で`no_context = true`（`--max-context 0`）を
 使います。entropy/logprob/no-speech閾値と温度fallbackも設定可能です。Silero GGML VADは
-`vad = true`と`vad_model`のローカルパスを指定した場合だけ有効です。同一segment抑制は保険として
-`repetition_limit = 4`で、0なら無効です。抑制件数はwarningに残り、正当な相槌も除外し得ます。
+`vad = true`で有効です。VADモデルは
+`utteran models download whisper-cpp-vad:silero-v6.2.0`で取得でき、`vad_model`未指定時は管理済み
+モデルを自動解決します。同一segment抑制は根本対策後の保険として`repetition_limit = 10`、0なら
+無効です。抑制件数はwarningに残り、正当な相槌も除外し得ます。
+
+24分46秒の実会議WAV、Vulkan、large-v3-turbo-q5_0、反復抑制無効で個別測定した結果、対策なしは
+最大150連続（343反復segment、289.94秒）でした。前文脈遮断のみは最大3（3、110.50秒）、VADのみは
+最大2（2、103.58秒）、entropy 2.4のみは最大31（90、193.25秒）、logprob -1.0のみとno-speech
+0.6のみは最大150で単独効果なしでした。既定の前文脈遮断＋decoder閾値では最大3です。VADは有効
+ですが出力segment構成を大きく変え、追加モデルも必要なため既定では無効のままとします。
 
 ```console
 uv run utteran benchmark --audio sample.wav --variants vulkan,openvino_vulkan --json benchmark.json
@@ -606,8 +614,19 @@ uv run utteran benchmark --audio sample.wav --variants vulkan,openvino_vulkan --
 実データを暗黙利用しないためWAVは必須です。既定でwarmup 1回・計測3回の中央値を表示し、認識
 本文やジョブは保存しません。Intel Core Ultra 7 255H / Arc 140T、large-v3-turbo-q5_0、180秒
 WAV、単語TSなしの実測中央値はVulkan 20.488秒（8.787x）、OpenVINO+Vulkan 32.564秒
-（5.528x）でした。この条件と追加IR不要という運用コストからautoはVulkanを優先します。
-30秒・10分および長時間メモリ測定は未完了で、この値を他環境へ一般化しないでください。
+（5.528x）で、ovvkが約59%遅い結果でした。一方、参考実装のCore Ultra 7 255H / Arc 140T・
+large-v3環境ではovvkが最速であり、優劣はhardware・model依存です。IR変換にはOpenAI PyTorch重み
+（large-v3で約3 GB）の追加取得と変換が必要です。**IRを用意せずVulkanで十分な場合があります。**
+自環境では`utteran benchmark`で判断してください。本機では実測差と追加IR不要の運用コストから
+autoはVulkanを優先します。
+
+同じ実音声の連結測定では、Vulkan ASRの25/50/100分が102.95/220.69/443.09秒、ピークRAM
+1.47/1.74/2.28 GBでした。XPU話者分離は212.52/401.55/811.92秒、5.41/5.58/6.10 GBで、
+100分までOOMはなくRAM増加は緩やかでした。CPU話者分離25/50分は655.91/1128.59秒、
+2.75/2.91 GBです。
+150分は時間制約から省略し、100分傾向から120分約6.3 GB、150分約6.6 GBと外挿します。本機の
+68 GB RAMでは2時間級に十分な余裕が見込まれますが、共有RAM使用量と他processの負荷に注意して
+ください。この値をメモリ容量・driverの異なる環境へそのまま一般化しないでください。
 
 uvプロファイルのPythonは3.12.13です。システムPython 3.14.6を対応版として使っているわけでは
 なく、パッケージの対応範囲は引き続き3.11/3.12です。

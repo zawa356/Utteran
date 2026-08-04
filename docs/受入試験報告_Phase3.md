@@ -296,3 +296,14 @@ P6のCPU基準では、4構成のセグメント数差は0%、文字数差は-6.
 - 機密文字列走査は191ファイルを確認してtoken一致0件、PowerShell構文は3/3合格した。
 - CPU/Intel/Vulkan profileを保持し、既定profileはIntel。CUDAは未作成のまま。
 - `output/_testdata/`、`output/_acceptance_p3/`、P14 jobを再試験用に保持した。
+
+### Phase 3d追加測定
+
+P14の24分46秒WAVで反復保険を無効化して再測定した。flash有効/DTWなしは最大反復3、flash無効の
+DTWなし/ありは双方最大2で全統計が一致し、差はDTWでなくflash attention無効化に帰属した。
+対策なしは最大150連続、前文脈遮断のみ3、VADのみ2、entropyのみ31、logprob/no-speechのみは
+150だった。認識本文は記録していない。詳細な全統計と開始終了時刻は`AISTATE.md`へ反映した。
+
+同じWAVを連結した25/50/100分測定ではVulkan ASR peak RAMが1.47/1.74/2.28 GB、XPU話者分離が
+5.41/5.58/6.10 GBだった。150分実測は時間制約で省略し、100分傾向から外挿した。
+CPU話者分離25/50分は655.91/1128.59秒、peak RAM 2.75/2.91 GBで完走した。
