@@ -57,7 +57,7 @@ logprob_threshold = -1.0
 no_speech_threshold = 0.6
 temperature = 0.0
 temperature_increment = 0.2
-repetition_limit = 4
+repetition_limit = 10
 
 [diarization]
 enabled = true
@@ -130,7 +130,7 @@ class WhisperCppConfig(BaseModel):
     no_speech_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     temperature_increment: float = Field(default=0.2, ge=0.0, le=1.0)
-    repetition_limit: int = Field(default=4, ge=0)
+    repetition_limit: int = Field(default=10, ge=0)
 
     @field_validator("vad_model", mode="before")
     @classmethod

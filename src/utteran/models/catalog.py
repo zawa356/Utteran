@@ -43,6 +43,18 @@ _MIB = 1024**2
 
 _CORE_CATALOG: tuple[ModelEntry, ...] = (
     ModelEntry(
+        model_id="silero-v6.2.0",
+        display_name="Silero VAD v6.2.0 (whisper.cpp)",
+        description="whisper.cppの無音区間除去に使用する軽量VADモデル",
+        backend="whisper-cpp-vad",
+        format="GGML VAD",
+        repository_id="ggml-org/whisper-vad",
+        approximate_size_bytes=885_159,
+        license="MIT",
+        gated=False,
+        artifact_filename="ggml-silero-v6.2.0.bin",
+    ),
+    ModelEntry(
         model_id="large-v3-turbo",
         display_name="Whisper large-v3-turbo",
         description="推奨の多言語ASR。速度と精度のバランスを重視",

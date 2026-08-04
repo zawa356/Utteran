@@ -32,6 +32,14 @@ def test_whisper_cpp_catalog_uses_verified_artifact_names() -> None:
     assert all(entry.license == "MIT" for entry in entries)
 
 
+def test_whisper_cpp_vad_catalog_entry_is_downloadable() -> None:
+    entry = get_model("whisper-cpp-vad:silero-v6.2.0")
+
+    assert entry.repository_id == "ggml-org/whisper-vad"
+    assert entry.artifact_filename == "ggml-silero-v6.2.0.bin"
+    assert entry.format == "GGML VAD"
+
+
 def test_recommended_catalog_hides_nonrecommended_and_english_models() -> None:
     entries = list_models(backend="whisper-cpp", recommended_only=True)
 

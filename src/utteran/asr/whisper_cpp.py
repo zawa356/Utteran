@@ -125,13 +125,19 @@ class WhisperCppBackend(ASRBackend):
             temporary_path = Path(temporary)
             output_prefix = temporary_path / "result"
             staged_model = _stage_model(self._model_path, temporary_path / "model")
+            run_settings = self.settings
+            if self.settings.vad:
+                staged_vad = _stage_model(
+                    _resolve_vad_model(self.settings), temporary_path / "vad-model"
+                )
+                run_settings = self.settings.model_copy(update={"vad_model": staged_vad})
             command = build_command(
                 self._executable,
                 staged_model,
                 audio_path,
                 output_prefix,
                 self._entry,
-                self.settings,
+                run_settings,
                 self._variant,
                 options,
             )
@@ -157,7 +163,7 @@ class WhisperCppBackend(ASRBackend):
                     audio_path,
                     output_prefix,
                     self._entry,
-                    self.settings,
+                    run_settings,
                     fallback,
                     options,
                 )
@@ -167,7 +173,15 @@ class WhisperCppBackend(ASRBackend):
                 raise BackendUnavailableError(
                     "whisper-cliがJSONを生成しませんでした: " + mask_secrets(stderr[-500:])
                 )
-            data = json.loads(output_path.read_text(encoding="utf-8"))
+            raw_output = output_path.read_bytes()
+            try:
+                output_text = raw_output.decode("utf-8")
+            except UnicodeDecodeError as error:
+                logging.getLogger(__name__).warning(
+                    "whisper.cpp JSONの不正UTF-8を置換しました: byte_offset=%d", error.start
+                )
+                output_text = raw_output.decode("utf-8", errors="replace")
+            data = json.loads(output_text)
         return _convert_result(
             data,
             self._entry,
@@ -244,14 +258,7 @@ def build_command(
         ]
     )
     if settings.vad:
-        if settings.vad_model is None:
-            raise ModelNotFoundError(
-                "whisper.cpp VADが有効ですがvad_modelが未設定です。"
-                "Silero GGML VADモデルを取得し[asr.whisper_cpp].vad_modelへ指定してください。"
-            )
-        vad_model = settings.vad_model.expanduser().resolve()
-        if not vad_model.is_file():
-            raise ModelNotFoundError(f"whisper.cpp VADモデルが見つかりません: {vad_model}")
+        vad_model = _resolve_vad_model(settings)
         command.extend(
             [
                 "--vad",
@@ -271,7 +278,30 @@ def build_command(
         preset = entry.dtw_preset if settings.dtw == "auto" else settings.dtw
         if preset:
             command.extend(["--dtw", preset, "--no-flash-attn"])
+    elif os.environ.get("UTTERAN_DEBUG_NO_FLASH_ATTN") == "1":
+        # Phase 3dの原因切り分け専用。公開設定にはせず、通常経路へ影響させない。
+        command.append("--no-flash-attn")
     return command
+
+
+def _resolve_vad_model(settings: WhisperCppConfig) -> Path:
+    if settings.vad_model is not None:
+        vad_model = settings.vad_model.expanduser().resolve()
+    else:
+        vad_entry = get_model("whisper-cpp-vad:silero-v6.2.0")
+        installed, _managed = ModelManager().find_installed(vad_entry)
+        if installed is None:
+            raise ModelNotFoundError(
+                "whisper.cpp VADモデルが未取得です。"
+                "`utteran models download whisper-cpp-vad:silero-v6.2.0`を実行してください。"
+            )
+        vad_model = installed / (vad_entry.artifact_filename or "")
+    if not vad_model.is_file():
+        raise ModelNotFoundError(
+            f"whisper.cpp VADモデルが見つかりません: {vad_model}。"
+            "`utteran models download whisper-cpp-vad:silero-v6.2.0`で取得できます。"
+        )
+    return vad_model
 
 
 def parse_progress(line: str) -> int | None:
@@ -392,7 +422,7 @@ def _convert_result(
     device: str,
     requested_words: bool,
     *,
-    repetition_limit: int = 4,
+    repetition_limit: int = 10,
 ) -> TranscriptionResult:
     segments: list[Segment] = []
     dtw_found = False

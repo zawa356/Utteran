@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from utteran.asr.whisper_cpp import (
     WhisperCppBackend,
     _convert_result,
@@ -41,6 +43,25 @@ def test_build_command_enables_dtw_only_when_words_requested(tmp_path: Path) -> 
     assert "--dtw" not in without_words and "--no-flash-attn" not in without_words
     assert with_words[with_words.index("--max-context") + 1] == "0"
     assert "--entropy-thold" in with_words
+
+
+def test_debug_no_flash_attention_without_dtw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UTTERAN_DEBUG_NO_FLASH_ATTN", "1")
+    command = build_command(
+        tmp_path / "whisper-cli",
+        tmp_path / "model.bin",
+        tmp_path / "audio.wav",
+        tmp_path / "out",
+        get_model("whisper-cpp:large-v3-turbo-q5_0"),
+        WhisperCppConfig(variant="vulkan"),
+        "vulkan",
+        ASROptions(word_timestamps=False),
+    )
+
+    assert "--no-flash-attn" in command
+    assert "--dtw" not in command
 
 
 def test_parse_progress_is_injectable() -> None:
@@ -108,6 +129,22 @@ def test_model_and_openvino_ir_are_staged_together(tmp_path: Path) -> None:
     assert (staged.parent / binary.name).read_bytes() == b"ir"
 
 
+def test_vad_model_is_staged_through_ascii_safe_temporary_path(tmp_path: Path) -> None:
+    vad = tmp_path / "日本語" / "ggml-silero-v6.2.0.bin"
+    vad.parent.mkdir()
+    vad.write_bytes(b"vad")
+    settings = WhisperCppConfig(variant="vulkan", vad=True, vad_model=vad)
+    backend = WhisperCppBackend(settings)
+    backend._entry = get_model("whisper-cpp:large-v3-turbo-q5_0")
+    backend._model_path = tmp_path / "model.bin"
+    backend._model_path.write_bytes(b"model")
+
+    staged = _stage_model(vad, tmp_path / "ascii-vad")
+
+    assert staged.read_bytes() == b"vad"
+    assert all(ord(char) < 128 for char in str(staged.relative_to(tmp_path)))
+
+
 def test_convert_result_discards_words_when_dtw_was_silently_disabled() -> None:
     entry = get_model("whisper-cpp:base")
     data = {
@@ -161,7 +198,7 @@ def test_convert_result_discards_zero_length_segments_and_words() -> None:
     assert result.segments[0].words == []
 
 
-def test_convert_result_limits_identical_consecutive_segments_to_four() -> None:
+def test_convert_result_limits_identical_consecutive_segments_to_ten() -> None:
     entry = get_model("whisper-cpp:base")
     transcription = [
         {
@@ -169,7 +206,7 @@ def test_convert_result_limits_identical_consecutive_segments_to_four() -> None:
             "text": " repeated ",
             "tokens": [],
         }
-        for index in range(8)
+        for index in range(12)
     ]
 
     result = _convert_result(
@@ -179,8 +216,8 @@ def test_convert_result_limits_identical_consecutive_segments_to_four() -> None:
         False,
     )
 
-    assert len(result.segments) == 4
-    assert [segment.start for segment in result.segments] == [0.0, 1.0, 2.0, 3.0]
+    assert len(result.segments) == 10
+    assert [segment.start for segment in result.segments] == [float(index) for index in range(10)]
 
 
 def test_convert_result_repetition_guard_can_be_disabled() -> None:

@@ -145,7 +145,7 @@ class ModelManager:
                 )
             )
         try:
-            if entry.format == "GGML" and entry.artifact_filename:
+            if entry.format in {"GGML", "GGML VAD"} and entry.artifact_filename:
                 from huggingface_hub import hf_hub_download
 
                 hf_hub_download(
@@ -292,7 +292,7 @@ def _missing_required_files(entry: ModelEntry, path: Path) -> tuple[str, ...]:
         return ("<model-directory>",)
     if entry.format == "CTranslate2":
         return tuple(name for name in ("config.json", "model.bin") if not (path / name).is_file())
-    if entry.format == "GGML":
+    if entry.format in {"GGML", "GGML VAD"}:
         filename = entry.artifact_filename or "<ggml-file>"
         candidate = path / filename
         return () if candidate.is_file() and candidate.stat().st_size > 0 else (filename,)
