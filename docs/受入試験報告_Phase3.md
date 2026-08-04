@@ -44,7 +44,8 @@
 | P8 auto選択とフォールバック | 7 | 7 | 0 | 0 | 0 |
 | P9 XPU話者分離 | 9 | 9 | 0 | 0 | 0 |
 | P10 結合検証 | 3 | 3 | 0 | 0 | 0 |
-| **暫定合計** | **78** | **78** | **0** | **0** | **0** |
+| P11 既存機能の回帰 | 14 | 14 | 0 | 0 | 0 |
+| **暫定合計** | **92** | **92** | **0** | **0** | **0** |
 
 ### P0 疎通確認
 
@@ -155,6 +156,18 @@
 | P3-U-002 | native manifestの`cmake_flags`にprofile固有の絶対`OpenVINO_DIR`が保存される | 中 | 移植可能なplaceholderへ置換し、比較時も正規化 | 失敗 `96d74ff`／修正 `3be1a19` |
 | P3-U-003 | `native build --variant cpu --force`がmanifestをCPUだけで上書きし、未指定3構成を未試行扱いにする | 高 | 未指定backend/error entryを保持し、回帰試験追加 | 失敗 `8ab7c8a`／修正 `3be1a19` |
 | P3-U-004 | 未ビルドwhisper.cpp構成の指定時に`native build`の復旧案内が表示されない | 中 | 構成名入りの復旧コマンドを追加 | 失敗 `e95fc95`／修正 `4e5967c` |
+
+### P11 既存機能の回帰
+
+- 専用jobで同条件全skip、形式変更でexportのみ、ASR device変更でASR/merge/export、
+  話者分離device変更でdiarization/merge/export、forceで全5段階の再実行を確認した。
+- 既存ハーネスのIntel実行では98ケース中51件が初回合格。job rootを合わせた再試験で、
+  Ctrl+C exit 130→ASRからresume、同時lock拒否、破損manifest検出が合格した。
+- 旧ハーネスの残り失敗はPhase 2固定前提（旧job root、auto=CPU、旧`--device`、旧exit期待、
+  文字化けした期待文）による受入器不整合として分類し、製品回帰とは数えない。
+- batchは部分失敗exit 5、全件失敗1、再帰、include/exclude、dry-runを実処理で確認した。
+- config、jobs、lock/stale lock、batch、5形式、exit code、token maskを含む関連64モデル不要試験が合格した。
+- 実成果物・ログのtoken形式走査とGit ignore確認を含むG10-01/02は両方合格した。
 
 ## 未修正のまま残した事項
 

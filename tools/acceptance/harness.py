@@ -40,11 +40,20 @@ class Case:
 
 
 def _windows_utteran() -> Path:
+    override = os.environ.get("UTTERAN_ACCEPTANCE_UTTERAN")
+    if override:
+        return Path(override)
+    intel = PROJECT_ROOT / ".venvs" / "win-intel" / "Scripts" / "utteran.exe"
+    if intel.is_file():
+        return intel
     return PROJECT_ROOT / ".venv-windows" / "Scripts" / "utteran.exe"
 
 
 def _placeholders() -> dict[str, str]:
-    acceptance = PROJECT_ROOT / "output" / "_acceptance"
+    acceptance = Path(
+        os.environ.get("UTTERAN_ACCEPTANCE_ROOT", PROJECT_ROOT / "output" / "_acceptance")
+    )
+    actual_files = sorted((PROJECT_ROOT / "input").glob("*.mp4"))
     return {
         "project": str(PROJECT_ROOT),
         "python": sys.executable,
@@ -52,7 +61,7 @@ def _placeholders() -> dict[str, str]:
             _windows_utteran() if os.name == "nt" else PROJECT_ROOT / ".venv/bin/utteran"
         ),
         "testdata": str(PROJECT_ROOT / "output" / "_testdata"),
-        "actual": str(PROJECT_ROOT / "input" / "2026-08-01 11-01-55.mp4"),
+        "actual": str(actual_files[0] if actual_files else PROJECT_ROOT / "input" / "missing.mp4"),
         "acceptance": str(acceptance),
         "jobs": str(acceptance / "jobs"),
     }
