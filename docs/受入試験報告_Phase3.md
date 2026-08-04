@@ -45,7 +45,8 @@
 | P9 XPU話者分離 | 9 | 9 | 0 | 0 | 0 |
 | P10 結合検証 | 3 | 3 | 0 | 0 | 0 |
 | P11 既存機能の回帰 | 14 | 14 | 0 | 0 | 0 |
-| **暫定合計** | **92** | **92** | **0** | **0** | **0** |
+| P12 `start.ps1`動的メニュー | 9 | 9 | 0 | 0 | 0 |
+| **暫定合計** | **101** | **101** | **0** | **0** | **0** |
 
 ### P0 疎通確認
 
@@ -168,6 +169,14 @@
 - batchは部分失敗exit 5、全件失敗1、再帰、include/exclude、dry-runを実処理で確認した。
 - config、jobs、lock/stale lock、batch、5形式、exit code、token maskを含む関連64モデル不要試験が合格した。
 - 実成果物・ログのtoken形式走査とGit ignore確認を含むG10-01/02は両方合格した。
+
+### P12 `start.ps1`動的メニュー
+
+- PowerShell Parser error 0。現在profile、devices/models JSON利用、別々の`--asr-device`と
+  `--diarization-device`組立て、空選択肢案内、dry-run経路をコード監査した。
+- Intel devices JSONにCUDA deviceがなく、動的選択肢生成は利用可能deviceだけを採用する。
+- Phase 2受入器の必須mappingを新しい2つのdevice optionへ更新した。
+- 旧固定対話入力列は現在の動的メニュー順と一致しないため、対話項目は仕様の許容どおりコード監査とした。
 
 ## 未修正のまま残した事項
 
