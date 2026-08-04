@@ -1,5 +1,16 @@
 # AI 作業状態
 
+## Phase 3d 是正（2026-08-04、作業中）
+
+- 固定checkoutの`examples/cli/cli.cpp`で`--max-context`、Sileroモデル必須の`--vad`、
+  entropy/logprob/no-speech閾値、温度fallbackの正確な名前と既定を確認した。
+- 単語TS切替ではDTWとflash attentionが同時に変わるため、既存P14だけでは一方を根因と断定
+  できない。前文脈遮断とdecoder閾値を設定化し、反復保険を無効化・閾値変更可能にした。
+- Intel profile（Python 3.12.13）、Arc 140T、180秒WAV、large-v3-turbo-q5_0、単語TSなしで
+  warmup 1 + 3回測定。中央値はVulkan 20.488秒（8.787x）、ovvk 32.564秒（5.528x）。
+- モデル不要試験179件、ruff、mypyは合格。R-1の長時間対策別効果測定、R-4統合ハーネス、
+  R-5の25/50/100/150分測定は未完了であり、Phase 3d完了とは扱わない。
+
 ## 現在のフェーズと進捗
 
 - Phase 3受入試験（2026-08-04、`test/acceptance-phase3`）: P0合格。P1で`setup.ps1`が

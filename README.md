@@ -591,6 +591,27 @@ uv lock --check
 
 ## ライセンス
 
+## Phase 3dのハルシネーション対策とbenchmark
+
+whisper.cppでは無音時の反復を抑えるため、既定で`no_context = true`（`--max-context 0`）を
+使います。entropy/logprob/no-speech閾値と温度fallbackも設定可能です。Silero GGML VADは
+`vad = true`と`vad_model`のローカルパスを指定した場合だけ有効です。同一segment抑制は保険として
+`repetition_limit = 4`で、0なら無効です。抑制件数はwarningに残り、正当な相槌も除外し得ます。
+
+```console
+uv run utteran benchmark --audio sample.wav --variants vulkan,openvino_vulkan --json benchmark.json
+uv run utteran benchmark --audio sample.wav --variants vulkan,openvino_vulkan --apply
+```
+
+実データを暗黙利用しないためWAVは必須です。既定でwarmup 1回・計測3回の中央値を表示し、認識
+本文やジョブは保存しません。Intel Core Ultra 7 255H / Arc 140T、large-v3-turbo-q5_0、180秒
+WAV、単語TSなしの実測中央値はVulkan 20.488秒（8.787x）、OpenVINO+Vulkan 32.564秒
+（5.528x）でした。この条件と追加IR不要という運用コストからautoはVulkanを優先します。
+30秒・10分および長時間メモリ測定は未完了で、この値を他環境へ一般化しないでください。
+
+uvプロファイルのPythonは3.12.13です。システムPython 3.14.6を対応版として使っているわけでは
+なく、パッケージの対応範囲は引き続き3.11/3.12です。
+
 utteran のコードは [MIT License](LICENSE) です。Whisper、Kotoba Whisper、PyTorch、NVIDIA
 CUDAライブラリ、pyannote、OpenVINO 配布モデル、ffmpeg などには個別のライセンスと利用条件があります。特に pyannote
 community-1 は CC-BY-4.0 で、利用前にモデル利用条件への同意が必要です。Windows setup が
