@@ -39,7 +39,8 @@
 | P3 ネイティブビルド | 8 | 8 | 0 | 0 | 0 |
 | P4 モデルカタログ | 9 | 9 | 0 | 0 | 0 |
 | P5 OpenVINO IR変換 | 9 | 9 | 0 | 0 | 0 |
-| **暫定合計** | **42** | **42** | **0** | **0** | **0** |
+| P6 whisper.cpp ASR | 9 | 8 | 1 | 0 | 0 |
+| **暫定合計** | **51** | **50** | **1** | **0** | **0** |
 
 ### P0 疎通確認
 
@@ -97,6 +98,7 @@
 | P3-U-001 | `setup.ps1` のprofile検証・既定profile設定で日本語出力や非ASCIIパスが誤デコードされる | 高 | 子processをUTF-8固定し、環境変数を復元。実機再試験とモデル不要回帰試験に合格 | 失敗 `1a0c98e`／修正 `a5be140` |
 | P3-U-002 | native manifestの`cmake_flags`にprofile固有の絶対`OpenVINO_DIR`が保存される | 中 | 移植可能なplaceholderへ置換し、比較時も正規化 | 失敗 `96d74ff`／修正 `3be1a19` |
 | P3-U-003 | `native build --variant cpu --force`がmanifestをCPUだけで上書きし、未指定3構成を未試行扱いにする | 高 | 未指定backend/error entryを保持し、回帰試験追加 | 失敗 `8ab7c8a`／修正 `3be1a19` |
+| P3-U-004 | 未ビルドwhisper.cpp構成の指定時に`native build`の復旧案内が表示されない | 中 | 調査・修正中 | 失敗記録: 本コミット |
 
 ## 未修正のまま残した事項
 
