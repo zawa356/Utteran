@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from utteran.asr.whisper_cpp import (
+    WhisperCppBackend,
     _convert_result,
     _stage_model,
     build_command,
@@ -57,6 +58,35 @@ def test_missing_variant_error_includes_recovery_command() -> None:
     )
 
     assert "`utteran native build --variant {requested}`" in source
+
+
+def test_auto_gpu_initialization_failure_falls_back_once(tmp_path: Path) -> None:
+    vulkan = tmp_path / "vulkan" / "whisper-cli.exe"
+    openvino = tmp_path / "openvino" / "whisper-cli.exe"
+    for executable in (vulkan, openvino):
+        executable.parent.mkdir(parents=True)
+        executable.touch()
+    backend = WhisperCppBackend(allow_fallback=True)
+    backend._variant = "openvino_vulkan"
+    backend._backends = {
+        "vulkan": {"executable": str(vulkan)},
+        "openvino": {"executable": str(openvino)},
+    }
+
+    assert backend._fallback_variant("failed to initialize Vulkan device") == "vulkan"
+    backend._variant = "vulkan"
+    assert backend._fallback_variant("failed to initialize Vulkan device") == "openvino"
+
+
+def test_explicit_whisper_cpp_variant_does_not_fallback(tmp_path: Path) -> None:
+    fallback = tmp_path / "vulkan" / "whisper-cli.exe"
+    fallback.parent.mkdir(parents=True)
+    fallback.touch()
+    backend = WhisperCppBackend(allow_fallback=False)
+    backend._variant = "openvino_vulkan"
+    backend._backends = {"vulkan": {"executable": str(fallback)}}
+
+    assert backend._fallback_variant("failed to initialize Vulkan device") is None
 
 
 def test_model_and_openvino_ir_are_staged_together(tmp_path: Path) -> None:
