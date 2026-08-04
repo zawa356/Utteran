@@ -132,7 +132,7 @@ class PyannoteBackend(DiarizationBackend):
                     pipeline.to(torch.device(selected_device))
                 else:
                     raise
-        except (ConfigurationError, ModelNotFoundError):
+        except (BackendUnavailableError, ConfigurationError, ModelNotFoundError):
             raise
         except Exception as exc:
             _raise_backend_error("モデル読み込み", exc)

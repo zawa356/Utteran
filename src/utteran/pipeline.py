@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -139,6 +140,7 @@ def run_pipeline(
         diarization_backend=diarization_backend,
     )
     executed_stages: list[str] = []
+    stage_durations: dict[str, float] = {}
     try:
         job_log_level = "debug" if config.general.log_level == "debug" else "info"
         with job.lock(force=force_unlock), job_log(job.root / "utteran.log", job_log_level):
@@ -152,6 +154,7 @@ def run_pipeline(
                 pool,
                 selected_token_provider,
                 executed_stages,
+                stage_durations,
                 progress,
                 cancel,
             )
@@ -162,6 +165,7 @@ def run_pipeline(
                 output_paths=output_paths,
                 job_id=job.manifest.job_id,
                 executed_stages=tuple(executed_stages),
+                stage_durations=stage_durations,
             )
     finally:
         if owns_pool:
@@ -176,6 +180,7 @@ def _run_stages(
     pool: BackendPool,
     token_provider: TokenProvider,
     executed_stages: list[str],
+    stage_durations: dict[str, float],
     progress: ProgressCallback | None,
     cancel: CancelToken | None,
 ) -> PipelineResult:
@@ -190,6 +195,7 @@ def _run_stages(
             "audio",
             hashes["audio"],
             executed_stages,
+            stage_durations,
             cancel,
             lambda: normalize_audio(
                 input_path,
@@ -214,6 +220,7 @@ def _run_stages(
                 "asr",
                 hashes["asr"],
                 executed_stages,
+                stage_durations,
                 cancel,
                 lambda: _transcribe_asr(pool, config, job.audio_path, progress, cancel),
                 lambda value: [
@@ -239,6 +246,7 @@ def _run_stages(
                     "diarization",
                     hashes["diarization"],
                     executed_stages,
+                    stage_durations,
                     cancel,
                     lambda: pool.diarization(config).diarize(
                         job.audio_path,
@@ -259,6 +267,7 @@ def _run_stages(
                 "diarization",
                 hashes["diarization"],
                 executed_stages,
+                stage_durations,
                 cancel,
                 lambda: None,
                 lambda _value: [job.write_intermediate("diarization", None)],
@@ -275,6 +284,7 @@ def _run_stages(
                 "merge",
                 hashes["merge"],
                 executed_stages,
+                stage_durations,
                 cancel,
                 lambda: _merge_result(input_path, transcription, diarization, config, progress),
                 lambda value: [
@@ -289,6 +299,7 @@ def _run_stages(
             "export",
             hashes["export"],
             executed_stages,
+            stage_durations,
             cancel,
             lambda: _export_result(result, config, progress),
             lambda value: cast(list[Path], value),
@@ -303,6 +314,7 @@ def _execute_stage(
     stage: StageName,
     config_hash: str,
     executed_stages: list[str],
+    stage_durations: dict[str, float],
     cancel: CancelToken | None,
     operation: Callable[[], object],
     artifacts: Callable[[object], list[Path]],
@@ -312,12 +324,15 @@ def _execute_stage(
     job.start_stage(stage, config_hash)
     executed_stages.append(stage)
     logging.getLogger(__name__).info("ステージ開始: %s", stage)
+    started = time.perf_counter()
     try:
         value = operation()
         _check_cancel(cancel)
         paths = artifacts(value)
         job.complete_stage(stage, config_hash, paths)
-        logging.getLogger(__name__).info("ステージ完了: %s", stage)
+        elapsed = time.perf_counter() - started
+        stage_durations[stage] = elapsed
+        logging.getLogger(__name__).info("ステージ完了: %s (%.3f秒)", stage, elapsed)
         return value
     except (CancelledError, KeyboardInterrupt):
         job.interrupt_stage(stage)

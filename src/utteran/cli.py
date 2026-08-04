@@ -117,7 +117,15 @@ def transcribe(
         str | None, typer.Option("--diarization-model", help="話者分離モデル ID またはローカルパス")
     ] = None,
     device: Annotated[
-        str | None, typer.Option("--device", help="cpu、cuda、cuda:N、xpu、xpu:N、auto")
+        str | None,
+        typer.Option("--device", help="ASRと話者分離に共通の実行デバイス (互換用)"),
+    ] = None,
+    asr_device: Annotated[
+        str | None, typer.Option("--asr-device", help="ASRの実行デバイス/構成")
+    ] = None,
+    diarization_device: Annotated[
+        str | None,
+        typer.Option("--diarization-device", help="話者分離の実行デバイス"),
     ] = None,
     language: Annotated[
         str | None, typer.Option("--language", help="言語コードまたは auto (自動判定)")
@@ -167,6 +175,8 @@ def transcribe(
             diarization_backend=diarization_backend,
             diarization_model=diarization_model,
             device=device,
+            asr_device=asr_device,
+            diarization_device=diarization_device,
             language=language,
             num_speakers=num_speakers,
             min_speakers=min_speakers,
@@ -222,6 +232,7 @@ def transcribe(
                 force_unlock=force_unlock,
             )
             _print_batch_summary(summary)
+            _print_batch_stage_timings(summary)
             if summary.exit_code:
                 raise typer.Exit(code=summary.exit_code)
             return
@@ -253,6 +264,7 @@ def transcribe(
         console.print(f"ジョブ: {outcome.job_id} (完了済みのためスキップ)")
     for path in outcome.output_paths:
         console.print(f"出力: {path}")
+    _print_stage_timings(outcome.stage_durations)
 
 
 @app.command("devices")
@@ -956,6 +968,51 @@ def _print_batch_summary(summary: BatchSummary) -> None:
             console.print(f"[{style}]{item.status}:[/{style}] {item.path}: {item.reason}")
 
 
+def _print_batch_stage_timings(summary: BatchSummary) -> None:
+    """Print accumulated stage durations for all successfully completed batch items."""
+    totals: dict[str, float] = {}
+    for item in summary.items:
+        if item.outcome is None:
+            continue
+        for stage, duration in item.outcome.stage_durations.items():
+            totals[stage] = totals.get(stage, 0.0) + duration
+    _print_stage_timings(totals, title="フェーズ別処理時間 (一括合計)")
+
+
+def _print_stage_timings(
+    stage_durations: dict[str, float], *, title: str = "フェーズ別処理時間"
+) -> None:
+    """Print timings in pipeline order after all regular result output."""
+    if not stage_durations:
+        console.print(f"{title}: 今回実行したフェーズはありません。")
+        return
+    labels = {
+        "audio": "音声抽出・正規化",
+        "asr": "文字起こし (ASR)",
+        "diarization": "話者分離",
+        "merge": "話者割当・結合",
+        "export": "出力生成",
+    }
+    table = Table("フェーズ", "所要時間", title=title)
+    total = 0.0
+    for stage in ("audio", "asr", "diarization", "merge", "export"):
+        duration = stage_durations.get(stage)
+        if duration is None:
+            continue
+        total += duration
+        table.add_row(labels[stage], _format_duration(duration))
+    table.add_section()
+    table.add_row("実行フェーズ合計", _format_duration(total))
+    console.print(table)
+
+
+def _format_duration(seconds: float) -> str:
+    """Format elapsed seconds without losing sub-second stage visibility."""
+    hours, remainder = divmod(max(seconds, 0.0), 3600)
+    minutes, seconds_part = divmod(remainder, 60)
+    return f"{int(hours):02d}:{int(minutes):02d}:{seconds_part:06.3f}"
+
+
 def _print_device_report(report: DeviceReport) -> None:
     """Render a compact human-oriented device table."""
     table = Table("項目", "状態", "詳細")
@@ -1096,6 +1153,8 @@ def _cli_overrides(
     diarization_backend: str | None,
     diarization_model: str | None,
     device: str | None,
+    asr_device: str | None,
+    diarization_device: str | None,
     language: str | None,
     num_speakers: int | None,
     min_speakers: int | None,
@@ -1124,6 +1183,10 @@ def _cli_overrides(
     if device is not None:
         asr["device"] = device
         diarization["device"] = device
+    if asr_device is not None:
+        asr["device"] = asr_device
+    if diarization_device is not None:
+        diarization["device"] = diarization_device
     if language is not None:
         normalized_language = language.strip()
         asr["language"] = None if normalized_language.casefold() == "auto" else normalized_language

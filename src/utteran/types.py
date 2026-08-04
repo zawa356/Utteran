@@ -251,6 +251,7 @@ class PipelineOutcome:
     output_paths: list[Path]
     job_id: str | None = None
     executed_stages: tuple[str, ...] = ()
+    stage_durations: dict[str, float] = field(default_factory=dict)
 
 
 def _segment_from_dict(data: dict[str, Any]) -> Segment:

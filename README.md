@@ -327,6 +327,11 @@ uv run utteran transcribe recordings/ --recursive --dry-run
 拒否し、プロセスが存在しない古いロックは自動回収します。所有状況を確認したうえで解除する
 場合だけ `--force-unlock` を使用してください。
 
+処理完了時には、今回実行した音声抽出・正規化、文字起こし、話者分離、話者割当・結合、
+出力生成の所要時間と実行フェーズ合計を`HH:MM:SS.mmm`形式で表示します。resumeで再利用した
+フェーズは今回の合計に含めません。フォルダ一括処理では、成功した各ジョブの時間をフェーズ別に
+合算して表示します。`start.ps1`から実行した場合も、出力ファイル一覧の後にこの集計が表示されます。
+
 ```console
 uv run utteran transcribe meeting.mp4 --force
 uv run utteran transcribe meeting.mp4 --format txt
@@ -358,7 +363,9 @@ uv run utteran transcribe meeting.mp4 --format txt
 --asr-model ID_OR_PATH
 --diarization-backend pyannote
 --diarization-model ID_OR_PATH
---device auto|cpu|cuda|cuda:N
+--asr-device auto|cpu|cuda|cuda:N|openvino|vulkan|openvino_vulkan
+--diarization-device auto|cpu|cuda|cuda:N|xpu|xpu:N
+--device DEVICE  # 両方へ同じ値を指定する従来互換オプション
 --language CODE|auto
 --num-speakers N
 --min-speakers N
@@ -446,6 +453,12 @@ uv run utteran models list --available --all       # 英語専用を含む全GGM
 uv run utteran models download whisper-cpp:large-v3-turbo-q5_0
 uv run utteran transcribe input.wav --asr-backend whisper-cpp --asr-model large-v3-turbo-q5_0
 ```
+
+ASRと話者分離では対応デバイスが異なります。特にwhisper.cppの
+`openvino`／`vulkan`／`openvino_vulkan`はASR専用です。両方を使うIntel環境では、例えば
+`--asr-device openvino_vulkan --diarization-device auto`と指定します。Windows対話フロントは
+`devices --json`から両者を別々に提示するため、非対応のASR構成をpyannoteへ渡しません。
+既存の`--device`は互換性のため残り、指定値を両方へ適用します。
 
 | 構成 | 前提条件 |
 |---|---|

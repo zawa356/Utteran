@@ -2,6 +2,16 @@
 
 ## 現在のフェーズと進捗
 
+- 運用改善（2026-08-04）: pipelineの各実行ステージを`perf_counter`で計測し、正常完了時に
+  audio/asr/diarization/merge/exportと実行フェーズ合計を`HH:MM:SS.mmm`で最終表示するよう変更。
+  resume再利用ステージは除外し、フォルダ一括は成功ジョブ分をステージ別に合算する。
+- Phase 3c follow-up（2026-08-04）: Windows対話フロントがASR用`openvino_vulkan`を共通の
+  `--device`でpyannoteにも渡すため、話者分離モデル読み込み時に失敗する不具合を実会議ジョブで
+  特定。モデル単体のXPUロードと同ジョブの`auto`完走履歴からモデル破損ではないことを確認した。
+  `--asr-device`／`--diarization-device`を追加してメニュー選択を分離し、従来の`--device`は互換維持。
+  pyannoteの非対応デバイス例外を一般エラーへ潰さず、そのまま案内するよう修正した。実データの
+  内容および`.env`の値は参照・記録していない。同じジョブをASR=`openvino_vulkan`、話者分離=
+  `auto`でresumeし、audio/asr再利用、diarization/merge/export実行が230.4秒・exit 0で完走した。
 - Phase 3c Step 0（2026-08-03、分岐A）: 有効な`.env`トークンを値非参照のまま使用して
   community-1完全モデルを取得。Arc 140Tで`Pipeline.to(xpu:0)`と30秒実音声の実pipelineが
   環境変数fallbackなしで完走した。CPU/XPUはいずれも1話者・5区間で境界まで完全一致し、

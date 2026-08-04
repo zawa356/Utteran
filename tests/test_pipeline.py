@@ -220,8 +220,12 @@ def test_pipeline_resumes_and_output_change_runs_export_only(
     third = run_pipeline(input_path, changed, asr_backend=backend)
 
     assert first.executed_stages == ("audio", "asr", "diarization", "merge", "export")
+    assert tuple(first.stage_durations) == ("audio", "asr", "diarization", "merge", "export")
+    assert all(duration >= 0.0 for duration in first.stage_durations.values())
     assert second.executed_stages == ()
+    assert second.stage_durations == {}
     assert third.executed_stages == ("export",)
+    assert tuple(third.stage_durations) == ("export",)
     assert backend.transcribe_count == 1
     assert third.output_paths[0].suffix == ".md"
 

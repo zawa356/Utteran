@@ -490,6 +490,7 @@ function Start-TranscriptionWizard {
 
     $UseDiarization = Read-YesNo -Prompt "話者分離を使用しますか?" -DefaultYes $true
     $SelectedDiarizationModel = ""
+    $SelectedDiarizationDevice = "auto"
     $SpeakerSummary = "無効"
     $SpeakerMode = "auto"
     $ExactSpeakers = 0
@@ -497,6 +498,22 @@ function Start-TranscriptionWizard {
     $MaximumSpeakers = 0
     if ($UseDiarization) {
         $SelectedDiarizationModel = Select-DiarizationModel
+        $DiarizationDeviceItems = @("auto", "cpu") + @(
+            $DeviceReport.pytorch.cuda_devices |
+                Where-Object { $_.usable } | ForEach-Object { "cuda:$($_.index)" }
+        ) + @(
+            $DeviceReport.pytorch.xpu_devices |
+                Where-Object { $_.usable } | ForEach-Object { "xpu:$($_.index)" }
+        )
+        $DiarizationDeviceObjects = @(
+            $DiarizationDeviceItems | Select-Object -Unique | ForEach-Object {
+                [pscustomobject]@{ Name = $_ }
+            }
+        )
+        $SelectedDiarizationDevice = Select-DynamicValue `
+            -Title "話者分離デバイスを選択してください。" `
+            -Items $DiarizationDeviceObjects `
+            -Label { param($Item) $Item.Name } -Value { param($Item) $Item.Name }
         Write-Host "`n話者数を指定してください。" -ForegroundColor Cyan
         Write-Host "  1. 自動推定"
         Write-Host "  2. 正確な人数を指定"
@@ -533,7 +550,7 @@ function Start-TranscriptionWizard {
     $CommandArguments.Add($SelectedASRBackend)
     $CommandArguments.Add("--asr-model")
     $CommandArguments.Add($SelectedASRModel)
-    $CommandArguments.Add("--device")
+    $CommandArguments.Add("--asr-device")
     $CommandArguments.Add($SelectedDevice)
     $CommandArguments.Add("--language")
     $CommandArguments.Add($SelectedLanguage)
@@ -545,6 +562,8 @@ function Start-TranscriptionWizard {
         $CommandArguments.Add("pyannote")
         $CommandArguments.Add("--diarization-model")
         $CommandArguments.Add($SelectedDiarizationModel)
+        $CommandArguments.Add("--diarization-device")
+        $CommandArguments.Add($SelectedDiarizationDevice)
         if ($SpeakerMode -eq "2") {
             $CommandArguments.Add("--num-speakers")
             $CommandArguments.Add([string]$ExactSpeakers)
@@ -610,7 +629,10 @@ function Start-TranscriptionWizard {
     Write-Host "ASR: $SelectedASRBackend / $SelectedASRModel / $SelectedDevice"
     Write-Host "言語: $SelectedLanguage"
     if ($UseDiarization) {
-        Write-Host "話者分離: pyannote / $SelectedDiarizationModel / $SpeakerSummary"
+        Write-Host (
+            "話者分離: pyannote / $SelectedDiarizationModel / " +
+            "$SelectedDiarizationDevice / $SpeakerSummary"
+        )
     }
     else {
         Write-Host "話者分離: 無効"

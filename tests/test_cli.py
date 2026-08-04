@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 from utteran.batch import BatchItemResult, BatchSummary
 from utteran.cli import (
     _cli_overrides,
+    _format_duration,
     _parse_model_selection,
     _parse_variant_selection,
     _run_interruptibly,
@@ -119,6 +120,8 @@ def test_cli_overrides_support_language_auto_and_diarization_model() -> None:
         diarization_backend="pyannote",
         diarization_model="local-pyannote",
         device="auto",
+        asr_device=None,
+        diarization_device=None,
         language="auto",
         num_speakers=None,
         min_speakers=None,
@@ -139,6 +142,35 @@ def test_cli_overrides_support_language_auto_and_diarization_model() -> None:
         "model": "local-pyannote",
         "device": "auto",
     }
+
+
+def test_format_duration_keeps_hours_and_milliseconds() -> None:
+    assert _format_duration(0.125) == "00:00:00.125"
+    assert _format_duration(3661.5) == "01:01:01.500"
+
+
+def test_cli_overrides_support_separate_asr_and_diarization_devices() -> None:
+    overrides = _cli_overrides(
+        format_names=None,
+        output_dir=None,
+        asr_backend="whisper-cpp",
+        asr_model="large-v3-turbo-q5_0",
+        diarization_backend="pyannote",
+        diarization_model="local-pyannote",
+        device=None,
+        asr_device="openvino_vulkan",
+        diarization_device="xpu:0",
+        language="ja",
+        num_speakers=None,
+        min_speakers=None,
+        max_speakers=None,
+        no_diarization=False,
+        verbose=False,
+        quiet=False,
+    )
+
+    assert overrides["asr"]["device"] == "openvino_vulkan"
+    assert overrides["diarization"]["device"] == "xpu:0"
 
 
 def test_missing_hf_token_is_actionable_before_expensive_work(
