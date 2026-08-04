@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import locale
 import os
 import re
 import signal
@@ -20,6 +19,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CASES = Path(__file__).with_name("cases.json")
 DEFAULT_RESULTS = PROJECT_ROOT / "output" / "_acceptance" / "results.jsonl"
+LONG_GROUPS = {"G13", "P14"}
 _TOKEN_PATTERN = re.compile(r"\bhf_[A-Za-z0-9_-]{4,}\b")
 _ERROR_WORDS = ("error", "failed", "warning", "エラー", "失敗", "警告", "traceback")
 
@@ -328,7 +328,9 @@ def run_case(case: Case, results_path: Path) -> dict[str, Any]:
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "text": True,
-        "encoding": locale.getpreferredencoding(False),
+        # utteran and Python children emit UTF-8; locale decoding caused the
+        # mojibake that invalidated 47 legacy expectations on Japanese Windows.
+        "encoding": "utf-8",
         "errors": "replace",
     }
     if os.name == "nt":
@@ -424,6 +426,9 @@ def main() -> int:
         "--rerun", action="append", default=[], help="run only this ID, even if present"
     )
     parser.add_argument("--list", action="store_true", help="list selected cases without running")
+    parser.add_argument(
+        "--include-long", action="store_true", help="include endurance groups G13/P14"
+    )
     args = parser.parse_args()
 
     cases = load_cases(args.cases)
@@ -431,6 +436,8 @@ def main() -> int:
     reruns = set(args.rerun)
     if selected_groups:
         cases = [case for case in cases if case.group in selected_groups]
+    elif not args.include_long:
+        cases = [case for case in cases if case.group not in LONG_GROUPS]
     if reruns:
         known = {case.case_id for case in cases}
         missing = reruns - known

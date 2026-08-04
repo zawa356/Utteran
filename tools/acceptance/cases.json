@@ -1574,5 +1574,29 @@
     ],
     "expected_exit_codes": [0],
     "timeout_seconds": 600
+  },
+  {
+    "id": "P14-NO-DIAR",
+    "group": "P14",
+    "description": "Phase 3 long real-file run without diarization",
+    "command": ["{utteran}", "transcribe", "{actual}", "--output-dir", "{acceptance}/p14/no-diarization", "--format", "srt,vtt,json,txt,md", "--asr-backend", "whisper-cpp", "--asr-model", "large-v3-turbo-q5_0", "--asr-device", "vulkan", "--no-diarization", "--language", "ja", "--force", "--yes", "--quiet"],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 14400
+  },
+  {
+    "id": "P14-DIAR",
+    "group": "P14",
+    "description": "Phase 3 long real-file run with auto diarization",
+    "command": ["{utteran}", "transcribe", "{actual}", "--output-dir", "{acceptance}/p14/diarization", "--format", "srt,vtt,json,txt,md", "--asr-backend", "whisper-cpp", "--asr-model", "large-v3-turbo-q5_0", "--asr-device", "vulkan", "--diarization-device", "auto", "--language", "ja", "--force", "--yes", "--quiet"],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 14400
+  },
+  {
+    "id": "P14-RESUME",
+    "group": "P14",
+    "description": "Phase 3 long real-file identical resume",
+    "command": ["{utteran}", "transcribe", "{actual}", "--output-dir", "{acceptance}/p14/diarization", "--format", "srt,vtt,json,txt,md", "--asr-backend", "whisper-cpp", "--asr-model", "large-v3-turbo-q5_0", "--asr-device", "vulkan", "--diarization-device", "auto", "--language", "ja", "--yes", "--quiet"],
+    "expected_exit_codes": [0],
+    "timeout_seconds": 14400
   }
 ]
