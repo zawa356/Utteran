@@ -106,7 +106,7 @@ def test_device_detection_is_injectable_and_json_serializable(tmp_path: Path) ->
     assert '"logical_cores": 8' in encoded
 
 
-def test_auto_prefers_openvino_vulkan_when_cuda_is_unavailable(tmp_path: Path) -> None:
+def test_auto_prefers_vulkan_when_cuda_is_unavailable(tmp_path: Path) -> None:
     probes = DeviceProbeSet(
         cpu=lambda: CPUReport(8, 4, True, False),
         ctranslate2=lambda: CTranslate2Report(True, "test", ("int8",), 0, ()),
@@ -136,7 +136,7 @@ def test_auto_prefers_openvino_vulkan_when_cuda_is_unavailable(tmp_path: Path) -
 
     assert (selected.asr_backend, selected.asr_device) == (
         "whisper-cpp",
-        "openvino_vulkan",
+        "vulkan",
     )
     assert selected.diarization_device == "xpu:0"
     assert any("XPU" in note for note in selected.notes)

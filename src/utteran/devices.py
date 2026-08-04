@@ -612,14 +612,12 @@ def _auto_selection(
         except BackendUnavailableError as exc:
             notes.append(str(exc))
             asr_backend, asr_device, asr_compute = "faster-whisper", "cpu", "int8"
-    elif (
-        vulkan.runtime_available and openvino_gpu and native.variants.get("openvino_vulkan", False)
-    ):
-        asr_backend, asr_device, asr_compute = "whisper-cpp", "openvino_vulkan", "ggml"
-        notes.append("VulkanとOpenVINO GPUが利用可能なためopenvino_vulkanを選択しました。")
     elif vulkan.runtime_available and native.variants.get("vulkan", False):
         asr_backend, asr_device, asr_compute = "whisper-cpp", "vulkan", "ggml"
-        notes.append("Vulkanが利用可能なためvulkanを選択しました。")
+        notes.append("実機中央値と追加IR不要という運用コストからvulkanを選択しました。")
+    elif openvino_gpu and native.variants.get("openvino_vulkan", False):
+        asr_backend, asr_device, asr_compute = "whisper-cpp", "openvino_vulkan", "ggml"
+        notes.append("Vulkan単独が利用できないためopenvino_vulkanを選択しました。")
     elif openvino_gpu and native.variants.get("openvino", False):
         asr_backend, asr_device, asr_compute = "whisper-cpp", "openvino", "ggml"
         notes.append("OpenVINO GPUが利用可能なためopenvinoを選択しました。")
