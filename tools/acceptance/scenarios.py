@@ -518,7 +518,7 @@ def validate_readme_commands(
         ([*prefix, "transcribe", batch_input, "--recursive", "--dry-run"], 0),
         ([*prefix, "transcribe", file_input, "--force", "--dry-run"], 0),
         ([*prefix, "transcribe", file_input, "--format", "txt", "--dry-run"], 0),
-        ([*prefix, "models", "download"], 2),
+        ([*prefix, "models", "download"], 1),
         ([*prefix, "models", "list", "--available"], 0),
         ([*prefix, "models", "download", "faster-whisper:large-v3-turbo"], 0),
         ([*prefix, "models", "download", "faster-whisper:kotoba-whisper-v2.0"], 0),

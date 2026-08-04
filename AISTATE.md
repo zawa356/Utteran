@@ -34,7 +34,7 @@
   XPU OOM変換、`unload()`のXPU cache解放、devices JSON/表示を実装。対象14テスト、ruff、mypy合格。
 
 - Phase 3b（whisper.cpp ASR）: `feature/phase3b-whisper-cpp`でStep 1〜7を実装・Intel実機検証済み。
-  pyannote gated実モデルとの結合比較だけは本機のモデル/token不在で保留。最終品質ゲート中。
+  当時保留したpyannote gated実モデルとの結合比較はPhase 3受入試験P9/P10/P14で解消した。
 - Phase 3b Step 2調査: 2026-08-03にHugging Face APIの`ggerganov/whisper.cpp` siblingsを
   取得し、実在するGGML 33ファイルとbyteサイズを確認して登録した。v1.9.1
   (`f049fff...`)の`cli.cpp`はOpenVINO deviceの`--ov-e-device`だけを公開し、IR pathには
@@ -72,8 +72,7 @@
     62.719/57.674、vulkan 40.863/30.699、ovvk 33.585/26.421。全exit 0。faster-whisper CPU
     （既存どおりTSあり）は178.344秒。ovvkのTSなしはありより約21%高速。
   - 実機`devices`はautoをwhisper-cpp/openvino_vulkanと理由付き選択し、auto E2Eも成功。
-  - community-1モデルと有効gated tokenが本機にないため、pyannote実モデルとの結合比較だけは
-    未実施。segment fallbackと結合経路はモデル不要試験で確認済みとして保留する。
+  - 当時未実施だったcommunity-1実モデルとの結合比較は、後続のPhase 3cとPhase 3受入試験で解消した。
 
 - Phase 1（骨格と最小動作）: 実装完了。受入試験でfaster-whisperとgated pyannoteの
   CPU/CUDA実モデルE2E、5形式出力を検証済み。
@@ -757,31 +756,12 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
 ## 未解決の課題・保留事項
 
 - 受入試験で確認された未修正の製品不具合はない。
-- pyannote実モデルE2EはCPU/CUDA、固定／範囲／自動話者数、3分／約2時間19分で検証済み。
-- large-v3-turbo実モデルE2EはCPU/CUDA、短時間／約2時間19分で検証済み。
-- 登録カタログに小容量モデルがないため、G6の削除→再取得→再削除は条件不成立。導入済み
-  大容量モデルを試験だけのために削除しなかった。
-- G12のExplorer起動、setup profile切替、破壊的確認はコード監査と非破壊dry-runまで。
-- 約2時間19分のCPU耐久はCUDA成功時には不要という指示に従い未実施。
+- Phase 3受入試験P0〜P14はIntel実機で完了。pyannote community-1のCPU/XPU、固定／自動話者数、
+  複数話者CPU/XPU完全一致、whisper.cpp 4構成、OpenVINO IR、結合、回帰、性能、耐久を検証済み。
+- `cuda`profileは本機にNVIDIA GPUがないため、仕様どおりvenvを作成せずhardware不在の未検証として残す。
+- P12の外部UI操作と対話入力は、Parser、動的option生成、command mapping、dry-run経路のコード監査まで。
+- P14の実入力は仕様想定の約2時間20分ではなく24分46秒。存在する実ファイル全長では耐久合格した。
 - 実文字起こし本文の意味的評価は利用者確認事項。構造・時刻・言語・重複・空欄・話者統計は合格。
-- Phase 3aはPhase 1/2のような専用受入試験（G0〜G14相当）を実施していない。cpuプロファイルの
-  実モデルend-to-end（実取得・ASR実行・レジューム・models/jobs/config/devices）は
-  `run.ps1`経由で実機確認済み（上記参照）。一方、start.ps1のプロファイル管理メニュー自体の
-  対話実行、`cuda`/`intel`/`vulkan`各プロファイルの実機フルセットアップ（本機はNVIDIA GPU
-  なしのためcuda未検証、intel/vulkanはネイティブビルドと一部probeのみ検証）は未実施。
-  次セッションでの正式な受入試験を推奨。
-- `cuda`プロファイルは本機（NVIDIA GPUなし）ではvenv作成してもprobeが必ず失敗するため、
-  利用者確認のうえ作成・検証しなかった（未検証のまま）。
-- 話者分離付き文字起こしの実パイプライン実行は、本機に有効なpyannote community-1の
-  gatedトークンがなく未検証。`models download`が「トークン未設定」exit 2で正しく失敗する
-  ことと、pyannote.audio 4.0.7・torch 2.11.0+cpuがcpuプロファイルで正常にimportでき
-  `PyannoteBackend.is_available()`がTrueであることは確認した。Phase 1/2の受入試験
-  （別マシン、G3等）でこの経路自体は実モデルE2E検証済みのため、Phase 3aの環境分離が
-  この経路を壊していないと判断する根拠は十分とみるが、実トークンでの最終確認は
-  次セッションを推奨する。
-- pyannote 4.0.7のtorch XPU上での完全E2E（community-1実パイプライン）は本機に有効な
-  gatedモデルトークンがなく未検証（I-6参照）。基本演算（Conv1d/LSTM/InstanceNorm1d）の
-  XPU実行は実機確認済み。Phase 3cの課題として残す。
 - `device = "auto"`のまま複数プロファイルで同一ジョブを共有した場合、config_hashが
   実際に使用されるハードウェアの変化を検知できない制約（19.5節）は、レジューム機構への
   影響範囲を考慮し今回は解消せず、要件定義への明記のみで対応した。利用者が実運用で
@@ -919,18 +899,10 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
 
 ## 次に着手すべきこと
 
-- 受入報告に記載した品質確認用成果物を、必要に応じて利用者が意味的に目視確認する。
-- Phase 3へ進む場合は、`docs/受入試験報告.md`の性能値・未実施事項と本ファイルを起点にする。
-- `output/_testdata/`は再試験不要になった時点で削除可能。2時間jobは指示により削除しない。
-- Phase 3aの専用受入試験（G0〜G14に相当する形式的な試験・報告書）は未実施。特に
-  `cuda`プロファイルの実機検証（NVIDIA GPU搭載機が必要）、`intel`/`vulkan`プロファイルの
-  フルセットアップ実機検証、`start.ps1`プロファイル管理メニューの対話実行確認、
-  4プロファイル同時作成時のディスク使用量実測が推奨される。
-- Phase 3bは実装・Intel実機検証完了。次は保留したcommunity-1との結合E2Eを有効token環境で
-  実施するか、Phase 3c（torch XPU話者分離）へ進む。Phase 3a専用の形式的受入報告は引き続き
-  未作成だが、Phase 3bでIntel native 4構成と既存faster-whisper回帰は実測済み。
-- Phase 3c（torch XPUによる話者分離）着手時はI-6（community-1実パイプラインの
-  XPU完全E2E未検証）を参照すること。
+- `docs/受入試験報告_Phase3.md`の品質確認用成果物を、必要に応じて利用者が意味的に目視確認する。
+- NVIDIA搭載機を利用できる場合だけ、hardware不在で対象外とした`cuda`profileを別途検証する。
+- Phase 3は受入完了。次の開発作業は要件定義のPhase 4（長時間分割、メモリ監視、eval、CI、公開準備）。
+- `output/_testdata/`と`output/_acceptance_p3/`は再試験用に保持。不要になった時点で手動削除できる。
 
 ## 既知の落とし穴・回避方法
 
