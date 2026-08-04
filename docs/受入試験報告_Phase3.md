@@ -112,7 +112,7 @@
 | P3-U-001 | `setup.ps1` のprofile検証・既定profile設定で日本語出力や非ASCIIパスが誤デコードされる | 高 | 子processをUTF-8固定し、環境変数を復元。実機再試験とモデル不要回帰試験に合格 | 失敗 `1a0c98e`／修正 `a5be140` |
 | P3-U-002 | native manifestの`cmake_flags`にprofile固有の絶対`OpenVINO_DIR`が保存される | 中 | 移植可能なplaceholderへ置換し、比較時も正規化 | 失敗 `96d74ff`／修正 `3be1a19` |
 | P3-U-003 | `native build --variant cpu --force`がmanifestをCPUだけで上書きし、未指定3構成を未試行扱いにする | 高 | 未指定backend/error entryを保持し、回帰試験追加 | 失敗 `8ab7c8a`／修正 `3be1a19` |
-| P3-U-004 | 未ビルドwhisper.cpp構成の指定時に`native build`の復旧案内が表示されない | 中 | 構成名入りの復旧コマンドを追加 | 失敗 `e95fc95`／修正: 本コミット |
+| P3-U-004 | 未ビルドwhisper.cpp構成の指定時に`native build`の復旧案内が表示されない | 中 | 構成名入りの復旧コマンドを追加 | 失敗 `e95fc95`／修正 `4e5967c` |
 
 ## 未修正のまま残した事項
 
