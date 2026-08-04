@@ -353,6 +353,9 @@ def _convert_result(
     dtw_found = False
     discarded_segments = 0
     discarded_words = 0
+    discarded_repetitions = 0
+    previous_text = ""
+    consecutive_repetitions = 0
     for raw in data.get("transcription", []):
         offsets = raw.get("offsets", {})
         start = float(offsets.get("from", 0)) / 1000.0
@@ -367,12 +370,24 @@ def _convert_result(
         )
         words = [word for word in converted_words if word.end > word.start]
         discarded_words += len(converted_words) - len(words)
-        segments.append(Segment(start, end, str(raw.get("text", "")), words))
-    if discarded_segments or discarded_words:
+        text = str(raw.get("text", ""))
+        normalized_text = text.strip()
+        if normalized_text and normalized_text == previous_text:
+            consecutive_repetitions += 1
+        else:
+            previous_text = normalized_text
+            consecutive_repetitions = 1
+        if normalized_text and consecutive_repetitions >= 5:
+            discarded_repetitions += 1
+            continue
+        segments.append(Segment(start, end, text, words))
+    if discarded_segments or discarded_words or discarded_repetitions:
         logging.getLogger(__name__).warning(
-            "whisper.cppのゼロ長時刻を除外しました: segments=%d, words=%d",
+            "whisper.cppの無効出力を除外しました: zero_segments=%d, zero_words=%d, "
+            "repeated_segments=%d",
             discarded_segments,
             discarded_words,
+            discarded_repetitions,
         )
     if requested_words and not dtw_found:
         logging.getLogger(__name__).warning(

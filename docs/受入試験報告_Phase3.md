@@ -160,7 +160,7 @@
 | P3-U-003 | `native build --variant cpu --force`がmanifestをCPUだけで上書きし、未指定3構成を未試行扱いにする | 高 | 未指定backend/error entryを保持し、回帰試験追加 | 失敗 `8ab7c8a`／修正 `3be1a19` |
 | P3-U-004 | 未ビルドwhisper.cpp構成の指定時に`native build`の復旧案内が表示されない | 中 | 構成名入りの復旧コマンドを追加 | 失敗 `e95fc95`／修正 `4e5967c` |
 | P3-U-005 | 長時間whisper.cpp出力に`start == end`のゼロ長segment/wordが混ざり、時刻品質基準に違反する | 高 | 共通型変換でゼロ長を除外し、segment fallback。回帰試験追加 | 失敗 `599ae9c`／修正: 本コミット |
-| P3-U-006 | 長時間・単語TSなしのwhisper.cppが同一segmentを最大72回連続生成する | 高 | 調査・修正中 | 失敗記録: 本コミット |
+| P3-U-006 | 長時間・単語TSなしのwhisper.cppが同一segmentを最大72回連続生成する | 高 | 完全一致の5回目以降を抑制し最大4回へ制限。回帰試験追加 | 失敗 `4c4c1ea`／修正: 本コミット |
 
 ### P11 既存機能の回帰
 

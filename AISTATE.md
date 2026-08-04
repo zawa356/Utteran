@@ -12,6 +12,8 @@
   P6で未ビルドwhisper.cpp構成のエラーに`native build --variant`案内がない問題を検出・修正。
   P14（本機の実ファイルは仕様想定2時間20分でなく24分46秒）でwhisper.cppのゼロ長segment/wordを
   検出。共通型変換で除外してsegment fallbackする修正と回帰試験を追加し、長時間再試験対象とした。
+  再試験でゼロ長は0件になったが、TSなしASRに同一segment最大72連続を検出。5回目以降の完全一致
+  segmentを抑制する回帰を追加し、P14話者分離なしだけ再試験対象とした。
 - 運用改善（2026-08-04）: pipelineの各実行ステージを`perf_counter`で計測し、正常完了時に
   audio/asr/diarization/merge/exportと実行フェーズ合計を`HH:MM:SS.mmm`で最終表示するよう変更。
   resume再利用ステージは除外し、フォルダ一括は成功ジョブ分をステージ別に合算する。

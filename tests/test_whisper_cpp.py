@@ -157,3 +157,25 @@ def test_convert_result_discards_zero_length_segments_and_words() -> None:
     assert len(result.segments) == 1
     assert (result.segments[0].start, result.segments[0].end) == (1.0, 2.0)
     assert result.segments[0].words == []
+
+
+def test_convert_result_limits_identical_consecutive_segments_to_four() -> None:
+    entry = get_model("whisper-cpp:base")
+    transcription = [
+        {
+            "offsets": {"from": index * 1000, "to": (index + 1) * 1000},
+            "text": " repeated ",
+            "tokens": [],
+        }
+        for index in range(8)
+    ]
+
+    result = _convert_result(
+        {"result": {"language": "ja"}, "transcription": transcription},
+        entry,
+        "cpu",
+        False,
+    )
+
+    assert len(result.segments) == 4
+    assert [segment.start for segment in result.segments] == [0.0, 1.0, 2.0, 3.0]
