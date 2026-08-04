@@ -169,9 +169,23 @@ function Set-DefaultProfileInConfig {
     if ($null -eq $UvCommand) {
         throw "uv が見つかりません。"
     }
-    $ConfigPathText = (& $UvCommand.Source run --no-sync utteran config path | Out-String).Trim()
-    if (-not (Test-Path -LiteralPath $ConfigPathText -PathType Leaf)) {
-        & $UvCommand.Source run --no-sync utteran config init | Out-Null
+    $HadPythonIoEncoding = Test-Path Env:PYTHONIOENCODING
+    $PreviousPythonIoEncoding = $env:PYTHONIOENCODING
+    try {
+        $env:PYTHONIOENCODING = "utf-8"
+        $ConfigPathText = (& $UvCommand.Source run --no-sync utteran config path |
+            Out-String).Trim()
+        if (-not (Test-Path -LiteralPath $ConfigPathText -PathType Leaf)) {
+            & $UvCommand.Source run --no-sync utteran config init | Out-Null
+        }
+    }
+    finally {
+        if ($HadPythonIoEncoding) {
+            $env:PYTHONIOENCODING = $PreviousPythonIoEncoding
+        }
+        else {
+            Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
+        }
     }
     $Content = Get-Content -LiteralPath $ConfigPathText -Raw -Encoding UTF8
     if ($Content -match '(?m)^\s*default_profile\s*=.*$') {
@@ -391,7 +405,26 @@ function Invoke-ProfileSetup {
     }
     else {
         try {
-            $DeviceText = (& $script:UvCommand.Source run --no-sync utteran devices --json | Out-String)
+            # Python selects the active Windows code page when stdout is piped.  The
+            # JSON contains Japanese notes and non-ASCII user paths, so decoding a
+            # cp932 stream as UTF-8 can turn a path separator into an invalid `\�`
+            # JSON escape.  Force the child process boundary to UTF-8 and restore
+            # the caller's environment afterwards.
+            $HadPythonIoEncoding = Test-Path Env:PYTHONIOENCODING
+            $PreviousPythonIoEncoding = $env:PYTHONIOENCODING
+            try {
+                $env:PYTHONIOENCODING = "utf-8"
+                $DeviceText = (& $script:UvCommand.Source run --no-sync utteran devices --json |
+                    Out-String)
+            }
+            finally {
+                if ($HadPythonIoEncoding) {
+                    $env:PYTHONIOENCODING = $PreviousPythonIoEncoding
+                }
+                else {
+                    Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
+                }
+            }
             if ($LASTEXITCODE -ne 0) {
                 throw "utteran devices --json failed (exit $LASTEXITCODE)"
             }
@@ -435,9 +468,23 @@ function Invoke-ProfileSetup {
                 # vulkan
                 $ProfileVerificationSucceeded = Invoke-VulkanPrerequisiteCheck -VenvPath $VenvPath
             }
-            & $script:UvCommand.Source run --no-sync utteran devices
-            if ($LASTEXITCODE -ne 0) {
-                throw "utteran devices failed (exit $LASTEXITCODE)"
+            $HadPythonIoEncoding = Test-Path Env:PYTHONIOENCODING
+            $PreviousPythonIoEncoding = $env:PYTHONIOENCODING
+            try {
+                $env:PYTHONIOENCODING = "utf-8"
+                & $script:UvCommand.Source run --no-sync utteran devices
+                $DeviceExitCode = $LASTEXITCODE
+            }
+            finally {
+                if ($HadPythonIoEncoding) {
+                    $env:PYTHONIOENCODING = $PreviousPythonIoEncoding
+                }
+                else {
+                    Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
+                }
+            }
+            if ($DeviceExitCode -ne 0) {
+                throw "utteran devices failed (exit $DeviceExitCode)"
             }
         }
         catch {

@@ -125,3 +125,14 @@ def test_list_profile_statuses_reports_existence_size_and_timestamp(tmp_path: Pa
     assert by_name["cuda"].exists is False
     assert by_name["cuda"].size_bytes is None
     assert isinstance(by_name["cpu"], ProfileStatus)
+
+def test_setup_forces_utf8_for_devices_json() -> None:
+    setup_script = (Path(__file__).parents[1] / "setup.ps1").read_text(encoding="utf-8")
+
+    json_call = setup_script.index("utteran devices --json")
+    encoding_assignment = setup_script.index('$env:PYTHONIOENCODING = "utf-8"')
+    json_parse = setup_script.index("ConvertFrom-Json", json_call)
+
+    assert encoding_assignment < json_call < json_parse
+    assert "Remove-Item Env:PYTHONIOENCODING" in setup_script[json_call:json_parse]
+    assert setup_script.count('$env:PYTHONIOENCODING = "utf-8"') == 3
