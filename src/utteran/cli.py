@@ -19,6 +19,7 @@ from rich.table import Table
 
 from utteran.audio import find_ffmpeg
 from utteran.batch import BatchSummary, discover_inputs, run_batch
+from utteran.benchmark import apply_variant, run_benchmark, wav_duration
 from utteran.config import (
     Config,
     TokenProvider,
@@ -72,6 +73,73 @@ error_console = Console(stderr=True)
 @app.callback()
 def main() -> None:
     """Run the utteran command group."""
+
+
+@app.command()
+def benchmark(
+    audio: Annotated[Path, typer.Option("--audio", help="測定用WAV (実データは明示指定)")],
+    variants: Annotated[
+        str, typer.Option(help="構成名のカンマ区切り")
+    ] = "cpu,openvino,vulkan,openvino_vulkan,faster-whisper",
+    word_timestamps: Annotated[str, typer.Option(help="auto|always|never")] = "auto",
+    repeat: Annotated[int, typer.Option(min=1)] = 3,
+    warmup: Annotated[int, typer.Option(min=0)] = 1,
+    json_path: Annotated[Path | None, typer.Option("--json", help="JSON出力先")] = None,
+    apply: Annotated[bool, typer.Option("--apply", help="最速whisper.cpp構成を設定へ保存")] = False,
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """Measure ASR variants without creating pipeline jobs or retaining recognized text."""
+    if word_timestamps not in {"auto", "always", "never"}:
+        raise typer.BadParameter(
+            "auto|always|neverを指定してください", param_hint="--word-timestamps"
+        )
+    selected = tuple(item.strip() for item in variants.split(",") if item.strip())
+    config = Config.load(config_path=config_path)
+    console.print("他の高負荷処理を停止してください。結果に文字起こし内容は保存しません。")
+    try:
+        results = run_benchmark(
+            config,
+            audio,
+            selected,
+            word_timestamps=word_timestamps == "always",
+            repeat=repeat,
+            warmup=warmup,
+        )
+    except (OSError, ValueError, UtteranError) as exc:
+        error_console.print(f"エラー: {mask_secrets(str(exc))}")
+        raise typer.Exit(3) from None
+    if not results:
+        error_console.print("エラー: 指定した構成に利用可能なバックエンド/モデルがありません。")
+        raise typer.Exit(3)
+    table = Table("構成", "中央値", "load中央値", "実時間比", "peak RAM")
+    for result in results:
+        peak = (
+            "取得不可"
+            if result.peak_ram_bytes is None
+            else f"{result.peak_ram_bytes / 1024**3:.2f} GiB"
+        )
+        table.add_row(
+            result.variant,
+            f"{result.median_total_seconds:.3f}s",
+            f"{result.median_load_seconds:.3f}s",
+            f"{result.realtime_factor:.3f}x",
+            peak,
+        )
+    console.print(table)
+    payload = {
+        "audio_duration_seconds": wav_duration(audio),
+        "results": [item.as_dict() for item in results],
+    }
+    if json_path is not None:
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    if apply:
+        candidates = [item for item in results if item.variant != "faster-whisper"]
+        if not candidates:
+            raise typer.BadParameter("--applyにはwhisper.cpp構成が必要です")
+        fastest = min(candidates, key=lambda item: item.median_total_seconds)
+        apply_variant(config_path or default_config_path(), fastest.variant)
+        console.print(f"設定へ適用しました: {fastest.variant}")
 
 
 class RichProgressReporter:
