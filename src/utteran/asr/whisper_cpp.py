@@ -101,7 +101,10 @@ class WhisperCppBackend(ASRBackend):
         backend = backends.get(requested)
         executable = backend.get("executable") if isinstance(backend, dict) else None
         if not executable or not Path(str(executable)).is_file():
-            raise BackendUnavailableError(f"whisper.cpp構成を利用できません: {requested}")
+            raise BackendUnavailableError(
+                f"whisper.cpp構成を利用できません: {requested}。"
+                f"`utteran native build --variant {requested}`を実行してください。"
+            )
         self._entry = entry
         self._model_path = model_path
         self._executable = Path(str(executable))

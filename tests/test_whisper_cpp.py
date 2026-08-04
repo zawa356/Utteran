@@ -51,6 +51,14 @@ def test_gpu_initialization_failure_patterns_are_bounded() -> None:
     assert not is_gpu_initialization_failure("model file has invalid magic")
 
 
+def test_missing_variant_error_includes_recovery_command() -> None:
+    source = (Path(__file__).parents[1] / "src" / "utteran" / "asr" / "whisper_cpp.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "`utteran native build --variant {requested}`" in source
+
+
 def test_model_and_openvino_ir_are_staged_together(tmp_path: Path) -> None:
     source_dir = tmp_path / "日本語"
     source_dir.mkdir()
