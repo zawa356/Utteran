@@ -39,6 +39,8 @@ def test_build_command_enables_dtw_only_when_words_requested(tmp_path: Path) -> 
     assert with_words[-3:] == ["--dtw", "large.v3.turbo", "--no-flash-attn"]
     assert "-oved" in with_words and "--device" in with_words
     assert "--dtw" not in without_words and "--no-flash-attn" not in without_words
+    assert with_words[with_words.index("--max-context") + 1] == "0"
+    assert "--entropy-thold" in with_words
 
 
 def test_parse_progress_is_injectable() -> None:
@@ -179,3 +181,19 @@ def test_convert_result_limits_identical_consecutive_segments_to_four() -> None:
 
     assert len(result.segments) == 4
     assert [segment.start for segment in result.segments] == [0.0, 1.0, 2.0, 3.0]
+
+
+def test_convert_result_repetition_guard_can_be_disabled() -> None:
+    entry = get_model("whisper-cpp:base")
+    transcription = [
+        {"offsets": {"from": i * 1000, "to": (i + 1) * 1000}, "text": " yes", "tokens": []}
+        for i in range(7)
+    ]
+    result = _convert_result(
+        {"result": {"language": "ja"}, "transcription": transcription},
+        entry,
+        "cpu",
+        False,
+        repetition_limit=0,
+    )
+    assert len(result.segments) == 7

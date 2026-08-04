@@ -168,7 +168,13 @@ class WhisperCppBackend(ASRBackend):
                     "whisper-cliがJSONを生成しませんでした: " + mask_secrets(stderr[-500:])
                 )
             data = json.loads(output_path.read_text(encoding="utf-8"))
-        return _convert_result(data, self._entry, self._device, options.word_timestamps)
+        return _convert_result(
+            data,
+            self._entry,
+            self._device,
+            options.word_timestamps,
+            repetition_limit=self.settings.repetition_limit,
+        )
 
     def unload(self) -> None:
         self._entry = None
@@ -221,6 +227,40 @@ def build_command(
         command.extend(["-t", str(settings.threads)])
     if options.initial_prompt:
         command.extend(["--prompt", options.initial_prompt])
+    if settings.no_context:
+        command.extend(["--max-context", "0"])
+    command.extend(
+        [
+            "--entropy-thold",
+            str(settings.entropy_threshold),
+            "--logprob-thold",
+            str(settings.logprob_threshold),
+            "--no-speech-thold",
+            str(settings.no_speech_threshold),
+            "--temperature",
+            str(settings.temperature),
+            "--temperature-inc",
+            str(settings.temperature_increment),
+        ]
+    )
+    if settings.vad:
+        if settings.vad_model is None:
+            raise ModelNotFoundError(
+                "whisper.cpp VADが有効ですがvad_modelが未設定です。"
+                "Silero GGML VADモデルを取得し[asr.whisper_cpp].vad_modelへ指定してください。"
+            )
+        vad_model = settings.vad_model.expanduser().resolve()
+        if not vad_model.is_file():
+            raise ModelNotFoundError(f"whisper.cpp VADモデルが見つかりません: {vad_model}")
+        command.extend(
+            [
+                "--vad",
+                "--vad-model",
+                str(vad_model),
+                "--vad-threshold",
+                str(settings.vad_threshold),
+            ]
+        )
     if variant in {"openvino", "openvino_vulkan"}:
         command.extend(["-oved", "GPU"])
     if variant == "cpu":
@@ -347,7 +387,12 @@ def _link_or_copy(source: Path, destination: Path) -> None:
 
 
 def _convert_result(
-    data: dict[str, Any], entry: ModelEntry, device: str, requested_words: bool
+    data: dict[str, Any],
+    entry: ModelEntry,
+    device: str,
+    requested_words: bool,
+    *,
+    repetition_limit: int = 4,
 ) -> TranscriptionResult:
     segments: list[Segment] = []
     dtw_found = False
@@ -377,17 +422,18 @@ def _convert_result(
         else:
             previous_text = normalized_text
             consecutive_repetitions = 1
-        if normalized_text and consecutive_repetitions >= 5:
+        if repetition_limit and normalized_text and consecutive_repetitions > repetition_limit:
             discarded_repetitions += 1
             continue
         segments.append(Segment(start, end, text, words))
     if discarded_segments or discarded_words or discarded_repetitions:
         logging.getLogger(__name__).warning(
             "whisper.cppの無効出力を除外しました: zero_segments=%d, zero_words=%d, "
-            "repeated_segments=%d",
+            "repeated_segments=%d (repetition_limit=%d; 正当な反復も除外される可能性があります)",
             discarded_segments,
             discarded_words,
             discarded_repetitions,
+            repetition_limit,
         )
     if requested_words and not dtw_found:
         logging.getLogger(__name__).warning(
@@ -408,7 +454,7 @@ def _convert_result(
 
 
 def _choose_variant(backends: dict[str, Any]) -> str:
-    for name in ("openvino_vulkan", "vulkan", "openvino", "cpu"):
+    for name in ("vulkan", "openvino_vulkan", "openvino", "cpu"):
         entry = backends.get(name)
         if isinstance(entry, dict) and Path(str(entry.get("executable", ""))).is_file():
             return name

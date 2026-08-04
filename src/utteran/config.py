@@ -48,6 +48,16 @@ word_timestamps = "auto"
 variant = "auto"
 dtw = "auto"
 threads = 0
+no_context = true
+vad = false
+vad_model = ""
+vad_threshold = 0.5
+entropy_threshold = 2.4
+logprob_threshold = -1.0
+no_speech_threshold = 0.6
+temperature = 0.0
+temperature_increment = 0.2
+repetition_limit = 4
 
 [diarization]
 enabled = true
@@ -111,6 +121,21 @@ class WhisperCppConfig(BaseModel):
     variant: Literal["auto", "cpu", "openvino", "vulkan", "openvino_vulkan"] = "auto"
     dtw: str = "auto"
     threads: int = Field(default=0, ge=0)
+    no_context: bool = True
+    vad: bool = False
+    vad_model: Path | None = None
+    vad_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    entropy_threshold: float = 2.4
+    logprob_threshold: float = -1.0
+    no_speech_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+    temperature_increment: float = Field(default=0.2, ge=0.0, le=1.0)
+    repetition_limit: int = Field(default=4, ge=0)
+
+    @field_validator("vad_model", mode="before")
+    @classmethod
+    def empty_vad_model_is_unset(cls, value: object) -> object:
+        return None if value == "" else value
 
 
 class ASRConfig(BaseModel):

@@ -19,6 +19,8 @@ def test_whisper_cpp_defaults() -> None:
     assert config.asr.word_timestamps == "auto"
     assert config.asr.whisper_cpp.variant == "auto"
     assert config.asr.whisper_cpp.dtw == "auto"
+    assert config.asr.whisper_cpp.no_context is True
+    assert config.asr.whisper_cpp.repetition_limit == 4
 
 
 def test_config_priority_cli_env_dotenv_toml_defaults(
