@@ -547,6 +547,20 @@ Windows 11、Intel Core Ultra 7 255H、Intel Arc 140T iGPU、large-v3-turbo-q5_0
 OpenVINO+Vulkanが最速で、単語TSなしはありより約21%高速でした。CPU auto fallbackを
 faster-whisperのままにする判断とも整合します。
 
+Phase 3受入試験では実会議から内容を記録せず生成した180秒fixtureで再測定しました。
+
+| 構成 | 単語TSあり | 単語TSなし |
+|---|---:|---:|
+| whisper-cpp / CPU | 207.425秒 | 171.427秒 |
+| whisper-cpp / OpenVINO | 36.328秒 | 33.939秒 |
+| whisper-cpp / Vulkan | 22.340秒 | 17.194秒 |
+| whisper-cpp / OpenVINO+Vulkan | 23.734秒 | 18.403秒 |
+| faster-whisper / CPU | 90.826秒 | 非対応（既存経路は常時取得） |
+
+同じ3分の複数話者fixtureに対するpyannoteはCPU 106.681秒、XPU 41.953秒でした。
+process treeのピークworking setは、ASRを含む独立測定でCPU 8.02 GiB、XPU 8.18 GiBです。
+XPUはGPU専用メモリではなく共有system RAMを使うため、他processを含む空きRAMに注意してください。
+
 ### Phase 1/2 NVIDIA実機
 
 Windows 11、GTX 1070 Ti 8 GiB、8 physical / 16 logical core CPU、large-v3-turbo/int8、

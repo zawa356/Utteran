@@ -46,7 +46,8 @@
 | P10 結合検証 | 3 | 3 | 0 | 0 | 0 |
 | P11 既存機能の回帰 | 14 | 14 | 0 | 0 | 0 |
 | P12 `start.ps1`動的メニュー | 9 | 9 | 0 | 0 | 0 |
-| **暫定合計** | **101** | **101** | **0** | **0** | **0** |
+| P13 性能測定 | 11 | 11 | 0 | 0 | 0 |
+| **暫定合計** | **112** | **112** | **0** | **0** | **0** |
 
 ### P0 疎通確認
 
@@ -184,7 +185,26 @@
 
 ## 性能測定結果
 
-P13、P14完了後に記載する。
+180秒fixture。ASR表はASR stageのみ。
+
+| ASR構成 | TSあり | TSなし | TSなし実時間比 |
+|---|---:|---:|---:|
+| whisper.cpp / CPU | 207.425秒 | 171.427秒 | 1.050x |
+| whisper.cpp / OpenVINO | 36.328秒 | 33.939秒 | 5.304x |
+| whisper.cpp / Vulkan | 22.340秒 | 17.194秒 | 10.469x |
+| whisper.cpp / OpenVINO+Vulkan | 23.734秒 | 18.403秒 | 9.781x |
+| faster-whisper / CPU | 90.826秒 | 非対応 | - |
+
+| 話者分離 | stage秒 | 独立測定wall秒 | process tree peak RAM |
+|---|---:|---:|---:|
+| pyannote / CPU | 106.681 | 106.890 | 8.02 GiB |
+| pyannote / XPU | 41.953 | 67.203 | 8.18 GiB |
+
+- whisper.cpp backend loadは1秒未満、faster-whisper CPU loadは約6秒。
+- pyannote model loadはCPU 6〜9秒、XPU 8〜9秒。
+- XPU話者分離stageはCPU比2.54倍高速。ピークRAMは共有memoryを含むprocess tree working setである。
+- ovvkがVulkan単独より約1.2秒遅い結果だった。事前の合成fixtureとは逆だが差は小さく、
+  音声内容・driver・OpenVINO encoder overheadによる測定差として記録し、機能不具合とはしない。
 
 ## 構成間の一致度
 
