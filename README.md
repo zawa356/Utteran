@@ -613,11 +613,20 @@ whisper.cppでは無音時の反復を抑えるため、既定で`no_context = t
 
 ```console
 uv run utteran benchmark --audio sample.wav --variants vulkan,openvino_vulkan --json benchmark.json
+uv run utteran benchmark --audio long-sample.wav --durations 180,900,full \
+  --variants vulkan,openvino_vulkan --json benchmark-multi.json
 uv run utteran benchmark --audio sample.wav --variants vulkan,openvino_vulkan --apply
 ```
 
-実データを暗黙利用しないためWAVは必須です。既定でwarmup 1回・計測3回の中央値を表示し、認識
-本文やジョブは保存しません。
+実データを暗黙利用しないためWAVは必須です。既定の測定長は`full`（指定WAV全体）で、短いfixtureへ
+暗黙に切り詰めません。`--durations 180,900,full`のように複数長を1コマンドで測定できます。
+長時間用途の判断には**15分以上**を推奨します。15分は主用途の下限30分より短い一方、初期化コストの
+償却を観測しやすく、CPU構成を含む測定時間を現実的に抑える妥協点です。15分未満の結果には、
+Phase 3dで180秒と24分46秒の順位逆転が観測されたことを根拠とする警告を、画面とJSONの両方へ
+含めます。既定でwarmup 1回・計測3回の中央値を表示し、認識本文やジョブは保存しません。
+複数長で`--apply`した場合は最長の測定結果を使い、`variant`と
+`benchmark_duration_seconds`を設定へ記録します。後者は測定metadataで、ASRのconfig hashには
+含まれません。
 
 **反復対策適用後の再測定**（Intel Core Ultra 7 255H / Arc 140T、large-v3-turbo-q5_0、180秒WAV、
 warmup 1・3回中央値）:

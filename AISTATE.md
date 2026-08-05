@@ -22,6 +22,14 @@
   `getattr`でOS条件解決し、テストを`venv_dir_name()`利用、ハーネスoverrideをOS共通へ修正。
   再実行はruff/format/mypy/lock/BOM/public gate合格、モデル不要201合格・Windows限定2 skip。
   Windowsはモデル不要203合格、全PS1のParser/PowerShell 5.1実起動、全品質gate合格。
+- Step 2: benchmarkの既定測定長を短いfixtureでなく指定WAV全体（`full`）とし、
+  `--durations 180,900,full`でprefix一時WAVによる複数長測定を追加。15分を測定時間と代表性の
+  妥協点に定め、未満ではPhase 3dの180秒/24分46秒順位逆転を画面・JSONへ警告する。
+  JSONはschema v2、`--apply`は最長測定の最速variantと`benchmark_duration_seconds`を保存し、
+  測定metadataはASR config hashへ含めない。
+- autoのIR状態判定は今回見送った。選択時点で設定modelからGGML実体と量子化別IR aliasの完全性まで
+  検証し、fallbackとの整合を変える必要があり、既存autoの安全性に対して変更範囲が過大なため。
+  Phase 4b以降でmodel-aware autoとして追加実測と合わせて検討する。
 
 ## Phase 3d 是正（2026-08-04〜2026-08-05、完了）
 

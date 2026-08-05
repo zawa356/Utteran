@@ -19,7 +19,15 @@ from rich.table import Table
 
 from utteran.audio import find_ffmpeg
 from utteran.batch import BatchSummary, discover_inputs, run_batch
-from utteran.benchmark import apply_variant, run_benchmark, wav_duration
+from utteran.benchmark import (
+    BenchmarkMeasurement,
+    apply_variant,
+    benchmark_warning,
+    parse_durations,
+    prepared_audio_lengths,
+    run_benchmark,
+    wav_duration,
+)
 from utteran.config import (
     Config,
     TokenProvider,
@@ -95,6 +103,10 @@ def benchmark(
     word_timestamps: Annotated[str, typer.Option(help="auto|always|never")] = "auto",
     repeat: Annotated[int, typer.Option(min=1)] = 3,
     warmup: Annotated[int, typer.Option(min=0)] = 1,
+    durations: Annotated[
+        str,
+        typer.Option(help="測定する秒数のカンマ区切り。fullは入力全体 (例: 180,900,full)"),
+    ] = "full",
     json_path: Annotated[Path | None, typer.Option("--json", help="JSON出力先")] = None,
     apply: Annotated[bool, typer.Option("--apply", help="最速whisper.cpp構成を設定へ保存")] = False,
     config_path: Annotated[Path | None, typer.Option("--config")] = None,
@@ -108,49 +120,65 @@ def benchmark(
     config = Config.load(config_path=config_path)
     console.print("他の高負荷処理を停止してください。結果に文字起こし内容は保存しません。")
     try:
-        results = run_benchmark(
-            config,
-            audio,
-            selected,
-            word_timestamps=word_timestamps == "always",
-            repeat=repeat,
-            warmup=warmup,
-        )
+        source_duration = wav_duration(audio)
+        requested_durations = parse_durations(durations, source_duration)
+        measurements: list[BenchmarkMeasurement] = []
+        with prepared_audio_lengths(audio, requested_durations) as prepared:
+            for measured_duration, measured_audio in prepared:
+                warning = benchmark_warning(measured_duration)
+                if warning:
+                    console.print(f"[yellow]警告 ({measured_duration:.3f}秒): {warning}[/yellow]")
+                results = run_benchmark(
+                    config,
+                    measured_audio,
+                    selected,
+                    word_timestamps=word_timestamps == "always",
+                    repeat=repeat,
+                    warmup=warmup,
+                )
+                measurements.append(
+                    BenchmarkMeasurement(measured_duration, warning, tuple(results))
+                )
     except (OSError, ValueError, UtteranError) as exc:
         error_console.print(f"エラー: {mask_secrets(str(exc))}")
         raise typer.Exit(3) from None
-    if not results:
+    if not any(measurement.results for measurement in measurements):
         error_console.print("エラー: 指定した構成に利用可能なバックエンド/モデルがありません。")
         raise typer.Exit(3)
-    table = Table("構成", "中央値", "load中央値", "実時間比", "peak RAM")
-    for result in results:
-        peak = (
-            "取得不可"
-            if result.peak_ram_bytes is None
-            else f"{result.peak_ram_bytes / 1024**3:.2f} GiB"
-        )
-        table.add_row(
-            result.variant,
-            f"{result.median_total_seconds:.3f}s",
-            f"{result.median_load_seconds:.3f}s",
-            f"{result.realtime_factor:.3f}x",
-            peak,
-        )
+    table = Table("音声長", "構成", "中央値", "load中央値", "実時間比", "peak RAM")
+    for measurement in measurements:
+        for result in measurement.results:
+            peak = (
+                "取得不可"
+                if result.peak_ram_bytes is None
+                else f"{result.peak_ram_bytes / 1024**3:.2f} GiB"
+            )
+            table.add_row(
+                f"{measurement.audio_duration_seconds:.3f}s",
+                result.variant,
+                f"{result.median_total_seconds:.3f}s",
+                f"{result.median_load_seconds:.3f}s",
+                f"{result.realtime_factor:.3f}x",
+                peak,
+            )
     console.print(table)
     payload = {
-        "audio_duration_seconds": wav_duration(audio),
-        "results": [item.as_dict() for item in results],
+        "schema_version": 2,
+        "source_audio_duration_seconds": source_duration,
+        "measurements": [measurement.as_dict() for measurement in measurements],
     }
     if json_path is not None:
         json_path.parent.mkdir(parents=True, exist_ok=True)
         json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     if apply:
-        candidates = [item for item in results if item.variant != "faster-whisper"]
+        longest = max(measurements, key=lambda item: item.audio_duration_seconds)
+        candidates = [item for item in longest.results if item.variant != "faster-whisper"]
         if not candidates:
             raise typer.BadParameter("--applyにはwhisper.cpp構成が必要です")
         fastest = min(candidates, key=lambda item: item.median_total_seconds)
-        apply_variant(config_path or default_config_path(), fastest.variant)
-        console.print(f"設定へ適用しました: {fastest.variant}")
+        applied_duration = longest.audio_duration_seconds
+        apply_variant(config_path or default_config_path(), fastest.variant, applied_duration)
+        console.print(f"設定へ適用しました: {fastest.variant} ({applied_duration:.3f}秒の測定)")
 
 
 class RichProgressReporter:

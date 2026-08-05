@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import statistics
+import tempfile
 import time
 import wave
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -17,6 +19,12 @@ from utteran.errors import BackendUnavailableError, ModelNotFoundError
 from utteran.models.catalog import get_model, list_models
 from utteran.models.manager import ModelManager
 from utteran.types import ASROptions
+
+RECOMMENDED_BENCHMARK_SECONDS = 15 * 60
+SHORT_BENCHMARK_WARNING = (
+    "この長さの結果は長時間音声を代表しない可能性があります。Phase 3dでは180秒と"
+    "24分46秒の素材でVulkan/OpenVINO+Vulkanの順位逆転が観測されました。"
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +51,20 @@ class BenchmarkResult:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class BenchmarkMeasurement:
+    audio_duration_seconds: float
+    warning: str | None
+    results: tuple[BenchmarkResult, ...]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "audio_duration_seconds": self.audio_duration_seconds,
+            "warning": self.warning,
+            "results": [result.as_dict() for result in self.results],
+        }
+
+
 def aggregate(
     variant: str, samples: list[BenchmarkSample], audio_seconds: float
 ) -> BenchmarkResult:
@@ -64,6 +86,76 @@ def wav_duration(path: Path) -> float:
     try:
         with wave.open(str(path), "rb") as audio:
             return audio.getnframes() / audio.getframerate()
+    except (OSError, wave.Error, ZeroDivisionError) as exc:
+        raise ValueError("benchmarkの入力はデコード可能なWAVを指定してください") from exc
+
+
+def parse_durations(value: str, full_duration: float) -> tuple[float, ...]:
+    """Parse comma-separated seconds and ``full`` while preserving order."""
+    durations: list[float] = []
+    for token in (item.strip().casefold() for item in value.split(",")):
+        if not token:
+            continue
+        if token == "full":
+            duration = full_duration
+        else:
+            try:
+                duration = float(token)
+            except ValueError as exc:
+                raise ValueError(
+                    "--durationsは秒数またはfullをカンマ区切りで指定してください"
+                ) from exc
+        if duration <= 0:
+            raise ValueError("--durationsの秒数は0より大きくしてください")
+        if duration > full_duration + 0.001:
+            raise ValueError(
+                f"測定長{duration:g}秒が入力WAVの長さ{full_duration:.3f}秒を超えています"
+            )
+        bounded = min(duration, full_duration)
+        if not any(abs(existing - bounded) < 0.001 for existing in durations):
+            durations.append(bounded)
+    if not durations:
+        raise ValueError("--durationsに1つ以上の秒数またはfullを指定してください")
+    return tuple(durations)
+
+
+def benchmark_warning(audio_seconds: float) -> str | None:
+    return SHORT_BENCHMARK_WARNING if audio_seconds < RECOMMENDED_BENCHMARK_SECONDS else None
+
+
+@contextmanager
+def prepared_audio_lengths(
+    source: Path, durations: tuple[float, ...]
+) -> Iterator[list[tuple[float, Path]]]:
+    """Yield prefix WAVs for requested lengths and remove temporary clips afterward."""
+    full_duration = wav_duration(source)
+    with tempfile.TemporaryDirectory(prefix="utteran-benchmark-") as temporary:
+        prepared: list[tuple[float, Path]] = []
+        for index, duration in enumerate(durations):
+            if abs(duration - full_duration) < 0.001:
+                prepared.append((full_duration, source))
+                continue
+            target = Path(temporary) / f"duration-{index}.wav"
+            actual = _copy_wav_prefix(source, target, duration)
+            prepared.append((actual, target))
+        yield prepared
+
+
+def _copy_wav_prefix(source: Path, target: Path, duration: float) -> float:
+    try:
+        with wave.open(str(source), "rb") as reader, wave.open(str(target), "wb") as writer:
+            writer.setparams(reader.getparams())
+            frame_rate = reader.getframerate()
+            remaining = min(reader.getnframes(), round(duration * frame_rate))
+            total = remaining
+            while remaining:
+                count = min(remaining, frame_rate * 60)
+                frames = reader.readframes(count)
+                if not frames:
+                    break
+                writer.writeframes(frames)
+                remaining -= count
+            return total / frame_rate
     except (OSError, wave.Error, ZeroDivisionError) as exc:
         raise ValueError("benchmarkの入力はデコード可能なWAVを指定してください") from exc
 
@@ -135,8 +227,8 @@ def _installed_model(configured: str, backend: str) -> str:
     raise ModelNotFoundError(f"{backend}の導入済みモデルがありません")
 
 
-def apply_variant(path: Path, variant: str) -> None:
-    """Update only [asr.whisper_cpp].variant while preserving the rest of TOML."""
+def apply_variant(path: Path, variant: str, audio_seconds: float) -> None:
+    """Record the selected variant and measurement length without changing ASR hashes."""
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     lines = text.splitlines()
     section = "[asr.whisper_cpp]"
@@ -145,7 +237,13 @@ def apply_variant(path: Path, variant: str) -> None:
     except ValueError:
         if lines and lines[-1]:
             lines.append("")
-        lines.extend([section, f'variant = "{variant}"'])
+        lines.extend(
+            [
+                section,
+                f'variant = "{variant}"',
+                f"benchmark_duration_seconds = {audio_seconds:.3f}",
+            ]
+        )
     else:
         end = next(
             (i for i in range(start + 1, len(lines)) if lines[i].startswith("[")), len(lines)
@@ -157,5 +255,18 @@ def apply_variant(path: Path, variant: str) -> None:
             lines.insert(start + 1, f'variant = "{variant}"')
         else:
             lines[target] = f'variant = "{variant}"'
+        duration_target = next(
+            (
+                i
+                for i in range(start + 1, end)
+                if lines[i].strip().startswith("benchmark_duration_seconds")
+            ),
+            None,
+        )
+        duration_line = f"benchmark_duration_seconds = {audio_seconds:.3f}"
+        if duration_target is None:
+            lines.insert(start + 2, duration_line)
+        else:
+            lines[duration_target] = duration_line
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
