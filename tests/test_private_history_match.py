@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 import runpy
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 
 def _namespace() -> dict[str, Any]:
@@ -83,3 +87,62 @@ def test_pattern_loader_rejects_plaintext_fields(tmp_path: Path) -> None:
         assert "metadata only" in str(exc)
     else:
         raise AssertionError("plaintext-bearing pattern entry was accepted")
+
+
+def test_rewrite_rules_are_generic(tmp_path: Path) -> None:
+    namespace = _namespace()
+    content = tmp_path / "content.txt"
+    messages = tmp_path / "messages.txt"
+
+    namespace["build_rewrite_rules"](content, messages)
+
+    assert "<user>" in content.read_text(encoding="utf-8")
+    assert "redacted-email" in messages.read_text(encoding="utf-8")
+    assert "LocalUser" not in content.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(shutil.which("git-filter-repo") is None, reason="git-filter-repo unavailable")
+def test_rewrite_rules_work_with_filter_repo(tmp_path: Path) -> None:
+    namespace = _namespace()
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"], cwd=repository, check=True
+    )
+    tracked = repository / "note.txt"
+    tracked.write_text("C:/Users/<user>/private\n", encoding="utf-8")
+    subprocess.run(["git", "add", "note.txt"], cwd=repository, check=True)
+    message = "subject\n\nContact: account" + "@" + "corp.invalid"
+    subprocess.run(["git", "commit", "-q", "-m", message], cwd=repository, check=True)
+    content = tmp_path / "content-rules.txt"
+    messages = tmp_path / "message-rules.txt"
+    namespace["build_rewrite_rules"](content, messages)
+
+    subprocess.run(
+        [
+            "git",
+            "filter-repo",
+            "--force",
+            "--replace-text",
+            str(content),
+            "--replace-message",
+            str(messages),
+        ],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+
+    expected = "C:/" + "Users/<user>/private"
+    assert expected in tracked.read_text(encoding="utf-8")
+    log = subprocess.run(
+        ["git", "log", "-1", "--format=%B"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "redacted-email" in log
+    assert "@" not in log

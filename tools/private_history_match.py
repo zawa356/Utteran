@@ -131,6 +131,23 @@ def build_pattern_file(input_dir: Path, destination: Path, windows_username: str
     }
 
 
+def build_rewrite_rules(content_output: Path, message_output: Path) -> None:
+    """Write generic filter-repo rules without embedding repository-specific values."""
+    content_output.parent.mkdir(parents=True, exist_ok=True)
+    message_output.parent.mkdir(parents=True, exist_ok=True)
+    content_output.write_text(
+        "regex:(?i)([A-Z]:[\\\\/](?:Users|UserData)[\\\\/])"
+        "[^\\\\/\\s:'\\\"]+==>\\1<user>\n"
+        "regex:(?i)(/h[o]me/)[^/\\s:'\\\"]+==>\\1<user>\n",
+        encoding="utf-8",
+    )
+    message_output.write_text(
+        "regex:(?i)(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@"
+        "[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(?![A-Za-z0-9.-])==>redacted-email\n",
+        encoding="utf-8",
+    )
+
+
 def load_patterns(path: Path) -> tuple[HashedPattern, ...]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     if raw.get("schema_version") != 1 or not isinstance(raw.get("patterns"), list):
@@ -303,6 +320,9 @@ def main(argv: list[str] | None = None) -> int:
     build = subparsers.add_parser("build", help="derive and hash patterns from input file names")
     build.add_argument("--input-dir", type=Path, default=Path("input"))
     build.add_argument("--output", type=Path, required=True)
+    rules = subparsers.add_parser("rewrite-rules", help="write generic filter-repo rules")
+    rules.add_argument("--content-output", type=Path, required=True)
+    rules.add_argument("--message-output", type=Path, required=True)
     scan = subparsers.add_parser("scan", help="scan all Git data using a hashed pattern file")
     scan.add_argument("--repo", type=Path, default=Path.cwd())
     scan.add_argument("--patterns", type=Path, required=True)
@@ -318,6 +338,11 @@ def main(argv: list[str] | None = None) -> int:
             f"categories={sum(bool(value) for value in counts.values())}"
         )
         print("source values are intentionally omitted")
+        return 0
+    if args.command == "rewrite-rules":
+        build_rewrite_rules(args.content_output, args.message_output)
+        print("history-rewrite-rules: content=2 message=1")
+        print("repository-specific values are intentionally omitted")
         return 0
 
     patterns = load_patterns(args.patterns)
