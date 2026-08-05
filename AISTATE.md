@@ -40,6 +40,10 @@
 - 任意整備は、SECURITY.mdはprivate reporting/contactが未設定のため安全な非公開窓口を示せず見送り、
   CONTRIBUTING/Issue/PR templateは外部contribution workflow未確定のため見送り。repository説明/topic/
   badgeはGitHub設定変更や未push CIへの依存があるため実施しない。公開後の次段階でownerが判断する。
+- Phase 4a最終再走査はcommit `a36b917`までの20 refs/115 commits/1,144 objectsを完了。
+  現在treeはblocking 0、公開refの秘密値候補0。ローカル到達不能blobにscanner回帰testが
+  意図的に使った秘密値形式1件があるが、値を表示せずtest contextから非credentialと判定。
+  objectの削除/GC、履歴書き換え、pushは行っていない。G11公開文書受入は2/2 pass。
 
 ## Phase 3d 是正（2026-08-04〜2026-08-05、完了）
 
