@@ -44,7 +44,17 @@ TRANSCRIPT_MARKERS = {
     "受入試験",
     "文字起こし",
 }
-PLACEHOLDER_MARKERS = ("dummy", "example", "fake", "person", "placeholder", "test", "xxxx")
+PLACEHOLDER_MARKERS = (
+    "dummy",
+    "example",
+    "fake",
+    "person",
+    "placeholder",
+    "test",
+    "user",
+    "workdir",
+    "xxxx",
+)
 
 
 @dataclass(frozen=True, order=True)

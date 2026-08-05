@@ -38,3 +38,10 @@ def test_sensitive_paths_are_classified_without_reading_files() -> None:
     assert any(finding.category == "media" and finding.blocking for finding in media)
     assert any(finding.category == "environment" and finding.blocking for finding in dotenv)
     assert any(finding.category == "artifact-candidate" for finding in artifact)
+
+
+def test_generalized_user_paths_are_non_blocking_placeholders() -> None:
+    findings = _scan_bytes(b"C:/Users/<user>/workspace", scope="test")
+
+    assert findings[0].category == "test-placeholder"
+    assert findings[0].blocking is False

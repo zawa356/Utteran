@@ -33,6 +33,9 @@ site/
 /inputs/
 /output/*
 !/output/.gitkeep
+# Alternate transcript destinations inside a source checkout
+**/transcripts/
+**/utteran-output/
 /jobs/
 /models/
 *.log

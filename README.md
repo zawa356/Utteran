@@ -110,6 +110,10 @@ uv run utteran transcribe recordings/ --recursive --include "**/*.wav"
 やり直します。`--force`は全stage再実行、`--no-resume`はcache不使用です。batchは個別失敗後も
 継続し、一部失敗はexit 5、全件失敗は1、Ctrl+Cは130を返します。
 
+Git checkout内へ出力する場合は、`.gitignore`対象の`output`、`transcripts`、または
+`utteran-output` directoryを指定してください。JSON / TXT / Markdownを通常の文書directoryへ
+出力しようとすると、誤commit防止のため実行を拒否します。repository外の出力先は制限しません。
+
 ASRと話者分離のdeviceは別に指定できます。
 
 ```console

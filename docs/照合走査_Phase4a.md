@@ -35,3 +35,34 @@ test値と判定する。一方、過去のuser絶対pathはuser名を含みう�
 ## 利用者への確認事項
 
 履歴書き換え後のforce pushとGitHub Releaseの更新は利用者作業とする。本作業でpushは行わない。
+
+## 履歴クリーンアップ結果
+
+`git filter-repo` 2.47.0を使い、全local branchとtagの120 commitsを書き換えた。commit messageの
+email形式は`redacted-email`、Windows/Linuxのuser絶対pathのuser部は`<user>`へ一般化した。
+Step 1の照合は0件だったため、利用者固有文字列の追加置換はない。
+
+事前準備:
+
+- `output/phase4a-history-backup-pre-rewrite/`に全21 refs・hash一覧、HEAD tree、1 releaseとtag対応を記録
+- `all-refs.bundle`のverifyと復元mirror cloneの`git fsck --full`に合格
+- `mirror.git`は`--mirror --no-hardlinks`で作成し、元repositoryの21 refsとobject IDが完全一致
+- 別の先行backupも`output/phase4a-history-backup-20260805/`に保持
+
+書き換え後、Git除外領域の置換rule file 2件を削除した。backup済みのローカル
+`refs/codex/*` 9件はcommitでないtree refで`filter-repo`対象外だったため除去し、
+`git reflog expire --expire=now --all` と `git gc --prune=now --aggressive`を実行した。
+
+検証結果:
+
+- 直後の8 refs、121 commits、1,146 objectsは全て到達可能で、到達不能objectは0
+- 書き換え後の同じ36 hash pattern照合は5分類すべて0件
+- 汎用scanに残るemail形式は、照合で非固有と判定したtest/公開用値のみ
+- 置換がdummy path test 2 filesへも適用されたためbackup blobから復元し、commit
+  `94c632c`のtree `2045447b3547785b7003d9342b36ca0c808abe78`が事前HEAD treeと一致
+- `v0.0.1`のannotated tag objectは`231772e9...`から`bce32e7c...`、対象commitは
+  `7cf578c2...`から`6f8f9a0f...`へ変更。GitHub Releaseとtagの再照合が必要
+
+pushは実施していない。安全なforce-with-leaseと新repositoryへの移行手順は
+`docs/リリース手順.md`に記録した。GitHub側の到達不能objectを完全削除するには、
+force push後にGitHub Supportへcache purgeを依頼する場合がある。

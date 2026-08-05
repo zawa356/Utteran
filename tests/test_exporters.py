@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
+from utteran.errors import ConfigurationError
 from utteran.exporters import export_all
 from utteran.exporters.json_exporter import JSONExporter
 from utteran.exporters.markdown import MarkdownExporter
@@ -100,3 +102,26 @@ def test_export_all_uses_shared_collision_suffix_and_srt_bom(tmp_path: Path) -> 
     }
     assert (tmp_path / "meeting_1.srt").read_bytes().startswith(b"\xef\xbb\xbf")
     assert b"\r\n" in (tmp_path / "meeting_1.vtt").read_bytes()
+
+
+def test_export_all_rejects_git_visible_transcript_directory(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    visible = tmp_path / "public-documents"
+
+    try:
+        export_all(sample_result(tmp_path), visible, ["json", "txt", "md"], ExportOptions())
+    except ConfigurationError as exc:
+        assert ".gitignore" in str(exc)
+    else:
+        raise AssertionError("Git-visible transcript output was accepted")
+
+
+def test_export_all_accepts_ignored_transcript_directory(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text("/transcripts/\n", encoding="utf-8")
+
+    paths = export_all(
+        sample_result(tmp_path), tmp_path / "transcripts", ["json", "txt", "md"], ExportOptions()
+    )
+
+    assert {path.suffix for path in paths} == {".json", ".txt", ".md"}

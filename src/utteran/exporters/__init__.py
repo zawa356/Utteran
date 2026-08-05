@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
+from utteran.errors import ConfigurationError
 from utteran.exporters.base import Exporter
 from utteran.types import ExportOptions, PipelineResult
 
@@ -42,6 +44,7 @@ def export_all(
 ) -> list[Path]:
     """Write all requested formats using one collision-free filename stem."""
     exporters = [create_exporter(name) for name in dict.fromkeys(formats)]
+    _ensure_git_ignored_output(output_dir, [item.extension for item in exporters])
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = _available_stem(output_dir, result.input_path.stem, exporters)
     paths: list[Path] = []
@@ -50,6 +53,32 @@ def export_all(
         exporter.write(result, path, options)
         paths.append(path)
     return paths
+
+
+def _ensure_git_ignored_output(output_dir: Path, extensions: Sequence[str]) -> None:
+    """Reject transcript destinations visible to Git inside a source checkout."""
+    resolved = output_dir.resolve()
+    repository = next(
+        (parent for parent in (resolved, *resolved.parents) if (parent / ".git").exists()), None
+    )
+    if repository is None:
+        return
+    probes = [resolved / f"private-transcript.{extension}" for extension in extensions]
+    for probe in probes:
+        try:
+            result = subprocess.run(
+                ["git", "check-ignore", "--no-index", "--quiet", str(probe)],
+                cwd=repository,
+                check=False,
+                capture_output=True,
+            )
+        except OSError as exc:
+            raise ConfigurationError("Git repository内の出力先の安全性を確認できません。") from exc
+        if result.returncode != 0:
+            raise ConfigurationError(
+                "Git repository内では、.gitignoreの対象であるoutput、"
+                "transcripts、またはutteran-output directoryを出力先に指定してください。"
+            )
 
 
 def _available_stem(output_dir: Path, base_stem: str, exporters: list[Exporter]) -> str:

@@ -51,6 +51,16 @@
   要素へ保守的に限定して再走査した。値とdigestはGit/報告/標準出力に未記録。
 - 照合0でも過去のuser絶対pathを除去する価値があり、追加指示で承認済みのため、
   完全backupと復元試験後に全branch/tagの履歴書き換えを実施する。pushは行わない。
+- 21 refsの`git bundle --all`、非hardlink mirror、bundle復元cloneを作成し、ref完全一致、
+  bundle verify、両cloneのfsckに合格。release 1件と`v0.0.1`対応も記録した。`filter-repo`
+  2.47.0で全120 commitsのcommit message email形式とfile内user絶pathを一般化。
+  ローカルtree ref 9件をbackup後に除去し、reflog失効/aggressive GCを実施。pushは未実施。
+- 書き換え後は8 refs/121 commits/1,146 reachable objects、unreachable 0。秘密hash再照合は
+  5分類全0件。dummy path test 2 filesはbackup blobから戻し、`94c632c`のtree hashは
+  事前の`2045447b...`と完全一致。`v0.0.1`のtag/commit SHAは変更されたためrelease再照合が必要。
+- 再発防止として、email付きcommit trailerを使わない規約を定義。Git checkout内では
+  Git除外済み出力先だけを許可し、`output`/`transcripts`/`utteran-output`の5形式を
+  `git check-ignore`で回帰確認する。CIの汎用current-tree scanとlocal hash照合の使い分けも文書化。
 
 ## Phase 3d 是正（2026-08-04〜2026-08-05、完了）
 
