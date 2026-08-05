@@ -1,5 +1,15 @@
 # AI 作業状態
 
+## Phase 4b メモリ管理（2026-08-05、進行中）
+
+- 指定4文書を確認し、`feature/phase4b-memory-management`を作成した。`.env`は読んでいない。
+- Step 0 は分岐B。pyannote.audio 4.0.7の実コードで `get_segmentations`、
+  `get_embeddings`、`clustering`、`reconstruct` を確認し、固定合成12秒波形で中間 shape と
+  通常／exclusive再構成を実行した。しかし分割には `apply` の主要ロジック複製、
+  `_segmentation.model.receptive_field` 等の非公開属性、重複チャンクの時刻格子統合が必要で、
+  安定した内部構造とは判断できない。指示に従いStep 3は実装しない。根拠、実装量、更新リスク、
+  CPU退避で救える範囲は `docs/調査結果_Phase4b.md` に記録した。
+
 ## Phase 4a 公開準備（2026-08-05、進行中）
 
 - 指定4文書を読了し、`chore/phase4a-public-readiness`を作成した。履歴改変、force push、push、
