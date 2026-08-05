@@ -612,7 +612,7 @@ def validate_readme_commands(
         ([*prefix, "transcribe", batch_input, "--recursive", "--dry-run"], 0),
         ([*prefix, "transcribe", file_input, "--force", "--dry-run"], 0),
         ([*prefix, "transcribe", file_input, "--format", "txt", "--dry-run"], 0),
-        ([*prefix, "models", "download"], 1),
+        ([*prefix, "models", "download"], 2),
         ([*prefix, "models", "list", "--available"], 0),
         ([*prefix, "models", "download", "faster-whisper:large-v3-turbo"], 0),
         ([*prefix, "models", "download", "faster-whisper:kotoba-whisper-v2.0"], 0),
@@ -706,7 +706,9 @@ def validate_documentation_contracts(readme: Path, requirements: Path) -> None:
     """Compare documented options, precedence, exit codes, and settings to code."""
     readme_text = readme.read_text(encoding="utf-8")
     requirements_text = requirements.read_text(encoding="utf-8")
-    option_section = readme_text.split("主な `transcribe` オプション:", 1)[1].split("```", 2)[1]
+    option_section = requirements_text.split("utteran transcribe <入力パス> [オプション]", 1)[
+        1
+    ].split("\n\nutteran devices", 1)[0]
     documented_options = set(re.findall(r"--[a-z][a-z-]+", option_section))
     root_command = get_command(cli_module.app)
     transcribe = root_command.commands["transcribe"]
@@ -718,7 +720,7 @@ def validate_documentation_contracts(readme: Path, requirements: Path) -> None:
     }
     if documented_options != actual_options:
         raise AssertionError(
-            f"README option mismatch: missing={sorted(actual_options - documented_options)}, "
+            f"requirements option mismatch: missing={sorted(actual_options - documented_options)}, "
             f"extra={sorted(documented_options - actual_options)}"
         )
     readme_priority = "CLI 引数 > 環境変数 > .env > config.toml > 既定値"

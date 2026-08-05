@@ -2852,7 +2852,7 @@
   {
     "id": "G11-02",
     "group": "G11",
-    "description": "Compare README options, priorities, exit codes, and settings to code",
+    "description": "Compare public documentation options, priorities, exit codes, and settings to code",
     "command": [
       "{python}",
       "{project}/tools/acceptance/scenarios.py",

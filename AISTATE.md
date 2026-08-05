@@ -30,6 +30,16 @@
 - autoのIR状態判定は今回見送った。選択時点で設定modelからGGML実体と量子化別IR aliasの完全性まで
   検証し、fallbackとの整合を変える必要があり、既存autoの安全性に対して変更範囲が過大なため。
   Phase 4b以降でmodel-aware autoとして追加実測と合わせて検討する。
+- Step 3: READMEを公開向けの短い導入・quick start・主要操作へ再構成し、英語short版を追加。
+  詳細仕様／受入／監査／release手順へlinkした。THIRD_PARTY_NOTICESへPhase 3のwhisper.cpp、GGML、
+  Silero VAD、OpenVINO、Vulkan/shadercとruntime依存を補完し、全modelの最新条件確認・必要な同意を明記。
+- GitHubには2026-08-02公開の`v0.0.1`releaseが実在したが、tag時点の変更履歴が未releaseのままだった。
+  過去を改変せず初期snapshotと位置づけ、次の正式pre-1.0候補を`v0.1.0`とした。pyprojectと
+  `__version__`を0.1.0へ統一し、SemVer、changelog切出し、acceptance/license/security gate、
+  tagを移動しないrelease手順を`docs/リリース手順.md`と要件定義24章へ追加。
+- 任意整備は、SECURITY.mdはprivate reporting/contactが未設定のため安全な非公開窓口を示せず見送り、
+  CONTRIBUTING/Issue/PR templateは外部contribution workflow未確定のため見送り。repository説明/topic/
+  badgeはGitHub設定変更や未push CIへの依存があるため実施しない。公開後の次段階でownerが判断する。
 
 ## Phase 3d 是正（2026-08-04〜2026-08-05、完了）
 
