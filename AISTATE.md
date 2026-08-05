@@ -9,6 +9,11 @@
   `_segmentation.model.receptive_field` 等の非公開属性、重複チャンクの時刻格子統合が必要で、
   安定した内部構造とは判断できない。指示に従いStep 3は実装しない。根拠、実装量、更新リスク、
   CPU退避で救える範囲は `docs/調査結果_Phase4b.md` に記録した。
+- Step 1: CUDA空きVRAM、XPU上限と空きRAMの小さい方、CPU空きRAMを別々に扱う予算算出、
+  種別別安全率、取得不能をunknownとする判定を実装。R-5のOLS式を同梱し、3点以上で
+  MAD外れ値除外後のローカル式へ切り替える。platformdirsのprofile共通領域にはstage、backend、
+  device種別、音声長、peak、日時だけを保存する。`memory show/reset`とPhase 3d同等のprocess tree
+  working set monitorを追加し、重点51 test、ruff、mypyに合格した。
 
 ## Phase 4a 公開準備（2026-08-05、進行中）
 

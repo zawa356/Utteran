@@ -45,6 +45,7 @@ from utteran.errors import (
 )
 from utteran.jobs import JobStore
 from utteran.logging import configure_logging, mask_secrets, register_secret
+from utteran.memory import CALIBRATION_MIN_POINTS, DEFAULT_MODELS, CalibrationStore
 from utteran.models.catalog import ModelEntry, get_model
 from utteran.models.manager import ModelManager, ModelStatus
 from utteran.native import VARIANT_NAMES, NativeBuilder, resolve_native_dir
@@ -68,11 +69,47 @@ jobs_app = typer.Typer(help="保存済みジョブを確認・削除します。
 config_app = typer.Typer(help="utteran の設定ファイルを管理します。", no_args_is_help=True)
 profiles_app = typer.Typer(help="実行環境プロファイル (venv) を確認します。", no_args_is_help=True)
 native_app = typer.Typer(help="whisper.cpp ネイティブビルドを管理します。", no_args_is_help=True)
+memory_app = typer.Typer(help="メモリ推定のキャリブレーションを管理します。", no_args_is_help=True)
 app.add_typer(models_app, name="models")
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(config_app, name="config")
 app.add_typer(profiles_app, name="profiles")
 app.add_typer(native_app, name="native")
+app.add_typer(memory_app, name="memory")
+
+
+@memory_app.command("show")
+def memory_show_command() -> None:
+    """Show bundled/local peak models without exposing media identifiers."""
+    store = CalibrationStore()
+    points = store.load()
+    table = Table("stage", "backend/device", "base", "slope", "source", "points")
+    keys = set(DEFAULT_MODELS) | {(p.stage, p.backend, p.device_kind) for p in points}
+    for stage, backend, kind in sorted(keys):
+        model = store.model(stage, backend, kind)
+        if model is None:
+            continue
+        table.add_row(
+            stage,
+            f"{backend}/{kind}",
+            f"{model.base_gib:.3f} GiB",
+            f"{model.gib_per_minute:.6f} GiB/min",
+            model.source,
+            str(model.sample_count),
+        )
+    console.print(table)
+    console.print(
+        f"保存点: {len(points)} / ローカル式への切替: 同一構成{CALIBRATION_MIN_POINTS}点以上 / "
+        f"保存先: {store.path}"
+    )
+
+
+@memory_app.command("reset")
+def memory_reset_command() -> None:
+    """Delete all profile-independent memory calibration points."""
+    removed = CalibrationStore().reset()
+    console.print("キャリブレーションを削除しました。" if removed else "保存データはありません。")
+
 
 console = Console()
 error_console = Console(stderr=True)

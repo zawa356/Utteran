@@ -67,6 +67,8 @@ device = "auto"
 num_speakers = 0
 min_speakers = 0
 max_speakers = 0
+memory_guard = "auto"
+memory_safety_margin = 0.0
 
 [output]
 formats = ["srt", "json", "md"]
@@ -164,6 +166,8 @@ class DiarizationConfig(BaseModel):
     num_speakers: int = Field(default=0, ge=0)
     min_speakers: int = Field(default=0, ge=0)
     max_speakers: int = Field(default=0, ge=0)
+    memory_guard: Literal["auto", "warn", "off"] = "auto"
+    memory_safety_margin: float = Field(default=0.0, ge=0.0, lt=1.0)
 
     @model_validator(mode="after")
     def validate_speaker_counts(self) -> DiarizationConfig:
