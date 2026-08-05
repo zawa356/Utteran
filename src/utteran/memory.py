@@ -88,6 +88,18 @@ class MemoryAssessment:
 
 
 @dataclass(frozen=True)
+class MemoryDecision:
+    """Preflight result including an optional auto-only CPU retreat."""
+
+    requested_device: str
+    selected_device: str
+    effective_device: str
+    assessment: MemoryAssessment | None
+    fallback_assessment: MemoryAssessment | None = None
+    fallback_reason: str | None = None
+
+
+@dataclass(frozen=True)
 class CalibrationPoint:
     """Content-free peak observation shared across profiles."""
 
@@ -175,6 +187,53 @@ def assess_memory(
             "danger", estimate, base, budget, model, "推定ピークがメモリ予算に近いか超えます"
         )
     return MemoryAssessment("safe", estimate, base, budget, model, "推定ピークは予算内です")
+
+
+def plan_diarization_memory(
+    *,
+    guard: str,
+    requested_device: str,
+    selected_device: str,
+    backend: str,
+    audio_minutes: float,
+    safety_margin: float,
+    store: CalibrationStore,
+    provider: ReadingProvider | None = None,
+) -> MemoryDecision:
+    """Assess the chosen device and retreat to a demonstrably safe CPU only for auto."""
+    if guard == "off":
+        return MemoryDecision(requested_device, selected_device, selected_device, None)
+    kind = device_kind(selected_device)
+    model = store.model("diarization", backend, kind)
+    budget = calculate_budget(selected_device, safety_margin=safety_margin, provider=provider)
+    assessment = assess_memory(model, audio_minutes, budget)
+    may_retreat = (
+        guard == "auto"
+        and requested_device == "auto"
+        and kind in {"cuda", "xpu"}
+        and assessment.status in {"danger", "impossible"}
+    )
+    if may_retreat:
+        cpu_model = store.model("diarization", backend, "cpu")
+        cpu_budget = calculate_budget("cpu", safety_margin=safety_margin, provider=provider)
+        cpu_assessment = assess_memory(cpu_model, audio_minutes, cpu_budget)
+        if cpu_assessment.status == "safe":
+            return MemoryDecision(
+                requested_device,
+                selected_device,
+                "cpu",
+                assessment,
+                cpu_assessment,
+                f"{selected_device} は {assessment.status}、CPU は safe と推定",
+            )
+        return MemoryDecision(
+            requested_device,
+            selected_device,
+            selected_device,
+            assessment,
+            cpu_assessment,
+        )
+    return MemoryDecision(requested_device, selected_device, selected_device, assessment)
 
 
 def default_calibration_path() -> Path:

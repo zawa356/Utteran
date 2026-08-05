@@ -7,8 +7,9 @@ import pytest
 from utteran.asr.base import ASRBackend
 from utteran.config import Config, TokenProvider
 from utteran.diarization.base import DiarizationBackend
-from utteran.errors import CancelledError
+from utteran.errors import CancelledError, VramExhaustedError
 from utteran.jobs import JobStore
+from utteran.memory import CalibrationStore
 from utteran.pipeline import run_pipeline
 from utteran.types import (
     ASROptions,
@@ -114,6 +115,30 @@ class FakeDiarization(DiarizationBackend):
         self.unloaded = True
 
 
+class OomOnceDiarization(FakeDiarization):
+    def __init__(self) -> None:
+        self.attempts = 0
+        self.loaded_devices: list[str] = []
+
+    def load(self, model_id: str, device: str) -> None:
+        super().load(model_id, device)
+        self.loaded_devices.append(device)
+
+    def diarize(
+        self,
+        audio_path: Path,
+        options: DiarizationOptions,
+        progress: ProgressCallback | None = None,
+        cancel: CancelToken | None = None,
+    ) -> DiarizationResult:
+        self.attempts += 1
+        if self.attempts == 1:
+            raise VramExhaustedError("synthetic OOM")
+        result = super().diarize(audio_path, options, progress, cancel)
+        result.device = self.loaded[1]
+        return result
+
+
 class FakeTokenProvider(TokenProvider):
     def get_token(self) -> str | None:
         return "hf_fake_for_test"
@@ -129,6 +154,61 @@ def fake_normalize(
 ) -> Path:
     output_path.write_bytes(b"fake wave")
     return output_path
+
+
+def valid_fake_normalize(
+    _input_path: Path,
+    output_path: Path,
+    **_kwargs: object,
+) -> Path:
+    import wave
+
+    with wave.open(str(output_path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16_000)
+        wav.writeframes(b"\0\0" * 16_000)
+    return output_path
+
+
+def test_auto_oom_retries_cpu_once_and_records_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    input_path = tmp_path / "meeting.wav"
+    input_path.write_bytes(b"input")
+    config = Config.model_validate(
+        {
+            "general": {"output_dir": tmp_path / "output", "job_dir": tmp_path / "jobs"},
+            "diarization": {"device": "auto", "memory_guard": "auto"},
+            "output": {"formats": ["json"]},
+        }
+    )
+    backend = OomOnceDiarization()
+    monkeypatch.setattr("utteran.pipeline.normalize_audio", valid_fake_normalize)
+    monkeypatch.setattr(
+        "utteran.pipeline._resolve_diarization_device", lambda _config, _pool: "xpu:0"
+    )
+
+    outcome = run_pipeline(
+        input_path,
+        config,
+        token_provider=FakeTokenProvider(),
+        asr_backend=FakeASR(),
+        diarization_backend=backend,
+        calibration_store=CalibrationStore(tmp_path / "memory.json"),
+    )
+
+    assert backend.attempts == 2
+    assert backend.loaded_devices == ["xpu:0", "cpu"]
+    assert outcome.result.diarization is not None
+    assert outcome.result.diarization.memory is not None
+    assert outcome.result.diarization.memory["oom_retry"] is True
+    assert outcome.result.diarization.memory["fallback"]["trigger"] == "oom"
+    exported = outcome.output_paths[0].read_text(encoding="utf-8")
+    assert '"oom_retry": true' in exported
+    assert "synthetic OOM" in (tmp_path / "jobs" / outcome.job_id / "utteran.log").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_pipeline_passes_num_speakers_and_exports_all_formats(

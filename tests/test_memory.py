@@ -16,6 +16,8 @@ from utteran.memory import (
     assess_memory,
     calculate_budget,
     fit_calibration,
+    plan_diarization_memory,
+    read_memory,
 )
 
 
@@ -126,3 +128,49 @@ def test_peak_monitor_keeps_maximum_sample() -> None:
     monitor._sample()
     monitor._sample()
     assert monitor.peak_bytes == 30
+
+
+def test_auto_retreats_from_impossible_xpu_to_safe_cpu(tmp_path: Path) -> None:
+    def readings(device: str) -> MemoryReadings:
+        if device.startswith("xpu"):
+            return MemoryReadings(system_available_bytes=10 * GIB, xpu_limit_bytes=6 * GIB)
+        return MemoryReadings(system_available_bytes=10 * GIB)
+
+    decision = plan_diarization_memory(
+        guard="auto",
+        requested_device="auto",
+        selected_device="xpu:0",
+        backend="pyannote",
+        audio_minutes=50,
+        safety_margin=0.0,
+        store=CalibrationStore(tmp_path / "memory.json"),
+        provider=readings,
+    )
+    assert decision.assessment is not None
+    assert decision.assessment.status == "impossible"
+    assert decision.fallback_assessment is not None
+    assert decision.fallback_assessment.status == "safe"
+    assert decision.effective_device == "cpu"
+
+
+@pytest.mark.parametrize("guard,requested", [("warn", "auto"), ("auto", "xpu:0")])
+def test_warn_or_explicit_device_never_retreats(tmp_path: Path, guard: str, requested: str) -> None:
+    decision = plan_diarization_memory(
+        guard=guard,
+        requested_device=requested,
+        selected_device="xpu:0",
+        backend="pyannote",
+        audio_minutes=50,
+        safety_margin=0.0,
+        store=CalibrationStore(tmp_path / "memory.json"),
+        provider=lambda _device: MemoryReadings(
+            system_available_bytes=10 * GIB, xpu_limit_bytes=6 * GIB
+        ),
+    )
+    assert decision.effective_device == "xpu:0"
+    assert decision.fallback_reason is None
+
+
+def test_debug_budget_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UTTERAN_DEBUG_MEMORY_BUDGET_GIB", "1.25")
+    assert read_memory("cpu").system_available_bytes == round(1.25 * GIB)

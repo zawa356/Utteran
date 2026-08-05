@@ -177,3 +177,8 @@ def test_explicit_xpu_profile_mismatch_does_not_fallback(
 def test_xpu_out_of_memory_mentions_shared_system_ram() -> None:
     with pytest.raises(VramExhaustedError, match="システムRAM"):
         _raise_backend_error("話者分離", RuntimeError("XPU out of memory"))
+
+
+def test_cpu_bad_allocation_mentions_system_ram() -> None:
+    with pytest.raises(VramExhaustedError, match="システムRAM"):
+        _raise_backend_error("話者分離", RuntimeError("bad allocation"), device="cpu")

@@ -99,6 +99,7 @@ class DiarizationResult:
     backend: str
     model_id: str
     device: str
+    memory: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation."""
@@ -117,6 +118,7 @@ class DiarizationResult:
             backend=str(data["backend"]),
             model_id=str(data["model_id"]),
             device=str(data["device"]),
+            memory=(None if data.get("memory") is None else dict(data["memory"])),
         )
 
 

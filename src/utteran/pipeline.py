@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+import wave
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -19,10 +20,24 @@ from utteran.diarization.registry import (
     create_diarization_backend,
     preflight_diarization_backend,
 )
-from utteran.errors import CancelledError, InputFileNotFoundError, UnsupportedInputError
+from utteran.errors import (
+    CancelledError,
+    InputFileNotFoundError,
+    MemoryBudgetError,
+    UnsupportedInputError,
+    VramExhaustedError,
+)
 from utteran.exporters import export_all
 from utteran.jobs import Job, JobStore, StageName, stage_config_hashes
 from utteran.logging import job_log, mask_secrets
+from utteran.memory import (
+    GIB,
+    CalibrationStore,
+    MemoryAssessment,
+    MemoryDecision,
+    measure_peak,
+    plan_diarization_memory,
+)
 from utteran.types import (
     AlignmentOptions,
     ASROptions,
@@ -52,6 +67,7 @@ class BackendPool:
         self._token_provider = token_provider
         self._asr = asr_backend
         self._diarization = diarization_backend
+        self._provided_diarization = diarization_backend
         self._asr_key: tuple[str, str, str, str] | None = None
         self._diarization_key: tuple[str, str, str] | None = None
 
@@ -88,14 +104,26 @@ class BackendPool:
         if self._diarization is not None and self._diarization_key is not None:
             self._diarization.unload()
             self._diarization = None
+        self._diarization = self._diarization or self._provided_diarization
         self._diarization = self._diarization or create_diarization_backend(
-            config.diarization.backend,
-            self._token_provider,
+            config.diarization.backend, self._token_provider
         )
         self._diarization.load(config.diarization.model, config.diarization.device)
         self._diarization_key = key
         logging.getLogger(__name__).info("話者分離バックエンドをロード: %s/%s/%s", *key)
         return self._diarization
+
+    def reset_diarization(self) -> None:
+        """Unload a failed attempt while allowing an injected backend to be reloaded."""
+        if self._diarization is not None:
+            self._diarization.unload()
+        self._diarization = None
+        self._diarization_key = None
+
+    @property
+    def provided_diarization_name(self) -> str | None:
+        """Expose the injected backend identity for dependency-isolated execution."""
+        return None if self._provided_diarization is None else self._provided_diarization.name
 
     def close(self) -> None:
         """Release all loaded model resources."""
@@ -120,6 +148,7 @@ def run_pipeline(
     diarization_backend: DiarizationBackend | None = None,
     backend_pool: BackendPool | None = None,
     job_store: JobStore | None = None,
+    calibration_store: CalibrationStore | None = None,
     resume: bool = True,
     force: bool = False,
     force_unlock: bool = False,
@@ -141,6 +170,7 @@ def run_pipeline(
     )
     executed_stages: list[str] = []
     stage_durations: dict[str, float] = {}
+    selected_calibration_store = calibration_store or CalibrationStore()
     try:
         job_log_level = "debug" if config.general.log_level == "debug" else "info"
         with job.lock(force=force_unlock), job_log(job.root / "utteran.log", job_log_level):
@@ -155,6 +185,7 @@ def run_pipeline(
                 selected_token_provider,
                 executed_stages,
                 stage_durations,
+                selected_calibration_store,
                 progress,
                 cancel,
             )
@@ -181,6 +212,7 @@ def _run_stages(
     token_provider: TokenProvider,
     executed_stages: list[str],
     stage_durations: dict[str, float],
+    calibration_store: CalibrationStore,
     progress: ProgressCallback | None,
     cancel: CancelToken | None,
 ) -> PipelineResult:
@@ -222,7 +254,14 @@ def _run_stages(
                 executed_stages,
                 stage_durations,
                 cancel,
-                lambda: _transcribe_asr(pool, config, job.audio_path, progress, cancel),
+                lambda: _transcribe_asr_measured(
+                    pool,
+                    config,
+                    job.audio_path,
+                    progress,
+                    cancel,
+                    calibration_store,
+                ),
                 lambda value: [
                     job.write_intermediate("asr", cast(TranscriptionResult, value).to_dict())
                 ],
@@ -248,11 +287,13 @@ def _run_stages(
                     executed_stages,
                     stage_durations,
                     cancel,
-                    lambda: pool.diarization(config).diarize(
+                    lambda: _diarize_with_memory_guard(
+                        pool,
+                        config,
                         job.audio_path,
-                        _diarization_options(config),
                         progress,
                         cancel,
+                        calibration_store,
                     ),
                     lambda value: [
                         job.write_intermediate(
@@ -465,6 +506,206 @@ def _transcribe_asr(
         progress,
         cancel,
     )
+
+
+def _transcribe_asr_measured(
+    pool: BackendPool,
+    config: Config,
+    audio_path: Path,
+    progress: ProgressCallback | None,
+    cancel: CancelToken | None,
+    calibration_store: CalibrationStore,
+) -> TranscriptionResult:
+    """Record a successful ASR stage separately from diarization."""
+    with measure_peak() as monitor:
+        result = _transcribe_asr(pool, config, audio_path, progress, cancel)
+    minutes = _wav_minutes(audio_path)
+    if monitor.peak_bytes is not None and minutes > 0:
+        calibration_store.record(
+            "asr",
+            result.backend,
+            result.device,
+            minutes,
+            monitor.peak_bytes,
+        )
+    return result
+
+
+def _diarize_with_memory_guard(
+    pool: BackendPool,
+    config: Config,
+    audio_path: Path,
+    progress: ProgressCallback | None,
+    cancel: CancelToken | None,
+    calibration_store: CalibrationStore,
+) -> DiarizationResult:
+    """Apply preflight policy and one auto-only CPU retry for runtime OOM."""
+    requested = config.diarization.device
+    selected = _resolve_diarization_device(config, pool)
+    minutes = _wav_minutes(audio_path)
+    backend_name = pool.provided_diarization_name or config.diarization.backend
+    decision = plan_diarization_memory(
+        guard=config.diarization.memory_guard,
+        requested_device=requested,
+        selected_device=selected,
+        backend=backend_name,
+        audio_minutes=minutes,
+        safety_margin=config.diarization.memory_safety_margin,
+        store=calibration_store,
+    )
+    _report_memory_decision(decision, config.diarization.memory_guard, progress)
+    effective = config.model_copy(deep=True)
+    effective.diarization.device = decision.effective_device
+    fallback = (
+        None
+        if decision.fallback_reason is None
+        else {
+            "from": decision.selected_device,
+            "to": decision.effective_device,
+            "reason": decision.fallback_reason,
+            "trigger": "preflight",
+        }
+    )
+    try:
+        result, peak = _run_diarization_attempt(
+            pool, effective, audio_path, progress, cancel, calibration_store, minutes
+        )
+        oom_retry = False
+    except VramExhaustedError as exc:
+        may_retry = (
+            config.diarization.memory_guard in {"auto", "off"}
+            and requested == "auto"
+            and decision.effective_device.startswith(("cuda", "xpu"))
+        )
+        if not may_retry:
+            raise VramExhaustedError(
+                f"{exc} 明示deviceまたはmemory_guard={config.diarization.memory_guard}のため"
+                "自動退避は行いません。"
+            ) from None
+        logging.getLogger(__name__).warning(
+            "話者分離OOMを捕捉したためCPUへ1回だけ再試行します: %s", exc
+        )
+        if progress is not None:
+            progress(ProgressEvent("diarization", 0.0, None, "メモリ不足のためCPUで再試行します"))
+        pool.reset_diarization()
+        effective.diarization.device = "cpu"
+        result, peak = _run_diarization_attempt(
+            pool, effective, audio_path, progress, cancel, calibration_store, minutes
+        )
+        fallback = {
+            "from": decision.effective_device,
+            "to": "cpu",
+            "reason": str(exc),
+            "trigger": "oom",
+        }
+        oom_retry = True
+    result.memory = {
+        "guard": config.diarization.memory_guard,
+        "requested_device": requested,
+        "selected_device": selected,
+        "effective_device": result.device,
+        "assessment": _assessment_dict(decision.assessment),
+        "fallback": fallback,
+        "oom_retry": oom_retry,
+        "peak_working_set_bytes": peak,
+    }
+    return result
+
+
+def _run_diarization_attempt(
+    pool: BackendPool,
+    config: Config,
+    audio_path: Path,
+    progress: ProgressCallback | None,
+    cancel: CancelToken | None,
+    calibration_store: CalibrationStore,
+    minutes: float,
+) -> tuple[DiarizationResult, int | None]:
+    with measure_peak() as monitor:
+        result = pool.diarization(config).diarize(
+            audio_path, _diarization_options(config), progress, cancel
+        )
+    peak = monitor.peak_bytes
+    if peak is not None and minutes > 0:
+        calibration_store.record("diarization", result.backend, result.device, minutes, peak)
+    return result, peak
+
+
+def _resolve_diarization_device(config: Config, pool: BackendPool) -> str:
+    if config.diarization.device != "auto":
+        return config.diarization.device
+    if pool.provided_diarization_name is not None:
+        return "cpu"
+    if config.diarization.backend == "pyannote":
+        from utteran.diarization.pyannote import PyannoteBackend
+
+        return PyannoteBackend.resolve_device("auto")
+    return "cpu"
+
+
+def _report_memory_decision(
+    decision: MemoryDecision,
+    guard: str,
+    progress: ProgressCallback | None,
+) -> None:
+    assessment = decision.assessment
+    if assessment is None:
+        return
+    detail = _format_assessment(assessment)
+    if decision.fallback_reason is not None:
+        message = f"話者分離deviceを {decision.selected_device} から CPU へ退避: {detail}"
+        logging.getLogger(__name__).warning(message)
+        if progress is not None:
+            progress(ProgressEvent("diarization", 0.0, None, message))
+        return
+    if assessment.status == "impossible":
+        raise MemoryBudgetError(
+            f"話者分離を開始できません: {detail}。"
+            "CPUなどメモリ効率のよいdeviceへ切り替える、--no-diarizationで話者分離を省略する、"
+            "または音声を短いファイルへ分けてください。"
+        )
+    if assessment.status in {"danger", "unknown"}:
+        message = f"話者分離メモリ警告 (memory_guard={guard}): {detail}"
+        logging.getLogger(__name__).warning(message)
+        if progress is not None:
+            progress(ProgressEvent("diarization", 0.0, None, message))
+
+
+def _format_assessment(assessment: MemoryAssessment) -> str:
+    estimate = (
+        "不明"
+        if assessment.estimate_bytes is None
+        else f"{assessment.estimate_bytes / GIB:.2f} GiB"
+    )
+    budget = (
+        "不明"
+        if assessment.budget.usable_bytes is None
+        else f"{assessment.budget.usable_bytes / GIB:.2f} GiB"
+    )
+    return f"判定={assessment.status}, 推定={estimate}, 予算={budget}, 理由={assessment.reason}"
+
+
+def _assessment_dict(assessment: MemoryAssessment | None) -> dict[str, object] | None:
+    if assessment is None:
+        return None
+    return {
+        "status": assessment.status,
+        "estimate_bytes": assessment.estimate_bytes,
+        "base_bytes": assessment.base_bytes,
+        "budget_bytes": assessment.budget.usable_bytes,
+        "safety_margin": assessment.budget.safety_margin,
+        "budget_source": assessment.budget.source,
+        "model_source": None if assessment.model is None else assessment.model.source,
+        "reason": assessment.reason,
+    }
+
+
+def _wav_minutes(path: Path) -> float:
+    try:
+        with wave.open(str(path), "rb") as wav:
+            return wav.getnframes() / wav.getframerate() / 60.0
+    except (EOFError, OSError, wave.Error, ZeroDivisionError):
+        return 0.0
 
 
 def _diarization_options(config: Config) -> DiarizationOptions:

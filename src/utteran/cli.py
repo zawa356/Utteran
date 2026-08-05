@@ -83,19 +83,23 @@ def memory_show_command() -> None:
     """Show bundled/local peak models without exposing media identifiers."""
     store = CalibrationStore()
     points = store.load()
-    table = Table("stage", "backend/device", "base", "slope", "source", "points")
+    table = Table("stage", "backend/device", "base", "slope", "source", "saved/model points")
     keys = set(DEFAULT_MODELS) | {(p.stage, p.backend, p.device_kind) for p in points}
     for stage, backend, kind in sorted(keys):
         model = store.model(stage, backend, kind)
         if model is None:
             continue
+        saved = sum(
+            (point.stage, point.backend, point.device_kind) == (stage, backend, kind)
+            for point in points
+        )
         table.add_row(
             stage,
             f"{backend}/{kind}",
             f"{model.base_gib:.3f} GiB",
             f"{model.gib_per_minute:.6f} GiB/min",
             model.source,
-            str(model.sample_count),
+            f"{saved}/{model.sample_count}",
         )
     console.print(table)
     console.print(

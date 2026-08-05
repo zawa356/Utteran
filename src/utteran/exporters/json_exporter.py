@@ -61,6 +61,7 @@ class JSONExporter(Exporter):
                         "backend": diarization.backend,
                         "model": diarization.model_id,
                         "device": diarization.device,
+                        "memory": diarization.memory,
                     }
                 ),
                 "created_at": result.created_at,

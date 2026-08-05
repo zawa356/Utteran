@@ -14,6 +14,12 @@
   MAD外れ値除外後のローカル式へ切り替える。platformdirsのprofile共通領域にはstage、backend、
   device種別、音声長、peak、日時だけを保存する。`memory show/reset`とPhase 3d同等のprocess tree
   working set monitorを追加し、重点51 test、ruff、mypyに合格した。
+- Step 2: 話者分離直前にsafe/danger/impossible/unknownを判定し、deviceとmemory guardがともに
+  autoの場合だけ、安全と確認できたCPUへ事前退避する。明示deviceは変更せず、基礎量超過は
+  CPU切替／話者分離省略／個別分割を提示して開始前に止める。OOM/MemoryError/bad allocationを
+  捕捉し、auto（guard auto/off）だけCPUへ1回再試行する。音声・ASR stageは保持される。
+  退避理由、判定、推定、予算、実測peakをdiarization中間結果、merged、最終JSON、job logへ記録。
+  `UTTERAN_DEBUG_MEMORY_BUDGET_GIB`で予算を人工制限できる。モデル不要234 test、ruff、mypy合格。
 
 ## Phase 4a 公開準備（2026-08-05、進行中）
 

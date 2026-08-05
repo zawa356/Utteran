@@ -63,6 +63,10 @@ class VramExhaustedError(DependencyError):
     """Raised when GPU memory is insufficient."""
 
 
+class MemoryBudgetError(DependencyError):
+    """Raised before inference when the stage baseline cannot fit."""
+
+
 class InputError(UtteranError):
     """An input path or media stream is invalid."""
 

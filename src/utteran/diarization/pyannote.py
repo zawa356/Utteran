@@ -139,6 +139,17 @@ class PyannoteBackend(DiarizationBackend):
         self._model_id = model_id
         self._device = selected_device
 
+    @staticmethod
+    def resolve_device(device: str) -> str:
+        """Resolve auto using the same real-kernel probe as model loading."""
+        try:
+            import torch
+        except Exception as exc:
+            raise BackendUnavailableError(
+                "PyTorch を読み込めないため話者分離deviceを選択できません。"
+            ) from exc
+        return _select_device(device, torch)
+
     def diarize(
         self,
         audio_path: Path,
@@ -191,7 +202,7 @@ class PyannoteBackend(DiarizationBackend):
         except CancelledError:
             raise
         except Exception as exc:
-            _raise_backend_error("話者分離", exc)
+            _raise_backend_error("話者分離", exc, device=self._device)
 
         speakers = {turn.speaker for turn in turns}
         if progress is not None:
@@ -384,14 +395,32 @@ def _annotation_to_turns(annotation: Any) -> list[SpeakerTurn]:
     ]
 
 
-def _raise_backend_error(operation: str, error: Exception) -> None:
+def _raise_backend_error(operation: str, error: Exception, *, device: str = "") -> None:
     """Translate pyannote/Torch errors into stable public exceptions."""
     detail = str(error).casefold()
-    if "out of memory" in detail or "cuda_error_out_of_memory" in detail:
-        if "xpu" in detail or "sycl" in detail or "level zero" in detail:
+    if isinstance(error, MemoryError) or any(
+        marker in detail
+        for marker in (
+            "out of memory",
+            "cuda_error_out_of_memory",
+            "bad allocation",
+            "bad_alloc",
+            "not enough memory",
+            "insufficient memory",
+            "cannot allocate memory",
+        )
+    ):
+        if device.startswith("xpu") or any(
+            marker in detail for marker in ("xpu", "sycl", "level zero")
+        ):
             raise VramExhaustedError(
                 f"{operation}中に XPU の共有メモリが不足しました。Arc内蔵GPUはシステムRAMを"
                 "共有します。CPUを指定するか、他のプロセスのRAM使用量を減らしてください。"
+            ) from None
+        if device.startswith("cpu"):
+            raise VramExhaustedError(
+                f"{operation}中にシステムRAMが不足しました。"
+                "他のアプリを終了するか、話者分離を省略してください。"
             ) from None
         raise VramExhaustedError(
             f"{operation}中に VRAM が不足しました。"
