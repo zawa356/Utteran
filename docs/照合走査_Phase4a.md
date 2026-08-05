@@ -62,6 +62,9 @@ Step 1の照合は0件だったため、利用者固有文字列の追加置換�
   `94c632c`のtree `2045447b3547785b7003d9342b36ca0c808abe78`が事前HEAD treeと一致
 - `v0.0.1`のannotated tag objectは`231772e9...`から`bce32e7c...`、対象commitは
   `7cf578c2...`から`6f8f9a0f...`へ変更。GitHub Releaseとtagの再照合が必要
+- モデル不要pytestは217 pass、ruff/format/mypy/lockfile/BOM/current-tree scanは全て合格
+- 統合受入は出力経路G2の16件と公開文書G11の2件を実モデル環境で再実行し、
+  18 pass / 0 fail / 0 skip（393.0秒）
 
 pushは実施していない。安全なforce-with-leaseと新repositoryへの移行手順は
 `docs/リリース手順.md`に記録した。GitHub側の到達不能objectを完全削除するには、

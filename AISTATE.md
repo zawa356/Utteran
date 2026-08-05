@@ -61,6 +61,9 @@
 - 再発防止として、email付きcommit trailerを使わない規約を定義。Git checkout内では
   Git除外済み出力先だけを許可し、`output`/`transcripts`/`utteran-output`の5形式を
   `git check-ignore`で回帰確認する。CIの汎用current-tree scanとlocal hash照合の使い分けも文書化。
+- 書き換え・再発防止後はモデル不要pytest 217 pass、ruff/format/mypy/lock/BOM/
+  current-tree scan全合格。統合受入は実出力G2 16件+公開文書G11 2件を新規結果へ実行し、
+  18 pass/0 fail/0 skip（393.0秒）。文字起こし本文は報告/Gitへ保存していない。
 
 ## Phase 3d 是正（2026-08-04〜2026-08-05、完了）
 
