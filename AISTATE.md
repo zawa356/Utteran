@@ -1,5 +1,19 @@
 # AI 作業状態
 
+## Phase 4a 公開準備（2026-08-05、進行中）
+
+- 指定4文書を読了し、`chore/phase4a-public-readiness`を作成した。履歴改変、force push、push、
+  branch/tag削除は実施していない。
+- Step 0で`origin`をfetchし、20 refs、111 commits、1,074 Git objects（到達可能1,052、
+  到達不能blob 9/tree 13）、全111差分、全commit message/path/blobを走査した。秘密値候補0件。
+  メール形式はcommit message 10件・過去差分7件、ユーザー絶対パス候補は`AISTATE.md`導入差分2件と
+  同内容の到達不能blob 2件。値は報告・保存していない。現在の`AISTATE.md`では固有表記を一般化。
+- GitHub側はIssues/PR/comments/Actions runsが0、release 1件はmetadata検出0・asset 0、Wikiなし、
+  Discussions無効。詳細は`docs/公開履歴監査_Phase4a.md`。履歴維持／書換え／非公開化の影響を整理し、
+  利用者判断までは履歴を維持する。
+- 再実行可能な`tools/public_history_scan.py`、値を含まないJSON報告、現在tree用blocking gate、
+  `.gitignore`実効性テストを追加した。gitleaksは環境になかったため自前scanを使用。
+
 ## Phase 3d 是正（2026-08-04〜2026-08-05、完了）
 
 - 固定checkoutの`examples/cli/cli.cpp`で`--max-context`、Sileroモデル必須の`--vad`、
@@ -1041,16 +1055,16 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
 
 ## 動作確認環境・手順
 
-- 作業パス: `/mnt/c/UserDataFile/Git/Utteran`
+- 作業パス: `<checkout>/Utteran`
 - 受入実行環境: Windows 11 Pro 10.0.26200、Python 3.12.0、uv 0.11.32。
   補助品質検査はWSL Python 3.11.15でも実施。
 - Git リポジトリ初回コミットは `83a4b29`。Phase 2 実装と指示書は
   `feat: implement Phase 2 operational workflows` の変更セットに収録。
 - `python3 --version`: 3.12.3。
-- `/home/<user>/.local/bin/uv --version`: 0.12.1。
+- ユーザー領域の `uv --version`: 0.12.1。
 - WSL の `ffmpeg -version`: 未導入。Windows 側 `C:\path\ffmpeg\bin\ffmpeg.exe` は確認したが、
   WSL パス引数との相互運用制約があるため製品検証には一時 Linux 静的版を使用。
-- `/home/<user>/.local/bin/uv sync --extra dev`: 成功、59パッケージ導入、`uv.lock` 生成。
+- ユーザー領域の `uv sync --extra dev`: 成功、59パッケージ導入、`uv.lock` 生成。
 - `uv run pytest -m 'not requires_model' --capture=sys`: 基盤段階で 12 passed。
 - pyannote.audio 4.0.7 の `Pipeline.from_pretrained` / `DiarizeOutput` を導入済みコードで確認。
 - 現環境はシステム ffmpeg 共有ライブラリ未導入のため TorchCodec が警告する。waveform 渡しで回避。
