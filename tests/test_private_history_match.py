@@ -112,7 +112,7 @@ def test_rewrite_rules_work_with_filter_repo(tmp_path: Path) -> None:
         ["git", "config", "user.email", "test@example.invalid"], cwd=repository, check=True
     )
     tracked = repository / "note.txt"
-    tracked.write_text("C:/Users/<user>/private\n", encoding="utf-8")
+    tracked.write_text("C:/Users/TestUser/private\n", encoding="utf-8")
     subprocess.run(["git", "add", "note.txt"], cwd=repository, check=True)
     message = "subject\n\nContact: account" + "@" + "corp.invalid"
     subprocess.run(["git", "commit", "-q", "-m", message], cwd=repository, check=True)
