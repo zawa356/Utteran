@@ -73,6 +73,17 @@ error_console = Console(stderr=True)
 @app.callback()
 def main() -> None:
     """Run the utteran command group."""
+    # On Windows, sys.stdout/stderr default to the system locale codepage (e.g. cp932)
+    # whenever they are not attached to a real console (piped, redirected to a file, or
+    # captured by a subprocess). typer.echo(json.dumps(..., ensure_ascii=False)) then
+    # writes real Japanese characters (e.g. auto-selection notes) through that codepage,
+    # silently corrupting them or emitting bytes that a UTF-8 reader parses as invalid
+    # JSON. Force both streams to UTF-8 so `--json` output stays machine-readable
+    # regardless of console state, matching the UTF-8 discipline already enforced for
+    # subprocess I/O elsewhere in this codebase (native.py, setup.ps1 child processes).
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower() != "utf-8":
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 @app.command()
