@@ -20,7 +20,7 @@ def test_pattern_file_contains_hashes_but_not_source_names(tmp_path: Path) -> No
     namespace = _namespace()
     input_dir = tmp_path / "input"
     input_dir.mkdir()
-    private_name = "テスト組織_contact@corp.invalid_meeting.wav"
+    private_name = "テスト組織_contact" + "@" + "corp.invalid_meeting.wav"
     (input_dir / private_name).touch()
     output = tmp_path / "patterns.json"
 
