@@ -4,6 +4,16 @@ Phase 1/2のG系とPhase 3のP系を同じ`harness.py`/`cases.json`から実行�
 長時間グループ（`G13`/`P14`）と破壊的グループを除外する。Phase 3d R-4で、単なるコマンド
 実行器から、将来GUIが「この環境で何が動くか」を判定する基盤へ拡張した。
 
+## CIとの役割分担
+
+GitHub ActionsはLinux/Windowsのモデル不要テスト、lint、型、lockfile、PowerShellのBOM・構文・
+実起動、公開treeの衛生を確認する最低限の回帰ゲートである。Vulkan SDK/OpenVINOを使うnative build、
+実モデル、GPU、長時間音声、性能、破壊的操作と復元はCIでは実行しない。
+
+実質的な品質保証とrelease判定は本ハーネスが担う。release前は対象hardware上で環境要件を満たす
+通常ケースに加え、必要な長時間／破壊的groupを明示選択して実行し、理由のない失敗がないことを
+確認する。CI合格だけを実モデル・GPU構成の動作保証として扱ってはならない。
+
 ```console
 python tools/acceptance/harness.py --list
 python tools/acceptance/harness.py --group G4 --group P14

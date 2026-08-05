@@ -337,6 +337,9 @@ def _run_process(
         environment["PATH"] = (
             os.pathsep.join(map(str, runtime_dirs)) + os.pathsep + environment.get("PATH", "")
         )
+    creationflags = (
+        int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+    )
     process = subprocess.Popen(
         command,
         stdout=subprocess.DEVNULL,
@@ -345,7 +348,7 @@ def _run_process(
         encoding="utf-8",
         errors="replace",
         env=environment,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+        creationflags=creationflags,
     )
     lines: queue.Queue[str | None] = queue.Queue()
 

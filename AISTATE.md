@@ -13,6 +13,15 @@
   利用者判断までは履歴を維持する。
 - 再実行可能な`tools/public_history_scan.py`、値を含まないJSON報告、現在tree用blocking gate、
   `.gitignore`実効性テストを追加した。gitleaksは環境になかったため自前scanを使用。
+- Step 1としてGitHub Actionsを追加。Linuxでruff/format/mypy/lock/モデル不要test/BOM byte/
+  public scan、Windowsでモデル不要test/全PS1 Parser/Windows PowerShell 5.1実起動を行う。
+  CIはnative build、実model、GPU、長時間、性能を対象外とし、実質的なrelease品質保証は
+  `tools/acceptance`が担うことを要件定義23章とハーネスREADMEへ明記した。
+- Linux CI相当をWSL Python 3.12.3で実行し、当初はWindows専用subprocess定数のmypy参照1件と、
+  profile directory/受入実行ファイルoverrideをWindows固定したテスト3件が失敗した。定数を
+  `getattr`でOS条件解決し、テストを`venv_dir_name()`利用、ハーネスoverrideをOS共通へ修正。
+  再実行はruff/format/mypy/lock/BOM/public gate合格、モデル不要201合格・Windows限定2 skip。
+  Windowsはモデル不要203合格、全PS1のParser/PowerShell 5.1実起動、全品質gate合格。
 
 ## Phase 3d 是正（2026-08-04〜2026-08-05、完了）
 

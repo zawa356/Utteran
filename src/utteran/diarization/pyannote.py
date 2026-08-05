@@ -72,9 +72,7 @@ class PyannoteBackend(DiarizationBackend):
             if xpu is not None and xpu.is_available():
                 for index in range(xpu.device_count()):
                     devices.append(
-                        DeviceInfo(
-                            id=f"xpu:{index}", kind="xpu", name=xpu.get_device_name(index)
-                        )
+                        DeviceInfo(id=f"xpu:{index}", kind="xpu", name=xpu.get_device_name(index))
                     )
         except Exception:
             pass

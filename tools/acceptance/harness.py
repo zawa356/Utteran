@@ -64,6 +64,15 @@ def _windows_utteran() -> Path:
     return PROJECT_ROOT / ".venv-windows" / "Scripts" / "utteran.exe"
 
 
+def _utteran() -> Path:
+    override = os.environ.get("UTTERAN_ACCEPTANCE_UTTERAN")
+    if override:
+        return Path(override)
+    if os.name == "nt":
+        return _windows_utteran()
+    return PROJECT_ROOT / ".venv/bin/utteran"
+
+
 def _placeholders(results_path: Path = DEFAULT_RESULTS) -> dict[str, str]:
     acceptance = Path(
         os.environ.get("UTTERAN_ACCEPTANCE_ROOT", PROJECT_ROOT / "output" / "_acceptance")
@@ -72,9 +81,7 @@ def _placeholders(results_path: Path = DEFAULT_RESULTS) -> dict[str, str]:
     return {
         "project": str(PROJECT_ROOT),
         "python": sys.executable,
-        "utteran": str(
-            _windows_utteran() if os.name == "nt" else PROJECT_ROOT / ".venv/bin/utteran"
-        ),
+        "utteran": str(_utteran()),
         "testdata": str(PROJECT_ROOT / "output" / "_testdata"),
         "actual": str(actual_files[0] if actual_files else PROJECT_ROOT / "input" / "missing.mp4"),
         "acceptance": str(acceptance),

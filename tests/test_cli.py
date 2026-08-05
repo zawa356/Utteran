@@ -37,6 +37,7 @@ from utteran.errors import CancelledError, ConfigurationError
 from utteran.jobs import JobStore
 from utteran.models.catalog import ModelEntry, get_model, list_models
 from utteran.models.manager import ModelManager, ModelStatus
+from utteran.profiles import venv_dir_name
 from utteran.types import CancelToken
 
 runner = CliRunner()
@@ -470,7 +471,7 @@ def test_profiles_list_reports_one_created_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("UTTERAN_VENV_DIR", raising=False)
-    (tmp_path / "win-cpu").mkdir()
+    (tmp_path / venv_dir_name("cpu")).mkdir()
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         f"[general]\nvenv_dir = '{tmp_path.as_posix()}'\n",

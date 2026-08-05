@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install development dependencies
+        run: uv sync --extra dev --locked
+      - name: Check lockfile
+        run: uv lock --check
+      - name: Lint
+        run: uv run --no-sync ruff check src tests tools
+      - name: Check formatting
+        run: uv run --no-sync ruff format --check src tests tools
+      - name: Type check
+        run: uv run --no-sync mypy
+      - name: Test without models
+        run: uv run --no-sync pytest -m "not requires_model"
+      - name: Check PowerShell UTF-8 BOM
+        run: uv run --no-sync python tools/check_powershell_bom.py
+      - name: Reject new private data in tracked files
+        run: >-
+          uv run --no-sync python tools/public_history_scan.py
+          --worktree --fail-on-findings
+      - name: Audit complete reachable history
+        run: >-
+          uv run --no-sync python tools/public_history_scan.py
+          --json output/public-history-scan-ci.json
+
+  windows-tests:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install development dependencies
+        run: uv sync --extra dev --locked
+      - name: Test without models
+        run: uv run --no-sync pytest -m "not requires_model"
+      - name: Parse every PowerShell script with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $failed = $false
+          foreach ($file in (git ls-files '*.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $file), [ref]$tokens, [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${file}: $($_.Message)" }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+      - name: Start every PowerShell script with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          foreach ($file in (git ls-files '*.ps1')) {
+            if ($file -eq 'setup.ps1') {
+              $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file -List 2>&1
+            } elseif ($file -eq 'start.ps1') {
+              $output = '0' | & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file 2>&1
+            } elseif ($file -eq 'run.ps1') {
+              $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file `
+                -Profile cpu --help 2>&1
+            } else {
+              $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file 2>&1
+            }
+            if ($output -match 'ParserError|Unexpected token|FullyQualifiedErrorId.*ParserError') {
+              Write-Error "$file failed Windows PowerShell startup parsing"
+              exit 1
+            }
+          }

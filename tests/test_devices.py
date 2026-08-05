@@ -25,6 +25,7 @@ from utteran.devices import (
 )
 from utteran.errors import BackendUnavailableError
 from utteran.native import PrerequisiteCheck as NativePrerequisiteCheck
+from utteran.profiles import venv_dir_name
 
 
 def test_auto_compute_type_uses_supported_cuda_fallback() -> None:
@@ -146,7 +147,7 @@ def test_detect_profile_report_reflects_current_and_created_profiles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UTTERAN_PROFILE", "cpu")
-    (tmp_path / "win-cpu").mkdir()
+    (tmp_path / venv_dir_name("cpu")).mkdir()
 
     report = detect_profile_report(tmp_path)
 

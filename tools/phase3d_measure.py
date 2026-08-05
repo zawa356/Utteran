@@ -31,9 +31,7 @@ def _statistics(segments: list[Segment]) -> dict[str, int | float]:
         previous = value
     combined = "".join(texts)
     japanese = sum(
-        1
-        for char in combined
-        if "\u3040" <= char <= "\u30ff" or "\u3400" <= char <= "\u9fff"
+        1 for char in combined if "\u3040" <= char <= "\u30ff" or "\u3400" <= char <= "\u9fff"
     )
     nonspace = sum(not char.isspace() for char in combined)
     return {
