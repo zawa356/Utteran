@@ -68,6 +68,15 @@
   `auto_selection.notes`等に含まれる日本語がpipe経由で破損する（無効なJSONになる場合すらある）
   不具合を発見した。R-4のrequires判定が依存する`devices --json`のパイプ読み取りで顕在化した。
   `cli.py`の`main()`callbackで`sys.stdout`/`sys.stderr`を`UTF-8`へ`reconfigure`して修正した。
+- **製品バグを発見・修正（重大）**: 新規P1-1ケース（`setup.ps1 -List`をWindows PowerShell 5.1
+  すなわち`powershell.exe`から直接実行）で`setup.ps1`が構文エラー（`Unexpected token`）で
+  即座に失敗することを発見した。同様に`run.ps1`も日本語文字列が文字化けしたうえで構文エラーに
+  なることを確認した。原因は両ファイルにUTF-8 BOMがないこと。`start.ps1`は既に同じ理由で
+  BOM付き追跡と明記されていたが（既知の落とし穴参照）、`setup.ps1`/`run.ps1`は対象外のままだった。
+  過去のWindows PowerShell 5.1 Parser API検査（静的構文検証）はこの実行時破損を検出できず、
+  合格し続けていた。両ファイルへUTF-8 BOMを追加し、`powershell.exe -File`での実行で
+  再現しないことを確認した。**この2ファイルはWindows PowerShell 5.1環境（README記載の
+  対応環境）で今回の修正前は起動不能だった可能性が高い。**
 
 ## 現在のフェーズと進捗
 
@@ -981,8 +990,12 @@ PATH永続化確認済み）。Visual Studio Community 2022（17.14.37411.7）�
 - WindowsとWSLで同じ `.venv` を共有しない。Phase 3a以降はプロファイル別
   `.venvs/<os>-<profile>`がOS識別子でこれを恒久的に回避する。旧`.venv-windows`は
   互換のため残置しているが新規作成はしない。
-- `start.ps1`の先頭UTF-8 BOMを保持する。PowerShell 7だけで検査せず、Windows PowerShell 5.1
-  Parser APIと実行の双方を確認する。
+- `start.ps1`/`setup.ps1`/`run.ps1`の先頭UTF-8 BOMを保持する。PowerShell 7だけで検査せず、
+  Windows PowerShell 5.1 Parser APIと実行の双方を確認する。**Parser API
+  （`[System.Management.Automation.(Language.)Parser]`）による静的構文検証だけでは
+  BOM欠落によるこの種の実行時破損を検出できない**（Phase 3d R-4で`setup.ps1`/`run.ps1`の
+  BOM欠落を発見した際、両ファイルは過去のParser API検査に合格し続けていた）。
+  BOMを除去するformatterは使用しない。
 - 第三者配布のCTranslate2モデル（特に蒸留系）は`config.json`の`alignment_heads`が
   decoder層数と整合しているとは限らない。単語タイムスタンプ計算はネイティブクラッシュとして
   失敗しうるため、モデル固有のバグを疑う際はまず`models verify`を実行する。

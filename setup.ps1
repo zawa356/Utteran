@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet("cpu", "cuda", "intel", "vulkan")]
     [string]$Profile,
