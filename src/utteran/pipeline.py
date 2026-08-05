@@ -590,7 +590,14 @@ def _diarize_with_memory_guard(
         pool.reset_diarization()
         effective.diarization.device = "cpu"
         result, peak = _run_diarization_attempt(
-            pool, effective, audio_path, progress, cancel, calibration_store, minutes
+            pool,
+            effective,
+            audio_path,
+            progress,
+            cancel,
+            calibration_store,
+            minutes,
+            record_calibration=False,
         )
         fallback = {
             "from": decision.effective_device,
@@ -620,13 +627,15 @@ def _run_diarization_attempt(
     cancel: CancelToken | None,
     calibration_store: CalibrationStore,
     minutes: float,
+    *,
+    record_calibration: bool = True,
 ) -> tuple[DiarizationResult, int | None]:
     with measure_peak() as monitor:
         result = pool.diarization(config).diarize(
             audio_path, _diarization_options(config), progress, cancel
         )
     peak = monitor.peak_bytes
-    if peak is not None and minutes > 0:
+    if record_calibration and peak is not None and minutes > 0:
         calibration_store.record("diarization", result.backend, result.device, minutes, peak)
     return result, peak
 

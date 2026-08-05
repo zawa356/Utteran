@@ -121,6 +121,38 @@ uv run utteran transcribe meeting.wav --asr-backend whisper-cpp \
   --asr-device openvino_vulkan --diarization-device xpu:0
 ```
 
+### 話者分離のメモリ管理
+
+pyannoteのメモリは固定的な基礎量が大きく、音声を短くしても基礎量は減りません。Phase 3dの
+単一Intel環境では、XPUが約4.80 GiB + 0.0087 GiB/分、CPUが約2.42 GiB + 0.0057 GiB/分でした。
+CUDAはGTX 1070 Tiの139分1点（7.31 GiB）だけで、傾向を推定できません。いずれも保証値ではなく、
+他のhardware、driver、model、同時実行processでは外れます。
+
+既定の`memory_guard = "auto"`は、CUDAなら空き専用VRAM、XPUならGPU上限と空きsystem RAMの
+小さい方、CPUなら空きsystem RAMから安全率を差し引きます。推定が予算に近い場合、deviceも
+`auto`なら安全と確認できたCPUへ退避します。明示deviceは変更せず警告し、基礎量すら入らない
+場合は処理前に停止します。取得APIが使えない場合は「不明」と警告し、十分とはみなしません。
+実行中のOOMもautoではCPUへ1回だけ再試行し、音声抽出とASR中間結果を再利用します。
+
+```toml
+[diarization]
+memory_guard = "auto"       # auto | warn | off
+memory_safety_margin = 0.0  # 0ならCUDA 10% / XPU 30% / CPU 20%
+```
+
+実測peakは音声長と構成・日時だけをprofile共通領域へ蓄積し、同一構成3点以上かつ5分以上の
+音声長spanが得られてからローカル式を
+優先します。音声名、path、認識内容は保存しません。
+
+```console
+uv run utteran memory show
+uv run utteran memory reset
+```
+
+pyannote 4.0.7には安定したチャンク処理APIがなく、全体clusterとexclusive diarizationを保った
+分割には非公開内部への強い依存が必要なため、Phase 4bでは自動分割を実装していません。
+CPU基礎量も入らない場合は`--no-diarization`または入力fileの事前分割を使用してください。
+
 ## whisper.cppとbenchmark
 
 ```console

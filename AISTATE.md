@@ -20,6 +20,17 @@
   捕捉し、auto（guard auto/off）だけCPUへ1回再試行する。音声・ASR stageは保持される。
   退避理由、判定、推定、予算、実測peakをdiarization中間結果、merged、最終JSON、job logへ記録。
   `UTTERAN_DEBUG_MEMORY_BUDGET_GIB`で予算を人工制限できる。モデル不要234 test、ruff、mypy合格。
+- Step 4実機検証: 3分fixtureで通常safe/XPU peak 4.962 GiB、人工raw予算4.9 GiBのautoは
+  danger/CPU退避/2.775 GiB、XPU明示はdanger警告のみ/4.952 GiB、2.5 GiBはmodel load前exit 3。
+  guard off + XPU allocator 2%制限で実OOMを発生させ、捕捉後CPUへ1回だけ再試行して完走した。
+  audio/ASRはresumeされ、job log/中間/merged/最終JSONの記録も確認。OOM後CPU peakはXPU残留
+  working setを含むためキャリブレーション対象外とした。R-5の25/50/100分byte実測に対する
+  同梱式誤差はXPU -0.424〜+0.617%、Vulkan ASR -0.015〜+0.019%、CPU 2点0%。
+  詳細は`docs/検証結果_Phase4b.md`。Step 4-Cは分岐Bのため対象外。
+- 統合受入P9初回は6/7 pass。ほぼ同じ3分点が3点たまり、微小な音声長差からlocal slopeが
+  暴走してP9-4を1940 GiBと誤推定した。3点条件に加えて音声長span 5分以上を必須化し、
+  pairwise slopeも5分未満の差を使わないよう修正。重点test後のP9-4再実行は70.2秒でpassし、
+  ID別最新P9は7/7 pass。
 
 ## Phase 4a 公開準備（2026-08-05、進行中）
 

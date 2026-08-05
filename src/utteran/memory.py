@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import ctypes
 import json
-import math
 import os
 import statistics
 import threading
@@ -27,6 +26,7 @@ from platformdirs import user_data_dir
 GIB = 1024**3
 CALIBRATION_SCHEMA_VERSION = 1
 CALIBRATION_MIN_POINTS = 3
+CALIBRATION_MIN_SPAN_MINUTES = 5.0
 DEFAULT_SAFETY_MARGINS = {"cuda": 0.10, "xpu": 0.30, "cpu": 0.20, "other": 0.20}
 
 MemoryStage = Literal["asr", "diarization"]
@@ -48,10 +48,10 @@ class PeakModel:
 
 # OLS fits of the R-5 points. CUDA is a one-point conservative constant.
 DEFAULT_MODELS: dict[tuple[MemoryStage, str, str], PeakModel] = {
-    ("diarization", "pyannote", "xpu"): PeakModel(5.1505, 0.00935143, "phase3d-r5", 3),
-    ("diarization", "pyannote", "cpu"): PeakModel(2.5990, 0.00616000, "phase3d-r5", 2),
+    ("diarization", "pyannote", "xpu"): PeakModel(4.79693985, 0.00870553, "phase3d-r5", 3),
+    ("diarization", "pyannote", "cpu"): PeakModel(2.42100143, 0.00571777, "phase3d-r5", 2),
     ("diarization", "pyannote", "cuda"): PeakModel(7.3100, 0.0, "phase3d-r5-one-point", 1),
-    ("asr", "whisper-cpp", "vulkan"): PeakModel(1.2005, 0.01076286, "phase3d-r5", 3),
+    ("asr", "whisper-cpp", "vulkan"): PeakModel(1.11793709, 0.01002353, "phase3d-r5", 3),
 }
 
 
@@ -313,13 +313,18 @@ class CalibrationStore:
 def fit_calibration(points: list[CalibrationPoint]) -> PeakModel | None:
     """Fit after MAD residual rejection; three points permit one residual check."""
     valid = [p for p in points if p.audio_minutes > 0 and p.peak_bytes > 0]
-    if len(valid) < CALIBRATION_MIN_POINTS or len({p.audio_minutes for p in valid}) < 2:
+    if (
+        len(valid) < CALIBRATION_MIN_POINTS
+        or max((p.audio_minutes for p in valid), default=0.0)
+        - min((p.audio_minutes for p in valid), default=0.0)
+        < CALIBRATION_MIN_SPAN_MINUTES
+    ):
         return None
     slopes = [
         ((b.peak_bytes - a.peak_bytes) / GIB) / (b.audio_minutes - a.audio_minutes)
         for index, a in enumerate(valid)
         for b in valid[index + 1 :]
-        if not math.isclose(a.audio_minutes, b.audio_minutes)
+        if abs(a.audio_minutes - b.audio_minutes) >= CALIBRATION_MIN_SPAN_MINUTES
     ]
     if not slopes:
         return None
@@ -335,7 +340,11 @@ def fit_calibration(points: list[CalibrationPoint]) -> PeakModel | None:
     median_peak = statistics.median(p.peak_bytes / GIB for p in valid)
     threshold = max(3.0 * mad, 0.10 * median_peak, 0.05)
     inliers = [p for p, residual in zip(valid, residuals, strict=True) if residual <= threshold]
-    if len(inliers) < CALIBRATION_MIN_POINTS or len({p.audio_minutes for p in inliers}) < 2:
+    if (
+        len(inliers) < CALIBRATION_MIN_POINTS
+        or max(p.audio_minutes for p in inliers) - min(p.audio_minutes for p in inliers)
+        < CALIBRATION_MIN_SPAN_MINUTES
+    ):
         return None
     xs = [p.audio_minutes for p in inliers]
     ys = [p.peak_bytes / GIB for p in inliers]

@@ -209,6 +209,8 @@ def test_auto_oom_retries_cpu_once_and_records_fallback(
     assert "synthetic OOM" in (tmp_path / "jobs" / outcome.job_id / "utteran.log").read_text(
         encoding="utf-8"
     )
+    points = CalibrationStore(tmp_path / "memory.json").load()
+    assert not any(point.stage == "diarization" and point.device_kind == "cpu" for point in points)
 
 
 def test_pipeline_passes_num_speakers_and_exports_all_formats(

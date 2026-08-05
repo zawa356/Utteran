@@ -114,6 +114,7 @@ class PyannoteBackend(DiarizationBackend):
                 from pyannote.audio import Pipeline
 
             selected_device = _select_device(device, torch)
+            _apply_debug_memory_fraction(torch, selected_device)
             pipeline = Pipeline.from_pretrained(model_path, token=token)
             if pipeline is None:
                 raise ModelNotFoundError(f"話者分離モデル '{model_id}' の設定を読み込めません。")
@@ -325,6 +326,24 @@ def _select_device(requested: str, torch_module: Any) -> str:
             )
         return f"xpu:{index}"
     raise BackendUnavailableError(f"pyannote が対応していないデバイスです: {requested}")
+
+
+def _apply_debug_memory_fraction(torch_module: Any, device: str) -> None:
+    """Constrain an accelerator allocator for destructive OOM verification only."""
+    raw = os.environ.get("UTTERAN_DEBUG_ACCELERATOR_MEMORY_FRACTION")
+    if raw is None or not device.startswith(("cuda", "xpu")):
+        return
+    try:
+        fraction = float(raw)
+        if not 0.0 < fraction <= 1.0:
+            raise ValueError
+        index = int(device.partition(":")[2] or "0")
+        allocator = torch_module.xpu if device.startswith("xpu") else torch_module.cuda
+        allocator.set_per_process_memory_fraction(fraction, index)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ConfigurationError(
+            "UTTERAN_DEBUG_ACCELERATOR_MEMORY_FRACTION は0超1以下で指定してください。"
+        ) from exc
 
 
 def _torch_cuda_usable(torch_module: Any, index: int) -> bool:

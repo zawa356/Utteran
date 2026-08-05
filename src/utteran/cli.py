@@ -45,7 +45,12 @@ from utteran.errors import (
 )
 from utteran.jobs import JobStore
 from utteran.logging import configure_logging, mask_secrets, register_secret
-from utteran.memory import CALIBRATION_MIN_POINTS, DEFAULT_MODELS, CalibrationStore
+from utteran.memory import (
+    CALIBRATION_MIN_POINTS,
+    CALIBRATION_MIN_SPAN_MINUTES,
+    DEFAULT_MODELS,
+    CalibrationStore,
+)
 from utteran.models.catalog import ModelEntry, get_model
 from utteran.models.manager import ModelManager, ModelStatus
 from utteran.native import VARIANT_NAMES, NativeBuilder, resolve_native_dir
@@ -103,7 +108,8 @@ def memory_show_command() -> None:
         )
     console.print(table)
     console.print(
-        f"保存点: {len(points)} / ローカル式への切替: 同一構成{CALIBRATION_MIN_POINTS}点以上 / "
+        f"保存点: {len(points)} / ローカル式への切替: 同一構成{CALIBRATION_MIN_POINTS}点以上・"
+        f"長さspan {CALIBRATION_MIN_SPAN_MINUTES:g}分以上 / "
         f"保存先: {store.path}"
     )
 

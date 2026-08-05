@@ -93,6 +93,10 @@ def test_calibration_requires_three_points_and_rejects_outlier() -> None:
     assert model.gib_per_minute == pytest.approx(0.01, abs=0.001)
 
 
+def test_calibration_rejects_nearly_identical_durations() -> None:
+    assert fit_calibration([_point(3.0, 5.0), _point(3.0001, 5.1), _point(3.0002, 4.9)]) is None
+
+
 def test_store_contains_no_media_name_or_path(tmp_path: Path) -> None:
     path = tmp_path / "memory.json"
     store = CalibrationStore(path)
