@@ -193,6 +193,10 @@
 
 ## 性能測定結果
 
+**注記（Phase 3d R-7）**: 以下はPhase 3dのハルシネーション対策（`no_context = true`等）適用前の
+測定値であり、現在は改善している。対策後の再測定と、長時間音声でVulkan/OpenVINO+Vulkanの
+優劣が逆転する非自明な発見は`README.md`「Phase 3dのハルシネーション対策とbenchmark」節を参照。
+
 180秒fixture。ASR表はASR stageのみ。
 
 | ASR構成 | TSあり | TSなし | TSなし実時間比 |

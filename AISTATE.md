@@ -27,6 +27,48 @@
   ただしP0〜P13/P15/P16は受入時の手動記録しかなく宣言的caseへ未移植で、統合ハーネス全件の
   実行も未完了。したがってPhase 3d完了とは扱わない。
 
+## Phase 3d 最終指示（R-7・R-4完遂、2026-08-05）
+
+- **R-7 再測定**: whisper-cliへの引数がR-2時点の測定から不変であることをコード差分で確認した
+  うえで、`utteran benchmark`により全構成・単語TSあり/なし・VAD有効・実音声長を再測定した。
+  180秒fixture・warmup1・3回中央値（TSなし/TSあり）: cpu 148.460s/183.135s、
+  openvino 30.587s/34.138s、vulkan 15.363s/22.310s、openvino_vulkan 19.638s/24.086s、
+  faster-whisper 79.551s/74.672s。VAD有効時のvulkan（TSなし）は14.322sでVAD無効時と有意差なし。
+  いずれもR-2時点よりやや高速（cpu/openvino/vulkanで約10〜13%）だが引数不変のため測定ばらつきと
+  判断し、対策自体による高速化ではない。
+- **重大な発見**: 180秒fixtureではvulkan(15.363s)がovvk(19.638s)より高速という順序が維持される一方、
+  24分46秒の実会議WAV（単語TSなし、1点測定）ではvulkan 110.730s・ovvk 65.141sと**順序が逆転**した
+  （ovvkが約41%高速）。180秒の比から単純外挿するとvulkan約127s・ovvk約162sの見込みだが、
+  実測はovvkが外挿より大幅に高速で、OpenVINOエンコーダの初期化コストが長い音声で償却される
+  ためと推測されるが単一環境・単一素材の1点測定であり断定していない。
+- **auto順序の決定**: `vulkan`優先の既定順序は変更しない。理由は(1) IR未変換環境でも`auto`が
+  確実に動作すること（`_choose_variant`はnative build有無のみ判定し、モデル別IR生成状態までは
+  見ないため、既定でovvkを選ぶとIR未生成環境で初期化失敗を誘発しうる。安全にするには追加実装が
+  要り本ステップの範囲を超える）、(2) 短い素材でも長い素材でも追加作業なしに確実に動く構成を
+  既定にする方針（R-2の判断）を継続するため。ただし主用途（30分〜3時間の会議）ではovvkが
+  大きく有利な場合があるため、README/要件定義に長時間音声での逆転と`--variant openvino_vulkan`
+  明示指定の推奨を明記した。`devices`のauto表示・理由文言は順序を変えていないため追従不要。
+- README・要件定義・受入試験報告_Phase3.mdの対策前の性能値へ「対策前の測定値であり現在は
+  改善している」旨の注記を追加した。
+- **R-4完遂**: `tools/acceptance/harness.py`のCaseへ`requires`（profile/backends/native_variants/
+  models/cuda/xpu）・`destructive`・`estimated_seconds`を追加し、`devices --json`/
+  `models list --json`の1回限りスナップショットと突き合わせて実行可否を判定する
+  `unmet_requirements`/`fetch_environment`を実装した。`destructive`ケースは既定除外し
+  `--include-destructive`または明示`--group`でのみ実行する。`run_selected()`/`RunSummary`で
+  Python APIと機械可読サマリーJSON出力を追加した。既存G13（CUDA耐久）へ`requires: {cuda: true}`
+  を付与し、本機（NVIDIA不在）では理由付きskipとして扱われるようにした。
+- P0〜P11から74ケースを新規追加した（P12〜P16は自動化・他手段での充足・手動手順書のいずれかに
+  分類し`docs/受入試験_手動確認手順書.md`と`tools/acceptance/README.md`に記録、詳細は次項）。
+  ほぼ全ケースが既存の`command-output`/`json-output`/`validate.py formats|json|equivalent`を
+  再利用でき、新規に追加したのは`scenarios.py`の`native-manifest`（manifestのcommit・
+  非可搬パス不在確認）・`profile-isolation`（プロファイル更新が他プロファイルのtorchへ
+  影響しないことの確認）と、`validate.py`の`words`（単語タイムスタンプ有無確認）の3つのみ。
+- **製品バグを発見・修正**: 本機（cp932ロケール）で`sys.stdout`がコンソール非接続時
+  （パイプ・リダイレクト・subprocess capture）に既定でcp932になり、`devices --json`の
+  `auto_selection.notes`等に含まれる日本語がpipe経由で破損する（無効なJSONになる場合すらある）
+  不具合を発見した。R-4のrequires判定が依存する`devices --json`のパイプ読み取りで顕在化した。
+  `cli.py`の`main()`callbackで`sys.stdout`/`sys.stderr`を`UTF-8`へ`reconfigure`して修正した。
+
 ## 現在のフェーズと進捗
 
 - Phase 3受入試験（2026-08-04、`test/acceptance-phase3`）: P0合格。P1で`setup.ps1`が

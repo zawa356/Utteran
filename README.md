@@ -557,6 +557,11 @@ Phase 3受入試験では実会議から内容を記録せず生成した180秒f
 | whisper-cpp / OpenVINO+Vulkan | 23.734秒 | 18.403秒 |
 | faster-whisper / CPU | 90.826秒 | 非対応（既存経路は常時取得） |
 
+**上記2つの表はPhase 3dのハルシネーション対策（`no_context = true`等）適用前の測定値です。
+現在はこの後の「Phase 3dのハルシネーション対策とbenchmark」節に記載した値へ改善しています。**
+ただしwhisper-cliへ渡すコマンドライン引数自体は対策前後で変化していないため、差は主に
+測定時点のばらつき（熱・電源状態等）によるものです。
+
 同じ3分の複数話者fixtureに対するpyannoteはCPU 106.681秒、XPU 41.953秒でした。
 process treeのピークworking setは、ASRを含む独立測定でCPU 8.02 GiB、XPU 8.18 GiBです。
 XPUはGPU専用メモリではなく共有system RAMを使うため、他processを含む空きRAMに注意してください。
@@ -612,13 +617,44 @@ uv run utteran benchmark --audio sample.wav --variants vulkan,openvino_vulkan --
 ```
 
 実データを暗黙利用しないためWAVは必須です。既定でwarmup 1回・計測3回の中央値を表示し、認識
-本文やジョブは保存しません。Intel Core Ultra 7 255H / Arc 140T、large-v3-turbo-q5_0、180秒
-WAV、単語TSなしの実測中央値はVulkan 20.488秒（8.787x）、OpenVINO+Vulkan 32.564秒
-（5.528x）で、ovvkが約59%遅い結果でした。一方、参考実装のCore Ultra 7 255H / Arc 140T・
-large-v3環境ではovvkが最速であり、優劣はhardware・model依存です。IR変換にはOpenAI PyTorch重み
-（large-v3で約3 GB）の追加取得と変換が必要です。**IRを用意せずVulkanで十分な場合があります。**
-自環境では`utteran benchmark`で判断してください。本機では実測差と追加IR不要の運用コストから
-autoはVulkanを優先します。
+本文やジョブは保存しません。
+
+**反復対策適用後の再測定**（Intel Core Ultra 7 255H / Arc 140T、large-v3-turbo-q5_0、180秒WAV、
+warmup 1・3回中央値）:
+
+| 構成 | TSなし | TSあり |
+|---|---:|---:|
+| whisper-cpp / CPU | 148.460秒（1.213x） | 183.135秒（0.983x） |
+| whisper-cpp / OpenVINO | 30.587秒（5.886x） | 34.138秒（5.273x） |
+| whisper-cpp / Vulkan | 15.363秒（11.718x） | 22.310秒（8.069x） |
+| whisper-cpp / OpenVINO+Vulkan | 19.638秒（9.167x） | 24.086秒（7.474x） |
+| faster-whisper / CPU | 79.551秒（2.263x） | 74.672秒（2.411x） |
+
+VAD有効時のVulkan（TSなし）は14.322秒（12.570x）で、無効時（15.363秒）と有意差はなく、
+VAD自体はほぼ処理時間へ影響しません。180秒fixtureではVulkanがOpenVINO+Vulkanより高速という
+順序は対策前と変わりませんでした（本機では約28%高速）。IR変換にはOpenAI PyTorch重み
+（モデルサイズにより最大約3 GB）の追加取得と変換が必要です。
+
+**しかし、24分46秒の実会議WAV（単語TSなし、1点測定）ではこの順序が逆転します。**
+
+| 構成 | 実時間比 | 秒 |
+|---|---:|---:|
+| whisper-cpp / Vulkan | 13.420x | 110.730秒 |
+| whisper-cpp / OpenVINO+Vulkan | 22.811x | 65.141秒 |
+
+180秒の結果から音声長の比（約8.26倍）で単純に外挿するとVulkanは約127秒、ovvkは約162秒の
+見込みですが、実測はVulkan 110.7秒・ovvk 65.1秒で、**ovvkがこの実音声ではVulkanより
+約41%高速**という、短い素材からは予測できない逆転が生じました。原因はOpenVINOエンコーダの
+初期化コストが短い音声で相対的に大きく、長い音声で償却されるためと考えられますが、
+単一環境・単一素材の1点測定であり断定はしていません。
+
+**IRを用意しなくてもVulkanで十分な場合がある一方、長時間の会議録音ではIR変換済みの
+OpenVINO+Vulkanが大きく有利な場合があります。** どちらが有利かは音声長・hardware・model
+依存です。**自環境・自分の音声長では`utteran benchmark`で判断してください。**
+本機のautoは、IR変換なしでも確実に動作する`vulkan`を既定で優先しますが
+（`models prepare-openvino`未実行の環境で`auto`が初期化に失敗するのを避けるため）、
+30分〜3時間の会議録音を扱う場合はIR変換済みなら`[asr.whisper_cpp].variant = "openvino_vulkan"`
+を明示指定することを推奨します。
 
 同じ実音声の連結測定では、Vulkan ASRの25/50/100分が102.95/220.69/443.09秒、ピークRAM
 1.47/1.74/2.28 GBでした。XPU話者分離は212.52/401.55/811.92秒、5.41/5.58/6.10 GBで、
