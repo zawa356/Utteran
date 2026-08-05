@@ -44,6 +44,13 @@
   現在treeはblocking 0、公開refの秘密値候補0。ローカル到達不能blobにscanner回帰testが
   意図的に使った秘密値形式1件があるが、値を表示せずtest contextから非credentialと判定。
   objectの削除/GC、履歴書き換え、pushは行っていない。G11公開文書受入は2/2 pass。
+- Phase 4a追加照合は`input/`の内容を開かずfile名とWindows環境から36のhash patternを
+  Git対象外の`output/`へ生成。21 refs/116 commits/1,152 objects/116差分/現在119 filesを
+  照合した。組織domain、email local部、組織名、入力file名、Windows user名は全0件。
+  初回の短い日本語／file片抽出は一般語を過剰検出したため、最長日本語列と十分長い
+  要素へ保守的に限定して再走査した。値とdigestはGit/報告/標準出力に未記録。
+- 照合0でも過去のuser絶対pathを除去する価値があり、追加指示で承認済みのため、
+  完全backupと復元試験後に全branch/tagの履歴書き換えを実施する。pushは行わない。
 
 ## Phase 3d 是正（2026-08-04〜2026-08-05、完了）
 

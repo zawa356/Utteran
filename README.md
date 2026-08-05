@@ -178,12 +178,27 @@ uv run python tools/public_history_scan.py --json output/public-history-scan.jso
 uv run python tools/public_history_scan.py --worktree --fail-on-findings
 ```
 
+利用者固有の文字列は公開CIに置けないため、ローカルで照合します。`build`は`input/`の
+**file名だけ**とWindows user名からSHA-256 patternを作り、ファイル内容は開きません。
+patternと結果はGit対象外の`output/`へ置き、値は画面や報告JSONに出力されません。
+
+```console
+uv run python tools/private_history_match.py build \
+  --input-dir input --output output/private-patterns.json
+uv run python tools/private_history_match.py scan \
+  --patterns output/private-patterns.json --json output/private-match.json
+```
+
+CIはpatternを必要としない汎用のemail形式、user絶対path、media拡張子検査だけを
+現在treeに対して行います。固有値照合はpatternを持つ利用者がローカルで実行してください。
+
 ## Documentation
 
 - [要件定義・設計](要件定義.md)
 - [Release手順](docs/リリース手順.md)
 - [Phase 3d統合受入結果](docs/受入試験統合結果_Phase3d.md)
 - [Phase 4a公開履歴監査](docs/公開履歴監査_Phase4a.md)
+- [Phase 4a照合走査](docs/照合走査_Phase4a.md)
 - [変更履歴](変更履歴.md)
 
 ## ライセンスとモデル利用条件
