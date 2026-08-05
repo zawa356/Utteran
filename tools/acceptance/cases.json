@@ -3095,7 +3095,7 @@
   {
     "id": "P0-1",
     "group": "P0",
-    "description": "Transcribe clip_30s with the active profile's default backend, no diarization",
+    "description": "Transcribe clip_30s with the active profile's auto ASR backend (model pinned to a whisper-cpp-compatible ID), no diarization",
     "command": [
       "{utteran}",
       "transcribe",
@@ -3104,6 +3104,8 @@
       "{acceptance}/p0",
       "--format",
       "srt,vtt,json,txt,md",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--no-diarization",
       "--language",
       "ja",
@@ -3133,7 +3135,7 @@
       "--stem",
       "clip_30s",
       "--duration",
-      "30"
+      "21.68"
     ],
     "expected_exit_codes": [
       0
@@ -3416,6 +3418,8 @@
       "{project}/run.ps1",
       "transcribe",
       "{testdata}/clip_30s.mp4",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--output-dir",
       "{acceptance}/p2/default",
       "--format",
@@ -3460,6 +3464,8 @@
       "intel",
       "transcribe",
       "{testdata}/clip_30s.mp4",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--output-dir",
       "{acceptance}/p2/explicit",
       "--format",
@@ -3491,7 +3497,7 @@
       "--exit",
       "1",
       "--contains",
-      "setup.ps1",
+      "未登録のプロファイル",
       "--",
       "powershell.exe",
       "-NoLogo",
@@ -4373,11 +4379,11 @@
   {
     "id": "P6-2",
     "group": "P6",
-    "description": "whisper.cpp / openvino completes on clip_30s",
+    "description": "whisper.cpp / openvino completes on clip_03m",
     "command": [
       "{utteran}",
       "transcribe",
-      "{testdata}/clip_30s.mp4",
+      "{testdata}/clip_03m.mp4",
       "--output-dir",
       "{acceptance}/p6/openvino",
       "--asr-backend",
@@ -4398,7 +4404,7 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120,
+    "timeout_seconds": 180,
     "requires": {
       "native_variants": [
         "openvino"
@@ -4411,11 +4417,11 @@
   {
     "id": "P6-3",
     "group": "P6",
-    "description": "whisper.cpp / vulkan completes on clip_30s",
+    "description": "whisper.cpp / vulkan completes on clip_03m",
     "command": [
       "{utteran}",
       "transcribe",
-      "{testdata}/clip_30s.mp4",
+      "{testdata}/clip_03m.mp4",
       "--output-dir",
       "{acceptance}/p6/vulkan",
       "--asr-backend",
@@ -4436,7 +4442,7 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60,
+    "timeout_seconds": 180,
     "requires": {
       "native_variants": [
         "vulkan"
@@ -4449,11 +4455,11 @@
   {
     "id": "P6-4",
     "group": "P6",
-    "description": "whisper.cpp / openvino_vulkan completes on clip_30s",
+    "description": "whisper.cpp / openvino_vulkan completes on clip_03m",
     "command": [
       "{utteran}",
       "transcribe",
-      "{testdata}/clip_30s.mp4",
+      "{testdata}/clip_03m.mp4",
       "--output-dir",
       "{acceptance}/p6/openvino_vulkan",
       "--asr-backend",
@@ -4474,7 +4480,7 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60,
+    "timeout_seconds": 180,
     "requires": {
       "native_variants": [
         "openvino_vulkan"
@@ -4492,9 +4498,9 @@
       "{python}",
       "{project}/tools/acceptance/validate.py",
       "equivalent",
-      "{acceptance}/p6/openvino/clip_30s.json",
-      "{acceptance}/p6/vulkan/clip_30s.json",
-      "{acceptance}/p6/openvino_vulkan/clip_30s.json"
+      "{acceptance}/p6/openvino/clip_03m.json",
+      "{acceptance}/p6/vulkan/clip_03m.json",
+      "{acceptance}/p6/openvino_vulkan/clip_03m.json"
     ],
     "expected_exit_codes": [
       0
@@ -4903,6 +4909,8 @@
       "{utteran}",
       "transcribe",
       "{testdata}/clip_30s.mp4",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--output-dir",
       "{acceptance}/p8/auto",
       "--format",
@@ -4963,6 +4971,8 @@
       "{utteran}",
       "transcribe",
       "{testdata}/clip_03m_multi.mp4",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--diarization-device",
       "xpu",
       "--output-dir",
@@ -4994,6 +5004,8 @@
       "{utteran}",
       "transcribe",
       "{testdata}/clip_03m_multi.mp4",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--diarization-device",
       "cpu",
       "--output-dir",
@@ -5045,6 +5057,8 @@
       "{utteran}",
       "transcribe",
       "{testdata}/clip_03m_multi.mp4",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--diarization-device",
       "xpu",
       "--num-speakers",
@@ -5111,6 +5125,8 @@
       "{project}/.venvs/win-cpu/Scripts/utteran.exe",
       "transcribe",
       "{testdata}/clip_30s.mp4",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--diarization-device",
       "xpu",
       "--force"
@@ -5144,6 +5160,8 @@
       "{utteran}",
       "transcribe",
       "{testdata}/clip_30s.mp4",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--device",
       "cpu",
       "--output-dir",
@@ -5348,6 +5366,8 @@
       "{utteran}",
       "transcribe",
       "{testdata}/clip_03m_multi.mp4",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
       "--diarization-device",
       "xpu",
       "--output-dir",

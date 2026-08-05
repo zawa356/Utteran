@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -368,6 +369,13 @@ def find_job_intermediate(jobs: Path, input_path: Path, stage: str) -> Path:
 
 
 def main() -> int:
+    # See the matching comment in scenarios.py's main(): piped stdout/stderr default to
+    # the system codepage here, corrupting Japanese assertion text before the harness
+    # ever reads it back as UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower() != "utf-8":
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 

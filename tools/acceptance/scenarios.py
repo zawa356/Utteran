@@ -11,6 +11,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import time
 import tomllib
 from datetime import UTC, datetime
@@ -1340,6 +1341,15 @@ def validate_generated_exclusion(
 
 
 def main() -> int:
+    # sys.stdout/stderr default to the system codepage (cp932 here) when piped rather
+    # than console-attached, corrupting Japanese assertion messages and --contains values
+    # the harness later reads back as UTF-8 - same root cause as the utteran CLI fix
+    # (src/utteran/cli.py's main() callback); this script needs it independently since it
+    # runs as its own process, always piped by tools/acceptance/harness.py.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower() != "utf-8":
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="scenario", required=True)
 
