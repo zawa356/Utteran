@@ -42,6 +42,37 @@ function Write-Step {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
 }
 
+function Invoke-Utf8Captured {
+    <#
+    Run a scriptblock that captures an external command's stdout, forcing UTF-8 on both
+    ends of the pipe. Setting $env:PYTHONIOENCODING alone (the previous fix) only forces
+    the child process to *write* UTF-8; Windows PowerShell 5.1 still *decodes* captured
+    external-command output using [Console]::OutputEncoding (the console's OEM/ANSI
+    codepage, e.g. cp932), independently of what the child actually wrote. That mismatch
+    corrupts any Japanese text or non-ASCII path in the result - including turning valid
+    `devices --json` output into text ConvertFrom-Json can't parse - even though the
+    child process encoded everything correctly.
+    #>
+    param([Parameter(Mandatory = $true)][scriptblock]$ScriptBlock)
+    $HadPythonIoEncoding = Test-Path Env:PYTHONIOENCODING
+    $PreviousPythonIoEncoding = $env:PYTHONIOENCODING
+    $PreviousConsoleEncoding = [Console]::OutputEncoding
+    try {
+        $env:PYTHONIOENCODING = "utf-8"
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        & $ScriptBlock
+    }
+    finally {
+        [Console]::OutputEncoding = $PreviousConsoleEncoding
+        if ($HadPythonIoEncoding) {
+            $env:PYTHONIOENCODING = $PreviousPythonIoEncoding
+        }
+        else {
+            Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Get-VenvRoot {
     if ($VenvDir) {
         return [IO.Path]::GetFullPath($VenvDir)
@@ -169,23 +200,12 @@ function Set-DefaultProfileInConfig {
     if ($null -eq $UvCommand) {
         throw "uv が見つかりません。"
     }
-    $HadPythonIoEncoding = Test-Path Env:PYTHONIOENCODING
-    $PreviousPythonIoEncoding = $env:PYTHONIOENCODING
-    try {
-        $env:PYTHONIOENCODING = "utf-8"
-        $ConfigPathText = (& $UvCommand.Source run --no-sync utteran config path |
-            Out-String).Trim()
-        if (-not (Test-Path -LiteralPath $ConfigPathText -PathType Leaf)) {
-            & $UvCommand.Source run --no-sync utteran config init | Out-Null
-        }
-    }
-    finally {
-        if ($HadPythonIoEncoding) {
-            $env:PYTHONIOENCODING = $PreviousPythonIoEncoding
-        }
-        else {
-            Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
-        }
+    $ConfigPathText = (Invoke-Utf8Captured {
+            & $UvCommand.Source run --no-sync utteran config path | Out-String
+        }).Trim()
+    if (-not (Test-Path -LiteralPath $ConfigPathText -PathType Leaf)) {
+        Invoke-Utf8Captured { & $UvCommand.Source run --no-sync utteran config init | Out-Null } |
+            Out-Null
     }
     $Content = Get-Content -LiteralPath $ConfigPathText -Raw -Encoding UTF8
     if ($Content -match '(?m)^\s*default_profile\s*=.*$') {
@@ -307,7 +327,10 @@ runtime, device = probe_vulkan_runtime()
 print(f"BUILD={build.available}|{build.detail or ''}")
 print(f"RUNTIME={runtime.available}|{device or runtime.detail or ''}")
 "@
-    $Result = & $PythonExe -c $Probe 2>&1
+    # Windows PowerShell 5.1 strips the quotes inside f-strings when a multiline
+    # script is passed as the value of `python -c`. Feed the probe over stdin so
+    # Python receives the source verbatim on every supported PowerShell version.
+    $Result = $Probe | & $PythonExe - 2>&1
     $BuildLine = $Result | Where-Object { $_ -like "BUILD=*" }
     $RuntimeLine = $Result | Where-Object { $_ -like "RUNTIME=*" }
     $BuildOk = $BuildLine -like "BUILD=True*"
@@ -405,25 +428,8 @@ function Invoke-ProfileSetup {
     }
     else {
         try {
-            # Python selects the active Windows code page when stdout is piped.  The
-            # JSON contains Japanese notes and non-ASCII user paths, so decoding a
-            # cp932 stream as UTF-8 can turn a path separator into an invalid `\�`
-            # JSON escape.  Force the child process boundary to UTF-8 and restore
-            # the caller's environment afterwards.
-            $HadPythonIoEncoding = Test-Path Env:PYTHONIOENCODING
-            $PreviousPythonIoEncoding = $env:PYTHONIOENCODING
-            try {
-                $env:PYTHONIOENCODING = "utf-8"
-                $DeviceText = (& $script:UvCommand.Source run --no-sync utteran devices --json |
-                    Out-String)
-            }
-            finally {
-                if ($HadPythonIoEncoding) {
-                    $env:PYTHONIOENCODING = $PreviousPythonIoEncoding
-                }
-                else {
-                    Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
-                }
+            $DeviceText = Invoke-Utf8Captured {
+                & $script:UvCommand.Source run --no-sync utteran devices --json | Out-String
             }
             if ($LASTEXITCODE -ne 0) {
                 throw "utteran devices --json failed (exit $LASTEXITCODE)"
@@ -468,21 +474,16 @@ function Invoke-ProfileSetup {
                 # vulkan
                 $ProfileVerificationSucceeded = Invoke-VulkanPrerequisiteCheck -VenvPath $VenvPath
             }
-            $HadPythonIoEncoding = Test-Path Env:PYTHONIOENCODING
-            $PreviousPythonIoEncoding = $env:PYTHONIOENCODING
-            try {
-                $env:PYTHONIOENCODING = "utf-8"
-                & $script:UvCommand.Source run --no-sync utteran devices
-                $DeviceExitCode = $LASTEXITCODE
+            # Piping through Out-String before Write-Host (rather than letting the
+            # external command's output pass straight through) is required here: plain
+            # passthrough re-encodes using a different, unaffected setting even with
+            # [Console]::OutputEncoding forced to UTF-8 above, corrupting this table the
+            # same way the JSON capture was corrupted before it went through Out-String.
+            $DeviceDisplayText = Invoke-Utf8Captured {
+                & $script:UvCommand.Source run --no-sync utteran devices | Out-String
             }
-            finally {
-                if ($HadPythonIoEncoding) {
-                    $env:PYTHONIOENCODING = $PreviousPythonIoEncoding
-                }
-                else {
-                    Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
-                }
-            }
+            $DeviceExitCode = $LASTEXITCODE
+            Write-Host $DeviceDisplayText
             if ($DeviceExitCode -ne 0) {
                 throw "utteran devices failed (exit $DeviceExitCode)"
             }

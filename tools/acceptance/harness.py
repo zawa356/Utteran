@@ -64,7 +64,7 @@ def _windows_utteran() -> Path:
     return PROJECT_ROOT / ".venv-windows" / "Scripts" / "utteran.exe"
 
 
-def _placeholders() -> dict[str, str]:
+def _placeholders(results_path: Path = DEFAULT_RESULTS) -> dict[str, str]:
     acceptance = Path(
         os.environ.get("UTTERAN_ACCEPTANCE_ROOT", PROJECT_ROOT / "output" / "_acceptance")
     )
@@ -79,6 +79,7 @@ def _placeholders() -> dict[str, str]:
         "actual": str(actual_files[0] if actual_files else PROJECT_ROOT / "input" / "missing.mp4"),
         "acceptance": str(acceptance),
         "jobs": str(acceptance / "jobs"),
+        "results": str(results_path),
     }
 
 
@@ -88,12 +89,12 @@ def _expand(value: str, placeholders: dict[str, str]) -> str:
     return value
 
 
-def load_cases(path: Path) -> list[Case]:
+def load_cases(path: Path, *, results_path: Path = DEFAULT_RESULTS) -> list[Case]:
     """Load ordered case declarations from JSON."""
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
         raise ValueError("cases.json must contain a list")
-    placeholders = _placeholders()
+    placeholders = _placeholders(results_path)
     cases: list[Case] = []
     seen: set[str] = set()
     for item in raw:
@@ -630,7 +631,7 @@ def run_selected(
     """
     emit = on_event or (lambda _message: None)
     cases = select_cases(
-        load_cases(cases_path),
+        load_cases(cases_path, results_path=results_path),
         groups=groups,
         rerun=rerun,
         include_long=include_long,

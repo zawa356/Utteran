@@ -33,7 +33,7 @@ NVIDIA hardwareがない環境のCUDA専用観点は失敗にせず、`requires`
 | `id` | 受入試験の番号（`P6-3`等）。追跡性のため維持する |
 | `group` | グループ識別子（`--group`で選択に使う） |
 | `description` | 何を確認するケースか |
-| `command` | 実行するargvのリスト。`{project}`/`{python}`/`{utteran}`/`{testdata}`/`{actual}`/`{acceptance}`/`{jobs}`をプレースホルダとして展開する |
+| `command` | 実行するargvのリスト。`{project}`/`{python}`/`{utteran}`/`{testdata}`/`{actual}`/`{acceptance}`/`{jobs}`/`{results}`をプレースホルダとして展開する |
 | `expected_exit_codes` | 合格とみなす終了コードの配列（既定`[0]`） |
 | `timeout_seconds` | タイムアウト（既定600秒）。超過時はprocess treeを終了し失敗として記録する |
 | `environment` | 追加で設定する環境変数（既定`{}`） |

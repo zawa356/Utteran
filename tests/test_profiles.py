@@ -126,13 +126,30 @@ def test_list_profile_statuses_reports_existence_size_and_timestamp(tmp_path: Pa
     assert by_name["cuda"].size_bytes is None
     assert isinstance(by_name["cpu"], ProfileStatus)
 
+
 def test_setup_forces_utf8_for_devices_json() -> None:
     setup_script = (Path(__file__).parents[1] / "setup.ps1").read_text(encoding="utf-8")
 
+    helper = setup_script.index("function Invoke-Utf8Captured")
     json_call = setup_script.index("utteran devices --json")
-    encoding_assignment = setup_script.index('$env:PYTHONIOENCODING = "utf-8"')
+    encoding_assignment = setup_script.index('$env:PYTHONIOENCODING = "utf-8"', helper)
+    console_encoding = setup_script.index(
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8", helper
+    )
     json_parse = setup_script.index("ConvertFrom-Json", json_call)
 
-    assert encoding_assignment < json_call < json_parse
-    assert "Remove-Item Env:PYTHONIOENCODING" in setup_script[json_call:json_parse]
-    assert setup_script.count('$env:PYTHONIOENCODING = "utf-8"') == 3
+    assert helper < encoding_assignment < console_encoding < json_call < json_parse
+    assert "Invoke-Utf8Captured" in setup_script[json_call - 100 : json_call]
+    assert "Remove-Item Env:PYTHONIOENCODING" in setup_script[helper:json_call]
+    assert "[Console]::OutputEncoding = $PreviousConsoleEncoding" in setup_script
+
+
+def test_setup_feeds_vulkan_probe_over_stdin_for_powershell_51() -> None:
+    setup_script = (Path(__file__).parents[1] / "setup.ps1").read_text(encoding="utf-8")
+
+    probe_function = setup_script.index("function Invoke-VulkanPrerequisiteCheck")
+    profile_setup = setup_script.index("function Invoke-ProfileSetup", probe_function)
+    probe_body = setup_script[probe_function:profile_setup]
+
+    assert "$Result = $Probe | & $PythonExe - 2>&1" in probe_body
+    assert "& $PythonExe -c $Probe" not in probe_body

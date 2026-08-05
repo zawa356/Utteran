@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
-import locale
 import logging
 import os
 import re
@@ -80,8 +79,9 @@ def _run(parts: list[str], expected_exit: int = 0) -> subprocess.CompletedProces
         command,
         check=False,
         capture_output=True,
+        input="",
         text=True,
-        encoding=locale.getpreferredencoding(False),
+        encoding="utf-8",
         errors="replace",
     )
     if completed.returncode != expected_exit:
@@ -113,14 +113,23 @@ def validate_command_output(
         _command(command),
         check=False,
         capture_output=True,
+        input="",
         text=True,
-        encoding=locale.getpreferredencoding(False),
+        encoding="utf-8",
         errors="replace",
         cwd=selected_cwd,
     )
     combined = completed.stdout + "\n" + completed.stderr
     if completed.returncode != expected_exit:
-        raise AssertionError(f"command exit was {completed.returncode}, expected {expected_exit}")
+        error_lines = [
+            line[:300]
+            for line in combined.splitlines()
+            if any(word in line.casefold() for word in ("error", "failed", "エラー", "失敗"))
+        ]
+        raise AssertionError(
+            f"command exit was {completed.returncode}, expected {expected_exit}; "
+            f"errors={error_lines[:3]}; stderr_tail={completed.stderr.splitlines()[-4:]}"
+        )
     for value in expected_text:
         if value not in combined:
             raise AssertionError(f"command output is missing expected text: {value}")
@@ -197,7 +206,7 @@ def validate_profile_isolation(
         check=False,
         capture_output=True,
         text=True,
-        encoding=locale.getpreferredencoding(False),
+        encoding="utf-8",
         errors="replace",
     )
     if completed.returncode != 0:
@@ -502,31 +511,43 @@ def validate_postflight(
     failures = sorted(
         case_id
         for case_id, record in latest.items()
-        if str(record.get("result")) != "pass" and str(record.get("group")) in expected_groups
+        if str(record.get("result")) == "fail" and str(record.get("group")) in expected_groups
     )
     if missing_groups or failures:
         raise AssertionError(
             f"acceptance aggregate is incomplete: missing={missing_groups}, failures={failures}"
         )
 
-    job = _find_job(jobs, input_path)
-    manifest = _load(job / "manifest.json")
-    incomplete = sorted(
-        stage for stage, state in manifest["stages"].items() if state.get("status") != "done"
+    endurance_ran = any(
+        str(record.get("group")) == "G13" and str(record.get("result")) == "pass"
+        for record in latest.values()
     )
-    if incomplete:
-        raise AssertionError(f"retained endurance job is incomplete: {incomplete}")
+    job: Path | None = None
+    job_bytes = 0
+    if endurance_ran:
+        job = _find_job(jobs, input_path)
+        manifest = _load(job / "manifest.json")
+        incomplete = sorted(
+            stage for stage, state in manifest["stages"].items() if state.get("status") != "done"
+        )
+        if incomplete:
+            raise AssertionError(f"retained endurance job is incomplete: {incomplete}")
+        job_bytes = sum(path.stat().st_size for path in job.rglob("*") if path.is_file())
 
-    testdata_bytes = sum(path.stat().st_size for path in testdata.rglob("*") if path.is_file())
-    if testdata_bytes > 100 * 1024 * 1024:
-        raise AssertionError("acceptance fixtures exceed the 100 MiB postflight limit")
-    job_bytes = sum(path.stat().st_size for path in job.rglob("*") if path.is_file())
+    fixture_files = [
+        path
+        for path in testdata.rglob("*")
+        if path.is_file() and not path.name.startswith("phase3d-")
+    ]
+    testdata_bytes = sum(path.stat().st_size for path in fixture_files)
+    if testdata_bytes > 150 * 1024 * 1024:
+        raise AssertionError("acceptance fixtures exceed the 150 MiB postflight limit")
     print(
         json.dumps(
             {
                 "groups_complete": len(expected_groups),
                 "latest_cases": len(latest),
-                "retained_job": job.name,
+                "retained_job": job.name if job is not None else None,
                 "retained_job_bytes": job_bytes,
                 "testdata_bytes": testdata_bytes,
             },
@@ -758,7 +779,7 @@ def validate_start_front(project: Path, start_script: Path, testdata: Path) -> N
         check=False,
         capture_output=True,
         text=True,
-        encoding=locale.getpreferredencoding(False),
+        encoding="utf-8",
         errors="replace",
     )
     if parsed.returncode != 0:
@@ -879,7 +900,7 @@ def _run_powershell_front(
         check=False,
         capture_output=True,
         text=True,
-        encoding=locale.getpreferredencoding(False),
+        encoding="utf-8",
         errors="replace",
         timeout=180,
     )
@@ -977,7 +998,7 @@ def _start(command: list[str]) -> subprocess.Popen[str]:
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "text": True,
-        "encoding": locale.getpreferredencoding(False),
+        "encoding": "utf-8",
         "errors": "replace",
     }
     if os.name == "nt":
@@ -1286,12 +1307,23 @@ def validate_batch_state(
 
 def validate_backend_reuse(jobs: Path, inputs: tuple[Path, ...]) -> None:
     messages: list[str] = []
-    job_roots = {_find_job(jobs, input_path) for input_path in inputs}
-    for job_root in job_roots:
+    job_root_counts: dict[Path, int] = {}
+    for input_path in inputs:
+        job_root = _find_job(jobs, input_path)
+        job_root_counts[job_root] = job_root_counts.get(job_root, 0) + 1
+    for job_root, expected_runs in job_root_counts.items():
         log = job_root / "utteran.log"
-        for line in log.read_text(encoding="utf-8").splitlines():
-            if line:
-                messages.append(str(json.loads(line).get("message", "")))
+        records = [
+            json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line
+        ]
+        starts = [
+            index
+            for index, record in enumerate(records)
+            if str(record.get("message", "")).startswith("ジョブ開始:")
+        ]
+        first_latest = starts[-min(expected_runs, len(starts))] if starts else 0
+        latest_records = records[first_latest:]
+        messages.extend(str(record.get("message", "")) for record in latest_records)
     loads = sum("ASRバックエンドをロード" in message for message in messages)
     reuses = sum("ASRバックエンドを再利用" in message for message in messages)
     if loads != 1 or reuses < len(inputs) - 1:

@@ -59,6 +59,19 @@ def test_phase_specific_paths_can_override_harness_defaults(
     assert placeholders["jobs"] == str(acceptance / "jobs")
 
 
+def test_results_placeholder_tracks_the_selected_results_file(tmp_path: Path) -> None:
+    cases_path = tmp_path / "cases.json"
+    results_path = tmp_path / "custom-results.jsonl"
+    _write_cases(
+        cases_path,
+        [{"id": "X-1", "group": "X", "description": "d", "command": ["{results}"]}],
+    )
+
+    (case,) = load_cases(cases_path, results_path=results_path)
+
+    assert case.command == (str(results_path),)
+
+
 def test_case_metadata_defaults_when_omitted_from_json(tmp_path: Path) -> None:
     cases_path = tmp_path / "cases.json"
     _write_cases(

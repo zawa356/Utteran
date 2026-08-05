@@ -12,7 +12,10 @@
       0
     ],
     "timeout_seconds": 30,
-    "minimum_peak_memory_bytes": 94371840
+    "minimum_peak_memory_bytes": 94371840,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 4
   },
   {
     "id": "G1-01",
@@ -38,7 +41,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 1800
+    "timeout_seconds": 1800,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 34
   },
   {
     "id": "G1-02",
@@ -58,7 +64,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-01",
@@ -82,7 +91,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 2400
+    "timeout_seconds": 2400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 84
   },
   {
     "id": "G2-02",
@@ -102,7 +114,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-03",
@@ -123,7 +138,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-04",
@@ -148,7 +166,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G2-05",
@@ -168,7 +189,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-06",
@@ -197,7 +221,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-07",
@@ -217,7 +244,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-08",
@@ -243,7 +273,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 2400
+    "timeout_seconds": 2400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 83
   },
   {
     "id": "G2-09",
@@ -264,7 +297,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-10",
@@ -290,7 +326,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 2400
+    "timeout_seconds": 2400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 78
   },
   {
     "id": "G2-11",
@@ -311,7 +350,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-12",
@@ -328,7 +370,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-13",
@@ -353,7 +398,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 2400
+    "timeout_seconds": 2400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 95
   },
   {
     "id": "G2-14",
@@ -373,7 +421,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-15",
@@ -402,7 +453,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G2-16",
@@ -416,7 +470,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G3-01",
@@ -440,7 +497,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 3600
+    "timeout_seconds": 3600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 250
   },
   {
     "id": "G3-02",
@@ -466,7 +526,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G3-03",
@@ -492,7 +555,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 3600
+    "timeout_seconds": 3600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 113
   },
   {
     "id": "G3-04",
@@ -516,7 +582,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G3-05",
@@ -542,7 +611,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 3600
+    "timeout_seconds": 3600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 97
   },
   {
     "id": "G3-06",
@@ -566,7 +638,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G3-07",
@@ -592,7 +667,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 3600
+    "timeout_seconds": 3600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 98
   },
   {
     "id": "G3-08",
@@ -616,7 +694,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G3-09",
@@ -644,7 +725,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 3600
+    "timeout_seconds": 3600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 93
   },
   {
     "id": "G3-10",
@@ -670,7 +754,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G3-11",
@@ -690,7 +777,10 @@
     "expected_exit_codes": [
       2
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G3-12",
@@ -716,7 +806,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 3600
+    "timeout_seconds": 3600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 86
   },
   {
     "id": "G3-13",
@@ -742,7 +835,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G3-14",
@@ -768,7 +864,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G3-15",
@@ -794,12 +893,15 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G4-01",
     "group": "G4",
-    "description": "Prepare the baseline job while changing only export settings",
+    "description": "Prepare a self-contained baseline job by forcing all five stages",
     "command": [
       "{python}",
       "{project}/tools/acceptance/scenarios.py",
@@ -809,7 +911,7 @@
       "--input",
       "{testdata}/clip_03m.mp4",
       "--expected",
-      "export",
+      "audio,asr,diarization,merge,export",
       "--",
       "{utteran}",
       "transcribe",
@@ -823,12 +925,16 @@
       "--language",
       "ja",
       "--device",
-      "cpu"
+      "cpu",
+      "--force"
     ],
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-02",
@@ -862,7 +968,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-03",
@@ -896,7 +1005,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-04",
@@ -930,7 +1042,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-05",
@@ -957,7 +1072,7 @@
       "--format",
       "json",
       "--asr-model",
-      "large-v3",
+      "kotoba-whisper-v2.0",
       "--language",
       "ja",
       "--device",
@@ -966,7 +1081,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 3600
+    "timeout_seconds": 3600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-06",
@@ -993,7 +1111,7 @@
       "--format",
       "json",
       "--asr-model",
-      "large-v3",
+      "kotoba-whisper-v2.0",
       "--language",
       "ja",
       "--device",
@@ -1004,7 +1122,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 3600
+    "timeout_seconds": 3600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-07",
@@ -1031,7 +1152,7 @@
       "--format",
       "json",
       "--asr-model",
-      "large-v3",
+      "kotoba-whisper-v2.0",
       "--language",
       "ja",
       "--device",
@@ -1043,7 +1164,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 5400
+    "timeout_seconds": 5400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-08",
@@ -1070,7 +1194,7 @@
       "--format",
       "json",
       "--asr-model",
-      "large-v3",
+      "kotoba-whisper-v2.0",
       "--language",
       "ja",
       "--device",
@@ -1082,7 +1206,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 5400
+    "timeout_seconds": 5400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-09",
@@ -1118,7 +1245,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 18
   },
   {
     "id": "G4-10",
@@ -1153,7 +1283,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 5400
+    "timeout_seconds": 5400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 178
   },
   {
     "id": "G4-11",
@@ -1187,7 +1320,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 5
   },
   {
     "id": "G4-12",
@@ -1220,7 +1356,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-13",
@@ -1255,7 +1394,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-14",
@@ -1277,7 +1419,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G4-15",
@@ -1297,7 +1442,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 4
   },
   {
     "id": "G4-16",
@@ -1315,7 +1463,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G5-01",
@@ -1340,7 +1491,10 @@
     "expected_exit_codes": [
       5
     ],
-    "timeout_seconds": 5400
+    "timeout_seconds": 5400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 27
   },
   {
     "id": "G5-02",
@@ -1383,7 +1537,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G5-03",
@@ -1405,7 +1562,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G5-04",
@@ -1435,7 +1595,10 @@
     "expected_exit_codes": [
       1
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G5-05",
@@ -1463,10 +1626,16 @@
       "--no-diarization",
       "--force"
     ],
+    "environment": {
+      "UTTERAN_GENERAL__JOB_DIR": "{acceptance}/jobs-g5-reuse"
+    },
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 1200
+    "timeout_seconds": 1200,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 40
   },
   {
     "id": "G5-06",
@@ -1477,14 +1646,17 @@
       "{project}/tools/acceptance/scenarios.py",
       "backend-reuse",
       "--jobs",
-      "{jobs}",
+      "{acceptance}/jobs-g5-reuse",
       "{testdata}/batch/clip_30s.mp4",
       "{testdata}/batch/nested/nested_clip.mp4"
     ],
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G5-07",
@@ -1519,7 +1691,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G5-08",
@@ -1547,7 +1722,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G5-09",
@@ -1585,7 +1763,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 13
   },
   {
     "id": "G6-01",
@@ -1607,7 +1788,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G6-02",
@@ -1630,7 +1814,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G6-03",
@@ -1650,7 +1837,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G6-04",
@@ -1672,7 +1862,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 300
+    "timeout_seconds": 300,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 15
   },
   {
     "id": "G6-05",
@@ -1696,7 +1889,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G6-06",
@@ -1721,7 +1917,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G6-07",
@@ -1744,7 +1943,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G6-08",
@@ -1778,7 +1980,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G6-09",
@@ -1795,7 +2000,7 @@
       "--contains",
       "非対話環境では自動取得しません",
       "--contains",
-      "openvino:large-v3-turbo",
+      "faster-whisper:large-v3-turbo",
       "--contains=--yes",
       "--",
       "{utteran}",
@@ -1804,7 +2009,7 @@
       "--config",
       "{project}/tools/acceptance/config.acceptance.toml",
       "--asr-backend",
-      "openvino",
+      "faster-whisper",
       "--asr-model",
       "large-v3-turbo",
       "--no-diarization",
@@ -1817,7 +2022,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G7-01",
@@ -1842,7 +2050,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 8
   },
   {
     "id": "G7-02",
@@ -1871,7 +2082,7 @@
       "--key",
       "warnings",
       "--value",
-      "auto_selection.asr_device=cpu",
+      "auto_selection.asr_device=vulkan",
       "--",
       "{utteran}",
       "devices",
@@ -1880,7 +2091,16 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "requires": {
+      "profile": "intel",
+      "native_variants": [
+        "vulkan"
+      ],
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 8
   },
   {
     "id": "G7-03",
@@ -1891,9 +2111,9 @@
       "{project}/tools/acceptance/scenarios.py",
       "command-output",
       "--contains",
-      "auto: ASR=faster-whisper/cpu/int8",
+      "auto: ASR=whisper-cpp/vulkan/ggml",
       "--contains",
-      "diarization=pyannote/cpu",
+      "diarization=pyannote/xpu:0",
       "--",
       "{utteran}",
       "devices"
@@ -1901,7 +2121,16 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "requires": {
+      "profile": "intel",
+      "native_variants": [
+        "vulkan"
+      ],
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 9
   },
   {
     "id": "G7-04",
@@ -1927,7 +2156,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 1200
+    "timeout_seconds": 1200,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 24
   },
   {
     "id": "G7-05",
@@ -1942,7 +2174,7 @@
       "--contains",
       "cuda:0",
       "--contains",
-      "cuDNN",
+      "自動フォールバックは行いません",
       "--",
       "{utteran}",
       "transcribe",
@@ -1963,7 +2195,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 4
   },
   {
     "id": "G7-06",
@@ -1997,7 +2232,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 4
   },
   {
     "id": "G7-07",
@@ -2031,7 +2269,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G8-01",
@@ -2051,7 +2292,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G8-02",
@@ -2069,7 +2313,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G8-03",
@@ -2101,7 +2348,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G8-04",
@@ -2117,7 +2367,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G8-05",
@@ -2135,7 +2388,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G8-06",
@@ -2151,7 +2407,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G8-07",
@@ -2169,7 +2428,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G9-01",
@@ -2194,7 +2456,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 23
   },
   {
     "id": "G9-02",
@@ -2218,7 +2483,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G9-03",
@@ -2249,7 +2517,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G9-04",
@@ -2264,7 +2535,7 @@
       "--exit",
       "3",
       "--contains",
-      "openvino:large-v3-turbo",
+      "faster-whisper:large-v3-turbo",
       "--contains",
       "models download",
       "--",
@@ -2274,7 +2545,7 @@
       "--config",
       "{project}/tools/acceptance/config.acceptance.toml",
       "--asr-backend",
-      "openvino",
+      "faster-whisper",
       "--asr-model",
       "large-v3-turbo",
       "--no-diarization",
@@ -2287,7 +2558,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G9-05",
@@ -2323,7 +2597,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G9-06",
@@ -2347,7 +2624,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G9-07",
@@ -2374,7 +2654,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G9-08",
@@ -2401,7 +2684,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "G9-09",
@@ -2437,7 +2723,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 13
   },
   {
     "id": "G9-10",
@@ -2472,7 +2761,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 76
   },
   {
     "id": "G9-11",
@@ -2488,7 +2780,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G10-01",
@@ -2504,7 +2799,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G10-02",
@@ -2521,7 +2819,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 22
   },
   {
     "id": "G11-01",
@@ -2543,7 +2844,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 900
+    "timeout_seconds": 900,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 42
   },
   {
     "id": "G11-02",
@@ -2561,7 +2865,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G12-01",
@@ -2581,7 +2888,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 300
+    "timeout_seconds": 300,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3
   },
   {
     "id": "G13-01",
@@ -2613,7 +2923,9 @@
     "measure_vram": true,
     "requires": {
       "cuda": true
-    }
+    },
+    "destructive": false,
+    "estimated_seconds": 7200
   },
   {
     "id": "G13-02",
@@ -2636,7 +2948,9 @@
     "timeout_seconds": 120,
     "requires": {
       "cuda": true
-    }
+    },
+    "destructive": false,
+    "estimated_seconds": 120
   },
   {
     "id": "G13-03",
@@ -2657,7 +2971,9 @@
     "timeout_seconds": 60,
     "requires": {
       "cuda": true
-    }
+    },
+    "destructive": false,
+    "estimated_seconds": 60
   },
   {
     "id": "G13-04",
@@ -2688,7 +3004,9 @@
     "measure_vram": true,
     "requires": {
       "cuda": true
-    }
+    },
+    "destructive": false,
+    "estimated_seconds": 14400
   },
   {
     "id": "G13-05",
@@ -2712,7 +3030,9 @@
     "timeout_seconds": 120,
     "requires": {
       "cuda": true
-    }
+    },
+    "destructive": false,
+    "estimated_seconds": 120
   },
   {
     "id": "G13-06",
@@ -2741,7 +3061,9 @@
     "timeout_seconds": 120,
     "requires": {
       "cuda": true
-    }
+    },
+    "destructive": false,
+    "estimated_seconds": 120
   },
   {
     "id": "G13-07",
@@ -2763,7 +3085,9 @@
     "timeout_seconds": 60,
     "requires": {
       "cuda": true
-    }
+    },
+    "destructive": false,
+    "estimated_seconds": 60
   },
   {
     "id": "G13-08",
@@ -2797,7 +3121,9 @@
     "timeout_seconds": 600,
     "requires": {
       "cuda": true
-    }
+    },
+    "destructive": false,
+    "estimated_seconds": 600
   },
   {
     "id": "G14-01",
@@ -2826,7 +3152,12 @@
     ],
     "timeout_seconds": 1800,
     "minimum_peak_memory_bytes": 536870912,
-    "measure_vram": true
+    "measure_vram": true,
+    "requires": {
+      "cuda": true
+    },
+    "destructive": false,
+    "estimated_seconds": 4
   },
   {
     "id": "G14-02",
@@ -2847,7 +3178,12 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {
+      "cuda": true
+    },
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G14-03",
@@ -2865,7 +3201,12 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {
+      "cuda": true
+    },
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G14-04",
@@ -2893,7 +3234,12 @@
     ],
     "timeout_seconds": 1800,
     "minimum_peak_memory_bytes": 1073741824,
-    "measure_vram": true
+    "measure_vram": true,
+    "requires": {
+      "cuda": true
+    },
+    "destructive": false,
+    "estimated_seconds": 3
   },
   {
     "id": "G14-05",
@@ -2916,7 +3262,12 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {
+      "cuda": true
+    },
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G14-06",
@@ -2935,7 +3286,12 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "requires": {
+      "cuda": true
+    },
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G14-07",
@@ -2959,7 +3315,12 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "requires": {
+      "cuda": true
+    },
+    "destructive": false,
+    "estimated_seconds": 8
   },
   {
     "id": "G14-08",
@@ -2970,7 +3331,7 @@
       "{project}/tools/acceptance/scenarios.py",
       "postflight",
       "--results",
-      "{acceptance}/results.jsonl",
+      "{results}",
       "--jobs",
       "{jobs}",
       "--input",
@@ -2981,7 +3342,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 120
+    "timeout_seconds": 120,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
   },
   {
     "id": "G14-09",
@@ -2999,7 +3363,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 17
   },
   {
     "id": "P14-NO-DIAR",
@@ -3029,7 +3396,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 14400
+    "timeout_seconds": 14400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 103
   },
   {
     "id": "P14-DIAR",
@@ -3060,7 +3430,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 14400
+    "timeout_seconds": 14400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 379
   },
   {
     "id": "P14-RESUME",
@@ -3090,7 +3463,10 @@
     "expected_exit_codes": [
       0
     ],
-    "timeout_seconds": 14400
+    "timeout_seconds": 14400,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2
   },
   {
     "id": "P0-1",

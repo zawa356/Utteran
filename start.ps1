@@ -102,7 +102,8 @@ function Get-VenvRoot {
 function Get-ExistingProfiles {
     $Root = Get-VenvRoot
     return @($AllProfiles | Where-Object {
-        Test-Path -LiteralPath (Join-Path $Root "win-$_" "Scripts\python.exe") -PathType Leaf
+        $ProfilePath = Join-Path $Root "win-$_"
+        Test-Path -LiteralPath (Join-Path $ProfilePath "Scripts\python.exe") -PathType Leaf
     })
 }
 
