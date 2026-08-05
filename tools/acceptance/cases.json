@@ -8,7 +8,9 @@
       "-c",
       "import subprocess,sys; p=subprocess.Popen([sys.executable,'-c','import time; x=bytearray(100*1024*1024); time.sleep(3)']); raise SystemExit(p.wait())"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 30,
     "minimum_peak_memory_bytes": 94371840
   },
@@ -33,7 +35,9 @@
       "--no-diarization",
       "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 1800
   },
   {
@@ -51,7 +55,9 @@
       "--duration",
       "30"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -59,12 +65,23 @@
     "group": "G2",
     "description": "Transcribe the three-minute MP4 with default formats and Japanese language",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g2/default",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g2/default",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 2400
   },
   {
@@ -72,11 +89,19 @@
     "group": "G2",
     "description": "Verify the default SRT, JSON, and Markdown artifact set",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "artifacts",
-      "--dir", "{acceptance}/g2/default", "--stem", "clip_03m",
-      "--extensions", "srt,json,md"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "artifacts",
+      "--dir",
+      "{acceptance}/g2/default",
+      "--stem",
+      "clip_03m",
+      "--extensions",
+      "srt,json,md"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -84,11 +109,20 @@
     "group": "G2",
     "description": "Validate three-minute MP4 JSON structure and ASR statistics",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "json",
-      "{acceptance}/g2/default/clip_03m.json", "--duration", "180",
-      "--min-segments", "5", "--max-segments", "300"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "json",
+      "{acceptance}/g2/default/clip_03m.json",
+      "--duration",
+      "180",
+      "--min-segments",
+      "5",
+      "--max-segments",
+      "300"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -96,12 +130,24 @@
     "group": "G2",
     "description": "Re-export the MP4 to an explicit output directory in all five formats",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g2/all", "--format", "srt,vtt,json,txt,md",
-      "--language", "ja", "--device", "cpu", "--no-diarization"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g2/all",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -109,10 +155,19 @@
     "group": "G2",
     "description": "Validate all five MP4 output formats",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "formats",
-      "--dir", "{acceptance}/g2/all", "--stem", "clip_03m", "--duration", "180"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "formats",
+      "--dir",
+      "{acceptance}/g2/all",
+      "--stem",
+      "clip_03m",
+      "--duration",
+      "180"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -120,13 +175,28 @@
     "group": "G2",
     "description": "Change only output newline settings to force collision-safe re-export",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.crlf.toml",
-      "--output-dir", "{acceptance}/g2/all", "--format", "srt,vtt,json,txt,md",
-      "--asr-backend", "faster-whisper", "--asr-model", "large-v3-turbo",
-      "--language", "ja", "--device", "cpu", "--no-diarization"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.crlf.toml",
+      "--output-dir",
+      "{acceptance}/g2/all",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--asr-backend",
+      "faster-whisper",
+      "--asr-model",
+      "large-v3-turbo",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -134,11 +204,19 @@
     "group": "G2",
     "description": "Verify collision outputs use a common numbered stem",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "collision",
-      "--dir", "{acceptance}/g2/all", "--stem", "clip_03m",
-      "--extensions", "srt,vtt,json,txt,md"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "collision",
+      "--dir",
+      "{acceptance}/g2/all",
+      "--stem",
+      "clip_03m",
+      "--extensions",
+      "srt,vtt,json,txt,md"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -146,12 +224,25 @@
     "group": "G2",
     "description": "Transcribe the three-minute WAV input",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.wav",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g2/wav", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.wav",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g2/wav",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 2400
   },
   {
@@ -159,11 +250,20 @@
     "group": "G2",
     "description": "Validate WAV JSON structure and ASR statistics",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "json",
-      "{acceptance}/g2/wav/clip_03m.json", "--duration", "180",
-      "--min-segments", "5", "--max-segments", "300"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "json",
+      "{acceptance}/g2/wav/clip_03m.json",
+      "--duration",
+      "180",
+      "--min-segments",
+      "5",
+      "--max-segments",
+      "300"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -171,12 +271,25 @@
     "group": "G2",
     "description": "Transcribe the three-minute M4A input",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.m4a",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g2/m4a", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.m4a",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g2/m4a",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 2400
   },
   {
@@ -184,11 +297,20 @@
     "group": "G2",
     "description": "Validate M4A JSON structure and ASR statistics",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "json",
-      "{acceptance}/g2/m4a/clip_03m.json", "--duration", "180",
-      "--min-segments", "5", "--max-segments", "300"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "json",
+      "{acceptance}/g2/m4a/clip_03m.json",
+      "--duration",
+      "180",
+      "--min-segments",
+      "5",
+      "--max-segments",
+      "300"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -196,11 +318,16 @@
     "group": "G2",
     "description": "Compare MP4, WAV, and M4A results using content-free statistics",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "equivalent",
-      "{acceptance}/g2/all/clip_03m.json", "{acceptance}/g2/wav/clip_03m.json",
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "equivalent",
+      "{acceptance}/g2/all/clip_03m.json",
+      "{acceptance}/g2/wav/clip_03m.json",
       "{acceptance}/g2/m4a/clip_03m.json"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -208,12 +335,24 @@
     "group": "G2",
     "description": "Transcribe MP4 with automatic language detection",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g2/auto", "--format", "json",
-      "--language", "auto", "--device", "cpu", "--no-diarization"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g2/auto",
+      "--format",
+      "json",
+      "--language",
+      "auto",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 2400
   },
   {
@@ -221,10 +360,19 @@
     "group": "G2",
     "description": "Verify automatic language detection selected Japanese",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "job",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--language", "ja"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "job",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--language",
+      "ja"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -232,13 +380,28 @@
     "group": "G2",
     "description": "Export an SRT with UTF-8 BOM enabled",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.bom.toml",
-      "--output-dir", "{acceptance}/g2/bom", "--format", "srt",
-      "--asr-backend", "faster-whisper", "--asr-model", "large-v3-turbo",
-      "--language", "auto", "--device", "cpu", "--no-diarization"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.bom.toml",
+      "--output-dir",
+      "{acceptance}/g2/bom",
+      "--format",
+      "srt",
+      "--asr-backend",
+      "faster-whisper",
+      "--asr-model",
+      "large-v3-turbo",
+      "--language",
+      "auto",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -246,10 +409,13 @@
     "group": "G2",
     "description": "Verify the SRT UTF-8 BOM bytes",
     "command": [
-      "{python}", "-c",
+      "{python}",
+      "-c",
       "from pathlib import Path; p=Path(r'{acceptance}/g2/bom/clip_03m.srt'); raise SystemExit(0 if p.read_bytes().startswith(bytes.fromhex('efbbbf')) else 1)"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -257,12 +423,23 @@
     "group": "G3",
     "description": "Run real pyannote diarization with automatic speaker count",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g3/auto", "--format", "json",
-      "--language", "ja", "--device", "cpu"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g3/auto",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 3600
   },
   {
@@ -270,13 +447,25 @@
     "group": "G3",
     "description": "Validate automatic diarization quality and exclusive turns",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "job",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--json", "{acceptance}/g3/auto/clip_03m.json",
-      "--min-speakers", "2", "--max-speakers", "20",
-      "--require-exclusive", "--require-quality"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "job",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--json",
+      "{acceptance}/g3/auto/clip_03m.json",
+      "--min-speakers",
+      "2",
+      "--max-speakers",
+      "20",
+      "--require-exclusive",
+      "--require-quality"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -284,12 +473,25 @@
     "group": "G3",
     "description": "Run diarization with exactly two speakers",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g3/two", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--num-speakers", "2"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g3/two",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--num-speakers",
+      "2"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 3600
   },
   {
@@ -297,12 +499,23 @@
     "group": "G3",
     "description": "Validate the exact two-speaker result",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "job",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--json", "{acceptance}/g3/two/clip_03m.json", "--exact-speakers", "2",
-      "--require-exclusive", "--require-quality"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "job",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--json",
+      "{acceptance}/g3/two/clip_03m.json",
+      "--exact-speakers",
+      "2",
+      "--require-exclusive",
+      "--require-quality"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -310,12 +523,25 @@
     "group": "G3",
     "description": "Run diarization with exactly three speakers",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g3/three", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--num-speakers", "3"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g3/three",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--num-speakers",
+      "3"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 3600
   },
   {
@@ -323,12 +549,23 @@
     "group": "G3",
     "description": "Validate the exact three-speaker result",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "job",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--json", "{acceptance}/g3/three/clip_03m.json", "--exact-speakers", "3",
-      "--require-exclusive", "--require-quality"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "job",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--json",
+      "{acceptance}/g3/three/clip_03m.json",
+      "--exact-speakers",
+      "3",
+      "--require-exclusive",
+      "--require-quality"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -336,12 +573,25 @@
     "group": "G3",
     "description": "Run diarization with exactly four speakers",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g3/four", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--num-speakers", "4"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g3/four",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--num-speakers",
+      "4"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 3600
   },
   {
@@ -349,12 +599,23 @@
     "group": "G3",
     "description": "Validate the exact four-speaker result",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "job",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--json", "{acceptance}/g3/four/clip_03m.json", "--exact-speakers", "4",
-      "--require-exclusive", "--require-quality"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "job",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--json",
+      "{acceptance}/g3/four/clip_03m.json",
+      "--exact-speakers",
+      "4",
+      "--require-exclusive",
+      "--require-quality"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -362,13 +623,27 @@
     "group": "G3",
     "description": "Run diarization with a two-to-five speaker range",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g3/range", "--format", "json",
-      "--language", "ja", "--device", "cpu",
-      "--min-speakers", "2", "--max-speakers", "5"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g3/range",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--min-speakers",
+      "2",
+      "--max-speakers",
+      "5"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 3600
   },
   {
@@ -376,13 +651,25 @@
     "group": "G3",
     "description": "Validate the ranged speaker-count result",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "job",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--json", "{acceptance}/g3/range/clip_03m.json",
-      "--min-speakers", "2", "--max-speakers", "5",
-      "--require-exclusive", "--require-quality"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "job",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--json",
+      "{acceptance}/g3/range/clip_03m.json",
+      "--min-speakers",
+      "2",
+      "--max-speakers",
+      "5",
+      "--require-exclusive",
+      "--require-quality"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -390,11 +677,19 @@
     "group": "G3",
     "description": "Reject exact and ranged speaker constraints used together",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--num-speakers", "2", "--min-speakers", "2"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--num-speakers",
+      "2",
+      "--min-speakers",
+      "2"
     ],
-    "expected_exit_codes": [2],
+    "expected_exit_codes": [
+      2
+    ],
     "timeout_seconds": 60
   },
   {
@@ -402,13 +697,25 @@
     "group": "G3",
     "description": "Run diarization with an explicit pyannote model ID",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g3/explicit", "--format", "json",
-      "--language", "ja", "--device", "cpu",
-      "--diarization-model", "pyannote/speaker-diarization-community-1"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g3/explicit",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--diarization-model",
+      "pyannote/speaker-diarization-community-1"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 3600
   },
   {
@@ -416,13 +723,25 @@
     "group": "G3",
     "description": "Validate explicit-model diarization quality and exclusive turns",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "job",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--json", "{acceptance}/g3/explicit/clip_03m.json",
-      "--min-speakers", "2", "--max-speakers", "20",
-      "--require-exclusive", "--require-quality"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "job",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--json",
+      "{acceptance}/g3/explicit/clip_03m.json",
+      "--min-speakers",
+      "2",
+      "--max-speakers",
+      "20",
+      "--require-exclusive",
+      "--require-quality"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -430,13 +749,25 @@
     "group": "G3",
     "description": "Re-export the automatic result with a friendly speaker label",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.speaker-labels.toml",
-      "--output-dir", "{acceptance}/g3/labels", "--format", "json",
-      "--language", "ja", "--device", "cpu",
-      "--diarization-model", "pyannote/speaker-diarization-community-1"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.speaker-labels.toml",
+      "--output-dir",
+      "{acceptance}/g3/labels",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--diarization-model",
+      "pyannote/speaker-diarization-community-1"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -444,13 +775,25 @@
     "group": "G3",
     "description": "Verify speaker-label replacement in exported JSON",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "job",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--json", "{acceptance}/g3/labels/clip_03m.json",
-      "--min-speakers", "2", "--max-speakers", "20",
-      "--required-speaker-label", "話者A"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "job",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--json",
+      "{acceptance}/g3/labels/clip_03m.json",
+      "--min-speakers",
+      "2",
+      "--max-speakers",
+      "20",
+      "--required-speaker-label",
+      "話者A"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -458,14 +801,33 @@
     "group": "G4",
     "description": "Prepare the baseline job while changing only export settings",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--expected", "export", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/base", "--format", "json",
-      "--language", "ja", "--device", "cpu"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "stages",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--expected",
+      "export",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/base",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -473,14 +835,33 @@
     "group": "G4",
     "description": "Verify an identical second run skips every stage",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--expected", "", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/base", "--format", "json",
-      "--language", "ja", "--device", "cpu"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "stages",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--expected",
+      "",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/base",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -488,14 +869,33 @@
     "group": "G4",
     "description": "Verify changing output formats reruns only export",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--expected", "export", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/base", "--format", "srt,json",
-      "--language", "ja", "--device", "cpu"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "stages",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--expected",
+      "export",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/base",
+      "--format",
+      "srt,json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -503,14 +903,33 @@
     "group": "G4",
     "description": "Verify changing output directory reruns only export",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4", "--expected", "export", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/moved", "--format", "srt,json",
-      "--language", "ja", "--device", "cpu"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "stages",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--expected",
+      "export",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/moved",
+      "--format",
+      "srt,json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -518,15 +937,35 @@
     "group": "G4",
     "description": "Verify changing the ASR model reruns ASR and downstream stages",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--expected", "asr,merge,export", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/asr-model", "--format", "json",
-      "--asr-model", "large-v3", "--language", "ja", "--device", "cpu"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "stages",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--expected",
+      "asr,merge,export",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/asr-model",
+      "--format",
+      "json",
+      "--asr-model",
+      "large-v3",
+      "--language",
+      "ja",
+      "--device",
+      "cpu"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 3600
   },
   {
@@ -534,16 +973,37 @@
     "group": "G4",
     "description": "Verify changing speaker count reruns diarization and downstream stages",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--expected", "diarization,merge,export", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/speakers", "--format", "json",
-      "--asr-model", "large-v3", "--language", "ja", "--device", "cpu",
-      "--num-speakers", "2"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "stages",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--expected",
+      "diarization,merge,export",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/speakers",
+      "--format",
+      "json",
+      "--asr-model",
+      "large-v3",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--num-speakers",
+      "2"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 3600
   },
   {
@@ -551,16 +1011,38 @@
     "group": "G4",
     "description": "Verify force reruns all five stages",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--expected", "audio,asr,diarization,merge,export", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/force", "--format", "json",
-      "--asr-model", "large-v3", "--language", "ja", "--device", "cpu",
-      "--num-speakers", "2", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "stages",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--expected",
+      "audio,asr,diarization,merge,export",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/force",
+      "--format",
+      "json",
+      "--asr-model",
+      "large-v3",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--num-speakers",
+      "2",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 5400
   },
   {
@@ -568,16 +1050,38 @@
     "group": "G4",
     "description": "Verify no-resume reruns all five stages",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
-      "--expected", "audio,asr,diarization,merge,export", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/no-resume", "--format", "json",
-      "--asr-model", "large-v3", "--language", "ja", "--device", "cpu",
-      "--num-speakers", "2", "--no-resume"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "stages",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
+      "--expected",
+      "audio,asr,diarization,merge,export",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/no-resume",
+      "--format",
+      "json",
+      "--asr-model",
+      "large-v3",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--num-speakers",
+      "2",
+      "--no-resume"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 5400
   },
   {
@@ -585,14 +1089,35 @@
     "group": "G4",
     "description": "Interrupt ten-minute ASR with SIGINT and retain completed audio",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "interrupt",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_10m.mp4", "--delay", "8", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_10m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/interrupt", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "interrupt",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_10m.mp4",
+      "--delay",
+      "8",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_10m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/interrupt",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -600,15 +1125,34 @@
     "group": "G4",
     "description": "Resume the interrupted ten-minute job from ASR",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "stages",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_10m.mp4",
-      "--expected", "asr,diarization,merge,export", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_10m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/interrupt", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "stages",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_10m.mp4",
+      "--expected",
+      "asr,diarization,merge,export",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_10m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/interrupt",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 5400
   },
   {
@@ -616,14 +1160,33 @@
     "group": "G4",
     "description": "Reject a concurrent process holding the same job lock",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "concurrent-lock",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_10m.mp4", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_10m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g4/concurrent", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "concurrent-lock",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_10m.mp4",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_10m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g4/concurrent",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -631,14 +1194,32 @@
     "group": "G4",
     "description": "Recover a lock owned by a nonexistent PID",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "artificial-lock",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_30s.mp4", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g1", "--format", "srt,vtt,json,txt,md",
-      "--language", "auto", "--device", "cpu", "--no-diarization"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "artificial-lock",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_30s.mp4",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g1",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--language",
+      "auto",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -646,14 +1227,34 @@
     "group": "G4",
     "description": "Force-unlock a lock owned by a live process",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "artificial-lock",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_30s.mp4", "--live", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g1", "--format", "srt,vtt,json,txt,md",
-      "--language", "auto", "--device", "cpu", "--no-diarization", "--force-unlock"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "artificial-lock",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_30s.mp4",
+      "--live",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g1",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--language",
+      "auto",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force-unlock"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -661,12 +1262,21 @@
     "group": "G4",
     "description": "List an intentionally unreadable manifest as corrupt",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "corrupt",
-      "--jobs", "{jobs}", "--",
-      "{utteran}", "jobs", "list",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "corrupt",
+      "--jobs",
+      "{jobs}",
+      "--",
+      "{utteran}",
+      "jobs",
+      "list",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -674,11 +1284,19 @@
     "group": "G4",
     "description": "Exercise jobs list, show, and every clean selector in isolation",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "jobs-management",
-      "--jobs", "{acceptance}/g4_jobs", "--utteran", "{utteran}",
-      "--config", "{project}/tools/acceptance/config.g4-clean.toml"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "jobs-management",
+      "--jobs",
+      "{acceptance}/g4_jobs",
+      "--utteran",
+      "{utteran}",
+      "--config",
+      "{project}/tools/acceptance/config.g4-clean.toml"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 120
   },
   {
@@ -686,10 +1304,17 @@
     "group": "G4",
     "description": "Validate per-job JSON logs and absence of token-like values",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "log",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "log",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -697,12 +1322,24 @@
     "group": "G5",
     "description": "Process a folder in name order and continue after broken media",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/batch",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g5/main", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/batch",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g5/main",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [5],
+    "expected_exit_codes": [
+      5
+    ],
     "timeout_seconds": 5400
   },
   {
@@ -710,16 +1347,42 @@
     "group": "G5",
     "description": "Validate partial-failure summary counts and exit code 5",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "batch-summary",
-      "--jobs", "{jobs}", "--dir", "{testdata}/batch",
-      "--exit", "5", "--success", "3", "--skipped", "0", "--failed", "1",
-      "--order", "broken.mp4,clip_03m.m4a,clip_03m.wav,clip_30s.mp4", "--",
-      "{utteran}", "transcribe", "{testdata}/batch",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g5/ordered-summary-final", "--format", "md",
-      "--language", "ja", "--device", "cpu", "--no-diarization"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "batch-summary",
+      "--jobs",
+      "{jobs}",
+      "--dir",
+      "{testdata}/batch",
+      "--exit",
+      "5",
+      "--success",
+      "3",
+      "--skipped",
+      "0",
+      "--failed",
+      "1",
+      "--order",
+      "broken.mp4,clip_03m.m4a,clip_03m.wav,clip_30s.mp4",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/batch",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g5/ordered-summary-final",
+      "--format",
+      "md",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -727,12 +1390,21 @@
     "group": "G5",
     "description": "Validate stable batch order, continuation, jobs, and outputs",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "batch-state",
-      "--jobs", "{jobs}", "--dir", "{testdata}/batch",
-      "--output", "{acceptance}/g5/main",
-      "--order", "broken.mp4,clip_03m.m4a,clip_03m.wav,clip_30s.mp4"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "batch-state",
+      "--jobs",
+      "{jobs}",
+      "--dir",
+      "{testdata}/batch",
+      "--output",
+      "{acceptance}/g5/main",
+      "--order",
+      "broken.mp4,clip_03m.m4a,clip_03m.wav,clip_30s.mp4"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -740,13 +1412,29 @@
     "group": "G5",
     "description": "Return exit code 1 when every selected batch item fails",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/batch",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g5/all-failed", "--format", "json",
-      "--include", "broken.mp4", "--include", "notmedia.txt",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/batch",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g5/all-failed",
+      "--format",
+      "json",
+      "--include",
+      "broken.mp4",
+      "--include",
+      "notmedia.txt",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [1],
+    "expected_exit_codes": [
+      1
+    ],
     "timeout_seconds": 600
   },
   {
@@ -754,13 +1442,30 @@
     "group": "G5",
     "description": "Recursively process selected root and nested media with one backend",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/batch",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g5/reuse", "--format", "json",
-      "--recursive", "--include", "clip_30s.mp4", "--include", "nested/nested_clip.mp4",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/batch",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g5/reuse",
+      "--format",
+      "json",
+      "--recursive",
+      "--include",
+      "clip_30s.mp4",
+      "--include",
+      "nested/nested_clip.mp4",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 1200
   },
   {
@@ -768,11 +1473,17 @@
     "group": "G5",
     "description": "Confirm the ASR backend was loaded once and then reused",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "backend-reuse",
-      "--jobs", "{jobs}",
-      "{testdata}/batch/clip_30s.mp4", "{testdata}/batch/nested/nested_clip.mp4"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "backend-reuse",
+      "--jobs",
+      "{jobs}",
+      "{testdata}/batch/clip_30s.mp4",
+      "{testdata}/batch/nested/nested_clip.mp4"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -780,15 +1491,34 @@
     "group": "G5",
     "description": "Apply recursive include/exclude globs in dry-run without changing jobs",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "dry-run",
-      "--jobs", "{jobs}", "--expected", "clip_30s.mp4",
-      "--absent", "broken.mp4,nested_clip.mp4,notmedia.txt", "--",
-      "{utteran}", "transcribe", "{testdata}/batch",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--recursive", "--include", "*.mp4", "--exclude", "broken*",
-      "--exclude", "nested/*", "--dry-run", "--no-diarization"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "dry-run",
+      "--jobs",
+      "{jobs}",
+      "--expected",
+      "clip_30s.mp4",
+      "--absent",
+      "broken.mp4,nested_clip.mp4,notmedia.txt",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/batch",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--recursive",
+      "--include",
+      "*.mp4",
+      "--exclude",
+      "broken*",
+      "--exclude",
+      "nested/*",
+      "--dry-run",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -796,14 +1526,27 @@
     "group": "G5",
     "description": "Exclude configured output and job roots from recursive inputs",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "generated-exclusion",
-      "--output", "{testdata}/batch/generated_output",
-      "--jobs", "{testdata}/batch/generated_jobs", "--",
-      "{utteran}", "transcribe", "{testdata}/batch",
-      "--config", "{project}/tools/acceptance/config.g5-generated.toml",
-      "--recursive", "--include", "should_not_process.mp4", "--no-diarization"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "generated-exclusion",
+      "--output",
+      "{testdata}/batch/generated_output",
+      "--jobs",
+      "{testdata}/batch/generated_jobs",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/batch",
+      "--config",
+      "{project}/tools/acceptance/config.g5-generated.toml",
+      "--recursive",
+      "--include",
+      "should_not_process.mp4",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -811,16 +1554,37 @@
     "group": "G5",
     "description": "Return exit code 130 on a real SIGINT during batch ASR",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "interrupt",
-      "--jobs", "{jobs}", "--input", "{testdata}/batch/clip_03m.m4a",
-      "--delay", "3", "--",
-      "{utteran}", "transcribe", "{testdata}/batch",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g5/interrupt", "--format", "json",
-      "--include", "clip_03m.m4a", "--language", "ja", "--device", "cpu",
-      "--no-diarization", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "interrupt",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/batch/clip_03m.m4a",
+      "--delay",
+      "3",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/batch",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g5/interrupt",
+      "--format",
+      "json",
+      "--include",
+      "clip_03m.m4a",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -828,11 +1592,21 @@
     "group": "G6",
     "description": "List installed models",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--contains", "faster-whisper:large-v3-turbo", "--contains", "pyannote:", "--",
-      "{utteran}", "models", "list"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--contains",
+      "faster-whisper:large-v3-turbo",
+      "--contains",
+      "pyannote:",
+      "--",
+      "{utteran}",
+      "models",
+      "list"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 120
   },
   {
@@ -840,12 +1614,22 @@
     "group": "G6",
     "description": "List the complete available model catalog",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--contains", "faster-whisper:large-v3-turbo",
-      "--contains", "openvino:large-v3-turbo", "--",
-      "{utteran}", "models", "list", "--available"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--contains",
+      "faster-whisper:large-v3-turbo",
+      "--contains",
+      "openvino:large-v3-turbo",
+      "--",
+      "{utteran}",
+      "models",
+      "list",
+      "--available"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 120
   },
   {
@@ -853,10 +1637,19 @@
     "group": "G6",
     "description": "Display the effective model path",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--contains", "models", "--", "{utteran}", "models", "path"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--contains",
+      "models",
+      "--",
+      "{utteran}",
+      "models",
+      "path"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -864,11 +1657,21 @@
     "group": "G6",
     "description": "Verify all installed models",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--contains", "ok", "--contains", "faster-whisper:large-v3-turbo", "--",
-      "{utteran}", "models", "verify"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--contains",
+      "ok",
+      "--contains",
+      "faster-whisper:large-v3-turbo",
+      "--",
+      "{utteran}",
+      "models",
+      "verify"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 300
   },
   {
@@ -876,12 +1679,23 @@
     "group": "G6",
     "description": "Reject omitted download ID on non-interactive stdin",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "2", "--contains", "非対話環境ではモデルIDを省略できません",
-      "--contains", "models list --available", "--",
-      "{utteran}", "models", "download"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "2",
+      "--contains",
+      "非対話環境ではモデルIDを省略できません",
+      "--contains",
+      "models list --available",
+      "--",
+      "{utteran}",
+      "models",
+      "download"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -889,12 +1703,24 @@
     "group": "G6",
     "description": "Reject ambiguous model ID and present qualified choices",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "2", "--contains", "faster-whisper:large-v3-turbo",
-      "--contains", "openvino:large-v3-turbo", "--",
-      "{utteran}", "models", "download", "large-v3-turbo"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "2",
+      "--contains",
+      "faster-whisper:large-v3-turbo",
+      "--contains",
+      "openvino:large-v3-turbo",
+      "--",
+      "{utteran}",
+      "models",
+      "download",
+      "large-v3-turbo"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -902,11 +1728,22 @@
     "group": "G6",
     "description": "Reject an unregistered model ID",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "2", "--contains", "モデルカタログにありません", "--",
-      "{utteran}", "models", "download", "not-a-real-model"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "2",
+      "--contains",
+      "モデルカタログにありません",
+      "--",
+      "{utteran}",
+      "models",
+      "download",
+      "not-a-real-model"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -914,10 +1751,21 @@
     "group": "G6",
     "description": "Classify gated download without any token",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--cwd", "{acceptance}/g6/empty-cwd", "--exit", "2",
-      "--contains", "settings/tokens", "--contains", "HF_TOKEN", "--",
-      "{utteran}", "models", "download",
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--cwd",
+      "{acceptance}/g6/empty-cwd",
+      "--exit",
+      "2",
+      "--contains",
+      "settings/tokens",
+      "--contains",
+      "HF_TOKEN",
+      "--",
+      "{utteran}",
+      "models",
+      "download",
       "pyannote:pyannote/speaker-diarization-community-1"
     ],
     "environment": {
@@ -927,7 +1775,9 @@
       "UTTERAN_MODEL_DIR": "{acceptance}/g6/empty-models",
       "HF_HOME": "{acceptance}/g6/empty-hf"
     },
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -935,20 +1785,38 @@
     "group": "G6",
     "description": "Guide non-interactive transcription when a catalog model is missing",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--cwd", "{acceptance}/g6/empty-cwd", "--exit", "3",
-      "--contains", "非対話環境では自動取得しません",
-      "--contains", "openvino:large-v3-turbo", "--contains=--yes", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--asr-backend", "openvino", "--asr-model", "large-v3-turbo",
-      "--no-diarization", "--quiet"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--cwd",
+      "{acceptance}/g6/empty-cwd",
+      "--exit",
+      "3",
+      "--contains",
+      "非対話環境では自動取得しません",
+      "--contains",
+      "openvino:large-v3-turbo",
+      "--contains=--yes",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--asr-backend",
+      "openvino",
+      "--asr-model",
+      "large-v3-turbo",
+      "--no-diarization",
+      "--quiet"
     ],
     "environment": {
       "UTTERAN_MODEL_DIR": "{acceptance}/g6/empty-models",
       "HF_HOME": "{acceptance}/g6/empty-hf"
     },
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -956,12 +1824,24 @@
     "group": "G7",
     "description": "Render the human-oriented device report",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--contains", "CPU", "--contains", "CTranslate2",
-      "--contains", "ffmpeg", "--contains", "auto:", "--",
-      "{utteran}", "devices"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--contains",
+      "CPU",
+      "--contains",
+      "CTranslate2",
+      "--contains",
+      "ffmpeg",
+      "--contains",
+      "auto:",
+      "--",
+      "{utteran}",
+      "devices"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 120
   },
   {
@@ -969,15 +1849,37 @@
     "group": "G7",
     "description": "Validate the stable device JSON structure",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "json-output",
-      "--key", "cpu.logical_cores", "--key", "ctranslate2.cuda_devices",
-      "--key", "pytorch.cuda_available", "--key", "openvino.available",
-      "--key", "onnxruntime.values", "--key", "ffmpeg.path",
-      "--key", "backends.faster-whisper", "--key", "auto_selection.asr_device",
-      "--key", "warnings", "--value", "auto_selection.asr_device=cpu", "--",
-      "{utteran}", "devices", "--json"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "json-output",
+      "--key",
+      "cpu.logical_cores",
+      "--key",
+      "ctranslate2.cuda_devices",
+      "--key",
+      "pytorch.cuda_available",
+      "--key",
+      "openvino.available",
+      "--key",
+      "onnxruntime.values",
+      "--key",
+      "ffmpeg.path",
+      "--key",
+      "backends.faster-whisper",
+      "--key",
+      "auto_selection.asr_device",
+      "--key",
+      "warnings",
+      "--value",
+      "auto_selection.asr_device=cpu",
+      "--",
+      "{utteran}",
+      "devices",
+      "--json"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 120
   },
   {
@@ -985,11 +1887,20 @@
     "group": "G7",
     "description": "Show the final auto backend, device, and compute selection",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--contains", "auto: ASR=faster-whisper/cpu/int8",
-      "--contains", "diarization=pyannote/cpu", "--", "{utteran}", "devices"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--contains",
+      "auto: ASR=faster-whisper/cpu/int8",
+      "--contains",
+      "diarization=pyannote/cpu",
+      "--",
+      "{utteran}",
+      "devices"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 120
   },
   {
@@ -997,12 +1908,25 @@
     "group": "G7",
     "description": "Transcribe with an explicit CPU device",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g7/cpu", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g7/cpu",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 1200
   },
   {
@@ -1010,14 +1934,35 @@
     "group": "G7",
     "description": "Reject explicit CUDA under the CPU dependency profile",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "3", "--contains", "cuda:0", "--contains", "cuDNN", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g7/cuda", "--format", "json",
-      "--language", "ja", "--device", "cuda", "--no-diarization", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "3",
+      "--contains",
+      "cuda:0",
+      "--contains",
+      "cuDNN",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g7/cuda",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cuda",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -1025,14 +1970,33 @@
     "group": "G7",
     "description": "Reject a nonexistent CUDA device index",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "3", "--contains", "cuda:99", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g7/cuda99", "--format", "json",
-      "--language", "ja", "--device", "cuda:99", "--no-diarization", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "3",
+      "--contains",
+      "cuda:99",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g7/cuda99",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cuda:99",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -1040,15 +2004,33 @@
     "group": "G7",
     "description": "Reject an unavailable ASR backend name",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "3", "--contains", "not-a-backend", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g7/backend", "--format", "json",
-      "--language", "ja", "--asr-backend", "not-a-backend",
-      "--no-diarization", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "3",
+      "--contains",
+      "not-a-backend",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g7/backend",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--asr-backend",
+      "not-a-backend",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -1056,10 +2038,19 @@
     "group": "G8",
     "description": "Display the platform config path",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--contains", "config.toml", "--", "{utteran}", "config", "path"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--contains",
+      "config.toml",
+      "--",
+      "{utteran}",
+      "config",
+      "path"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1067,10 +2058,17 @@
     "group": "G8",
     "description": "Initialize, preserve, and display an isolated config",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "config-lifecycle",
-      "--target", "{acceptance}/g8/config.toml", "--utteran", "{utteran}"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "config-lifecycle",
+      "--target",
+      "{acceptance}/g8/config.toml",
+      "--utteran",
+      "{utteran}"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1078,13 +2076,31 @@
     "group": "G8",
     "description": "Validate config show JSON structure without token fields",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "json-output",
-      "--key", "general.output_dir", "--key", "asr.language",
-      "--key", "diarization.enabled", "--key", "output.formats",
-      "--key", "ffmpeg.path", "--key", "alignment.merge_gap", "--",
-      "{utteran}", "config", "show", "--path", "{acceptance}/g8/config.toml"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "json-output",
+      "--key",
+      "general.output_dir",
+      "--key",
+      "asr.language",
+      "--key",
+      "diarization.enabled",
+      "--key",
+      "output.formats",
+      "--key",
+      "ffmpeg.path",
+      "--key",
+      "alignment.merge_gap",
+      "--",
+      "{utteran}",
+      "config",
+      "show",
+      "--path",
+      "{acceptance}/g8/config.toml"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1092,10 +2108,15 @@
     "group": "G8",
     "description": "Verify CLI over environment over dotenv over TOML over defaults",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "config-precedence",
-      "--root", "{acceptance}/g8/precedence"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "config-precedence",
+      "--root",
+      "{acceptance}/g8/precedence"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1103,10 +2124,17 @@
     "group": "G8",
     "description": "Ignore a dummy TOML token key and emit a warning",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "config-token",
-      "--root", "{acceptance}/g8/token", "--utteran", "{utteran}"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "config-token",
+      "--root",
+      "{acceptance}/g8/token",
+      "--utteran",
+      "{utteran}"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1114,10 +2142,15 @@
     "group": "G8",
     "description": "Apply an alignment threshold from TOML to merge results",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "alignment-setting",
-      "--root", "{acceptance}/g8/alignment"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "alignment-setting",
+      "--root",
+      "{acceptance}/g8/alignment"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1125,10 +2158,17 @@
     "group": "G8",
     "description": "Return exit code 2 for an invalid validated setting",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "invalid-config",
-      "--root", "{acceptance}/g8/invalid", "--utteran", "{utteran}"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "invalid-config",
+      "--root",
+      "{acceptance}/g8/invalid",
+      "--utteran",
+      "{utteran}"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1136,12 +2176,24 @@
     "group": "G9",
     "description": "Return exit code 0 for a completed normal transcription",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g7/cpu", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g7/cpu",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 120
   },
   {
@@ -1149,11 +2201,23 @@
     "group": "G9",
     "description": "Return exit code 2 for mutually exclusive verbosity flags",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "2", "--contains=--verbose", "--contains=--quiet", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4", "--verbose", "--quiet"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "2",
+      "--contains=--verbose",
+      "--contains=--quiet",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--verbose",
+      "--quiet"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1161,14 +2225,30 @@
     "group": "G9",
     "description": "Return exit code 3 with guidance when ffmpeg is undiscoverable",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "3", "--contains", "ffmpeg", "--contains", "PATH", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.g9-noffmpeg.toml",
-      "--no-diarization", "--quiet"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "3",
+      "--contains",
+      "ffmpeg",
+      "--contains",
+      "PATH",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.g9-noffmpeg.toml",
+      "--no-diarization",
+      "--quiet"
     ],
-    "environment": {"PATH": "{acceptance}/g9/empty-path"},
-    "expected_exit_codes": [0],
+    "environment": {
+      "PATH": "{acceptance}/g9/empty-path"
+    },
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1176,19 +2256,37 @@
     "group": "G9",
     "description": "Return exit code 3 with a download command for a missing model",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--cwd", "{acceptance}/g9/empty-cwd", "--exit", "3",
-      "--contains", "openvino:large-v3-turbo", "--contains", "models download", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--asr-backend", "openvino", "--asr-model", "large-v3-turbo",
-      "--no-diarization", "--quiet"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--cwd",
+      "{acceptance}/g9/empty-cwd",
+      "--exit",
+      "3",
+      "--contains",
+      "openvino:large-v3-turbo",
+      "--contains",
+      "models download",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--asr-backend",
+      "openvino",
+      "--asr-model",
+      "large-v3-turbo",
+      "--no-diarization",
+      "--quiet"
     ],
     "environment": {
       "UTTERAN_MODEL_DIR": "{acceptance}/g9/empty-models",
       "HF_HOME": "{acceptance}/g9/empty-hf"
     },
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1196,19 +2294,35 @@
     "group": "G9",
     "description": "Return exit code 2 when diarization has no token",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--cwd", "{acceptance}/g9/empty-cwd", "--exit", "2",
-      "--contains", "settings/tokens", "--contains", "HF_TOKEN", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_30s.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--diarization-model", "pyannote/private-missing-model", "--quiet"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--cwd",
+      "{acceptance}/g9/empty-cwd",
+      "--exit",
+      "2",
+      "--contains",
+      "settings/tokens",
+      "--contains",
+      "HF_TOKEN",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--diarization-model",
+      "pyannote/private-missing-model",
+      "--quiet"
     ],
     "environment": {
       "HF_TOKEN": "",
       "HUGGING_FACE_HUB_TOKEN": "",
       "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring"
     },
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1216,12 +2330,23 @@
     "group": "G9",
     "description": "Return exit code 4 for a nonexistent input path",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "4", "--contains", "入力ファイルが見つかりません", "--",
-      "{utteran}", "transcribe", "{testdata}/does-not-exist.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "4",
+      "--contains",
+      "入力ファイルが見つかりません",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/does-not-exist.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1229,13 +2354,26 @@
     "group": "G9",
     "description": "Return exit code 4 for empty media",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "4", "--contains", "デコードできません", "--",
-      "{utteran}", "transcribe", "{testdata}/empty.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--no-diarization", "--quiet", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "4",
+      "--contains",
+      "デコードできません",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/empty.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--no-diarization",
+      "--quiet",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1243,13 +2381,26 @@
     "group": "G9",
     "description": "Return exit code 4 for a non-media text file",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "4", "--contains", "デコードできません", "--",
-      "{utteran}", "transcribe", "{testdata}/notmedia.txt",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--no-diarization", "--quiet", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "4",
+      "--contains",
+      "デコードできません",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/notmedia.txt",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--no-diarization",
+      "--quiet",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1257,14 +2408,35 @@
     "group": "G9",
     "description": "Return exit code 130 on SIGINT",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "interrupt",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_10m.mp4", "--delay", "3", "--",
-      "{utteran}", "transcribe", "{testdata}/clip_10m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g9/interrupt", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization", "--force"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "interrupt",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_10m.mp4",
+      "--delay",
+      "3",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_10m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g9/interrupt",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization",
+      "--force"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -1272,14 +2444,34 @@
     "group": "G9",
     "description": "Return exit code 5 for a partially failed batch",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--exit", "5", "--contains", "集計:", "--contains", "失敗 1", "--",
-      "{utteran}", "transcribe", "{testdata}/batch",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g5/main", "--format", "json",
-      "--language", "ja", "--device", "cpu", "--no-diarization"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "5",
+      "--contains",
+      "集計:",
+      "--contains",
+      "失敗 1",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/batch",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g5/main",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cpu",
+      "--no-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -1287,10 +2479,15 @@
     "group": "G9",
     "description": "Show unexpected traceback detail only with verbose mode",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "verbose-error",
-      "--root", "{acceptance}/g9/verbose"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "verbose-error",
+      "--root",
+      "{acceptance}/g9/verbose"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1298,10 +2495,15 @@
     "group": "G10",
     "description": "Mask a dummy token in normal, verbose, exception, and job-log output",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "security-redaction",
-      "--root", "{acceptance}/g10/redaction"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "security-redaction",
+      "--root",
+      "{acceptance}/g10/redaction"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1309,10 +2511,16 @@
     "group": "G10",
     "description": "Scan generated artifacts for tokens and verify private Git ignores",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "security-scan",
-      "--project", "{project}", "{project}/output"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "security-scan",
+      "--project",
+      "{project}",
+      "{project}/output"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
@@ -1320,12 +2528,21 @@
     "group": "G11",
     "description": "Execute README CLI examples with safe fixture substitutions",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "readme-commands",
-      "--project", "{project}", "--utteran", "{utteran}",
-      "--testdata", "{testdata}",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "readme-commands",
+      "--project",
+      "{project}",
+      "--utteran",
+      "{utteran}",
+      "--testdata",
+      "{testdata}",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 900
   },
   {
@@ -1333,10 +2550,17 @@
     "group": "G11",
     "description": "Compare README options, priorities, exit codes, and settings to code",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "documentation-contracts",
-      "--readme", "{project}/README.md", "--requirements", "{project}/要件定義.md"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "documentation-contracts",
+      "--readme",
+      "{project}/README.md",
+      "--requirements",
+      "{project}/要件定義.md"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1344,11 +2568,19 @@
     "group": "G12",
     "description": "Parse, review, and smoke-test the Windows interactive front",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "start-front",
-      "--project", "{project}", "--script", "{project}/start.ps1",
-      "--testdata", "{testdata}"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "start-front",
+      "--project",
+      "{project}",
+      "--script",
+      "{project}/start.ps1",
+      "--testdata",
+      "{testdata}"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 300
   },
   {
@@ -1356,121 +2588,242 @@
     "group": "G13",
     "description": "Transcribe the full confidential recording on CUDA without diarization",
     "command": [
-      "{utteran}", "transcribe", "{actual}",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g13/no-diarization",
-      "--format", "srt,vtt,json,txt,md", "--language", "ja",
-      "--device", "cuda:0", "--no-diarization", "--force", "--quiet"
+      "{utteran}",
+      "transcribe",
+      "{actual}",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g13/no-diarization",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--language",
+      "ja",
+      "--device",
+      "cuda:0",
+      "--no-diarization",
+      "--force",
+      "--quiet"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 7200,
     "minimum_peak_memory_bytes": 536870912,
-    "measure_vram": true
+    "measure_vram": true,
+    "requires": {
+      "cuda": true
+    }
   },
   {
     "id": "G13-02",
     "group": "G13",
     "description": "Validate all full-recording outputs without exposing text",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "formats",
-      "--dir", "{acceptance}/g13/no-diarization",
-      "--stem", "2026-08-01 11-01-55", "--duration", "8363.883"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "formats",
+      "--dir",
+      "{acceptance}/g13/no-diarization",
+      "--stem",
+      "2026-08-01 11-01-55",
+      "--duration",
+      "8363.883"
     ],
-    "expected_exit_codes": [0],
-    "timeout_seconds": 120
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {
+      "cuda": true
+    }
   },
   {
     "id": "G13-03",
     "group": "G13",
     "description": "Measure full-recording ASR model load from the structured job log",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "performance-log",
-      "--jobs", "{jobs}", "--input", "{actual}"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "performance-log",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{actual}"
     ],
-    "expected_exit_codes": [0],
-    "timeout_seconds": 60
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {
+      "cuda": true
+    }
   },
   {
     "id": "G13-04",
     "group": "G13",
     "description": "Transcribe the full confidential recording on CUDA with diarization",
     "command": [
-      "{utteran}", "transcribe", "{actual}",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g13/diarization",
-      "--format", "srt,vtt,json,txt,md", "--language", "ja",
-      "--device", "cuda:0", "--force", "--quiet"
+      "{utteran}",
+      "transcribe",
+      "{actual}",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g13/diarization",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--language",
+      "ja",
+      "--device",
+      "cuda:0",
+      "--force",
+      "--quiet"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 14400,
     "minimum_peak_memory_bytes": 1073741824,
-    "measure_vram": true
+    "measure_vram": true,
+    "requires": {
+      "cuda": true
+    }
   },
   {
     "id": "G13-05",
     "group": "G13",
     "description": "Validate speaker-labelled full-recording outputs without exposing text",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "formats",
-      "--dir", "{acceptance}/g13/diarization",
-      "--stem", "2026-08-01 11-01-55", "--duration", "8363.883", "--expect-speakers"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "formats",
+      "--dir",
+      "{acceptance}/g13/diarization",
+      "--stem",
+      "2026-08-01 11-01-55",
+      "--duration",
+      "8363.883",
+      "--expect-speakers"
     ],
-    "expected_exit_codes": [0],
-    "timeout_seconds": 120
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {
+      "cuda": true
+    }
   },
   {
     "id": "G13-06",
     "group": "G13",
     "description": "Validate full-recording ASR and diarization intermediates statistically",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "job",
-      "--jobs", "{jobs}", "--input", "{actual}",
-      "--json", "{acceptance}/g13/diarization/2026-08-01 11-01-55.json",
-      "--language", "ja", "--min-speakers", "2",
-      "--require-exclusive", "--require-quality"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "job",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{actual}",
+      "--json",
+      "{acceptance}/g13/diarization/2026-08-01 11-01-55.json",
+      "--language",
+      "ja",
+      "--min-speakers",
+      "2",
+      "--require-exclusive",
+      "--require-quality"
     ],
-    "expected_exit_codes": [0],
-    "timeout_seconds": 120
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {
+      "cuda": true
+    }
   },
   {
     "id": "G13-07",
     "group": "G13",
     "description": "Measure ASR and diarization model loads from the full structured job log",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "performance-log",
-      "--jobs", "{jobs}", "--input", "{actual}", "--expect-diarization"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "performance-log",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{actual}",
+      "--expect-diarization"
     ],
-    "expected_exit_codes": [0],
-    "timeout_seconds": 60
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {
+      "cuda": true
+    }
   },
   {
     "id": "G13-08",
     "group": "G13",
     "description": "Skip every completed stage when rerunning the full recording",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "command-output",
-      "--contains", "スキップ", "--",
-      "{utteran}", "transcribe", "{actual}",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g13/diarization",
-      "--format", "srt,vtt,json,txt,md", "--language", "ja",
-      "--device", "cuda:0", "--quiet"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--contains",
+      "スキップ",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{actual}",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g13/diarization",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--language",
+      "ja",
+      "--device",
+      "cuda:0",
+      "--quiet"
     ],
-    "expected_exit_codes": [0],
-    "timeout_seconds": 600
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 600,
+    "requires": {
+      "cuda": true
+    }
   },
   {
     "id": "G14-01",
     "group": "G14",
     "description": "Benchmark the three-minute fixture on CUDA without diarization",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g14/cuda-no-diarization",
-      "--format", "json", "--language", "ja", "--device", "cuda:0",
-      "--no-diarization", "--force", "--quiet"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g14/cuda-no-diarization",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cuda:0",
+      "--no-diarization",
+      "--force",
+      "--quiet"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 1800,
     "minimum_peak_memory_bytes": 536870912,
     "measure_vram": true
@@ -1480,11 +2833,20 @@
     "group": "G14",
     "description": "Validate the three-minute CUDA ASR-only artifact",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "json",
-      "{acceptance}/g14/cuda-no-diarization/clip_03m.json", "--duration", "180",
-      "--min-segments", "5", "--max-segments", "300"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "json",
+      "{acceptance}/g14/cuda-no-diarization/clip_03m.json",
+      "--duration",
+      "180",
+      "--min-segments",
+      "5",
+      "--max-segments",
+      "300"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1492,10 +2854,17 @@
     "group": "G14",
     "description": "Measure the three-minute CUDA ASR model load",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "performance-log",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "performance-log",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1503,13 +2872,25 @@
     "group": "G14",
     "description": "Benchmark the three-minute fixture on CUDA with diarization",
     "command": [
-      "{utteran}", "transcribe", "{testdata}/clip_03m.mp4",
-      "--config", "{project}/tools/acceptance/config.acceptance.toml",
-      "--output-dir", "{acceptance}/g14/cuda-diarization",
-      "--format", "json", "--language", "ja", "--device", "cuda:0",
-      "--force", "--quiet"
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--config",
+      "{project}/tools/acceptance/config.acceptance.toml",
+      "--output-dir",
+      "{acceptance}/g14/cuda-diarization",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--device",
+      "cuda:0",
+      "--force",
+      "--quiet"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 1800,
     "minimum_peak_memory_bytes": 1073741824,
     "measure_vram": true
@@ -1519,11 +2900,22 @@
     "group": "G14",
     "description": "Validate the three-minute speaker-labelled CUDA artifact",
     "command": [
-      "{python}", "{project}/tools/acceptance/validate.py", "json",
-      "{acceptance}/g14/cuda-diarization/clip_03m.json", "--duration", "180",
-      "--min-segments", "5", "--max-segments", "300", "--min-speakers", "2"
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "json",
+      "{acceptance}/g14/cuda-diarization/clip_03m.json",
+      "--duration",
+      "180",
+      "--min-segments",
+      "5",
+      "--max-segments",
+      "300",
+      "--min-speakers",
+      "2"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1531,11 +2923,18 @@
     "group": "G14",
     "description": "Measure the three-minute CUDA ASR and diarization model loads",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "performance-log",
-      "--jobs", "{jobs}", "--input", "{testdata}/clip_03m.mp4",
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "performance-log",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{testdata}/clip_03m.mp4",
       "--expect-diarization"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 60
   },
   {
@@ -1543,13 +2942,23 @@
     "group": "G14",
     "description": "Confirm the retained profile selects both backends on CUDA",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "json-output",
-      "--value", "auto_selection.asr_device=cuda:0",
-      "--value", "auto_selection.diarization_device=cuda:0",
-      "--value", "pytorch.cuda_available=true", "--",
-      "{utteran}", "devices", "--json"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "json-output",
+      "--value",
+      "auto_selection.asr_device=cuda:0",
+      "--value",
+      "auto_selection.diarization_device=cuda:0",
+      "--value",
+      "pytorch.cuda_available=true",
+      "--",
+      "{utteran}",
+      "devices",
+      "--json"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 120
   },
   {
@@ -1557,11 +2966,21 @@
     "group": "G14",
     "description": "Aggregate G0-G13 and verify retained endurance state",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "postflight",
-      "--results", "{acceptance}/results.jsonl", "--jobs", "{jobs}",
-      "--input", "{actual}", "--testdata", "{testdata}"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "postflight",
+      "--results",
+      "{acceptance}/results.jsonl",
+      "--jobs",
+      "{jobs}",
+      "--input",
+      "{actual}",
+      "--testdata",
+      "{testdata}"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 120
   },
   {
@@ -1569,34 +2988,2386 @@
     "group": "G14",
     "description": "Perform the final generated-artifact and report token scan",
     "command": [
-      "{python}", "{project}/tools/acceptance/scenarios.py", "security-scan",
-      "--project", "{project}", "{project}/output", "{project}/docs/受入試験報告.md"
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "security-scan",
+      "--project",
+      "{project}",
+      "{project}/output",
+      "{project}/docs/受入試験報告.md"
     ],
-    "expected_exit_codes": [0],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 600
   },
   {
     "id": "P14-NO-DIAR",
     "group": "P14",
     "description": "Phase 3 long real-file run without diarization",
-    "command": ["{utteran}", "transcribe", "{actual}", "--output-dir", "{acceptance}/p14/no-diarization", "--format", "srt,vtt,json,txt,md", "--asr-backend", "whisper-cpp", "--asr-model", "large-v3-turbo-q5_0", "--asr-device", "vulkan", "--no-diarization", "--language", "ja", "--force", "--yes", "--quiet"],
-    "expected_exit_codes": [0],
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{actual}",
+      "--output-dir",
+      "{acceptance}/p14/no-diarization",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "vulkan",
+      "--no-diarization",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 14400
   },
   {
     "id": "P14-DIAR",
     "group": "P14",
     "description": "Phase 3 long real-file run with auto diarization",
-    "command": ["{utteran}", "transcribe", "{actual}", "--output-dir", "{acceptance}/p14/diarization", "--format", "srt,vtt,json,txt,md", "--asr-backend", "whisper-cpp", "--asr-model", "large-v3-turbo-q5_0", "--asr-device", "vulkan", "--diarization-device", "auto", "--language", "ja", "--force", "--yes", "--quiet"],
-    "expected_exit_codes": [0],
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{actual}",
+      "--output-dir",
+      "{acceptance}/p14/diarization",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "vulkan",
+      "--diarization-device",
+      "auto",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 14400
   },
   {
     "id": "P14-RESUME",
     "group": "P14",
     "description": "Phase 3 long real-file identical resume",
-    "command": ["{utteran}", "transcribe", "{actual}", "--output-dir", "{acceptance}/p14/diarization", "--format", "srt,vtt,json,txt,md", "--asr-backend", "whisper-cpp", "--asr-model", "large-v3-turbo-q5_0", "--asr-device", "vulkan", "--diarization-device", "auto", "--language", "ja", "--yes", "--quiet"],
-    "expected_exit_codes": [0],
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{actual}",
+      "--output-dir",
+      "{acceptance}/p14/diarization",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "vulkan",
+      "--diarization-device",
+      "auto",
+      "--language",
+      "ja",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
     "timeout_seconds": 14400
+  },
+  {
+    "id": "P0-1",
+    "group": "P0",
+    "description": "Transcribe clip_30s with the active profile's default backend, no diarization",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--output-dir",
+      "{acceptance}/p0",
+      "--format",
+      "srt,vtt,json,txt,md",
+      "--no-diarization",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 180,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 30,
+    "environment": {}
+  },
+  {
+    "id": "P0-2",
+    "group": "P0",
+    "description": "Validate the five P0 artifacts and JSON structure",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "formats",
+      "--dir",
+      "{acceptance}/p0",
+      "--stem",
+      "clip_30s",
+      "--duration",
+      "30"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2,
+    "environment": {}
+  },
+  {
+    "id": "P1-1",
+    "group": "P1",
+    "description": "setup.ps1 -List shows created profiles with sizes",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "cpu",
+      "--contains",
+      "intel",
+      "--contains",
+      "vulkan",
+      "--contains",
+      "GiB",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/setup.ps1",
+      "-List"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 10,
+    "environment": {}
+  },
+  {
+    "id": "P1-2",
+    "group": "P1",
+    "description": "setup.ps1 -Profile cpu creates/updates the cpu profile and reports the legacy .venv notice",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "旧方式の環境が見つかりました",
+      "--absent",
+      "Traceback",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/setup.ps1",
+      "-Profile",
+      "cpu"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 1200,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 120,
+    "environment": {}
+  },
+  {
+    "id": "P1-3",
+    "group": "P1",
+    "description": "setup.ps1 -Profile intel creates/updates the intel profile",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/setup.ps1",
+      "-Profile",
+      "intel"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 2400,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 180,
+    "environment": {}
+  },
+  {
+    "id": "P1-4",
+    "group": "P1",
+    "description": "setup.ps1 -Profile vulkan creates/updates the vulkan profile",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/setup.ps1",
+      "-Profile",
+      "vulkan"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 1200,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 120,
+    "environment": {}
+  },
+  {
+    "id": "P1-5",
+    "group": "P1",
+    "description": "Updating the cpu profile does not change intel/vulkan's installed torch build",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "profile-isolation",
+      "--setup",
+      "{project}/setup.ps1",
+      "--venv-root",
+      "{project}/.venvs",
+      "--target",
+      "cpu",
+      "--others",
+      "intel,vulkan"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 1200,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 120,
+    "environment": {}
+  },
+  {
+    "id": "P1-6",
+    "group": "P1",
+    "description": "setup.ps1 -SetDefault changes [general].default_profile",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/setup.ps1",
+      "-SetDefault",
+      "intel"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 5,
+    "environment": {}
+  },
+  {
+    "id": "P1-7a",
+    "group": "P1",
+    "description": "setup.ps1 -Remove vulkan -Yes deletes the profile after showing reclaimed size",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "vulkan",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/setup.ps1",
+      "-Remove",
+      "vulkan",
+      "-Yes"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 10,
+    "environment": {}
+  },
+  {
+    "id": "P1-7b",
+    "group": "P1",
+    "description": "setup.ps1 -Profile vulkan restores the removed profile",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/setup.ps1",
+      "-Profile",
+      "vulkan"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 1200,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 120,
+    "environment": {}
+  },
+  {
+    "id": "P2-1",
+    "group": "P2",
+    "description": "run.ps1 transcribe works with the default profile",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "profile",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/run.ps1",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--output-dir",
+      "{acceptance}/p2/default",
+      "--format",
+      "json",
+      "--no-diarization",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 180,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 30,
+    "environment": {}
+  },
+  {
+    "id": "P2-2",
+    "group": "P2",
+    "description": "run.ps1 -Profile intel works with an explicit profile and shows it at startup",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "intel",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/run.ps1",
+      "-Profile",
+      "intel",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--output-dir",
+      "{acceptance}/p2/explicit",
+      "--format",
+      "json",
+      "--no-diarization",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 180,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 30,
+    "environment": {}
+  },
+  {
+    "id": "P2-3",
+    "group": "P2",
+    "description": "run.ps1 -Profile <missing> fails with setup.ps1 guidance",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "1",
+      "--contains",
+      "setup.ps1",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/run.ps1",
+      "-Profile",
+      "does-not-exist",
+      "transcribe",
+      "{testdata}/clip_30s.mp4"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 5,
+    "environment": {}
+  },
+  {
+    "id": "P2-4",
+    "group": "P2",
+    "description": "run.ps1 transparently passes through the wrapped utteran exit code",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "4",
+      "--",
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "{project}/run.ps1",
+      "transcribe",
+      "{testdata}/missing-input-does-not-exist.mp4"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 5,
+    "environment": {}
+  },
+  {
+    "id": "P2-5",
+    "group": "P2",
+    "description": "utteran profiles list/current/path succeed",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "cpu",
+      "--contains",
+      "intel",
+      "--",
+      "{utteran}",
+      "profiles",
+      "list"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P3-1",
+    "group": "P3",
+    "description": "native status reports the pinned whisper.cpp v1.9.1 commit",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "f049fff95a089aa9969deb009cdd4892b3e74916",
+      "--",
+      "{utteran}",
+      "native",
+      "status"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P3-2",
+    "group": "P3",
+    "description": "devices --json reports all four native variants runnable",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "json-output",
+      "--value",
+      "native.variants.cpu=true",
+      "--value",
+      "native.variants.openvino=true",
+      "--value",
+      "native.variants.vulkan=true",
+      "--value",
+      "native.variants.openvino_vulkan=true",
+      "--",
+      "{utteran}",
+      "devices",
+      "--json"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P3-3",
+    "group": "P3",
+    "description": "native build re-run skips already-built variants without error",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "{utteran}",
+      "native",
+      "build"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 15,
+    "environment": {}
+  },
+  {
+    "id": "P3-4",
+    "group": "P3",
+    "description": "native build --variant cpu --force rebuilds only the cpu variant",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "{utteran}",
+      "native",
+      "build",
+      "--variant",
+      "cpu",
+      "--force"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 900,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 90,
+    "environment": {}
+  },
+  {
+    "id": "P3-5",
+    "group": "P3",
+    "description": "manifest pins the expected commit and never bakes in a profile-specific OpenVINO_DIR",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "native-manifest",
+      "--commit",
+      "f049fff95a089aa9969deb009cdd4892b3e74916",
+      "--forbidden",
+      "site-packages",
+      "--forbidden",
+      ".venvs"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P3-6",
+    "group": "P3",
+    "description": "the vulkan profile's own utteran.exe reports the same shared native build as intel",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "f049fff95a089aa9969deb009cdd4892b3e74916",
+      "--",
+      "{project}/.venvs/win-vulkan/Scripts/utteran.exe",
+      "native",
+      "status"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "profile": [
+        "intel"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P3-7a",
+    "group": "P3",
+    "description": "native clean --variant cpu removes the cpu build",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "{utteran}",
+      "native",
+      "clean",
+      "--variant",
+      "cpu"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P6-7",
+    "group": "P6",
+    "description": "an explicitly requested but unbuilt whisper.cpp variant names the recovery command",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "3",
+      "--contains",
+      "native build --variant",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--output-dir",
+      "{acceptance}/p6/missing-cpu",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "cpu",
+      "--no-diarization",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 10,
+    "environment": {}
+  },
+  {
+    "id": "P3-7c",
+    "group": "P3",
+    "description": "native build --variant cpu restores the cleaned variant",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "{utteran}",
+      "native",
+      "build",
+      "--variant",
+      "cpu"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 900,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 90,
+    "environment": {}
+  },
+  {
+    "id": "P4-1",
+    "group": "P4",
+    "description": "models list / --available / --all render human-oriented catalog views",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "Whisper",
+      "--contains",
+      "pyannote",
+      "--",
+      "{utteran}",
+      "models",
+      "list",
+      "--available"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P4-2",
+    "group": "P4",
+    "description": "models list --available --all --json includes quantization variants and .en entries",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "\"backend\": \"whisper-cpp\"",
+      "--contains",
+      "q5_0",
+      "--contains",
+      "q5_1",
+      "--contains",
+      ".en",
+      "--",
+      "{utteran}",
+      "models",
+      "list",
+      "--available",
+      "--all",
+      "--json"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P4-3",
+    "group": "P4",
+    "description": "models list --available (without --all) excludes English-only .en models",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--absent",
+      ".en",
+      "--",
+      "{utteran}",
+      "models",
+      "list",
+      "--available"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P4-4",
+    "group": "P4",
+    "description": "download whisper-cpp:base fetches a small model",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "base",
+      "--",
+      "{utteran}",
+      "models",
+      "download",
+      "whisper-cpp:base"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 300,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 30,
+    "environment": {}
+  },
+  {
+    "id": "P4-5",
+    "group": "P4",
+    "description": "models verify confirms whisper-cpp:base is intact",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "ok",
+      "--",
+      "{utteran}",
+      "models",
+      "verify",
+      "whisper-cpp:base"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 5,
+    "environment": {}
+  },
+  {
+    "id": "P4-6",
+    "group": "P4",
+    "description": "models remove whisper-cpp:base --yes deletes the cached model",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "{utteran}",
+      "models",
+      "remove",
+      "whisper-cpp:base",
+      "--yes"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P4-7",
+    "group": "P4",
+    "description": "download whisper-cpp:base again resumes into a clean cache",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "base",
+      "--",
+      "{utteran}",
+      "models",
+      "download",
+      "whisper-cpp:base"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 300,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 30,
+    "environment": {}
+  },
+  {
+    "id": "P4-8",
+    "group": "P4",
+    "description": "models verify confirms whisper-cpp:base after re-download",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "ok",
+      "--",
+      "{utteran}",
+      "models",
+      "verify",
+      "whisper-cpp:base"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 5,
+    "environment": {}
+  },
+  {
+    "id": "P4-9",
+    "group": "P4",
+    "description": "an ID shared by two catalog backends is rejected as ambiguous, with candidates",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "2",
+      "--contains",
+      "large-v3-turbo",
+      "--",
+      "{utteran}",
+      "models",
+      "download",
+      "large-v3-turbo"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P4-10",
+    "group": "P4",
+    "description": "an unregistered model ID is rejected",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "2",
+      "--",
+      "{utteran}",
+      "models",
+      "download",
+      "not-a-real-model-id"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P4-11",
+    "group": "P4",
+    "description": "omitting the model ID in a non-interactive environment does not download anything",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "1",
+      "--",
+      "{utteran}",
+      "models",
+      "download"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P4-12",
+    "group": "P4",
+    "description": "models path prints the configured model cache directory",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "models",
+      "--",
+      "{utteran}",
+      "models",
+      "path"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 2,
+    "environment": {}
+  },
+  {
+    "id": "P5-1",
+    "group": "P5",
+    "description": "models list-openvino shows the already-converted large IR",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "ok",
+      "--",
+      "{utteran}",
+      "models",
+      "list-openvino"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "native_variants": [
+        "openvino"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P5-2",
+    "group": "P5",
+    "description": "prepare-openvino without --yes in a non-interactive shell does not silently convert",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "1",
+      "--",
+      "{utteran}",
+      "models",
+      "prepare-openvino",
+      "whisper-cpp:base"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {
+      "native_variants": [
+        "openvino"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 5,
+    "environment": {}
+  },
+  {
+    "id": "P5-3",
+    "group": "P5",
+    "description": "prepare-openvino --yes --purge-cache converts a small model's encoder IR",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "IR",
+      "--",
+      "{utteran}",
+      "models",
+      "prepare-openvino",
+      "whisper-cpp:base",
+      "--device",
+      "GPU",
+      "--purge-cache",
+      "--yes"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 900,
+    "requires": {
+      "native_variants": [
+        "openvino"
+      ],
+      "models": [
+        "whisper-cpp:base"
+      ]
+    },
+    "destructive": true,
+    "estimated_seconds": 120,
+    "environment": {}
+  },
+  {
+    "id": "P5-4",
+    "group": "P5",
+    "description": "models verify confirms the freshly generated base IR",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "ok",
+      "--",
+      "{utteran}",
+      "models",
+      "verify",
+      "whisper-cpp:base"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 5,
+    "environment": {}
+  },
+  {
+    "id": "P5-5",
+    "group": "P5",
+    "description": "remove-openvino --yes deletes the generated base IR",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "{utteran}",
+      "models",
+      "remove-openvino",
+      "whisper-cpp:base",
+      "--yes"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": true,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P5-6",
+    "group": "P5",
+    "description": "prepare-openvino on the cpu profile (no openvino extra) names the needed setup",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "3",
+      "--contains",
+      "intel",
+      "--",
+      "{project}/.venvs/win-cpu/Scripts/utteran.exe",
+      "models",
+      "prepare-openvino",
+      "whisper-cpp:base",
+      "--yes"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {
+      "profile": [
+        "intel"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 5,
+    "environment": {}
+  },
+  {
+    "id": "P6-1",
+    "group": "P6",
+    "description": "whisper.cpp / cpu completes on clip_30s",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--output-dir",
+      "{acceptance}/p6/cpu",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "cpu",
+      "--format",
+      "json",
+      "--no-diarization",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 600,
+    "requires": {
+      "native_variants": [
+        "cpu"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 60,
+    "environment": {}
+  },
+  {
+    "id": "P6-2",
+    "group": "P6",
+    "description": "whisper.cpp / openvino completes on clip_30s",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--output-dir",
+      "{acceptance}/p6/openvino",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "openvino",
+      "--format",
+      "json",
+      "--no-diarization",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {
+      "native_variants": [
+        "openvino"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 20,
+    "environment": {}
+  },
+  {
+    "id": "P6-3",
+    "group": "P6",
+    "description": "whisper.cpp / vulkan completes on clip_30s",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--output-dir",
+      "{acceptance}/p6/vulkan",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "vulkan",
+      "--format",
+      "json",
+      "--no-diarization",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 10,
+    "environment": {}
+  },
+  {
+    "id": "P6-4",
+    "group": "P6",
+    "description": "whisper.cpp / openvino_vulkan completes on clip_30s",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--output-dir",
+      "{acceptance}/p6/openvino_vulkan",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "openvino_vulkan",
+      "--format",
+      "json",
+      "--no-diarization",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {
+      "native_variants": [
+        "openvino_vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 15,
+    "environment": {}
+  },
+  {
+    "id": "P6-5",
+    "group": "P6",
+    "description": "openvino/vulkan/openvino_vulkan agree within the spec's cross-config tolerance",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "equivalent",
+      "{acceptance}/p6/openvino/clip_30s.json",
+      "{acceptance}/p6/vulkan/clip_30s.json",
+      "{acceptance}/p6/openvino_vulkan/clip_30s.json"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "native_variants": [
+        "openvino",
+        "vulkan",
+        "openvino_vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P6-6",
+    "group": "P6",
+    "description": "an unknown whisper.cpp variant name is rejected",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "3",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "not-a-variant",
+      "--no-diarization",
+      "--force"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P7-1",
+    "group": "P7",
+    "description": "word_timestamps=auto fetches words when diarization is enabled",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "vulkan",
+      "--diarization-device",
+      "cpu",
+      "--output-dir",
+      "{acceptance}/p7/auto-diar",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 300,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 60,
+    "environment": {}
+  },
+  {
+    "id": "P7-1v",
+    "group": "P7",
+    "description": "the auto+diarization JSON has words",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "words",
+      "{acceptance}/p7/auto-diar/clip_03m.json",
+      "--expect",
+      "present"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P7-2",
+    "group": "P7",
+    "description": "word_timestamps=auto omits words without diarization",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "vulkan",
+      "--no-diarization",
+      "--output-dir",
+      "{acceptance}/p7/auto-nodiar",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 20,
+    "environment": {}
+  },
+  {
+    "id": "P7-2v",
+    "group": "P7",
+    "description": "the auto+no-diarization JSON has no words",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "words",
+      "{acceptance}/p7/auto-nodiar/clip_03m.json",
+      "--expect",
+      "absent"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P7-3",
+    "group": "P7",
+    "description": "word_timestamps=always fetches words even without diarization",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "vulkan",
+      "--no-diarization",
+      "--config",
+      "{project}/tools/acceptance/config.wordts-always.toml",
+      "--output-dir",
+      "{acceptance}/p7/always-nodiar",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 180,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 30,
+    "environment": {}
+  },
+  {
+    "id": "P7-3v",
+    "group": "P7",
+    "description": "the always JSON has words with no mojibake replacement characters",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--absent",
+      "�",
+      "--",
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "words",
+      "{acceptance}/p7/always-nodiar/clip_03m.json",
+      "--expect",
+      "present"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P7-4",
+    "group": "P7",
+    "description": "word_timestamps=never never fetches words",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m.mp4",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "vulkan",
+      "--no-diarization",
+      "--config",
+      "{project}/tools/acceptance/config.wordts-never.toml",
+      "--output-dir",
+      "{acceptance}/p7/never",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 20,
+    "environment": {}
+  },
+  {
+    "id": "P7-4v",
+    "group": "P7",
+    "description": "the never JSON has no words",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "words",
+      "{acceptance}/p7/never/clip_03m.json",
+      "--expect",
+      "absent"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P8-1",
+    "group": "P8",
+    "description": "devices prints the final auto ASR/diarization selection with reasons",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--contains",
+      "auto",
+      "--",
+      "{utteran}",
+      "devices"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P8-2",
+    "group": "P8",
+    "description": "devices --json auto-selects a runnable whisper.cpp variant on this profile",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "json-output",
+      "--value",
+      "auto_selection.asr_backend=whisper-cpp",
+      "--",
+      "{utteran}",
+      "devices",
+      "--json"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "native_variants": [
+        "vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P8-3",
+    "group": "P8",
+    "description": "devices --json auto-selects XPU for diarization when available",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "json-output",
+      "--value",
+      "auto_selection.diarization_backend=pyannote",
+      "--value",
+      "auto_selection.diarization_device=xpu:0",
+      "--",
+      "{utteran}",
+      "devices",
+      "--json"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P8-4",
+    "group": "P8",
+    "description": "a fully-auto transcribe (no explicit device flags) completes",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--output-dir",
+      "{acceptance}/p8/auto",
+      "--format",
+      "json",
+      "--no-diarization",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 180,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 30,
+    "environment": {}
+  },
+  {
+    "id": "P8-5",
+    "group": "P8",
+    "description": "explicit --asr-device cuda gives a clear error when NVIDIA is absent",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "3",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--asr-backend",
+      "faster-whisper",
+      "--asr-device",
+      "cuda",
+      "--no-diarization",
+      "--force"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "cuda": false
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P9-1",
+    "group": "P9",
+    "description": "diarization on XPU completes on the multi-speaker clip",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m_multi.mp4",
+      "--diarization-device",
+      "xpu",
+      "--output-dir",
+      "{acceptance}/p9/xpu",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 300,
+    "requires": {
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 90,
+    "environment": {}
+  },
+  {
+    "id": "P9-2",
+    "group": "P9",
+    "description": "diarization on CPU completes on the multi-speaker clip",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m_multi.mp4",
+      "--diarization-device",
+      "cpu",
+      "--output-dir",
+      "{acceptance}/p9/cpu",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 300,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 110,
+    "environment": {}
+  },
+  {
+    "id": "P9-3",
+    "group": "P9",
+    "description": "CPU and XPU diarization agree on speaker count for the multi-speaker clip",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "equivalent",
+      "{acceptance}/p9/cpu/clip_03m_multi.json",
+      "{acceptance}/p9/xpu/clip_03m_multi.json"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P9-4",
+    "group": "P9",
+    "description": "--num-speakers is honored on XPU",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m_multi.mp4",
+      "--diarization-device",
+      "xpu",
+      "--num-speakers",
+      "3",
+      "--output-dir",
+      "{acceptance}/p9/xpu-fixed3",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 300,
+    "requires": {
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 90,
+    "environment": {}
+  },
+  {
+    "id": "P9-4v",
+    "group": "P9",
+    "description": "the fixed-3-speaker XPU output has exactly 3 or 4 speakers (UNKNOWN included)",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "json",
+      "{acceptance}/p9/xpu-fixed3/clip_03m_multi.json",
+      "--min-speakers",
+      "3",
+      "--max-speakers",
+      "4"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P9-5",
+    "group": "P9",
+    "description": "the cpu profile explicitly requesting XPU diarization gets a profile-mismatch error",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "3",
+      "--contains",
+      "intel",
+      "--",
+      "{project}/.venvs/win-cpu/Scripts/utteran.exe",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--diarization-device",
+      "xpu",
+      "--force"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {
+      "profile": [
+        "intel"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 5,
+    "environment": {
+      "UTTERAN_PROFILE": "cpu"
+    }
+  },
+  {
+    "id": "P9-6",
+    "group": "P9",
+    "description": "the legacy --device flag still applies to both ASR and diarization",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "command-output",
+      "--exit",
+      "0",
+      "--",
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--device",
+      "cpu",
+      "--output-dir",
+      "{acceptance}/p9/legacy-device",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 40,
+    "environment": {}
+  },
+  {
+    "id": "P10-A",
+    "group": "P10",
+    "description": "combination A: faster-whisper/cpu ASR + pyannote/cpu diarization",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m_multi.mp4",
+      "--asr-backend",
+      "faster-whisper",
+      "--asr-device",
+      "cpu",
+      "--diarization-device",
+      "cpu",
+      "--output-dir",
+      "{acceptance}/p10/A",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 300,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 110,
+    "environment": {}
+  },
+  {
+    "id": "P10-B",
+    "group": "P10",
+    "description": "combination B: whisper-cpp/openvino_vulkan ASR + pyannote/cpu diarization",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m_multi.mp4",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "openvino_vulkan",
+      "--diarization-device",
+      "cpu",
+      "--output-dir",
+      "{acceptance}/p10/B",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 300,
+    "requires": {
+      "native_variants": [
+        "openvino_vulkan"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 90,
+    "environment": {}
+  },
+  {
+    "id": "P10-C",
+    "group": "P10",
+    "description": "combination C: whisper-cpp/openvino_vulkan ASR + pyannote/xpu diarization",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m_multi.mp4",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "openvino_vulkan",
+      "--diarization-device",
+      "xpu",
+      "--output-dir",
+      "{acceptance}/p10/C",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 300,
+    "requires": {
+      "native_variants": [
+        "openvino_vulkan"
+      ],
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 60,
+    "environment": {}
+  },
+  {
+    "id": "P10-BC",
+    "group": "P10",
+    "description": "B and C (same ASR, CPU vs XPU diarization) agree within tolerance",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/validate.py",
+      "equivalent",
+      "{acceptance}/p10/B/clip_03m_multi.json",
+      "{acceptance}/p10/C/clip_03m_multi.json"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {
+      "native_variants": [
+        "openvino_vulkan"
+      ],
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 3,
+    "environment": {}
+  },
+  {
+    "id": "P11-ASR-DEVICE",
+    "group": "P11",
+    "description": "changing --asr-device recomputes ASR/merge/export but reuses the audio stage",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_30s.mp4",
+      "--asr-backend",
+      "whisper-cpp",
+      "--asr-model",
+      "large-v3-turbo-q5_0",
+      "--asr-device",
+      "openvino",
+      "--no-diarization",
+      "--output-dir",
+      "{acceptance}/p11/asr-device",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--force",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {
+      "native_variants": [
+        "openvino"
+      ]
+    },
+    "destructive": false,
+    "estimated_seconds": 20,
+    "environment": {}
+  },
+  {
+    "id": "P11-DIAR-DEVICE",
+    "group": "P11",
+    "description": "changing --diarization-device recomputes diarization/merge/export",
+    "command": [
+      "{utteran}",
+      "transcribe",
+      "{testdata}/clip_03m_multi.mp4",
+      "--diarization-device",
+      "xpu",
+      "--output-dir",
+      "{acceptance}/p9/xpu",
+      "--format",
+      "json",
+      "--language",
+      "ja",
+      "--yes",
+      "--quiet"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 120,
+    "requires": {
+      "xpu": true
+    },
+    "destructive": false,
+    "estimated_seconds": 15,
+    "environment": {}
   }
 ]

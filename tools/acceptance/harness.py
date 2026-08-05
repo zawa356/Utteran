@@ -1,4 +1,8 @@
-"""Resumable acceptance-test command harness with privacy-safe result capture."""
+"""Resumable acceptance-test command harness with privacy-safe result capture.
+
+Importable as a Python API (``import tools.acceptance.harness as harness``) so a future
+GUI can call :func:`run_selected` directly instead of shelling out to this file's CLI.
+"""
 
 from __future__ import annotations
 
@@ -11,8 +15,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +31,14 @@ _ERROR_WORDS = ("error", "failed", "warning", "エラー", "失敗", "警告", "
 
 @dataclass(frozen=True)
 class Case:
-    """One declarative command-based acceptance case."""
+    """One declarative command-based acceptance case.
+
+    ``requires``/``destructive``/``estimated_seconds`` are the metadata a future GUI needs
+    to decide, ahead of time, what this environment can run: ``requires`` is matched
+    against a live ``devices --json`` / ``models list --json`` snapshot (see
+    :func:`unmet_requirements`); cases whose requirements are unmet are recorded as
+    ``skip`` rather than attempted or failed.
+    """
 
     case_id: str
     group: str
@@ -37,6 +49,9 @@ class Case:
     environment: dict[str, str]
     minimum_peak_memory_bytes: int | None
     measure_vram: bool
+    requires: dict[str, Any] = field(default_factory=dict)
+    destructive: bool = False
+    estimated_seconds: float | None = None
 
 
 def _windows_utteran() -> Path:
@@ -110,9 +125,130 @@ def load_cases(path: Path) -> list[Case]:
                     else int(item["minimum_peak_memory_bytes"])
                 ),
                 measure_vram=bool(item.get("measure_vram", False)),
+                requires=dict(item.get("requires") or {}),
+                destructive=bool(item.get("destructive", False)),
+                estimated_seconds=(
+                    None
+                    if item.get("estimated_seconds") is None
+                    else float(item["estimated_seconds"])
+                ),
             )
         )
     return cases
+
+
+def select_cases(
+    cases: list[Case],
+    *,
+    groups: set[str] | None = None,
+    rerun: set[str] | None = None,
+    include_long: bool = False,
+    include_destructive: bool = False,
+) -> list[Case]:
+    """Apply the same group/long/destructive/rerun filtering the CLI and API share."""
+    selected = cases
+    if groups:
+        selected = [case for case in selected if case.group in groups]
+    else:
+        if not include_long:
+            selected = [case for case in selected if case.group not in LONG_GROUPS]
+        if not include_destructive:
+            selected = [case for case in selected if not case.destructive]
+    if rerun:
+        selected = [case for case in selected if case.case_id in rerun]
+    return selected
+
+
+def _capture_json(command: list[str], *, environment: dict[str, str] | None = None) -> Any:
+    """Run a read-only CLI command and parse its JSON stdout, tolerating decode failure."""
+    merged_env = None
+    if environment:
+        merged_env = os.environ.copy()
+        merged_env.update(environment)
+    try:
+        completed = subprocess.run(
+            command, cwd=PROJECT_ROOT, capture_output=True, timeout=60, check=False, env=merged_env
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    try:
+        return json.loads(completed.stdout.decode("utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _profile_from_executable(utteran: Path) -> str | None:
+    """Infer a profile name from a resolved ``.venvs/<os>-<profile>/...`` executable path.
+
+    ``devices --json``'s own ``profile.current`` depends on the ``UTTERAN_PROFILE``
+    environment variable that only ``run.ps1``/``start.ps1`` set (AISTATE.md); invoking
+    ``{utteran}`` directly, as this harness and a future GUI both do, leaves it unset. The
+    executable path itself already encodes which profile it belongs to, so this recovers
+    the same information without requiring the wrapper scripts.
+    """
+    for parent in utteran.parents:
+        if "-" in parent.name and parent.name.split("-", 1)[0] in {"win", "linux"}:
+            return parent.name.split("-", 1)[1]
+    return None
+
+
+def fetch_environment(utteran: Path) -> dict[str, Any]:
+    """Snapshot ``devices --json`` and ``models list --json`` once per harness run.
+
+    This is the "environment" future GUIs can reuse to answer "what can I run here" -
+    the same question :func:`unmet_requirements` answers per-case.
+    """
+    profile = _profile_from_executable(utteran)
+    environment = {"UTTERAN_PROFILE": profile} if profile else None
+    devices = _capture_json([str(utteran), "devices", "--json"], environment=environment)
+    raw_models = _capture_json([str(utteran), "models", "list", "--json"], environment=environment)
+    models = (
+        {str(item["key"]): item for item in raw_models if isinstance(item, dict) and "key" in item}
+        if isinstance(raw_models, list)
+        else {}
+    )
+    return {"devices": devices if isinstance(devices, dict) else {}, "models": models}
+
+
+def unmet_requirements(requires: dict[str, Any], environment: dict[str, Any] | None) -> list[str]:
+    """Return human-readable reasons a case cannot run here; empty means runnable.
+
+    ``requires`` keys mirror the four condition categories a future GUI needs
+    (profile / backend / native build / model / hardware device):
+
+    - ``profile``: exact profile name, or list of acceptable names
+    - ``backends``: list of ``devices.backends`` keys that must be available
+    - ``native_variants``: list of whisper.cpp native build variants that must be runnable
+    - ``models``: list of catalog keys (``<backend>:<model-id>``) that must be installed
+    - ``cuda`` / ``xpu``: bool, require the matching accelerator to be usable
+    """
+    if not requires:
+        return []
+    if environment is None:
+        return ["environment probe unavailable"]
+    devices = environment.get("devices") or {}
+    models = environment.get("models") or {}
+    reasons: list[str] = []
+    profile = requires.get("profile")
+    if profile is not None:
+        allowed = {profile} if isinstance(profile, str) else set(profile)
+        current = (devices.get("profile") or {}).get("current")
+        if current not in allowed:
+            reasons.append(f"profile must be one of {sorted(allowed)}, current is {current!r}")
+    for backend in requires.get("backends", ()):
+        if not (devices.get("backends") or {}).get(backend):
+            reasons.append(f"backend not available: {backend}")
+    for variant in requires.get("native_variants", ()):
+        if not ((devices.get("native") or {}).get("variants") or {}).get(variant):
+            reasons.append(f"native build not runnable: {variant}")
+    for key in requires.get("models", ()):
+        if not (models.get(key) or {}).get("installed"):
+            reasons.append(f"model not installed: {key}")
+    if requires.get("cuda") and not (devices.get("ctranslate2") or {}).get("cuda_device_count"):
+        reasons.append("CUDA hardware not present")
+    if requires.get("xpu") and not (devices.get("pytorch") or {}).get("xpu_available"):
+        reasons.append("XPU not available")
+    return reasons
 
 
 def _sanitize(value: str) -> str:
@@ -416,10 +552,138 @@ def run_case(case: Case, results_path: Path) -> dict[str, Any]:
     return result
 
 
+def _skip_result(case: Case, reasons: list[str]) -> dict[str, Any]:
+    """Build a skip record shaped like :func:`run_case`'s result, for a merged results.jsonl."""
+    empty_summary = {"head": [], "tail": [], "errors": []}
+    return {
+        "id": case.case_id,
+        "group": case.group,
+        "description": case.description,
+        "command": [_sanitize(part) for part in case.command],
+        "environment_keys": sorted(case.environment),
+        "exit_code": None,
+        "duration_seconds": 0.0,
+        "peak_memory_bytes": None,
+        "vram_baseline_bytes": None,
+        "peak_vram_bytes": None,
+        "peak_vram_delta_bytes": None,
+        "total_vram_bytes": None,
+        "result": "skip",
+        "reason": "environment unmet: " + "; ".join(reasons),
+        "timed_out": False,
+        "stdout": empty_summary,
+        "stderr": empty_summary,
+        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+
+
+@dataclass(frozen=True)
+class RunSummary:
+    """Machine-readable outcome of one :func:`run_selected` call."""
+
+    total: int
+    passed: int
+    failed: int
+    skipped: int
+    duration_seconds: float
+    results: tuple[dict[str, Any], ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "total": self.total,
+            "passed": self.passed,
+            "failed": self.failed,
+            "skipped": self.skipped,
+            "duration_seconds": round(self.duration_seconds, 3),
+            "skipped_reasons": {
+                result["id"]: result["reason"]
+                for result in self.results
+                if result["result"] == "skip"
+            },
+            "failed_ids": [result["id"] for result in self.results if result["result"] == "fail"],
+        }
+
+
+def run_selected(
+    cases_path: Path = DEFAULT_CASES,
+    results_path: Path = DEFAULT_RESULTS,
+    *,
+    groups: set[str] | None = None,
+    rerun: set[str] | None = None,
+    resume: bool = False,
+    include_long: bool = False,
+    include_destructive: bool = False,
+    summary_path: Path | None = None,
+    on_event: Callable[[str], None] | None = None,
+    environment: dict[str, Any] | None = None,
+) -> RunSummary:
+    """Run the selected cases and return a typed summary.
+
+    This is the Python entry point future callers (a GUI, another script) should use
+    instead of invoking this file as a subprocess: it does the same group/long/destructive
+    filtering, environment-requirement skipping, and results.jsonl bookkeeping the CLI does,
+    and returns a JSON-serializable :class:`RunSummary` rather than only an exit code.
+
+    ``environment``, if given, is used verbatim instead of calling :func:`fetch_environment`
+    - this is the injection seam tests (and any caller that already has a snapshot) use to
+    avoid a real ``devices``/``models`` subprocess call.
+    """
+    emit = on_event or (lambda _message: None)
+    cases = select_cases(
+        load_cases(cases_path),
+        groups=groups,
+        rerun=rerun,
+        include_long=include_long,
+        include_destructive=include_destructive,
+    )
+    completed = _completed_ids(results_path) if resume and not rerun else set()
+    if environment is None and any(case.requires for case in cases):
+        environment = fetch_environment(Path(_placeholders()["utteran"]))
+
+    started = time.monotonic()
+    results: list[dict[str, Any]] = []
+    for case in cases:
+        if case.case_id in completed:
+            emit(f"SKIP {case.case_id}: already recorded")
+            continue
+        unmet = unmet_requirements(case.requires, environment)
+        if unmet:
+            result = _skip_result(case, unmet)
+            _append_result(results_path, result)
+            emit(f"SKIP {case.case_id}: {result['reason']}")
+        else:
+            emit(f"RUN  {case.case_id}: {case.description}")
+            result = run_case(case, results_path)
+            emit(
+                f"{result['result'].upper():4} {case.case_id}: {result['reason']} "
+                f"({result['duration_seconds']}s)"
+            )
+        results.append(result)
+    duration = time.monotonic() - started
+
+    summary = RunSummary(
+        total=len(results),
+        passed=sum(1 for result in results if result["result"] == "pass"),
+        failed=sum(1 for result in results if result["result"] == "fail"),
+        skipped=sum(1 for result in results if result["result"] == "skip"),
+        duration_seconds=duration,
+        results=tuple(results),
+    )
+    if summary_path is not None:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(
+            json.dumps(summary.as_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    return summary
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS)
+    parser.add_argument(
+        "--summary", type=Path, default=None, help="write a machine-readable run summary JSON"
+    )
     parser.add_argument("--group", action="append", help="run only this group (repeatable)")
     parser.add_argument("--resume", action="store_true", help="skip IDs already present")
     parser.add_argument(
@@ -429,41 +693,50 @@ def main() -> int:
     parser.add_argument(
         "--include-long", action="store_true", help="include endurance groups G13/P14"
     )
+    parser.add_argument(
+        "--include-destructive",
+        action="store_true",
+        help="also run environment-mutating cases (profile/native/model changes)",
+    )
     args = parser.parse_args()
 
-    cases = load_cases(args.cases)
+    all_cases = load_cases(args.cases)
     selected_groups = set(args.group or [])
     reruns = set(args.rerun)
-    if selected_groups:
-        cases = [case for case in cases if case.group in selected_groups]
-    elif not args.include_long:
-        cases = [case for case in cases if case.group not in LONG_GROUPS]
+    cases = select_cases(
+        all_cases,
+        groups=selected_groups,
+        rerun=reruns,
+        include_long=args.include_long,
+        include_destructive=args.include_destructive,
+    )
     if reruns:
-        known = {case.case_id for case in cases}
+        known = {case.case_id for case in all_cases}
         missing = reruns - known
         if missing:
             parser.error(f"unknown rerun IDs: {', '.join(sorted(missing))}")
-        cases = [case for case in cases if case.case_id in reruns]
     if args.list:
         for case in cases:
-            print(f"{case.case_id}\t{case.group}\t{case.description}")
+            marker = "!" if case.destructive else " "
+            print(f"{marker}{case.case_id}\t{case.group}\t{case.description}")
         return 0
 
-    completed = _completed_ids(args.results) if args.resume and not reruns else set()
-    failed = False
-    for case in cases:
-        if case.case_id in completed:
-            print(f"SKIP {case.case_id}: already recorded")
-            continue
-        print(f"RUN  {case.case_id}: {case.description}", flush=True)
-        result = run_case(case, args.results)
-        print(
-            f"{result['result'].upper():4} {case.case_id}: {result['reason']} "
-            f"({result['duration_seconds']}s)",
-            flush=True,
-        )
-        failed = failed or result["result"] != "pass"
-    return 1 if failed else 0
+    summary = run_selected(
+        args.cases,
+        args.results,
+        groups=selected_groups or None,
+        rerun=reruns or None,
+        resume=args.resume,
+        include_long=args.include_long,
+        include_destructive=args.include_destructive,
+        summary_path=args.summary,
+        on_event=print,
+    )
+    print(
+        f"TOTAL {summary.total} pass={summary.passed} fail={summary.failed} "
+        f"skip={summary.skipped} ({summary.duration_seconds:.1f}s)"
+    )
+    return 1 if summary.failed else 0
 
 
 if __name__ == "__main__":

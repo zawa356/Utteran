@@ -140,6 +140,78 @@ def validate_command_output(
     )
 
 
+def validate_native_manifest(expected_commit: str, forbidden: tuple[str, ...]) -> None:
+    """Confirm the shared native manifest pins the expected commit and stays portable.
+
+    "Portable" means no profile-specific absolute path (e.g. a venv's OpenVINO_DIR) is
+    baked in - build artifacts are shared across profiles (19.4/20.4), so a path from the
+    profile that happened to build it would break the others.
+    """
+    from utteran.native import NativeBuilder, resolve_native_dir
+
+    manifest = NativeBuilder(resolve_native_dir()).load_manifest()
+    if not manifest:
+        raise AssertionError("native manifest not found; run `utteran native build` first")
+    commit = str((manifest.get("whisper_cpp") or {}).get("commit", ""))
+    if commit != expected_commit:
+        raise AssertionError(f"unexpected whisper.cpp commit: {commit}")
+    serialized = json.dumps(manifest, ensure_ascii=False)
+    hits = [token for token in forbidden if token in serialized]
+    if hits:
+        raise AssertionError(f"manifest contains forbidden token(s): {hits}")
+    print(json.dumps({"commit": commit, "forbidden_checked": len(forbidden)}, sort_keys=True))
+
+
+def _profile_torch_version(venv_root: Path, profile: str) -> str | None:
+    executable = venv_root / f"win-{profile}" / "Scripts" / "utteran.exe"
+    if not executable.is_file():
+        return None
+    completed = subprocess.run(
+        [str(executable), "devices", "--json"], check=False, capture_output=True, timeout=60
+    )
+    try:
+        payload = json.loads(completed.stdout.decode("utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        return None
+    return str((payload.get("pytorch") or {}).get("version"))
+
+
+def validate_profile_isolation(
+    setup_script: Path, venv_root: Path, target_profile: str, other_profiles: tuple[str, ...]
+) -> None:
+    """Update one profile and confirm sibling profiles' installed torch build is untouched."""
+    before = {name: _profile_torch_version(venv_root, name) for name in other_profiles}
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(setup_script),
+            "-Profile",
+            target_profile,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding=locale.getpreferredencoding(False),
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"setup.ps1 -Profile {target_profile} failed: exit {completed.returncode}"
+        )
+    after = {name: _profile_torch_version(venv_root, name) for name in other_profiles}
+    changed = sorted(name for name in other_profiles if before[name] != after[name])
+    if changed:
+        raise AssertionError(f"sibling profiles changed unexpectedly: {changed}")
+    print(
+        json.dumps({"target": target_profile, "unaffected": sorted(other_profiles)}, sort_keys=True)
+    )
+
+
 def validate_json_output(
     command: list[str],
     *,
@@ -1404,6 +1476,16 @@ def main() -> int:
     postflight.add_argument("--input", type=Path, required=True)
     postflight.add_argument("--testdata", type=Path, required=True)
 
+    native_manifest = subparsers.add_parser("native-manifest")
+    native_manifest.add_argument("--commit", required=True)
+    native_manifest.add_argument("--forbidden", action="append", default=[])
+
+    profile_isolation = subparsers.add_parser("profile-isolation")
+    profile_isolation.add_argument("--setup", type=Path, required=True)
+    profile_isolation.add_argument("--venv-root", type=Path, required=True)
+    profile_isolation.add_argument("--target", required=True)
+    profile_isolation.add_argument("--others", required=True, help="comma-separated")
+
     args = parser.parse_args()
     if args.scenario == "stages":
         validate_stages(
@@ -1491,6 +1573,15 @@ def main() -> int:
         validate_start_front(args.project, args.script, args.testdata)
     elif args.scenario == "postflight":
         validate_postflight(args.results, args.jobs, args.input, args.testdata)
+    elif args.scenario == "native-manifest":
+        validate_native_manifest(args.commit, tuple(args.forbidden))
+    elif args.scenario == "profile-isolation":
+        validate_profile_isolation(
+            args.setup,
+            args.venv_root,
+            args.target,
+            tuple(filter(None, args.others.split(","))),
+        )
     else:
         validate_performance_log(args.jobs, args.input, args.expect_diarization)
     return 0

@@ -273,6 +273,25 @@ def validate_intermediate(
     return stats
 
 
+def validate_word_presence(path: Path, expect_words: bool) -> dict[str, Any]:
+    """Confirm a merged JSON output has (or lacks) word-level timestamps.
+
+    Segment-internal containment of any present words is already checked generically by
+    :func:`_validate_segments`; this only answers the auto/always/never presence question.
+    """
+    payload = _load_json(path)
+    segments = payload.get("segments", [])
+    word_count = sum(len(segment.get("words") or []) for segment in segments)
+    has_words = word_count > 0
+    if has_words != expect_words:
+        raise AssertionError(
+            f"word_count was {word_count}, expected {'greater than 0' if expect_words else '0'}"
+        )
+    stats = {"segment_count": len(segments), "word_count": word_count}
+    print(json.dumps(stats, ensure_ascii=False, sort_keys=True))
+    return stats
+
+
 def validate_artifacts(directory: Path, stem: str, extensions: list[str]) -> dict[str, Any]:
     files = {
         extension: _latest_artifact(directory, stem, extension).name for extension in extensions
@@ -392,6 +411,10 @@ def main() -> int:
     equivalent = subparsers.add_parser("equivalent")
     equivalent.add_argument("paths", type=Path, nargs="+")
 
+    words = subparsers.add_parser("words")
+    words.add_argument("path", type=Path)
+    words.add_argument("--expect", choices=("present", "absent"), required=True)
+
     job = subparsers.add_parser("job")
     job.add_argument("--jobs", type=Path, required=True)
     job.add_argument("--input", type=Path, required=True)
@@ -435,6 +458,8 @@ def main() -> int:
         validate_collision(args.dir, args.stem, args.extensions.split(","))
     elif args.command == "equivalent":
         validate_equivalent(args.paths)
+    elif args.command == "words":
+        validate_word_presence(args.path, args.expect == "present")
     else:
         asr_path = find_job_intermediate(args.jobs, args.input, "asr")
         diarization_path = (
