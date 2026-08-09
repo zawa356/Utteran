@@ -174,12 +174,42 @@ function Invoke-Utteran {
     }
 }
 
+function Invoke-Utf8Captured {
+    <#
+    Keep the encoding used by Python and the encoding PowerShell uses to decode
+    redirected native-command output in sync.  This is especially important in
+    Windows PowerShell 5.1, where the latter defaults to the console code page
+    even when the child process writes UTF-8.
+    #>
+    param([Parameter(Mandatory = $true)][scriptblock]$ScriptBlock)
+
+    $HadPythonIoEncoding = Test-Path Env:PYTHONIOENCODING
+    $PreviousPythonIoEncoding = $env:PYTHONIOENCODING
+    $PreviousConsoleEncoding = [Console]::OutputEncoding
+    try {
+        $env:PYTHONIOENCODING = "utf-8"
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        & $ScriptBlock
+    }
+    finally {
+        [Console]::OutputEncoding = $PreviousConsoleEncoding
+        if ($HadPythonIoEncoding) {
+            $env:PYTHONIOENCODING = $PreviousPythonIoEncoding
+        }
+        else {
+            Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Get-UtteranJson {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
     $Launcher = Get-UtteranLauncher
     $env:UTTERAN_PROFILE = $Launcher.Profile
-    $Raw = & $Launcher.Command @Arguments 2>$null | Out-String
+    $Raw = Invoke-Utf8Captured {
+        & $Launcher.Command @Arguments 2>$null | Out-String
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "診断情報を取得できませんでした: utteran $($Arguments -join ' ')"
     }

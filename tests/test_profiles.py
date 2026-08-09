@@ -144,6 +144,22 @@ def test_setup_forces_utf8_for_devices_json() -> None:
     assert "[Console]::OutputEncoding = $PreviousConsoleEncoding" in setup_script
 
 
+def test_start_forces_utf8_for_captured_json() -> None:
+    start_script = (Path(__file__).parents[1] / "start.ps1").read_text(encoding="utf-8")
+
+    helper = start_script.index("function Invoke-Utf8Captured")
+    json_helper = start_script.index("function Get-UtteranJson", helper)
+    json_capture = start_script.index("$Raw = Invoke-Utf8Captured", json_helper)
+    json_parse = start_script.index("ConvertFrom-Json", json_capture)
+
+    assert helper < json_helper < json_capture < json_parse
+    helper_body = start_script[helper:json_helper]
+    assert '$env:PYTHONIOENCODING = "utf-8"' in helper_body
+    assert "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8" in helper_body
+    assert "Remove-Item Env:PYTHONIOENCODING" in helper_body
+    assert "[Console]::OutputEncoding = $PreviousConsoleEncoding" in helper_body
+
+
 def test_setup_feeds_vulkan_probe_over_stdin_for_powershell_51() -> None:
     setup_script = (Path(__file__).parents[1] / "setup.ps1").read_text(encoding="utf-8")
 
