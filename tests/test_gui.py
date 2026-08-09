@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from utteran_gui.api import SESSION_HEADER, create_app
 from utteran_gui.app import bind_loopback_socket
-from utteran_gui.cli import CliAdapter, TranscriptionOptions
+from utteran_gui.cli import CliAdapter, RegenerationOptions, TranscriptionOptions
 from utteran_gui.environment import EnvironmentService, derive_options
 from utteran_gui.jobs import JobManager, guidance_for, parse_progress_line
 from utteran_gui.security import mask_secrets
@@ -88,6 +88,7 @@ def test_session_key_is_required_for_every_api_request(tmp_path: Path) -> None:
     response = client.get("/api/settings", headers={SESSION_HEADER: "session-secret"})
     assert response.status_code == 200
     assert response.json()["token_configured"] is False
+    assert response.headers["cache-control"] == "no-store"
 
     launched = client.get("/launch?session=session-secret", follow_redirects=False)
     assert launched.status_code == 303
@@ -120,6 +121,25 @@ def test_theme_and_language_assets_are_externalized() -> None:
     assert "ja:" in translations and "en:" in translations
 
 
+def test_viewer_assets_use_virtual_rows_and_ime_safe_ephemeral_search() -> None:
+    web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
+    index = (web / "index.html").read_text(encoding="utf-8")
+    script = (web / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="transcript-viewport"' in index
+    assert "ROW_HEIGHT" in script and "renderVirtualRows" in script
+    assert "compositionstart" in script and "compositionend" in script
+    assert "replaceChildren(...nodes)" in script
+    assert 'document.createElement("mark")' in script
+    assert "matches.push({ originalIndex, filteredIndex, start: index })" in script
+    assert "toLocaleLowerCase" in script
+    assert "open.disabled = !job.result_available" not in script
+    assert "if (job.result_error) row.title = job.result_error" in script
+    assert "localStorage" not in script
+    assert "sessionStorage" not in script
+    assert "indexedDB" not in script
+
+
 def test_command_builder_uses_profile_executable_and_argument_array(tmp_path: Path) -> None:
     executable = _create_profile(tmp_path, "cuda")
     cli = CliAdapter(tmp_path)
@@ -144,6 +164,46 @@ def test_command_builder_uses_profile_executable_and_argument_array(tmp_path: Pa
     assert "--no-diarization" in command
     assert "--no-resume" in command
     assert environment["UTTERAN_PROFILE"] == "cuda"
+
+
+def test_regeneration_builder_passes_labels_as_shell_free_arguments(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    _create_profile(tmp_path, "cuda")
+    cli = CliAdapter(tmp_path)
+    captured: list[object] = []
+
+    def run_json(profile: str, arguments: list[str], *, timeout: float = 60.0) -> object:
+        captured.extend([profile, arguments, timeout])
+        return {"executed_stages": ["export"]}
+
+    monkeypatch.setattr(cli, "run_json", run_json)
+    response = cli.regenerate(
+        RegenerationOptions(
+            job_id="0123456789abcdef",
+            profile="cuda",
+            output_dir="output with space",
+            formats=("txt", "json"),
+            speaker_labels={"SPEAKER_00": "テスト 話者", "SPEAKER_01": ""},
+        )
+    )
+
+    assert response == {"executed_stages": ["export"]}
+    assert captured[0] == "cuda"
+    assert captured[1] == [
+        "jobs",
+        "export",
+        "0123456789abcdef",
+        "--output-dir",
+        "output with space",
+        "--format",
+        "txt,json",
+        "--speaker-label",
+        "SPEAKER_00=テスト 話者",
+        "--speaker-label",
+        "SPEAKER_01=",
+        "--json",
+    ]
 
 
 def test_dynamic_choices_exclude_unusable_models_and_devices() -> None:
@@ -220,6 +280,118 @@ def test_environment_reads_all_state_from_profile_json_contracts(
         ("cuda", ("models", "list", "--json")),
         ("cuda", ("native", "status", "--json")),
     ]
+
+
+def test_history_api_uses_profile_cli_contracts_without_persisting_result(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    _create_profile(tmp_path, "cuda")
+    cli = CliAdapter(tmp_path)
+    calls: list[tuple[str, object]] = []
+    job_id = "0123456789abcdef"
+    job_root = tmp_path / job_id
+    job_root.mkdir()
+    merged_path = job_root / "merged.json"
+    merged_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "result": {
+                    "input_path": str(tmp_path / "synthetic.wav"),
+                    "transcription": {
+                        "segments": [],
+                        "language": "ja",
+                        "duration": 3.0,
+                        "backend": "faster-whisper",
+                        "model_id": "synthetic-model",
+                        "device": "cpu",
+                    },
+                    "diarization": None,
+                    "segments": [
+                        {
+                            "start": 0.0,
+                            "end": 1.0,
+                            "speaker": "SPEAKER_00",
+                            "text": "合成テスト",
+                            "words": [],
+                        }
+                    ],
+                    "created_at": "2026-08-09T00:00:00+09:00",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    presentation_path = job_root / "presentation.json"
+    presentation_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "speaker_labels": {"SPEAKER_00": "テスト話者"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def list_jobs(profile: str) -> object:
+        calls.append(("list", profile))
+        return {
+            "schema_version": 1,
+            "jobs": [
+                {
+                    "job_id": job_id,
+                    "input_name": "synthetic.wav",
+                    "status": "done",
+                    "output_paths": [],
+                    "result_path": str(merged_path),
+                    "presentation_path": str(presentation_path),
+                }
+            ],
+        }
+
+    def delete_job(profile: str, job_id: str) -> object:
+        calls.append(("delete", (profile, job_id)))
+        return {"schema_version": 1, "deleted": [job_id], "freed_bytes": 123}
+
+    def regenerate(options: Any) -> object:
+        calls.append(("regenerate", options))
+        return {"schema_version": 1, "executed_stages": ["export"], "outputs": []}
+
+    monkeypatch.setattr(cli, "list_jobs", list_jobs)
+    monkeypatch.setattr(cli, "delete_job", delete_job)
+    monkeypatch.setattr(cli, "regenerate", regenerate)
+    app = create_app("session-secret", repo_root=tmp_path, cli=cli)
+    client = TestClient(app, headers={SESSION_HEADER: "session-secret"})
+
+    listed = client.get("/api/history?profile=cuda")
+    shown = client.get("/api/history/0123456789abcdef?profile=cuda")
+    incompatible_data = json.loads(merged_path.read_text(encoding="utf-8"))
+    incompatible_data["schema_version"] = 999
+    merged_path.write_text(json.dumps(incompatible_data), encoding="utf-8")
+    incompatible = client.get("/api/history/0123456789abcdef?profile=cuda")
+    deleted = client.delete("/api/history/0123456789abcdef?profile=cuda")
+    regenerated = client.post(
+        "/api/history/0123456789abcdef/regenerate",
+        json={
+            "profile": "cuda",
+            "output_dir": str(tmp_path / "output"),
+            "formats": ["json", "txt"],
+            "speaker_labels": {"SPEAKER_00": "テスト話者"},
+        },
+    )
+
+    assert listed.json()["jobs"][0]["job_id"] == "0123456789abcdef"
+    assert shown.json()["result"]["segments"][0]["text"] == "合成テスト"
+    assert shown.json()["result"]["segments"][0]["speaker_display"] == "テスト話者"
+    assert incompatible.json()["result"] is None
+    assert "対応=1、検出=999" in incompatible.json()["result_error"]
+    assert deleted.json()["freed_bytes"] == 123
+    assert regenerated.json()["executed_stages"] == ["export"]
+    regeneration_options = calls[-1][1]
+    assert regeneration_options.speaker_labels == {"SPEAKER_00": "テスト話者"}
+    assert all(response.headers["cache-control"] == "no-store" for response in [listed, shown])
 
 
 def test_progress_parser_keeps_invalid_or_partial_lines_as_raw() -> None:

@@ -12,6 +12,7 @@
       <div class="brand"><span class="brand-mark">u</span><span>utteran</span></div>
       <nav aria-label="Primary">
         <button class="nav-item active" data-view="workspace" data-i18n="navWorkspace">文字起こし</button>
+        <button class="nav-item" data-view="history" data-i18n="navHistory">結果と履歴</button>
         <button class="nav-item" data-view="settings" data-i18n="navSettings">設定</button>
       </nav>
       <div class="sidebar-foot">
@@ -98,7 +99,63 @@
           <p class="eyebrow" id="result-eyebrow">COMPLETE</p><h2 id="result-title" data-i18n="complete">完了しました</h2>
           <p id="result-guidance" class="notice hidden"></p>
           <ul id="output-list" class="output-list"></ul>
+          <button id="open-result" class="button primary hidden" data-i18n="openResult">結果を表示</button>
           <button id="open-output" class="button secondary hidden" data-i18n="openFolder">出力フォルダを開く</button>
+        </section>
+      </section>
+
+      <section id="view-history" class="view">
+        <header class="page-header">
+          <div><p class="eyebrow">RESULT LIBRARY</p><h1 data-i18n="historyTitle">結果とジョブ履歴</h1><p class="lede" data-i18n="historyLead">保存済みジョブを開き、結果の確認や再出力を行います。</p></div>
+          <button id="refresh-history" class="button secondary" data-i18n="refresh">再検出</button>
+        </header>
+        <div class="history-controls panel">
+          <label><span data-i18n="profile">プロファイル</span><select id="history-profile"></select></label>
+          <label><span data-i18n="statusFilter">状態</span><select id="history-status"><option value="all" data-i18n="all">すべて</option><option value="done" data-i18n="completedStatus">完了</option><option value="failed" data-i18n="failedStatus">失敗</option><option value="corrupt" data-i18n="corruptStatus">破損</option></select></label>
+          <label><span data-i18n="sortBy">並び替え</span><select id="history-sort"><option value="updated-desc" data-i18n="newest">新しい順</option><option value="updated-asc" data-i18n="oldest">古い順</option><option value="name-asc" data-i18n="fileName">ファイル名</option><option value="size-desc" data-i18n="largest">サイズ順</option></select></label>
+        </div>
+        <div id="history-alert" class="notice hidden"></div>
+        <div class="history-table-wrap panel">
+          <table class="history-table"><thead><tr><th data-i18n="inputFile">入力ファイル</th><th data-i18n="date">日時</th><th data-i18n="statusFilter">状態</th><th data-i18n="usedModel">モデル</th><th data-i18n="speakers">話者</th><th data-i18n="size">サイズ</th><th data-i18n="actions">操作</th></tr></thead><tbody id="history-body"></tbody></table>
+          <p id="history-empty" class="empty-state hidden" data-i18n="noJobs">保存済みジョブはありません。</p>
+        </div>
+      </section>
+
+      <section id="view-viewer" class="view viewer-view">
+        <header class="page-header viewer-header">
+          <div><button id="viewer-back" class="text-button" data-i18n="backHistory">← 履歴へ戻る</button><p class="eyebrow">TRANSCRIPT RESULT</p><h1 id="viewer-title">—</h1><p id="viewer-subtitle" class="lede"></p></div>
+          <div class="viewer-header-actions"><button id="viewer-open-folder" class="button secondary" data-i18n="openFolder">出力フォルダを開く</button><button id="viewer-delete" class="button danger" data-i18n="deleteJob">ジョブを削除</button></div>
+        </header>
+        <div id="viewer-error" class="notice hidden"></div>
+        <section id="viewer-meta" class="model-banner"></section>
+        <section id="viewer-stats" class="stats-grid"></section>
+
+        <section class="panel viewer-tools">
+          <div class="search-row">
+            <label class="search-field"><span data-i18n="fullTextSearch">全文検索</span><input id="search-text" type="search" autocomplete="off" spellcheck="false" data-i18n-placeholder="searchPlaceholder" placeholder="検索語を入力"></label>
+            <div class="match-nav"><strong id="match-count">0</strong><button id="match-prev" class="button ghost" aria-label="Previous match">↑</button><button id="match-next" class="button ghost" aria-label="Next match">↓</button></div>
+          </div>
+          <div class="filter-row">
+            <div><span class="field-caption" data-i18n="speakerFilter">話者</span><div id="speaker-filters" class="speaker-filters"></div></div>
+            <div class="time-filter"><label><span data-i18n="fromMinute">開始（分）</span><input id="time-from" type="number" min="0" step="0.1"></label><label><span data-i18n="toMinute">終了（分）</span><input id="time-to" type="number" min="0" step="0.1"></label><button id="clear-filters" class="button ghost" data-i18n="clearFilters">絞り込み解除</button></div>
+          </div>
+          <p class="privacy-inline" data-i18n="searchPrivacy">検索語は保存されず、この画面を閉じると破棄されます。</p>
+        </section>
+
+        <section class="panel transcript-panel">
+          <div class="transcript-summary"><span id="visible-count">0</span><span data-i18n="segmentsShown">セグメント表示</span></div>
+          <div id="transcript-viewport" class="transcript-viewport" tabindex="0" aria-label="Transcript"><div id="transcript-spacer"></div><div id="transcript-rows"></div></div>
+        </section>
+
+        <section class="panel regenerate-panel">
+          <div class="section-heading"><div><span class="step-number">↻</span><h2 data-i18n="regenerateTitle">出力ファイルを再生成</h2></div><span class="section-note" data-i18n="exportOnly">ASR・話者分離は再実行しません</span></div>
+          <form id="regenerate-form">
+            <label><span data-i18n="outputDir">出力先</span><input id="regenerate-output" required autocomplete="off"></label>
+            <div><span class="field-caption" data-i18n="outputFormats">出力形式</span><div id="regenerate-formats" class="format-options"></div></div>
+            <div><span class="field-caption" data-i18n="speakerNames">話者の表示名</span><div id="speaker-label-fields" class="speaker-label-fields"></div></div>
+            <div class="form-actions"><span id="regenerate-status" class="muted"></span><button id="regenerate-button" class="button primary" type="submit" data-i18n="regenerate">exportのみ実行</button></div>
+          </form>
+          <ul id="regenerated-outputs" class="output-list"></ul>
         </section>
       </section>
 

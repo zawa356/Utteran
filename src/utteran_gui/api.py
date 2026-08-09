@@ -17,8 +17,9 @@ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from utteran_gui.cli import CliAdapter, CliError, TranscriptionOptions
+from utteran_gui.cli import CliAdapter, CliError, RegenerationOptions, TranscriptionOptions
 from utteran_gui.environment import EnvironmentService
+from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
 from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore
 
@@ -64,6 +65,13 @@ class OpenFolderPayload(BaseModel):
     path: str = Field(min_length=1, max_length=32768)
 
 
+class RegenerationPayload(BaseModel):
+    profile: Literal["cpu", "cuda", "intel", "vulkan"]
+    output_dir: str = Field(min_length=1, max_length=32768)
+    formats: list[Literal["srt", "vtt", "json", "txt", "md"]] = Field(min_length=1)
+    speaker_labels: dict[str, str] = Field(default_factory=dict)
+
+
 def create_app(
     session_key: str,
     *,
@@ -73,6 +81,7 @@ def create_app(
     token_store: TokenStore | None = None,
     environment_service: EnvironmentService | None = None,
     job_manager: JobManager | None = None,
+    history_service: HistoryService | None = None,
 ) -> FastAPI:
     """Create one session-scoped application without importing the CLI package."""
     if not session_key:
@@ -82,6 +91,7 @@ def create_app(
     selected_tokens = token_store or TokenStore()
     selected_environment = environment_service or EnvironmentService(selected_cli)
     selected_jobs = job_manager or JobManager(selected_cli)
+    selected_history = history_service or HistoryService(selected_cli)
     web_root = Path(__file__).with_name("web")
     app = FastAPI(title="utteran GUI", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/assets", StaticFiles(directory=web_root), name="assets")
@@ -102,6 +112,8 @@ def create_app(
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; style-src 'self'; script-src 'self'; "
             "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
@@ -222,6 +234,56 @@ def create_app(
                 await asyncio.sleep(0.5)
 
         return StreamingResponse(generate(), media_type="text/event-stream")
+
+    @app.get("/api/history")
+    def history(profile: Literal["cpu", "cuda", "intel", "vulkan"]) -> object:
+        try:
+            return selected_history.list(profile)
+        except (CliError, HistoryError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    @app.get("/api/history/{job_id}")
+    def history_detail(
+        job_id: str,
+        profile: Literal["cpu", "cuda", "intel", "vulkan"],
+    ) -> object:
+        try:
+            return selected_history.detail(profile, job_id)
+        except (CliError, HistoryError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    @app.delete("/api/history/{job_id}")
+    def delete_history(
+        job_id: str,
+        profile: Literal["cpu", "cuda", "intel", "vulkan"],
+    ) -> object:
+        try:
+            result = selected_cli.delete_job(profile, job_id)
+            selected_history.invalidate(profile, job_id)
+            return result
+        except CliError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    @app.post("/api/history/{job_id}/regenerate")
+    def regenerate_history(job_id: str, payload: RegenerationPayload) -> object:
+        if any(len(key) > 100 or len(value) > 100 for key, value in payload.speaker_labels.items()):
+            raise HTTPException(
+                status_code=422, detail="Speaker labels must be 100 characters or less"
+            )
+        try:
+            result = selected_cli.regenerate(
+                RegenerationOptions(
+                    job_id=job_id,
+                    profile=payload.profile,
+                    output_dir=payload.output_dir,
+                    formats=tuple(payload.formats),
+                    speaker_labels=dict(payload.speaker_labels),
+                )
+            )
+            selected_history.invalidate(payload.profile, job_id)
+            return result
+        except CliError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
 
     @app.post("/api/open-folder", status_code=204)
     def open_folder(payload: OpenFolderPayload) -> Response:

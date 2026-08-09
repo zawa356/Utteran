@@ -53,6 +53,17 @@ class TranscriptionOptions:
     exclude: tuple[str, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class RegenerationOptions:
+    """Export-only changes applied to one persistent core job."""
+
+    job_id: str
+    profile: str
+    output_dir: str
+    formats: tuple[str, ...]
+    speaker_labels: dict[str, str] = field(default_factory=dict)
+
+
 class CliAdapter:
     """Resolve profile environments and invoke only their console executable."""
 
@@ -189,6 +200,42 @@ class CliAdapter:
         for pattern in options.exclude:
             arguments.extend(["--exclude", pattern])
         return arguments, self.environment(options.profile)
+
+    def list_jobs(self, profile: str) -> object:
+        """Read the shared job history through the core JSON contract."""
+        return self.run_json(profile, ["jobs", "list", "--json"])
+
+    def show_job(self, profile: str, job_id: str) -> object:
+        """Read one normalized viewer payload without importing the core package."""
+        return self.run_json(profile, ["jobs", "show", job_id, "--json"])
+
+    def delete_job(self, profile: str, job_id: str) -> object:
+        """Delete exactly one core job after the GUI has confirmed its size."""
+        return self.run_json(
+            profile,
+            ["jobs", "clean", "--job-id", job_id, "--yes", "--json"],
+        )
+
+    def regenerate(self, options: RegenerationOptions) -> object:
+        """Run only export from merged.json with shell-free label arguments."""
+        formats = tuple(dict.fromkeys(item.lower() for item in options.formats))
+        if not formats or any(item not in OUTPUT_FORMATS for item in formats):
+            raise CliError("At least one supported output format is required")
+        if not options.output_dir.strip():
+            raise CliError("Output directory is required")
+        arguments = [
+            "jobs",
+            "export",
+            options.job_id,
+            "--output-dir",
+            options.output_dir,
+            "--format",
+            ",".join(formats),
+        ]
+        for speaker, display_name in options.speaker_labels.items():
+            arguments.extend(["--speaker-label", f"{speaker}={display_name}"])
+        arguments.append("--json")
+        return self.run_json(options.profile, arguments, timeout=300.0)
 
 
 def as_json_dict(value: object) -> dict[str, Any]:
