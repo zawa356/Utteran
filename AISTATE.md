@@ -1,5 +1,38 @@
 # AI 作業状態
 
+## Phase 5b GUI結果閲覧・検索・履歴（2026-08-09、実装・自動検証完了）
+
+- `feature/phase5b-gui-viewer`をPhase 5a完了commitから作成した。作業開始時に既存86 fileの
+  CRLF/LF差分があったため、内容を破棄せず保持している。
+- `jobs list --json`／`jobs show --json`を追加し、履歴へ入力名、日時、状態、容量、ASR／話者分離の
+  model・device、話者数、音声長、出力pathを返す。個別削除は`jobs clean --job-id --json`とし、
+  live lock所有jobを拒否する。
+- viewerと再出力は出力先JSONでなくjob内`merged.json`を正本とした。出力JSONは削除・移動され得て、
+  表示名適用後は内部話者labelを失うため。schema version 1以外、欠落、破損は`corrupt`として
+  対応／検出versionを明示し、推測表示しない。
+- `jobs export`は`merged.json`を共通`PipelineResult`へ復元してexporterだけを実行し、形式、
+  出力先、`SPEAKER_00=表示名`を変更できる。audio／ASR／diarization／merge recordは変更しない。
+  表示名と直近出力指定はGUI設定でなく関連job内`presentation.json`へ保存し、job削除で同時消去する。
+- GUIは結果／履歴view、固定108px行の仮想scroll（viewport＋overscanだけDOM化）、検索highlight・
+  件数・前後移動、IME composition中の検索抑止＋180ms debounce、話者／時間filter、話者色、
+  model／device強調表示、発話時間／割合／平均turn、履歴filter／sort／open／個別delete、
+  export-only再生成を実装した。word詳細は正本とCLI JSONに保持し、GUI初期payloadはword数だけ返す。
+- 本文、検索語をlog／settings／追加cache／Web Storageへ保存しない。全APIに
+  `Cache-Control: no-store`を付与し、viewerを離れると検索語とin-memory resultを破棄する。
+  手書き合成結果だけのCLI/API/privacy回帰を追加した。
+- 既存の長時間実jobは`merged.json` 9,236,847 byte、1,280 segment、23,117 word。
+  本文非出力でのGUI用読込／正規化は0.326秒、JSON化0.003秒、payload 255,336 byte。
+  650px viewportの同時DOM行はoverscan込み最大23行で、server側は1秒の初期表示目標内。
+  実データの本文、file名、参加者名は計測出力とGit成果物へ含めていない。
+- 重点回帰は`test_cli.py`/`test_gui.py`/`test_jobs.py`/`test_pipeline.py`が65 passed／
+  Windows限定1 skipped。全モデル不要testは254 passed／環境依存3 skipped。ruff format/check、
+  mypy 52 source files、lock、PowerShell BOM、公開tree scan（blocking 0）は合格。
+- 受入ハーネスG11はREADME CLI例と公開文書契約の2/2 pass（143.4秒）。
+  `.venvs/win-gui`のWindows Pythonで長時間job 1,280 segmentを0.211秒で読込み、
+  Windows Edge headlessでfrontend起動、外部script読込み、5出力形式の動的DOM生成を確認した。
+  フォント、dark/lightの色、連続scrollとIME操作は自動化に不向きなため、
+  `docs/Phase5a_GUI_手動確認手順書.md`と`docs/Phase5b_GUI_手動確認手順書.md`に実機手順を残す。
+
 ## Phase 5a Windows GUI基盤（2026-08-09、実装・実機確認完了）
 
 - `docs/utteran_Phase5a_指示書.md`に従い、推論coreをimportしない独立package

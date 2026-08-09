@@ -41,9 +41,10 @@ For the desktop GUI, install its lightweight environment and at least one infere
 
 `.venvs/win-gui` contains FastAPI, Uvicorn, and pywebview, but no PyTorch or faster-whisper.
 The independent `utteran_gui` package never imports the inference core; it runs the selected
-profile's `utteran` executable as a child process.
-Phase 5a covers detection, run settings, progress, cancellation, and output-file listing. Transcript
-view/search/history are planned for 5b, first-run setup for 5c, and installer packaging for 5d.
+profile's `utteran` executable as a child process. The GUI includes a virtualized transcript viewer,
+full-text search, speaker/time filters, prominent model and device metadata, job history, deletion,
+and export-only regeneration with new formats, speaker display names, or an output directory.
+Regeneration reads the job's `merged.json`; it does not rerun ASR or diarization.
 
 ## Linux installation
 
@@ -71,7 +72,19 @@ uv run utteran models verify
 providing a read token through `HF_TOKEN`, a Git-ignored `.env`, or the OS keyring. Never put a
 token in `config.toml`, a command line, an issue, or a log. Revoke a leaked token before attempting
 history cleanup. A token saved through the GUI is stored only in the OS keyring and is never
-returned to the browser or API client. GUI settings do not retain input-file history.
+returned to the browser or API client. GUI settings do not retain input-file history, transcript
+text, or search terms. Speaker display names are stored only beside the associated job and are
+removed with that job. Transcript API responses use `Cache-Control: no-store`.
+
+Machine-readable history and export-only regeneration are also available from the CLI:
+
+```console
+uv run utteran jobs list --json
+uv run utteran jobs show <job_id> --json
+uv run utteran jobs export <job_id> --format txt,json --output-dir transcripts \
+  --speaker-label SPEAKER_00=Alice
+uv run utteran jobs clean --job-id <job_id>
+```
 
 For machine-readable progress, add `--progress-json --quiet`. The CLI writes one UTF-8 JSON object
 per stderr line, including stages and output paths but never transcript segments, words, or text.

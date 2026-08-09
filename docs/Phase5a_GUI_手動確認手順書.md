@@ -74,3 +74,19 @@ GUI profileにPyTorch／faster-whisperが入っていないこと、CUDA profile
 - fake process注入によるprocess tree killer呼出し、settings／keyring adapterの保存・復元
 
 これらは`tests/test_progress_json.py`と`tests/test_gui.py`で回帰検査する。
+
+## 5. Phase 5b 結果閲覧・検索・履歴
+
+Phase 5bで追加した次の項目も、上記と同じWindows native windowで確認する。
+
+1. 完了後の「結果を表示」からviewerが開き、ASR／話者分離のmodelとdevice、
+   timestamp、話者色、統計がdark／lightで判読できる。
+2. 2時間級約1,300 segmentで仮想scroll、日本語IME検索、highlight、一致移動、
+   話者／時間filterを確認する。本文や検索語は報告に転記しない。
+3. 履歴の絞り込み／sort／folder表示／個別削除と、形式・話者表示名・出力先を
+   変更したexport-only再生成を確認する。上流4 stageは再実行されない。
+4. Englishへ切り替え、新画面の固定文言が切り替わる。GUI再起動後に検索語が
+   復元されず、参加者表示名はGUI設定でなく対象jobだけに保存される。
+
+詳細な長時間性能、schema不一致、削除確認、privacy確認の手順は
+[`Phase5b_GUI_手動確認手順書.md`](Phase5b_GUI_手動確認手順書.md)を参照する。

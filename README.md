@@ -15,7 +15,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 - pyannote.audio 4.x話者分離: CPU / NVIDIA CUDA / Intel XPU
 - 単一ファイル／folder batch、段階別resume、5形式出力
 - profile別venv、model／job／native build管理、device診断
-- WindowsデスクトップGUI（dark/light、日本語/English、進捗・中断・出力表示）
+- WindowsデスクトップGUI（進捗・中断、結果閲覧・検索、ジョブ履歴、再出力）
 - Windows番号menu (`start.ps1`) と自動化向けCLI
 
 主対象はWindows 10/11、Python 3.11/3.12です。Linuxは副対象で、CIがモデル不要testとimportを
@@ -47,8 +47,9 @@ GUIを使う場合は、軽量なGUI環境と実際に推論するprofileを別�
 
 GUI環境`.venvs/win-gui`はFastAPI／pywebview専用で、PyTorchとfaster-whisperを含みません。
 `utteran_gui`は推論coreをimportせず、選択したprofileの`utteran` CLIだけを子processとして起動します。
-Phase 5aのGUI範囲は環境検出、実行設定、進捗、cancel、生成file一覧までです。本文閲覧／検索／履歴は
-Phase 5b、初回setup wizardは5c、installer化は5dで扱います。
+GUIは結果の仮想スクロール、全文検索、話者／時間フィルタ、モデル・device情報、話者統計、
+ジョブ履歴、個別削除、形式・話者表示名・出力先を変えた再生成に対応します。再生成はジョブ内の
+`merged.json`からexportだけを実行し、ASRや話者分離を再実行しません。
 
 話者分離にはpyannote modelの利用条件への同意とHugging Face tokenが必要です。取得前に必ず
 [ライセンスとモデル利用条件](#ライセンスとモデル利用条件)を確認してください。
@@ -207,6 +208,11 @@ uv run utteran devices --json
 uv run utteran profiles list --json
 uv run utteran native status --json
 uv run utteran jobs list
+uv run utteran jobs list --json
+uv run utteran jobs show <job_id> --json
+uv run utteran jobs export <job_id> --format txt,json \
+  --output-dir transcripts --speaker-label SPEAKER_00=田中
+uv run utteran jobs clean --job-id <job_id>
 uv run utteran config init
 uv run utteran config show
 ```
@@ -216,7 +222,9 @@ uv run utteran config show
 [要件定義](要件定義.md)を参照してください。
 
 GUI設定はOS user config directoryの`settings.json`へ原子的に保存します。theme、language、既定profile、
-既定入出力directoryだけを保持し、選択した入力fileや文字起こし履歴は保存しません。
+既定入出力directoryだけを保持し、選択した入力file、文字起こし本文、検索語は保存しません。
+話者表示名を保存する場合はGUI設定でなく文字起こしと同じジョブdirectoryの`presentation.json`へ置き、
+ジョブ削除時に一緒に削除します。API応答は`Cache-Control: no-store`でbrowser cacheを抑止します。
 
 ## 開発と品質保証
 
@@ -261,6 +269,7 @@ CIはpatternを必要としない汎用のemail形式、user絶対path、media�
 - [Phase 4a公開履歴監査](docs/公開履歴監査_Phase4a.md)
 - [Phase 4a照合走査](docs/照合走査_Phase4a.md)
 - [Phase 5a GUI手動確認](docs/Phase5a_GUI_手動確認手順書.md)
+- [Phase 5b GUI手動確認](docs/Phase5b_GUI_手動確認手順書.md)
 - [変更履歴](変更履歴.md)
 
 ## ライセンスとモデル利用条件
