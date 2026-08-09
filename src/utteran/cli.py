@@ -10,7 +10,7 @@ import sys
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Annotated, Any, Never, TypeVar, cast
+from typing import Annotated, Any, Never, TypedDict, TypeVar, cast
 
 import typer
 from rich.console import Console
@@ -47,6 +47,7 @@ from utteran.errors import (
 from utteran.exporters import export_all
 from utteran.jobs import (
     INTERMEDIATE_SCHEMA_VERSION,
+    STAGES,
     Job,
     JobStore,
     JobSummary,
@@ -72,6 +73,18 @@ from utteran.progress import JsonProgressReporter, combine_progress
 from utteran.types import CancelToken, ExportOptions, PipelineOutcome, PipelineResult, ProgressEvent
 
 T = TypeVar("T")
+
+
+class RuntimeSummary(TypedDict):
+    """Transcript-free runtime metadata shared by CLI and GUI."""
+
+    job_id: str | None
+    asr_backend: str
+    asr_model: str
+    asr_device: str
+    executed_stages: list[str]
+    reused_stages: list[str]
+
 
 app = typer.Typer(
     name="utteran",
@@ -451,15 +464,37 @@ def transcribe(
             json_progress.done(1)
         raise typer.Exit(code=1) from None
 
-    if outcome.executed_stages:
-        console.print(f"ジョブ: {outcome.job_id} ({', '.join(outcome.executed_stages)})")
-    else:
-        console.print(f"ジョブ: {outcome.job_id} (完了済みのためスキップ)")
+    runtime_summary = _outcome_summary(outcome)
+    console.print(f"ジョブ: {outcome.job_id}")
+    console.print(
+        f"ASR: {runtime_summary['asr_backend']} / {runtime_summary['asr_model']} / "
+        f"{runtime_summary['asr_device']}"
+    )
+    console.print(
+        "ステージ: 実行 "
+        f"{', '.join(runtime_summary['executed_stages']) or 'なし'} / 再利用 "
+        f"{', '.join(runtime_summary['reused_stages']) or 'なし'}"
+    )
     for path in outcome.output_paths:
         console.print(f"出力: {path}")
     _print_stage_timings(outcome.stage_durations)
     if json_progress is not None:
+        json_progress.emit("run_summary", **runtime_summary)
         json_progress.done(0)
+
+
+def _outcome_summary(outcome: PipelineOutcome) -> RuntimeSummary:
+    """Return transcript-free runtime and resume decisions for CLI/GUI display."""
+    executed = list(outcome.executed_stages)
+    transcription = outcome.result.transcription
+    return {
+        "job_id": outcome.job_id,
+        "asr_backend": transcription.backend,
+        "asr_model": transcription.model_id,
+        "asr_device": transcription.device,
+        "executed_stages": executed,
+        "reused_stages": [stage for stage in STAGES if stage not in executed],
+    }
 
 
 @app.command("devices")

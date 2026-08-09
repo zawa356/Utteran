@@ -314,6 +314,18 @@
     } else {
       guidance.classList.add("hidden");
     }
+    const summary = [...result.events].reverse().find((item) => item.event === "run_summary");
+    const summaryNode = $("result-summary");
+    if (summary) {
+      const executed = summary.executed_stages?.join(", ") || t("none");
+      const reused = summary.reused_stages?.join(", ") || t("none");
+      summaryNode.textContent =
+        `ASR: ${summary.asr_backend} / ${summary.asr_model} / ${summary.asr_device} · ` +
+        `${t("executedStages")}: ${executed} · ${t("reusedStages")}: ${reused}`;
+      summaryNode.classList.remove("hidden");
+    } else {
+      summaryNode.classList.add("hidden");
+    }
     $("output-list").replaceChildren(
       ...result.outputs.map((path) => {
         const item = document.createElement("li");
@@ -373,6 +385,7 @@
         "progress",
         "stage_done",
         "output_written",
+        "run_summary",
         "warning",
         "error",
         "done",

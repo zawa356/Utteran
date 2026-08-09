@@ -15,6 +15,7 @@ from utteran.batch import BatchItemResult, BatchSummary
 from utteran.cli import (
     _cli_overrides,
     _format_duration,
+    _outcome_summary,
     _parse_model_selection,
     _parse_variant_selection,
     _run_interruptibly,
@@ -41,6 +42,7 @@ from utteran.profiles import venv_dir_name
 from utteran.types import (
     CancelToken,
     DiarizationResult,
+    PipelineOutcome,
     PipelineResult,
     Segment,
     SpeakerTurn,
@@ -49,6 +51,28 @@ from utteran.types import (
 )
 
 runner = CliRunner()
+
+
+def test_outcome_summary_exposes_runtime_and_resume_without_transcript() -> None:
+    result = PipelineResult(
+        input_path=Path("input.wav"),
+        transcription=TranscriptionResult([], "ja", 30.0, "faster-whisper", "large-v3", "cuda:0"),
+        diarization=None,
+        segments=[],
+        created_at="now",
+    )
+
+    summary = _outcome_summary(PipelineOutcome(result, [], "job-id", ("asr", "merge", "export")))
+
+    assert summary == {
+        "job_id": "job-id",
+        "asr_backend": "faster-whisper",
+        "asr_model": "large-v3",
+        "asr_device": "cuda:0",
+        "executed_stages": ["asr", "merge", "export"],
+        "reused_stages": ["audio", "diarization"],
+    }
+    assert "segments" not in summary
 
 
 def test_interruptible_worker_returns_a_normal_result() -> None:

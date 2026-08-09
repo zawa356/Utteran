@@ -119,6 +119,10 @@ def test_theme_and_language_assets_are_externalized() -> None:
     assert "dataset.theme" in script and 'api("/api/settings"' in script
     assert "window.UTTERAN_I18N" in translations
     assert "ja:" in translations and "en:" in translations
+    assert 'id="result-summary"' in index
+    assert 'item.event === "run_summary"' in script
+    assert '"run_summary"' in script
+    assert "executedStages" in translations and "reusedStages" in translations
 
 
 def test_viewer_assets_use_virtual_rows_and_ime_safe_ephemeral_search() -> None:
