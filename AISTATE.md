@@ -1,5 +1,29 @@
 # AI 作業状態
 
+## レジューム挙動調査（2026-08-09、実機調査・是正完了）
+
+- `fix/resume-behavior-investigation`でWindows CUDA／`cuda:0`、`large-v3-turbo`／`large-v3`、
+  話者分離なしの5分派生clipを使用した。元入力と既存jobは変更せず、本文、固有名詞、話者名、
+  元file名を出力・記録していない。対象jobは`jobs clean --job-id`で個別削除し、既存5 jobを保持した。
+- 同一条件の2回目は1.323秒で全5 stageと既存2出力を再利用し、上書き・連番追加・日時更新なし。
+  出力削除後は1.436秒、出力先変更は1.417秒でexportだけを実行した。実装は一貫するが衝突連番との
+  適用関係が不明なため仕様の欠陥と判定し、要件定義とREADMEへ正しい挙動を明文化した。
+- turbo→large→turboは各model変更でASR／merge／exportを再実行し、ASR hash、出力model、
+  59 segmentに対するword／文字統計がmodel別に切り替わった。異modelの古いcache再利用は再現せず、
+  操作の誤り相当かつ表示不足と判定した。GUI選択もCLIへ正しく渡り、同一条件では全stage再利用した。
+- 調査中、`large-v3`と`faster-whisper:large-v3`が同じ実体なのに別ASR hashとなる逆方向の不具合を
+  発見。修正前に失敗testを追加し、backend明示時のcatalog ID正規化で解消した。受入`G4-17`で
+  真のmodel変更とalias同値を検査する。
+- CLI／GUI完了表示とJSONL `run_summary`へ実ASR backend／model／device、実行stage、再利用stageを
+  追加した。即時終了が正しいcache hitかを完了画面で判断できる。
+- 86 fileのCRLF/LFのみの差分、Windows Git `core.autocrlf=true`、WSL未設定を確認。
+  `.gitattributes`で通常text=LF、PowerShell等=CRLF、media／model／実行形式=binaryとし、EOLだけの
+  変更表示を解消した。全file renormalizeは不要のため行っていない。詳細は
+  `docs/レジューム挙動調査.md`。
+- 最終品質確認はモデル不要256 passed／環境依存3 skipped、ruff check／format 93 file、mypy
+  52 source file、lock、PowerShell BOM 4 file、Windows PowerShell 5.1構文検査、受入G4-17 1/1が
+  合格（3.911秒）。修正後のWindows CUDA実行も0.634秒で全5 stage再利用とcanonical model表示を確認した。
+
 ## Phase 5b GUI結果閲覧・検索・履歴（2026-08-09、実装・自動検証完了）
 
 - `feature/phase5b-gui-viewer`をPhase 5a完了commitから作成した。作業開始時に既存86 fileの

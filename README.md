@@ -132,6 +132,12 @@ uv run utteran transcribe meeting.mp4 --progress-json --quiet 2> progress.jsonl
 やり直します。`--force`は全stage再実行、`--no-resume`はcache不使用です。batchは個別失敗後も
 継続し、一部失敗はexit 5、全件失敗は1、Ctrl+Cは130を返します。
 
+同じ入力・設定・出力先で成果物が残っている再実行は、全stageと既存fileを再利用します。上書きも
+連番fileの追加も行いません。成果物を削除した場合や出力先だけを変えた場合はexportだけを実行し、
+既存の同名fileと衝突するときだけ連番を付けます。完了時には実際のASR model／deviceと、今回
+実行したstage／cacheから再利用したstageを表示します。`--asr-model`を別モデルへ変えるとASR以降を
+再実行しますが、`large-v3`と`faster-whisper:large-v3`のような同一backend内の別記法は同一modelとして扱います。
+
 Git checkout内へ出力する場合は、`.gitignore`対象の`output`、`transcripts`、または
 `utteran-output` directoryを指定してください。JSON / TXT / Markdownを通常の文書directoryへ
 出力しようとすると、誤commit防止のため実行を拒否します。repository外の出力先は制限しません。
