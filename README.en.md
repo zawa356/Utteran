@@ -2,7 +2,7 @@
 
 [日本語](README.md) | English
 
-utteran is a local CLI that creates speaker-aware transcripts from audio and video files.
+utteran is a local desktop app and CLI that creates speaker-aware transcripts from audio and video files.
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
@@ -31,6 +31,20 @@ matching hardware, not by CI.
 Run `.\start.ps1` for the numbered interactive menu. Available profiles are `cpu`, `cuda`,
 `intel`, and `vulkan`; each uses an isolated virtual environment under `.venvs`.
 
+For the desktop GUI, install its lightweight environment and at least one inference profile:
+
+```powershell
+.\setup.ps1 -Profile gui
+.\setup.ps1 -Profile cuda
+.\gui.ps1
+```
+
+`.venvs/win-gui` contains FastAPI, Uvicorn, and pywebview, but no PyTorch or faster-whisper.
+The independent `utteran_gui` package never imports the inference core; it runs the selected
+profile's `utteran` executable as a child process.
+Phase 5a covers detection, run settings, progress, cancellation, and output-file listing. Transcript
+view/search/history are planned for 5b, first-run setup for 5c, and installer packaging for 5d.
+
 ## Linux installation
 
 Install [uv](https://docs.astral.sh/uv/), Python 3.11/3.12, and ffmpeg, then run:
@@ -56,7 +70,11 @@ uv run utteran models verify
 `pyannote/speaker-diarization-community-1` requires accepting its terms on Hugging Face and
 providing a read token through `HF_TOKEN`, a Git-ignored `.env`, or the OS keyring. Never put a
 token in `config.toml`, a command line, an issue, or a log. Revoke a leaked token before attempting
-history cleanup.
+history cleanup. A token saved through the GUI is stored only in the OS keyring and is never
+returned to the browser or API client. GUI settings do not retain input-file history.
+
+For machine-readable progress, add `--progress-json --quiet`. The CLI writes one UTF-8 JSON object
+per stderr line, including stages and output paths but never transcript segments, words, or text.
 
 ## Benchmarking
 
@@ -79,7 +97,7 @@ recognized text or pipeline jobs.
 ## Development
 
 ```console
-uv sync --extra dev
+uv sync --extra dev --extra gui
 uv run ruff check src tests tools
 uv run ruff format --check src tests tools
 uv run mypy

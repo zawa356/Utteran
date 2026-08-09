@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 日本語
 
-utteranは、音声・動画から話者別の文字起こしをローカル生成するCLIです。
+utteranは、音声・動画から話者別の文字起こしをローカル生成するデスクトップアプリ／CLIです。
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
@@ -15,6 +15,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 - pyannote.audio 4.x話者分離: CPU / NVIDIA CUDA / Intel XPU
 - 単一ファイル／folder batch、段階別resume、5形式出力
 - profile別venv、model／job／native build管理、device診断
+- WindowsデスクトップGUI（dark/light、日本語/English、進捗・中断・出力表示）
 - Windows番号menu (`start.ps1`) と自動化向けCLI
 
 主対象はWindows 10/11、Python 3.11/3.12です。Linuxは副対象で、CIがモデル不要testとimportを
@@ -36,6 +37,19 @@ PowerShellでrepository直下から実行します。管理者権限は不要で
 .\start.ps1
 ```
 
+GUIを使う場合は、軽量なGUI環境と実際に推論するprofileを別々に構築します。
+
+```powershell
+.\setup.ps1 -Profile gui
+.\setup.ps1 -Profile cuda
+.\gui.ps1
+```
+
+GUI環境`.venvs/win-gui`はFastAPI／pywebview専用で、PyTorchとfaster-whisperを含みません。
+`utteran_gui`は推論coreをimportせず、選択したprofileの`utteran` CLIだけを子processとして起動します。
+Phase 5aのGUI範囲は環境検出、実行設定、進捗、cancel、生成file一覧までです。本文閲覧／検索／履歴は
+Phase 5b、初回setup wizardは5c、installer化は5dで扱います。
+
 話者分離にはpyannote modelの利用条件への同意とHugging Face tokenが必要です。取得前に必ず
 [ライセンスとモデル利用条件](#ライセンスとモデル利用条件)を確認してください。
 
@@ -46,6 +60,7 @@ PowerShellでrepository直下から実行します。管理者権限は不要で
 .\setup.ps1 -Profile cuda
 .\setup.ps1 -Profile intel
 .\setup.ps1 -Profile vulkan
+.\setup.ps1 -Profile gui
 .\setup.ps1 -List
 .\setup.ps1 -SetDefault intel
 ```
@@ -56,6 +71,7 @@ PowerShellでrepository直下から実行します。管理者権限は不要で
 | `cuda` | NVIDIA | CUDA 12.6 PyTorch、faster-whisper、pyannote |
 | `intel` | Intel Arc/NPU | XPU PyTorch、OpenVINO、whisper.cpp |
 | `vulkan` | AMD等 | CPU PyTorch、Vulkan whisper.cpp |
+| `gui` | Windows GUI | FastAPI、Uvicorn、pywebview（推論依存なし） |
 
 各venvは`.venvs/<os>-<profile>`へ分離されます。model、job、native buildはprofile間で共有します。
 `setup.ps1`は依存、ffmpeg、device診断だけを担当し、modelを暗黙downloadしません。
@@ -96,6 +112,7 @@ $env:HF_TOKEN = "hf_xxxxxxxxxxxxxxxxxxxx"
 
 tokenを`config.toml`、command line、issue、logへ書かないでください。`.env`はGit除外され、runtimeの
 log／例外はtoken形式をmaskしますが、漏えい時は履歴修正より先にtokenを失効してください。
+GUIから保存したtokenはOS keyringだけに格納され、画面やAPIへ値を返しません。
 
 ## 文字起こし
 
@@ -104,7 +121,11 @@ uv run utteran transcribe meeting.mp4
 uv run utteran transcribe interview.wav --num-speakers 2 --format srt,vtt,json,txt,md
 uv run utteran transcribe lecture.m4a --no-diarization
 uv run utteran transcribe recordings/ --recursive --include "**/*.wav"
+uv run utteran transcribe meeting.mp4 --progress-json --quiet 2> progress.jsonl
 ```
+
+`--progress-json`はGUIや自動化向けに、schema version付きUTF-8 JSONLをstderrへ出力します。
+進捗にはstage、比率、生成path、終了codeを含みますが、認識segment／単語／文字起こし本文は含みません。
 
 既定でresumeは有効です。設定変更時は影響stage以降だけを再実行し、出力形式だけの変更はexportだけを
 やり直します。`--force`は全stage再実行、`--no-resume`はcache不使用です。batchは個別失敗後も
@@ -183,7 +204,8 @@ Vulkanを現在優先します。
 
 ```console
 uv run utteran devices --json
-uv run utteran profiles list
+uv run utteran profiles list --json
+uv run utteran native status --json
 uv run utteran jobs list
 uv run utteran config init
 uv run utteran config show
@@ -193,10 +215,13 @@ uv run utteran config show
 トークンの参照元は環境変数、`.env`、OS キーリングの3段階で、この順に優先します。全設定、終了code、JSON schema、resume hashは
 [要件定義](要件定義.md)を参照してください。
 
+GUI設定はOS user config directoryの`settings.json`へ原子的に保存します。theme、language、既定profile、
+既定入出力directoryだけを保持し、選択した入力fileや文字起こし履歴は保存しません。
+
 ## 開発と品質保証
 
 ```console
-uv sync --extra dev
+uv sync --extra dev --extra gui
 uv run ruff check src tests tools
 uv run ruff format --check src tests tools
 uv run mypy
@@ -235,6 +260,7 @@ CIはpatternを必要としない汎用のemail形式、user絶対path、media�
 - [Phase 3d統合受入結果](docs/受入試験統合結果_Phase3d.md)
 - [Phase 4a公開履歴監査](docs/公開履歴監査_Phase4a.md)
 - [Phase 4a照合走査](docs/照合走査_Phase4a.md)
+- [Phase 5a GUI手動確認](docs/Phase5a_GUI_手動確認手順書.md)
 - [変更履歴](変更履歴.md)
 
 ## ライセンスとモデル利用条件

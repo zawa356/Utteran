@@ -1,5 +1,55 @@
 # AI 作業状態
 
+## Phase 5a Windows GUI基盤（2026-08-09、実装・実機確認完了）
+
+- `docs/utteran_Phase5a_指示書.md`に従い、推論coreをimportしない独立package
+  `src/utteran_gui`を追加した。AST回帰試験でも`utteran` importがないことを検査する。
+- `setup.ps1 -Profile gui`は`.venvs/win-gui`へFastAPI、Uvicorn、pywebviewだけを導入し、
+  PyTorch／faster-whisperが存在しないことをprobeする。`gui.ps1`はこの環境の`utteran-gui`を起動する。
+  GUIはprofileごとの`utteran.exe`をshellなしの引数配列で子process起動する。
+- local APIはOS割当の`127.0.0.1:0`へ事前bindし、起動ごとのsession keyで全`/api/*`を認証する。
+  初期launchはHttpOnly／SameSite=Strict cookieを設定し、CORSは有効化しない。CSP等のsecurity
+  headerも付与した。key不一致を記録する際もkey値はlogへ出さない。
+- GUIは`profiles list --json`、`devices --json`、`models list --json`、`native status --json`から
+  導入済みmodelと利用可能device／native構成だけを動的生成し、開始時にも再検証する。
+  同時jobは1件、進捗はSSE、固定timeoutなし、30秒無eventは停止でなく応答待ち表示、cancelは
+  Windows `taskkill /T /F`またはPOSIX process group停止とした。
+- `transcribe --progress-json`を追加し、schema version 1のUTF-8 JSONLをstderrへ逐次flushする。
+  job/file/stage/progress/output/warning/error/doneを公開契約とし、全stringを秘密maskする。
+  segment、word、文字起こし本文、tokenはeventへ含めない。非JSON／不完全行はGUIがraw logとして
+  mask後に保持する。
+- GUIはdark既定／light、日本語既定／English、profile／backend／model／device、話者分離、
+  話者数、形式、resume mode、file／folder／glob、drag and drop、stage／経過／ETA／応答待ち、
+  詳細log、中断、生成file／folder表示を実装した。theme、language、既定profile、既定directoryだけを
+  user configのJSONへ原子的保存し、入力file履歴は残さない。HF tokenはOS keyringへ保存し、APIは
+  設定済み状態だけを返す。
+- 依存は`faster-whisper`をbaseから`cpu`／`cuda`／`xpu`へ移し、`gui` extraを軽量化した。
+  `dev`はcore testのためfaster-whisperとGUI API試験用httpxを含む。XPUのtorch／torchaudio／
+  pyannote／faster-whisperはWindows条件付きとし、非Windows XPUは引き続き未検証。
+- Windows PowerShell 5.1で`setup.ps1 -Profile gui -Yes`成功。47 package、約47 MBで、
+  `torch`／`faster_whisper`不在、GUI import、random loopback bindを確認した。
+  `setup.ps1 -Profile cuda -Yes`も再実行成功し、CTranslate2 4.8.1の`cuda:0` int8、
+  PyTorch 2.11.0+cu126 CUDA、pyannote CUDAの実probeに合格した。WSLから最初に呼んだ際は継承された
+  `PATHEXT=.CPL`のためPython／uv探索に失敗し、Windows標準PATHEXTへ戻して再実行した。
+  製品setupの不具合ではなくWSL interop環境固有の前提である。
+- GUI `JobManager`から既存30秒受入素材を実行し、話者分離OFFはCUDA ASRでexit 0、27 events、
+  JSON／SRT生成を確認した。話者分離ONはCUDA ASR＋CPU pyannoteでaudio／asr／diarization／merge／
+  exportの全stageを通り、exit 0、40 events、JSON／SRT生成、stallなしを確認した。pyannoteもCUDAを
+  明示した場合、GTX 1070 Ti 8 GiBでは既存memory guardが必要7.31 GiB／予算6.32 GiBとして
+  推論前に安全停止した。このeventをGUIが`memory`案内へ分類し、話者分離deviceのCPU切替を示す。
+- 実機検査の生成物はGit対象外の`output/gui-e2e-*`だけに置き、認識本文は画面・作業記録へ
+  出していない。既存`.venv`／`.venv-windows`は変更・削除していない。
+- 10分派生素材をGUI `JobManager`で開始し、ASR stage開始後に実cancelした。Windowsのprocess treeが
+  終了してstatus `cancelled`／exit 130／resume案内となり、出力なし、stallなしを確認した。
+  さらに`.venvs/win-gui`の`utteran-gui.exe`からnative pywebviewを起動し、WebViewを含む13 processの
+  tree内でOS割当portの`127.0.0.1` listenerを確認した。検査後は対象treeだけを終了しGUI host残存0件。
+- `docs/Phase5a_GUI_手動確認手順書.md`へnative window、動的選択、theme／言語、keyring、
+  drag and drop、実行／resume、Explorer、中断、error案内の目視手順を記録した。
+- 最終品質確認はモデル不要`247 passed / 3 skipped`（既知のStarlette TestClient移行warning 1件）、
+  ruff check合格、ruff format 92 files合格、mypy 51 source files合格、`uv lock --check`合格。
+  Windows PowerShell 5.1の全root `.ps1` parser検査と新旧scriptのUTF-8 BOMも合格した。
+  受入ハーネスG11はREADME CLI例／公開文書契約の2/2合格（265.3秒、失敗・skipなし）。
+
 ## Phase 4b メモリ管理（2026-08-05、進行中）
 
 - 指定4文書を確認し、`feature/phase4b-memory-management`を作成した。`.env`は読んでいない。

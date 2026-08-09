@@ -21,6 +21,9 @@ gated条件をdownload前に確認してください。利用条件への同意�
 | python-dotenv | BSD-3-Clause | `.env`のlocal読取りに利用します。 |
 | Rich | MIT | console表示に利用します。 |
 | Typer | MIT | CLIに利用します。 |
+| FastAPI | MIT | GUIのloopback APIに利用します。 |
+| Uvicorn | BSD-3-Clause | GUIのloopback ASGI serverに利用します。 |
+| pywebview | BSD-3-Clause | Windows desktop WebView windowに利用します。platform固有runtimeの条件も確認してください。 |
 | OpenVINO / OpenVINO GenAI | Apache-2.0 | デバイス検出と将来 backend の準備に利用します。 |
 | OpenAI Whisper Python package | MIT | OpenVINO encoder IR生成時に利用します。 |
 | ONNX Script | Apache-2.0 | OpenVINO encoder export時に利用します。 |
