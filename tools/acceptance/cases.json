@@ -1469,6 +1469,23 @@
     "estimated_seconds": 1
   },
   {
+    "id": "G4-17",
+    "group": "G4",
+    "description": "Verify --asr-model changes invalidate ASR while qualified aliases share a cache key",
+    "command": [
+      "{python}",
+      "{project}/tools/acceptance/scenarios.py",
+      "asr-model-hashes"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 60,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1
+  },
+  {
     "id": "G5-01",
     "group": "G5",
     "description": "Process a folder in name order and continue after broken media",

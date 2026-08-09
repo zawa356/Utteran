@@ -155,6 +155,22 @@ class ASRConfig(BaseModel):
     word_timestamps: Literal["auto", "always", "never"] = "auto"
     whisper_cpp: WhisperCppConfig = Field(default_factory=WhisperCppConfig)
 
+    @model_validator(mode="after")
+    def canonicalize_catalog_model_id(self) -> ASRConfig:
+        """Store backend-qualified catalog aliases under one stable model ID."""
+        if self.backend == "auto":
+            return self
+        from utteran.models.catalog import get_model
+
+        try:
+            entry = get_model(self.model, backend=self.backend)
+        except ConfigurationError:
+            # Local paths and backend-specific custom identifiers are also supported.
+            return self
+        if entry.backend == self.backend:
+            self.model = entry.model_id
+        return self
+
 
 class DiarizationConfig(BaseModel):
     """Speaker diarization settings."""

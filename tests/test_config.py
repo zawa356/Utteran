@@ -11,6 +11,7 @@ from utteran.config import (
     initialize_config,
 )
 from utteran.errors import ConfigurationError
+from utteran.jobs import stage_config_hashes
 
 
 def test_whisper_cpp_defaults() -> None:
@@ -21,6 +22,24 @@ def test_whisper_cpp_defaults() -> None:
     assert config.asr.whisper_cpp.dtw == "auto"
     assert config.asr.whisper_cpp.no_context is True
     assert config.asr.whisper_cpp.repetition_limit == 10
+
+
+def test_qualified_asr_model_uses_same_canonical_id_and_hash() -> None:
+    unqualified = Config.model_validate({"asr": {"backend": "faster-whisper", "model": "large-v3"}})
+    qualified = Config.model_validate(
+        {
+            "asr": {
+                "backend": "faster-whisper",
+                "model": "faster-whisper:large-v3",
+            }
+        }
+    )
+
+    assert qualified.asr.model == "large-v3"
+    assert (
+        stage_config_hashes(qualified, "input-hash")["asr"]
+        == (stage_config_hashes(unqualified, "input-hash")["asr"])
+    )
 
 
 def test_config_priority_cli_env_dotenv_toml_defaults(

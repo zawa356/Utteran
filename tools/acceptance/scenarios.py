@@ -24,7 +24,7 @@ from typer.testing import CliRunner
 import utteran.cli as cli_module
 from utteran.align import align_transcription
 from utteran.config import Config
-from utteran.jobs import JobStore, fingerprint_input, job_id_from_input_hash
+from utteran.jobs import JobStore, fingerprint_input, job_id_from_input_hash, stage_config_hashes
 from utteran.logging import job_log, register_secret
 from utteran.types import (
     AlignmentOptions,
@@ -981,6 +981,36 @@ def validate_stages(
     print(json.dumps({"changed_stages": changed}, sort_keys=True))
 
 
+def validate_asr_model_hashes() -> None:
+    """Verify true model changes invalidate ASR while qualified aliases do not."""
+    turbo = Config.model_validate({"asr": {"backend": "faster-whisper", "model": "large-v3-turbo"}})
+    large = Config.model_validate({"asr": {"backend": "faster-whisper", "model": "large-v3"}})
+    qualified = Config.model_validate(
+        {
+            "asr": {
+                "backend": "faster-whisper",
+                "model": "faster-whisper:large-v3",
+            }
+        }
+    )
+    turbo_hashes = stage_config_hashes(turbo, "acceptance-input")
+    large_hashes = stage_config_hashes(large, "acceptance-input")
+    qualified_hashes = stage_config_hashes(qualified, "acceptance-input")
+    if turbo_hashes["asr"] == large_hashes["asr"]:
+        raise AssertionError("changing --asr-model did not change the ASR cache key")
+    if large_hashes["asr"] != qualified_hashes["asr"]:
+        raise AssertionError("qualified model alias changed the ASR cache key")
+    print(
+        json.dumps(
+            {
+                "model_change_invalidates_asr": True,
+                "qualified_alias_reuses_asr": True,
+            },
+            sort_keys=True,
+        )
+    )
+
+
 def _wait_for(
     condition: Any,
     *,
@@ -1393,6 +1423,8 @@ def main() -> int:
     stages.add_argument("--expected", default="")
     stages.add_argument("command", nargs=argparse.REMAINDER)
 
+    subparsers.add_parser("asr-model-hashes")
+
     interrupt = subparsers.add_parser("interrupt")
     interrupt.add_argument("--jobs", type=Path, required=True)
     interrupt.add_argument("--input", type=Path, required=True)
@@ -1538,6 +1570,8 @@ def main() -> int:
             tuple(filter(None, args.expected.split(","))),
             args.command,
         )
+    elif args.scenario == "asr-model-hashes":
+        validate_asr_model_hashes()
     elif args.scenario == "interrupt":
         interrupt_asr(args.jobs, args.input, args.delay, args.command)
     elif args.scenario == "concurrent-lock":
