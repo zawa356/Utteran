@@ -8,9 +8,9 @@ import logging
 import os
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Annotated, Never, TypeVar, cast
+from typing import Annotated, Any, Never, TypeVar, cast
 
 import typer
 from rich.console import Console
@@ -40,10 +40,18 @@ from utteran.diarization.registry import preflight_diarization_backend
 from utteran.errors import (
     CancelledError,
     ConfigurationError,
+    JobNotFoundError,
     ModelNotFoundError,
     UtteranError,
 )
-from utteran.jobs import JobStore
+from utteran.exporters import export_all
+from utteran.jobs import (
+    INTERMEDIATE_SCHEMA_VERSION,
+    Job,
+    JobStore,
+    JobSummary,
+    config_hash,
+)
 from utteran.logging import configure_logging, mask_secrets, register_secret
 from utteran.memory import (
     CALIBRATION_MIN_POINTS,
@@ -61,7 +69,7 @@ from utteran.profiles import (
     resolve_venv_root,
 )
 from utteran.progress import JsonProgressReporter, combine_progress
-from utteran.types import CancelToken, PipelineOutcome, ProgressEvent
+from utteran.types import CancelToken, ExportOptions, PipelineOutcome, PipelineResult, ProgressEvent
 
 T = TypeVar("T")
 
@@ -674,13 +682,28 @@ def models_remove_openvino(
 @jobs_app.command("list")
 def jobs_list(
     config_path: Annotated[Path | None, typer.Option("--config")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで表示")] = False,
 ) -> None:
     """List jobs with input name, status, update time, and disk size."""
     try:
-        store = _job_store(config_path)
+        config = Config.load(config_path=config_path)
+        store = JobStore(config.effective_job_dir)
         summaries = store.list_jobs()
     except UtteranError as exc:
         _exit_expected(exc)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "speaker_labels": config.output.speaker_labels,
+                    "jobs": [_job_summary_payload(item) for item in summaries],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
     table = Table("job_id", "入力", "状態", "更新日時", "サイズ")
     for item in summaries:
         table.add_row(
@@ -699,12 +722,21 @@ def jobs_list(
 def jobs_show(
     job_id: Annotated[str, typer.Argument(help="16文字のジョブ ID")],
     config_path: Annotated[Path | None, typer.Option("--config")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで表示")] = False,
 ) -> None:
     """Show one manifest and every stage config hash."""
     try:
         job = _job_store(config_path).get(job_id)
     except UtteranError as exc:
         _exit_expected(exc)
+    if json_output:
+        try:
+            config = Config.load(config_path=config_path)
+            payload = _job_detail_payload(job, config)
+        except UtteranError as exc:
+            _exit_expected(exc)
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
     console.print(f"入力: {job.manifest.input.path}")
     console.print(f"状態: {job.manifest.status}")
     console.print(f"作成: {job.manifest.created_at}")
@@ -725,39 +757,152 @@ def jobs_show(
 def jobs_clean(
     all_jobs: Annotated[bool, typer.Option("--all", help="すべて削除")] = False,
     failed: Annotated[bool, typer.Option("--failed", help="失敗ジョブだけ削除")] = False,
+    job_id: Annotated[
+        str | None, typer.Option("--job-id", help="指定した1件のジョブだけ削除")
+    ] = None,
     older_than: Annotated[
         int | None, typer.Option("--older-than", min=0, help="指定日数より古いジョブ")
     ] = None,
     yes: Annotated[bool, typer.Option("--yes", help="確認を省略")] = False,
     config_path: Annotated[Path | None, typer.Option("--config")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで結果を表示")] = False,
 ) -> None:
     """Display and then remove jobs matching exactly one filter."""
     try:
-        if sum((all_jobs, failed, older_than is not None)) != 1:
+        if sum((all_jobs, failed, older_than is not None, job_id is not None)) != 1:
             raise ConfigurationError(
-                "--all / --failed / --older-than のいずれか1つを指定してください。"
+                "--all / --failed / --older-than / --job-id のいずれか1つを指定してください。"
             )
         store = _job_store(config_path)
-        candidates = store.clean_candidates(
-            all_jobs=all_jobs,
-            failed=failed,
-            older_than_days=older_than,
-        )
-        if not candidates:
-            console.print("削除対象のジョブはありません。")
-            return
-        for item in candidates:
-            console.print(
-                f"削除対象: {item.job_id}  {item.input_name}  {item.status}  "
-                f"{_format_size(item.size_bytes)}"
+        if job_id is None:
+            candidates = store.clean_candidates(
+                all_jobs=all_jobs,
+                failed=failed,
+                older_than_days=older_than,
             )
+        else:
+            candidates = [item for item in store.list_jobs() if item.job_id == job_id]
+            if not candidates:
+                raise JobNotFoundError(f"ジョブが見つかりません: {job_id}")
+        if not candidates:
+            if json_output:
+                typer.echo(
+                    json.dumps(
+                        {"schema_version": 1, "deleted": [], "freed_bytes": 0},
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            else:
+                console.print("削除対象のジョブはありません。")
+            return
+        freed_bytes = sum(item.size_bytes for item in candidates)
+        if not json_output:
+            for item in candidates:
+                console.print(
+                    f"削除対象: {item.job_id}  {item.input_name}  {item.status}  "
+                    f"{_format_size(item.size_bytes)}"
+                )
         if not yes and not typer.confirm(f"{len(candidates)}件を削除しますか?"):
             console.print("キャンセルしました。")
             return
         store.remove([item.job_id for item in candidates])
-        console.print(f"{len(candidates)}件のジョブを削除しました。")
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "deleted": [item.job_id for item in candidates],
+                        "freed_bytes": freed_bytes,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            console.print(f"{len(candidates)}件のジョブを削除しました。")
     except UtteranError as exc:
         _exit_expected(exc)
+
+
+@jobs_app.command("export")
+def jobs_export(
+    job_id: Annotated[str, typer.Argument(help="16文字のジョブ ID")],
+    format_names: Annotated[
+        str | None, typer.Option("--format", help="出力形式 (srt,vtt,json,txt,md)")
+    ] = None,
+    output_dir: Annotated[Path | None, typer.Option("--output-dir", help="出力先")] = None,
+    speaker_labels: Annotated[
+        list[str] | None,
+        typer.Option("--speaker-label", help="内部ラベル=表示名 (複数指定可)"),
+    ] = None,
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで結果を表示")] = False,
+) -> None:
+    """Regenerate presentation files from merged.json without running inference."""
+    try:
+        config = Config.load(config_path=config_path)
+        job = JobStore(config.effective_job_dir).get(job_id)
+        with job.lock():
+            result = PipelineResult.from_dict(job.read_merged_payload())
+            presentation = job.read_presentation()
+            stored_formats = presentation.get("formats") if presentation is not None else None
+            formats = _parse_export_formats(
+                format_names,
+                stored_formats if isinstance(stored_formats, list) else config.output.formats,
+            )
+            stored_labels = presentation.get("speaker_labels") if presentation is not None else None
+            base_labels = (
+                {str(key): str(value) for key, value in stored_labels.items()}
+                if isinstance(stored_labels, dict)
+                else dict(config.output.speaker_labels)
+            )
+            speakers = tuple(
+                dict.fromkeys(segment.speaker for segment in result.segments if segment.speaker)
+            )
+            labels = _parse_speaker_labels(speaker_labels, speakers, base_labels)
+            selected_output = _resolve_export_output_dir(output_dir, presentation, job, config)
+            options = ExportOptions(
+                speaker_labels=labels,
+                show_speaker=config.output.show_speaker,
+                srt_bom=config.output.srt_bom,
+                newline=config.output.newline,
+            )
+            paths = export_all(result, selected_output, formats, options)
+            export_material = config.output.model_dump(mode="json")
+            export_material["formats"] = formats
+            export_material["speaker_labels"] = labels
+            export_hash = config_hash(
+                {
+                    "merge_config_hash": job.manifest.stages["merge"].config_hash,
+                    "output": export_material,
+                    "output_dir": str(selected_output.absolute()),
+                }
+            )
+            job.complete_stage("export", export_hash, paths)
+            job.write_presentation(
+                output_dir=selected_output,
+                formats=formats,
+                speaker_labels=labels,
+                outputs=paths,
+            )
+    except (UtteranError, KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, UtteranError):
+            _exit_expected(exc)
+        _exit_expected(ConfigurationError("文字起こし結果の形式が不正です。"))
+    payload = {
+        "schema_version": 1,
+        "job_id": job_id,
+        "executed_stages": ["export"],
+        "outputs": [str(path) for path in paths],
+        "output_dir": str(selected_output),
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    console.print("export ステージだけを実行しました。")
+    for path in paths:
+        console.print(f"出力: {path}")
 
 
 @config_app.command("init")
@@ -1362,6 +1507,212 @@ def _model_manager() -> ModelManager:
 def _job_store(config_path: Path | None) -> JobStore:
     """Create a job store from effective configuration."""
     return JobStore(Config.load(config_path=config_path).effective_job_dir)
+
+
+def _job_summary_payload(item: JobSummary) -> dict[str, object]:
+    """Return the stable machine-readable history summary contract."""
+    return {
+        "job_id": item.job_id,
+        "input_name": item.input_name,
+        "status": item.status,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at,
+        "size_bytes": item.size_bytes,
+        "duration_seconds": item.duration_seconds,
+        "speaker_count": item.speaker_count,
+        "result_available": item.result_available,
+        "result_schema_version": item.result_schema_version,
+        "result_error": item.result_error,
+        "processing": {
+            "asr": (
+                None
+                if item.asr_backend is None
+                else {
+                    "backend": item.asr_backend,
+                    "model": item.asr_model,
+                    "device": item.asr_device,
+                }
+            ),
+            "diarization": (
+                None
+                if item.diarization_backend is None
+                else {
+                    "backend": item.diarization_backend,
+                    "model": item.diarization_model,
+                    "device": item.diarization_device,
+                }
+            ),
+        },
+        "output_paths": list(item.output_paths),
+        "result_path": item.result_path,
+        "presentation_path": item.presentation_path,
+    }
+
+
+def _job_detail_payload(job: Job, config: Config) -> dict[str, object]:
+    """Build a viewer contract from the authoritative merged intermediate."""
+    presentation = job.read_presentation()
+    stored_labels = presentation.get("speaker_labels") if presentation is not None else None
+    labels = (
+        {str(key): str(value) for key, value in stored_labels.items()}
+        if isinstance(stored_labels, Mapping)
+        else dict(config.output.speaker_labels)
+    )
+    output_paths = list(job.manifest.stages["export"].artifacts)
+    stored_format_items = presentation.get("formats") if presentation is not None else None
+    formats = (
+        [str(item) for item in stored_format_items]
+        if isinstance(stored_format_items, list)
+        else [Path(path).suffix.lstrip(".") for path in output_paths]
+    )
+    output_dir = (
+        str(presentation.get("output_dir", ""))
+        if presentation is not None
+        else (str(Path(output_paths[0]).parent) if output_paths else str(config.general.output_dir))
+    )
+    detail: dict[str, object] = {
+        "schema_version": 1,
+        "expected_result_schema_version": INTERMEDIATE_SCHEMA_VERSION,
+        "job": {
+            "job_id": job.manifest.job_id,
+            "input_name": Path(job.manifest.input.path).name,
+            "input_path": job.manifest.input.path,
+            "status": job.manifest.status,
+            "created_at": job.manifest.created_at,
+            "updated_at": job.manifest.updated_at,
+            "output_paths": output_paths,
+            "output_dir": output_dir,
+            "formats": list(dict.fromkeys(formats)),
+        },
+        "manifest": job.manifest.to_dict(),
+        "result": None,
+        "result_error": None,
+    }
+    try:
+        result = PipelineResult.from_dict(cast(dict[str, Any], job.read_merged_payload()))
+    except UtteranError as exc:
+        detail["result_error"] = str(exc)
+        cast(dict[str, object], detail["job"])["status"] = "corrupt"
+        return detail
+    except (KeyError, TypeError, ValueError):
+        detail["result_error"] = "文字起こし結果の内容が不正です。merged.json を確認してください。"
+        cast(dict[str, object], detail["job"])["status"] = "corrupt"
+        return detail
+    speaker_ids = list(
+        dict.fromkeys(segment.speaker for segment in result.segments if segment.speaker is not None)
+    )
+    detail["result"] = {
+        "schema_version": 1,
+        "input": {
+            "path": str(result.input_path),
+            "duration": result.transcription.duration,
+        },
+        "processing": {
+            "asr": {
+                "backend": result.transcription.backend,
+                "model": result.transcription.model_id,
+                "device": result.transcription.device,
+            },
+            "diarization": (
+                None
+                if result.diarization is None
+                else {
+                    "backend": result.diarization.backend,
+                    "model": result.diarization.model_id,
+                    "device": result.diarization.device,
+                }
+            ),
+            "created_at": result.created_at,
+        },
+        "speakers": [
+            {"id": speaker, "name": labels.get(speaker, speaker)} for speaker in speaker_ids
+        ],
+        "segments": [
+            {
+                "start": segment.start,
+                "end": segment.end,
+                "speaker": segment.speaker,
+                "speaker_display": (
+                    None
+                    if segment.speaker is None
+                    else labels.get(segment.speaker, segment.speaker)
+                ),
+                "text": segment.text,
+                "words": [
+                    {
+                        "start": word.start,
+                        "end": word.end,
+                        "text": word.text,
+                        "probability": word.probability,
+                    }
+                    for word in segment.words
+                ],
+            }
+            for segment in result.segments
+        ],
+    }
+    return detail
+
+
+def _parse_export_formats(raw: str | None, defaults: object) -> list[str]:
+    """Validate formats for export-only regeneration."""
+    formats = (
+        [item.strip().lower() for item in raw.split(",") if item.strip()]
+        if raw is not None
+        else [str(item).lower() for item in cast(list[object], defaults)]
+    )
+    formats = list(dict.fromkeys(formats))
+    supported = {"srt", "vtt", "json", "txt", "md"}
+    if not formats:
+        raise ConfigurationError("--format には1つ以上の出力形式を指定してください。")
+    unknown = [item for item in formats if item not in supported]
+    if unknown:
+        raise ConfigurationError(f"未対応の出力形式です: {', '.join(unknown)}")
+    return formats
+
+
+def _parse_speaker_labels(
+    raw_labels: list[str] | None,
+    speakers: tuple[str, ...],
+    defaults: Mapping[str, str],
+) -> dict[str, str]:
+    """Apply explicit label replacements while allowing a saved label to be cleared."""
+    labels = {str(key): str(value) for key, value in defaults.items() if str(value)}
+    if raw_labels is None:
+        return labels
+    known = set(speakers)
+    for raw in raw_labels:
+        if "=" not in raw:
+            raise ConfigurationError("--speaker-label は 内部ラベル=表示名 で指定してください。")
+        speaker, display_name = (item.strip() for item in raw.split("=", 1))
+        if speaker not in known:
+            raise ConfigurationError(f"結果に存在しない話者ラベルです: {speaker}")
+        if len(display_name) > 100:
+            raise ConfigurationError("話者の表示名は100文字以内で指定してください。")
+        if display_name:
+            labels[speaker] = display_name
+        else:
+            labels.pop(speaker, None)
+    return labels
+
+
+def _resolve_export_output_dir(
+    explicit: Path | None,
+    presentation: dict[str, object] | None,
+    job: Job,
+    config: Config,
+) -> Path:
+    """Choose an explicit, per-job, previous-artifact, or configured destination."""
+    if explicit is not None:
+        return explicit
+    if presentation is not None:
+        stored = str(presentation.get("output_dir", "")).strip()
+        if stored:
+            return Path(stored)
+    artifacts = job.manifest.stages["export"].artifacts
+    if artifacts:
+        return Path(artifacts[0]).parent
+    return config.general.output_dir
 
 
 def _validate_transcribe_path(path: Path) -> None:

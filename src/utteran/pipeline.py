@@ -354,16 +354,25 @@ def _run_stages(
         )
 
     if not job.is_done("export", hashes["export"]):
-        _execute_stage(
-            job,
-            "export",
-            hashes["export"],
-            executed_stages,
-            stage_durations,
-            cancel,
-            progress,
-            lambda: _export_result(result, config, progress),
-            lambda value: cast(list[Path], value),
+        exported = cast(
+            list[Path],
+            _execute_stage(
+                job,
+                "export",
+                hashes["export"],
+                executed_stages,
+                stage_durations,
+                cancel,
+                progress,
+                lambda: _export_result(result, config, progress),
+                lambda value: cast(list[Path], value),
+            ),
+        )
+        job.write_presentation(
+            output_dir=config.general.output_dir,
+            formats=config.output.formats,
+            speaker_labels=config.output.speaker_labels,
+            outputs=exported,
         )
     else:
         _report_skip(progress, "export")

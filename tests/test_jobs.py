@@ -157,6 +157,18 @@ def test_lock_rejects_live_owner_and_recovers_stale_owner(
     assert not lock_path.exists()
 
 
+def test_remove_rejects_a_job_with_a_live_lock(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs")
+    job = store.open(_input(tmp_path))
+
+    with job.lock(), pytest.raises(JobLockedError, match=str(os.getpid())):
+        store.remove([job.manifest.job_id])
+
+    assert job.root.is_dir()
+    store.remove([job.manifest.job_id])
+    assert not job.root.exists()
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows PID liveness regression")
 def test_windows_process_probe_detects_live_and_finished_child() -> None:
     process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])

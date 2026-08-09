@@ -34,11 +34,19 @@ from utteran.devices import (
     VulkanReport,
 )
 from utteran.errors import CancelledError, ConfigurationError
-from utteran.jobs import JobStore
+from utteran.jobs import Job, JobStore
 from utteran.models.catalog import ModelEntry, get_model, list_models
 from utteran.models.manager import ModelManager, ModelStatus
 from utteran.profiles import venv_dir_name
-from utteran.types import CancelToken
+from utteran.types import (
+    CancelToken,
+    DiarizationResult,
+    PipelineResult,
+    Segment,
+    SpeakerTurn,
+    TranscriptionResult,
+    Word,
+)
 
 runner = CliRunner()
 
@@ -270,6 +278,173 @@ def test_jobs_commands_list_show_and_clean_failed(tmp_path: Path) -> None:
     assert shown.exit_code == 0 and "decode failed" in shown.output
     assert cleaned.exit_code == 0 and "1件" in cleaned.output
     assert not job.root.exists()
+
+
+def _completed_synthetic_job(tmp_path: Path, job_dir: Path) -> tuple[Job, PipelineResult]:
+    """Create a hand-written transcript job without using real recording content."""
+    input_path = tmp_path / "synthetic-meeting.wav"
+    input_path.write_bytes(b"synthetic-audio")
+    segment = Segment(
+        1.0,
+        3.5,
+        " 合成テストの発言です",
+        [Word(1.0, 1.5, " 合成", 0.95)],
+        "SPEAKER_00",
+    )
+    transcription = TranscriptionResult(
+        [segment], "ja", 10.0, "faster-whisper", "synthetic-model", "cpu"
+    )
+    diarization = DiarizationResult(
+        [SpeakerTurn(1.0, 3.5, "SPEAKER_00")],
+        None,
+        1,
+        "pyannote",
+        "synthetic-diarization",
+        "cpu",
+    )
+    result = PipelineResult(
+        input_path,
+        transcription,
+        diarization,
+        [segment],
+        "2026-08-09T00:00:00+09:00",
+    )
+    job = JobStore(job_dir).open(input_path)
+    job.audio_path.write_bytes(b"wav")
+    job.complete_stage("audio", "audio", [job.audio_path])
+    asr_path = job.write_intermediate("asr", transcription.to_dict())
+    job.complete_stage("asr", "asr", [asr_path])
+    diarization_path = job.write_intermediate("diarization", diarization.to_dict())
+    job.complete_stage("diarization", "diarization", [diarization_path])
+    merged_path = job.write_intermediate("merge", result.to_dict())
+    job.complete_stage("merge", "merge", [merged_path])
+    existing = tmp_path / "existing.txt"
+    existing.write_text("synthetic", encoding="utf-8")
+    job.complete_stage("export", "old-export", [existing])
+    return job, result
+
+
+def test_jobs_json_contracts_include_viewer_metadata_and_schema_error(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    job_dir = tmp_path / "jobs"
+    config_path.write_text(
+        f"[general]\njob_dir = '{job_dir.as_posix()}'\n",
+        encoding="utf-8",
+    )
+    job, _result = _completed_synthetic_job(tmp_path, job_dir)
+
+    listed = runner.invoke(app, ["jobs", "list", "--json", "--config", str(config_path)])
+    shown = runner.invoke(
+        app,
+        ["jobs", "show", job.manifest.job_id, "--json", "--config", str(config_path)],
+    )
+
+    assert listed.exit_code == 0
+    list_payload = json.loads(listed.stdout)
+    assert list_payload["schema_version"] == 1
+    assert list_payload["jobs"][0]["processing"]["asr"]["model"] == "synthetic-model"
+    assert list_payload["jobs"][0]["speaker_count"] == 1
+    assert Path(list_payload["jobs"][0]["result_path"]).is_absolute()
+    assert Path(list_payload["jobs"][0]["presentation_path"]).is_absolute()
+    detail = json.loads(shown.stdout)
+    assert detail["result"]["segments"][0]["speaker"] == "SPEAKER_00"
+    assert detail["result"]["segments"][0]["text"] == " 合成テストの発言です"
+
+    merged = json.loads(job.intermediate_path("merge").read_text(encoding="utf-8"))
+    merged["schema_version"] = 999
+    job.intermediate_path("merge").write_text(
+        json.dumps(merged, ensure_ascii=False), encoding="utf-8"
+    )
+    incompatible = runner.invoke(
+        app,
+        ["jobs", "show", job.manifest.job_id, "--json", "--config", str(config_path)],
+    )
+    incompatible_payload = json.loads(incompatible.stdout)
+    assert incompatible_payload["result"] is None
+    assert "対応=1、検出=999" in incompatible_payload["result_error"]
+    assert incompatible_payload["job"]["status"] == "corrupt"
+
+
+def test_jobs_export_regenerates_only_export_with_per_job_labels(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    job_dir = tmp_path / "jobs"
+    output_dir = tmp_path / "regenerated"
+    config_path.write_text(
+        f"[general]\njob_dir = '{job_dir.as_posix()}'\n",
+        encoding="utf-8",
+    )
+    job, _result = _completed_synthetic_job(tmp_path, job_dir)
+    upstream = {
+        name: job.manifest.stages[name].config_hash
+        for name in ("audio", "asr", "diarization", "merge")
+    }
+
+    exported = runner.invoke(
+        app,
+        [
+            "jobs",
+            "export",
+            job.manifest.job_id,
+            "--format",
+            "txt,json",
+            "--output-dir",
+            str(output_dir),
+            "--speaker-label",
+            "SPEAKER_00=テスト話者",
+            "--json",
+            "--config",
+            str(config_path),
+        ],
+    )
+
+    assert exported.exit_code == 0, exported.output
+    payload = json.loads(exported.stdout)
+    assert payload["executed_stages"] == ["export"]
+    assert len(payload["outputs"]) == 2
+    reopened = JobStore(job_dir).get(job.manifest.job_id)
+    assert {
+        name: reopened.manifest.stages[name].config_hash
+        for name in ("audio", "asr", "diarization", "merge")
+    } == upstream
+    assert reopened.manifest.stages["export"].config_hash != "old-export"
+    assert "テスト話者" in next(output_dir.glob("*.txt")).read_text(encoding="utf-8")
+    presentation = reopened.read_presentation()
+    assert presentation is not None
+    assert presentation["speaker_labels"] == {"SPEAKER_00": "テスト話者"}
+
+
+def test_jobs_clean_can_delete_exactly_one_job(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    job_dir = tmp_path / "jobs"
+    config_path.write_text(
+        f"[general]\njob_dir = '{job_dir.as_posix()}'\n",
+        encoding="utf-8",
+    )
+    first_input = tmp_path / "first.wav"
+    second_input = tmp_path / "second.wav"
+    first_input.write_bytes(b"first")
+    second_input.write_bytes(b"second")
+    first_job = JobStore(job_dir).open(first_input)
+    second_job = JobStore(job_dir).open(second_input)
+
+    cleaned = runner.invoke(
+        app,
+        [
+            "jobs",
+            "clean",
+            "--job-id",
+            first_job.manifest.job_id,
+            "--yes",
+            "--json",
+            "--config",
+            str(config_path),
+        ],
+    )
+
+    assert cleaned.exit_code == 0
+    assert json.loads(cleaned.stdout)["deleted"] == [first_job.manifest.job_id]
+    assert not first_job.root.exists()
+    assert second_job.root.exists()
 
 
 def test_config_commands_create_and_show_effective_settings(tmp_path: Path) -> None:

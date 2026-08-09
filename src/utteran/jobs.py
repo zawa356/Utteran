@@ -21,6 +21,7 @@ from utteran.errors import JobLockedError, JobManifestError, JobNotFoundError
 
 MANIFEST_VERSION = 1
 INTERMEDIATE_SCHEMA_VERSION = 1
+PRESENTATION_SCHEMA_VERSION = 1
 FINGERPRINT_CHUNK_SIZE = 1024 * 1024
 FLOAT_PRECISION = 12
 
@@ -200,6 +201,21 @@ class JobSummary:
     status: str
     updated_at: str
     size_bytes: int
+    created_at: str | None = None
+    asr_backend: str | None = None
+    asr_model: str | None = None
+    asr_device: str | None = None
+    diarization_backend: str | None = None
+    diarization_model: str | None = None
+    diarization_device: str | None = None
+    speaker_count: int | None = None
+    duration_seconds: float | None = None
+    result_available: bool = False
+    result_schema_version: int | None = None
+    result_error: str | None = None
+    output_paths: tuple[str, ...] = ()
+    result_path: str | None = None
+    presentation_path: str | None = None
 
 
 class Job:
@@ -223,6 +239,11 @@ class Job:
     def audio_path(self) -> Path:
         """Return the persistent normalized WAV path."""
         return self.root / "audio.wav"
+
+    @property
+    def presentation_path(self) -> Path:
+        """Return per-job export presentation metadata kept beside the transcript."""
+        return self.root / "presentation.json"
 
     def intermediate_path(self, stage: StageName) -> Path:
         """Return a stage JSON path."""
@@ -337,6 +358,83 @@ class Job:
                 stacklevel=2,
             )
             return None
+
+    def read_merged_payload(self) -> dict[str, object]:
+        """Read the authoritative viewer/export payload with strict schema validation."""
+        path = self.intermediate_path("merge")
+        try:
+            with path.open(encoding="utf-8") as file:
+                data = json.load(file)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise JobManifestError(
+                "文字起こし結果を読み込めません。merged.json が存在し、正常か確認してください。"
+            ) from exc
+        if not isinstance(data, Mapping):
+            raise JobManifestError("文字起こし結果のルート形式が不正です。")
+        raw_version = data.get("schema_version")
+        try:
+            version = int(cast(int | str, raw_version))
+        except (TypeError, ValueError):
+            raise JobManifestError("文字起こし結果に schema_version がありません。") from None
+        if version != INTERMEDIATE_SCHEMA_VERSION:
+            raise JobManifestError(
+                "文字起こし結果のスキーマに対応していません。"
+                f"対応={INTERMEDIATE_SCHEMA_VERSION}、検出={version}。"
+            )
+        result = data.get("result")
+        if not isinstance(result, Mapping):
+            raise JobManifestError("文字起こし結果に result オブジェクトがありません。")
+        return {str(key): cast(object, value) for key, value in result.items()}
+
+    def read_presentation(self) -> dict[str, object] | None:
+        """Read optional per-job labels/output choices without using GUI settings."""
+        try:
+            with self.presentation_path.open(encoding="utf-8") as file:
+                data = json.load(file)
+            if not isinstance(data, Mapping):
+                return None
+            if data.get("schema_version") != PRESENTATION_SCHEMA_VERSION:
+                return None
+            labels = data.get("speaker_labels", {})
+            formats = data.get("formats", [])
+            outputs = data.get("outputs", [])
+            if not isinstance(labels, Mapping) or not isinstance(formats, list):
+                return None
+            if not isinstance(outputs, list):
+                return None
+            return {
+                "schema_version": PRESENTATION_SCHEMA_VERSION,
+                "output_dir": str(data.get("output_dir", "")),
+                "formats": [str(item) for item in formats],
+                "speaker_labels": {str(key): str(value) for key, value in labels.items()},
+                "outputs": [str(item) for item in outputs],
+                "updated_at": str(data.get("updated_at", "")),
+            }
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return None
+
+    def write_presentation(
+        self,
+        *,
+        output_dir: Path,
+        formats: Sequence[str],
+        speaker_labels: Mapping[str, str],
+        outputs: Sequence[Path],
+    ) -> None:
+        """Persist participant display names only inside their associated job."""
+        _atomic_write_json(
+            self.presentation_path,
+            {
+                "schema_version": PRESENTATION_SCHEMA_VERSION,
+                "output_dir": str(output_dir.resolve()),
+                "formats": list(dict.fromkeys(str(item) for item in formats)),
+                "speaker_labels": {
+                    str(key): str(value) for key, value in speaker_labels.items() if str(value)
+                },
+                "outputs": [str(path.resolve()) for path in outputs],
+                "updated_at": _now(),
+            },
+        )
 
     def _artifacts_valid(self, stage: StageName, artifacts: Sequence[str]) -> bool:
         """Validate recorded outputs and intermediate schema versions."""
@@ -480,13 +578,41 @@ class JobStore:
                     )
                 )
                 continue
+            result_metadata = _result_metadata(directory / _INTERMEDIATE_FILES["merge"])
+            status = manifest.status
+            if (
+                manifest.stages["merge"].status == "done"
+                and not result_metadata["result_available"]
+            ):
+                status = "corrupt"
+                if result_metadata["result_error"] is None:
+                    result_metadata["result_error"] = (
+                        "文字起こし結果を読み込めません。merged.json がありません。"
+                    )
             summaries.append(
                 JobSummary(
                     job_id=manifest.job_id,
                     input_name=Path(manifest.input.path).name,
-                    status=manifest.status,
+                    status=status,
                     updated_at=manifest.updated_at,
                     size_bytes=_directory_size(directory),
+                    created_at=manifest.created_at,
+                    asr_backend=cast(str | None, result_metadata["asr_backend"]),
+                    asr_model=cast(str | None, result_metadata["asr_model"]),
+                    asr_device=cast(str | None, result_metadata["asr_device"]),
+                    diarization_backend=cast(str | None, result_metadata["diarization_backend"]),
+                    diarization_model=cast(str | None, result_metadata["diarization_model"]),
+                    diarization_device=cast(str | None, result_metadata["diarization_device"]),
+                    speaker_count=cast(int | None, result_metadata["speaker_count"]),
+                    duration_seconds=cast(float | None, result_metadata["duration_seconds"]),
+                    result_available=bool(result_metadata["result_available"]),
+                    result_schema_version=cast(
+                        int | None, result_metadata["result_schema_version"]
+                    ),
+                    result_error=cast(str | None, result_metadata["result_error"]),
+                    output_paths=tuple(manifest.stages["export"].artifacts),
+                    result_path=str((directory / _INTERMEDIATE_FILES["merge"]).resolve()),
+                    presentation_path=str((directory / "presentation.json").resolve()),
                 )
             )
         return sorted(summaries, key=lambda item: (item.updated_at, item.job_id), reverse=True)
@@ -520,7 +646,78 @@ class JobStore:
                 raise JobNotFoundError(f"不正なジョブ ID です: {job_id}")
             directory = self.root / job_id
             if directory.is_dir():
+                owner_pid = _read_lock_pid(directory / ".lock")
+                if owner_pid is not None and _process_exists(owner_pid):
+                    raise JobLockedError(f"ジョブは PID {owner_pid} で実行中のため削除できません。")
                 shutil.rmtree(directory)
+
+
+def _result_metadata(path: Path) -> dict[str, object]:
+    """Extract history fields from merged.json without exposing transcript text."""
+    metadata: dict[str, object] = {
+        "asr_backend": None,
+        "asr_model": None,
+        "asr_device": None,
+        "diarization_backend": None,
+        "diarization_model": None,
+        "diarization_device": None,
+        "speaker_count": None,
+        "duration_seconds": None,
+        "result_available": False,
+        "result_schema_version": None,
+        "result_error": None,
+    }
+    if not path.is_file():
+        return metadata
+    try:
+        with path.open(encoding="utf-8") as file:
+            data = json.load(file)
+        if not isinstance(data, Mapping):
+            raise ValueError("root")
+        raw_version = data.get("schema_version")
+        version = int(cast(int | str, raw_version))
+        metadata["result_schema_version"] = version
+        if version != INTERMEDIATE_SCHEMA_VERSION:
+            metadata["result_error"] = (
+                "文字起こし結果のスキーマに対応していません。"
+                f"対応={INTERMEDIATE_SCHEMA_VERSION}、検出={version}。"
+            )
+            return metadata
+        result = data.get("result")
+        if not isinstance(result, Mapping):
+            raise ValueError("result")
+        transcription = result.get("transcription")
+        if not isinstance(transcription, Mapping):
+            raise ValueError("transcription")
+        metadata.update(
+            {
+                "asr_backend": str(transcription.get("backend", "")) or None,
+                "asr_model": str(transcription.get("model_id", "")) or None,
+                "asr_device": str(transcription.get("device", "")) or None,
+                "duration_seconds": float(cast(float | int | str, transcription["duration"])),
+            }
+        )
+        diarization = result.get("diarization")
+        if isinstance(diarization, Mapping):
+            metadata.update(
+                {
+                    "diarization_backend": str(diarization.get("backend", "")) or None,
+                    "diarization_model": str(diarization.get("model_id", "")) or None,
+                    "diarization_device": str(diarization.get("device", "")) or None,
+                }
+            )
+        segments = result.get("segments")
+        if not isinstance(segments, list):
+            raise ValueError("segments")
+        speakers: set[str] = set()
+        for segment in segments:
+            if isinstance(segment, Mapping) and segment.get("speaker") is not None:
+                speakers.add(str(segment["speaker"]))
+        metadata["speaker_count"] = len(speakers)
+        metadata["result_available"] = True
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        metadata["result_error"] = "文字起こし結果を読み込めません。merged.json が破損しています。"
+    return metadata
 
 
 def fingerprint_input(path: Path) -> InputFingerprint:
