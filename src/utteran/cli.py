@@ -60,6 +60,7 @@ from utteran.profiles import (
     list_profile_statuses,
     resolve_venv_root,
 )
+from utteran.progress import JsonProgressReporter, combine_progress
 from utteran.types import CancelToken, PipelineOutcome, ProgressEvent
 
 T = TypeVar("T")
@@ -237,6 +238,8 @@ class RichProgressReporter:
 
     def __call__(self, event: ProgressEvent) -> None:
         """Create or update one task per pipeline stage."""
+        if event.event_type not in {"progress", "stage_start", "stage_done"}:
+            return
         task_id = self._tasks.get(event.stage)
         description = event.message or event.stage
         if task_id is None:
@@ -315,9 +318,17 @@ def transcribe(
     config_path: Annotated[Path | None, typer.Option("--config", help="config.toml のパス")] = None,
     verbose: Annotated[bool, typer.Option("--verbose", help="詳細ログを表示")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", help="進捗表示を抑制")] = False,
+    progress_json: Annotated[
+        bool,
+        typer.Option(
+            "--progress-json",
+            help="標準エラーへ機械可読な進捗をJSON Linesで出力",
+        ),
+    ] = False,
 ) -> None:
     """Transcribe one file or a stable sequential folder batch."""
     _restore_windows_ctrl_c()
+    json_progress = JsonProgressReporter() if progress_json else None
     try:
         if verbose and quiet:
             raise ConfigurationError("--verbose と --quiet は同時に指定できません。")
@@ -353,6 +364,8 @@ def transcribe(
             )
         if dry_run:
             _show_dry_run(input_path, config, recursive, includes, excludes)
+            if json_progress is not None:
+                json_progress.done(0)
             return
         if input_path.is_dir() and not discover_inputs(
             input_path,
@@ -361,6 +374,8 @@ def transcribe(
             exclude=excludes,
         ):
             console.print("処理対象ファイルはありません。")
+            if json_progress is not None:
+                json_progress.done(0)
             return
 
         if config.diarization.enabled:
@@ -378,6 +393,7 @@ def transcribe(
                 config,
                 token_provider,
                 quiet,
+                json_progress,
                 recursive=recursive,
                 include=includes,
                 exclude=excludes,
@@ -387,6 +403,8 @@ def transcribe(
             )
             _print_batch_summary(summary)
             _print_batch_stage_timings(summary)
+            if json_progress is not None:
+                json_progress.done(summary.exit_code)
             if summary.exit_code:
                 raise typer.Exit(code=summary.exit_code)
             return
@@ -396,20 +414,33 @@ def transcribe(
             config,
             token_provider,
             quiet,
+            json_progress,
             resume=resume,
             force=force,
             force_unlock=force_unlock,
         )
     except KeyboardInterrupt:
-        _exit_expected(CancelledError())
+        error = CancelledError()
+        if json_progress is not None:
+            json_progress.error(error, error.exit_code)
+            json_progress.done(error.exit_code)
+        _exit_expected(error)
     except UtteranError as exc:
+        if json_progress is not None:
+            json_progress.error(exc, exc.exit_code)
+            json_progress.done(exc.exit_code)
         _exit_expected(exc)
-    except typer.Exit:
+    except typer.Exit as exc:
+        if json_progress is not None:
+            json_progress.done(exc.exit_code)
         raise
     except Exception as exc:
         if verbose:
             logging.getLogger(__name__).exception("予期しないエラー")
         error_console.print(f"[red]予期しないエラー:[/red] {mask_secrets(str(exc))}")
+        if json_progress is not None:
+            json_progress.error(exc, 1)
+            json_progress.done(1)
         raise typer.Exit(code=1) from None
 
     if outcome.executed_stages:
@@ -419,6 +450,8 @@ def transcribe(
     for path in outcome.output_paths:
         console.print(f"出力: {path}")
     _print_stage_timings(outcome.stage_durations)
+    if json_progress is not None:
+        json_progress.done(0)
 
 
 @app.command("devices")
@@ -760,6 +793,7 @@ def config_path_command() -> None:
 @profiles_app.command("list")
 def profiles_list_command(
     config_path: Annotated[Path | None, typer.Option("--config")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで表示")] = False,
 ) -> None:
     """List every known profile's presence, disk usage, and last update."""
     try:
@@ -768,6 +802,29 @@ def profiles_list_command(
         statuses = list_profile_statuses(root)
     except UtteranError as exc:
         _exit_expected(exc)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "venv_root": str(root),
+                    "current": current_profile_name(),
+                    "profiles": [
+                        {
+                            "name": status.name,
+                            "extras": list(status.extras),
+                            "path": str(status.path),
+                            "exists": status.exists,
+                            "size_bytes": status.size_bytes,
+                            "updated_at": status.updated_at,
+                        }
+                        for status in statuses
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
     table = Table("プロファイル", "extras", "状態", "サイズ", "最終更新")
     for status in statuses:
         table.add_row(
@@ -838,6 +895,7 @@ def native_build_command(
 @native_app.command("status")
 def native_status_command(
     config_path: Annotated[Path | None, typer.Option("--config")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで表示")] = False,
 ) -> None:
     """Show the native build manifest and whether each variant is runnable now."""
     try:
@@ -846,6 +904,9 @@ def native_status_command(
         status = NativeBuilder(native_dir).status()
     except UtteranError as exc:
         _exit_expected(exc)
+    if json_output:
+        typer.echo(json.dumps(status, ensure_ascii=False, indent=2))
+        return
     manifest = cast(dict[str, object], status["manifest"])
     if not manifest:
         console.print("ネイティブビルドは未実行です。`utteran native build` を実行してください。")
@@ -903,6 +964,7 @@ def _run_with_progress(
     config: Config,
     token_provider: TokenProvider,
     quiet: bool,
+    json_progress: JsonProgressReporter | None,
     *,
     resume: bool,
     force: bool,
@@ -915,6 +977,7 @@ def _run_with_progress(
             return run_pipeline(
                 input_path,
                 config,
+                progress=json_progress,
                 cancel=cancel,
                 token_provider=token_provider,
                 resume=resume,
@@ -925,7 +988,7 @@ def _run_with_progress(
             return run_pipeline(
                 input_path,
                 config,
-                progress=RichProgressReporter(progress),
+                progress=combine_progress(RichProgressReporter(progress), json_progress),
                 cancel=cancel,
                 token_provider=token_provider,
                 resume=resume,
@@ -933,7 +996,11 @@ def _run_with_progress(
                 force_unlock=force_unlock,
             )
 
-    return _run_interruptibly(operation, hard_exit_on_interrupt=True)
+    return _run_interruptibly(
+        operation,
+        hard_exit_on_interrupt=True,
+        interrupt_reporter=json_progress,
+    )
 
 
 def _run_batch_with_progress(
@@ -941,6 +1008,7 @@ def _run_batch_with_progress(
     config: Config,
     token_provider: TokenProvider,
     quiet: bool,
+    json_progress: JsonProgressReporter | None,
     *,
     recursive: bool,
     include: tuple[str, ...],
@@ -956,6 +1024,7 @@ def _run_batch_with_progress(
             return run_batch(
                 input_path,
                 config,
+                progress=json_progress,
                 cancel=cancel,
                 token_provider=token_provider,
                 recursive=recursive,
@@ -970,7 +1039,7 @@ def _run_batch_with_progress(
                 input_path,
                 config,
                 token_provider=token_provider,
-                progress=RichProgressReporter(progress),
+                progress=combine_progress(RichProgressReporter(progress), json_progress),
                 cancel=cancel,
                 recursive=recursive,
                 include=include,
@@ -980,13 +1049,18 @@ def _run_batch_with_progress(
                 force_unlock=force_unlock,
             )
 
-    return _run_interruptibly(operation, hard_exit_on_interrupt=True)
+    return _run_interruptibly(
+        operation,
+        hard_exit_on_interrupt=True,
+        interrupt_reporter=json_progress,
+    )
 
 
 def _run_interruptibly(
     operation: Callable[[CancelToken], T],
     *,
     hard_exit_on_interrupt: bool = False,
+    interrupt_reporter: JsonProgressReporter | None = None,
 ) -> T:
     """Keep the main thread responsive while a native backend is running."""
     cancel = CancelToken()
@@ -1011,7 +1085,11 @@ def _run_interruptibly(
         cancel.cancel()
         finished.wait(1.0)
         if hard_exit_on_interrupt:
-            error_console.print(f"[red]エラー:[/red] {CancelledError()}")
+            error = CancelledError()
+            error_console.print(f"[red]エラー:[/red] {error}")
+            if interrupt_reporter is not None:
+                interrupt_reporter.error(error, error.exit_code)
+                interrupt_reporter.done(error.exit_code)
             sys.stdout.flush()
             sys.stderr.flush()
             os._exit(130)

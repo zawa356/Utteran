@@ -19,7 +19,7 @@ from utteran.errors import (
 )
 from utteran.logging import mask_secrets
 from utteran.pipeline import BackendPool, run_pipeline
-from utteran.types import CancelToken, PipelineOutcome, ProgressCallback
+from utteran.types import CancelToken, PipelineOutcome, ProgressCallback, ProgressEvent
 
 SUPPORTED_MEDIA_SUFFIXES = frozenset(
     {
@@ -152,11 +152,26 @@ def run_batch(
     )
     items: list[BatchItemResult] = []
     try:
-        for path in selected:
+        for index, path in enumerate(selected, start=1):
             if cancel is not None:
                 cancel.raise_if_cancelled()
+            if progress is not None:
+                progress(
+                    ProgressEvent(
+                        "batch",
+                        index - 1,
+                        len(selected),
+                        event_type="file_start",
+                        details={
+                            "file_index": index,
+                            "file_total": len(selected),
+                            "input_path": str(path),
+                        },
+                    )
+                )
             if dry_run:
                 items.append(BatchItemResult(path, "skipped", "dry-run: 処理対象"))
+                _report_file_done(progress, index, len(selected), path, items[-1])
                 continue
             try:
                 outcome = run_pipeline(
@@ -191,9 +206,39 @@ def run_batch(
                         f"予期しないエラー: {mask_secrets(str(exc))}",
                     )
                 )
+            _report_file_done(progress, index, len(selected), path, items[-1])
     finally:
         pool.close()
     return BatchSummary(tuple(items))
+
+
+def _report_file_done(
+    progress: ProgressCallback | None,
+    index: int,
+    total: int,
+    path: Path,
+    item: BatchItemResult,
+) -> None:
+    if progress is None:
+        return
+    details: dict[str, object] = {
+        "file_index": index,
+        "file_total": total,
+        "input_path": str(path),
+        "status": item.status,
+        "reason": item.reason,
+    }
+    if item.outcome is not None:
+        details["job_id"] = item.outcome.job_id
+    progress(
+        ProgressEvent(
+            "batch",
+            index,
+            total,
+            event_type="file_done",
+            details=details,
+        )
+    )
 
 
 def _matches(relative: str, name: str, patterns: tuple[str, ...]) -> bool:

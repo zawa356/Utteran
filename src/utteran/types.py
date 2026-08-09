@@ -182,6 +182,10 @@ class ProgressEvent:
     completed: float
     total: float | None = None
     message: str | None = None
+    event_type: str = "progress"
+    skipped: bool = False
+    duration_seconds: float | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 ProgressCallback: TypeAlias = Callable[[ProgressEvent], None]

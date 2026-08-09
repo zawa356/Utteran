@@ -417,9 +417,10 @@ def _system_available_memory() -> int | None:
         status = MemoryStatus()
         status.dwLength = ctypes.sizeof(status)
         try:
+            loader = vars(ctypes)["windll"]
             return (
                 int(status.ullAvailPhys)
-                if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+                if loader.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
                 else None
             )
         except (AttributeError, OSError):
@@ -542,7 +543,8 @@ def _read_windows_tree_memory(pid: int) -> int | None:
                 ("szExeFile", wintypes.WCHAR * 260),
             ]
 
-        kernel32, psapi = ctypes.WinDLL("kernel32"), ctypes.WinDLL("psapi")
+        loader = vars(ctypes)["WinDLL"]
+        kernel32, psapi = loader("kernel32"), loader("psapi")
         kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
         kernel32.OpenProcess.restype = wintypes.HANDLE
         snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)

@@ -18,6 +18,7 @@ from utteran.types import (
     DiarizationOptions,
     DiarizationResult,
     ProgressCallback,
+    ProgressEvent,
     Segment,
     SpeakerTurn,
     TranscriptionResult,
@@ -296,7 +297,8 @@ def test_pipeline_resumes_and_output_change_runs_export_only(
     monkeypatch.setattr("utteran.pipeline.normalize_audio", fake_normalize)
 
     first = run_pipeline(input_path, config, asr_backend=backend)
-    second = run_pipeline(input_path, config, asr_backend=backend)
+    resume_events: list[ProgressEvent] = []
+    second = run_pipeline(input_path, config, asr_backend=backend, progress=resume_events.append)
     changed = config.model_copy(deep=True)
     changed.output.formats = ["md"]
     third = run_pipeline(input_path, changed, asr_backend=backend)
@@ -306,6 +308,8 @@ def test_pipeline_resumes_and_output_change_runs_export_only(
     assert all(duration >= 0.0 for duration in first.stage_durations.values())
     assert second.executed_stages == ()
     assert second.stage_durations == {}
+    reusable_outputs = [event for event in resume_events if event.event_type == "output_written"]
+    assert [event.details["path"] for event in reusable_outputs] == [str(second.output_paths[0])]
     assert third.executed_stages == ("export",)
     assert tuple(third.stage_durations) == ("export",)
     assert backend.transcribe_count == 1

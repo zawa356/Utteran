@@ -28,7 +28,7 @@ from utteran.errors import (
     VramExhaustedError,
 )
 from utteran.exporters import export_all
-from utteran.jobs import Job, JobStore, StageName, stage_config_hashes
+from utteran.jobs import STAGES, Job, JobStore, StageName, stage_config_hashes
 from utteran.logging import job_log, mask_secrets
 from utteran.memory import (
     GIB,
@@ -176,6 +176,20 @@ def run_pipeline(
         with job.lock(force=force_unlock), job_log(job.root / "utteran.log", job_log_level):
             logging.getLogger(__name__).info("ジョブ開始: %s", job.manifest.job_id)
             job.reconcile(hashes, force=force or not resume)
+            if progress is not None:
+                planned = [stage for stage in STAGES if not job.is_done(stage, hashes[stage])]
+                progress(
+                    ProgressEvent(
+                        "job",
+                        0.0,
+                        event_type="job_resolved",
+                        details={
+                            "job_id": job.manifest.job_id,
+                            "resumed": bool(resume and len(planned) < len(STAGES)),
+                            "stages": planned,
+                        },
+                    )
+                )
             result = _run_stages(
                 job,
                 input_path,
@@ -229,6 +243,7 @@ def _run_stages(
             executed_stages,
             stage_durations,
             cancel,
+            progress,
             lambda: normalize_audio(
                 input_path,
                 job.audio_path,
@@ -254,6 +269,7 @@ def _run_stages(
                 executed_stages,
                 stage_durations,
                 cancel,
+                progress,
                 lambda: _transcribe_asr_measured(
                     pool,
                     config,
@@ -287,6 +303,7 @@ def _run_stages(
                     executed_stages,
                     stage_durations,
                     cancel,
+                    progress,
                     lambda: _diarize_with_memory_guard(
                         pool,
                         config,
@@ -310,6 +327,7 @@ def _run_stages(
                 executed_stages,
                 stage_durations,
                 cancel,
+                progress,
                 lambda: None,
                 lambda _value: [job.write_intermediate("diarization", None)],
             )
@@ -327,6 +345,7 @@ def _run_stages(
                 executed_stages,
                 stage_durations,
                 cancel,
+                progress,
                 lambda: _merge_result(input_path, transcription, diarization, config, progress),
                 lambda value: [
                     job.write_intermediate("merge", cast(PipelineResult, value).to_dict())
@@ -342,11 +361,13 @@ def _run_stages(
             executed_stages,
             stage_durations,
             cancel,
+            progress,
             lambda: _export_result(result, config, progress),
             lambda value: cast(list[Path], value),
         )
     else:
         _report_skip(progress, "export")
+        _report_outputs(progress, job.manifest.stages["export"].artifacts)
     return result
 
 
@@ -357,6 +378,7 @@ def _execute_stage(
     executed_stages: list[str],
     stage_durations: dict[str, float],
     cancel: CancelToken | None,
+    progress: ProgressCallback | None,
     operation: Callable[[], object],
     artifacts: Callable[[object], list[Path]],
 ) -> object:
@@ -365,6 +387,8 @@ def _execute_stage(
     job.start_stage(stage, config_hash)
     executed_stages.append(stage)
     logging.getLogger(__name__).info("ステージ開始: %s", stage)
+    if progress is not None:
+        progress(ProgressEvent(stage, 0.0, event_type="stage_start"))
     started = time.perf_counter()
     try:
         value = operation()
@@ -374,6 +398,27 @@ def _execute_stage(
         elapsed = time.perf_counter() - started
         stage_durations[stage] = elapsed
         logging.getLogger(__name__).info("ステージ完了: %s (%.3f秒)", stage, elapsed)
+        if progress is not None:
+            progress(
+                ProgressEvent(
+                    stage,
+                    1.0,
+                    1.0,
+                    event_type="stage_done",
+                    duration_seconds=elapsed,
+                )
+            )
+            if stage == "export":
+                for path in paths:
+                    progress(
+                        ProgressEvent(
+                            stage,
+                            1.0,
+                            1.0,
+                            event_type="output_written",
+                            details={"path": str(path), "format": path.suffix.lstrip(".")},
+                        )
+                    )
         return value
     except (CancelledError, KeyboardInterrupt):
         job.interrupt_stage(stage)
@@ -586,7 +631,15 @@ def _diarize_with_memory_guard(
             "話者分離OOMを捕捉したためCPUへ1回だけ再試行します: %s", exc
         )
         if progress is not None:
-            progress(ProgressEvent("diarization", 0.0, None, "メモリ不足のためCPUで再試行します"))
+            progress(
+                ProgressEvent(
+                    "diarization",
+                    0.0,
+                    None,
+                    "メモリ不足のためCPUで再試行します",
+                    event_type="warning",
+                )
+            )
         pool.reset_diarization()
         effective.diarization.device = "cpu"
         result, peak = _run_diarization_attempt(
@@ -665,7 +718,7 @@ def _report_memory_decision(
         message = f"話者分離deviceを {decision.selected_device} から CPU へ退避: {detail}"
         logging.getLogger(__name__).warning(message)
         if progress is not None:
-            progress(ProgressEvent("diarization", 0.0, None, message))
+            progress(ProgressEvent("diarization", 0.0, None, message, event_type="warning"))
         return
     if assessment.status == "impossible":
         raise MemoryBudgetError(
@@ -677,7 +730,7 @@ def _report_memory_decision(
         message = f"話者分離メモリ警告 (memory_guard={guard}): {detail}"
         logging.getLogger(__name__).warning(message)
         if progress is not None:
-            progress(ProgressEvent("diarization", 0.0, None, message))
+            progress(ProgressEvent("diarization", 0.0, None, message, event_type="warning"))
 
 
 def _format_assessment(assessment: MemoryAssessment) -> str:
@@ -737,8 +790,34 @@ def _validate_input(input_path: Path) -> None:
 def _report_skip(progress: ProgressCallback | None, stage: StageName) -> None:
     """Expose resume decisions to CLI and future GUI consumers."""
     if progress is not None:
-        progress(ProgressEvent(stage, 1.0, 1.0, f"{stage} は完了済みのためスキップ"))
+        progress(
+            ProgressEvent(
+                stage,
+                1.0,
+                1.0,
+                f"{stage} は完了済みのためスキップ",
+                event_type="stage_done",
+                skipped=True,
+            )
+        )
     logging.getLogger(__name__).info("ステージ再利用: %s", stage)
+
+
+def _report_outputs(progress: ProgressCallback | None, paths: list[str]) -> None:
+    """Report reusable exports so GUI consumers can still present completed files."""
+    if progress is None:
+        return
+    for raw_path in paths:
+        path = Path(raw_path)
+        progress(
+            ProgressEvent(
+                "export",
+                1.0,
+                1.0,
+                event_type="output_written",
+                details={"path": str(path), "format": path.suffix.lstrip(".")},
+            )
+        )
 
 
 def _positive_or_none(value: int) -> int | None:
