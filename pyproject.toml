@@ -11,7 +11,6 @@ requires-python = ">=3.11,<3.13"
 license = { file = "LICENSE" }
 authors = [{ name = "utteran contributors" }]
 dependencies = [
-  "faster-whisper>=1.1,<2",
   "huggingface-hub>=0.27,<2",
   "keyring>=25,<26",
   "platformdirs>=4,<5",
@@ -27,19 +26,22 @@ dependencies = [
 # once (see [tool.uv] conflicts below). Each pulls pyannote.audio plus the
 # matching torch/torchaudio wheel from an explicit per-build index.
 cpu = [
+  "faster-whisper>=1.1,<2",
   "pyannote.audio>=4,<5",
   "torch>=2.8,<2.12",
   "torchaudio>=2.8,<2.12",
 ]
 cuda = [
+  "faster-whisper>=1.1,<2",
   "pyannote.audio>=4,<5",
   "torch>=2.8,<2.12",
   "torchaudio>=2.8,<2.12",
 ]
 xpu = [
-  "pyannote.audio>=4,<5",
-  "torch>=2.8,<2.12",
-  "torchaudio>=2.8,<2.12",
+  "faster-whisper>=1.1,<2; sys_platform == 'win32'",
+  "pyannote.audio>=4,<5; sys_platform == 'win32'",
+  "torch>=2.8,<2.12; sys_platform == 'win32'",
+  "torchaudio>=2.8,<2.12; sys_platform == 'win32'",
   # torch's xpu wheel depends transitively on triton-xpu, but uv only
   # resolves indexed sources (see [tool.uv.sources] below) for packages
   # listed directly in a conflicting extra's own optional-dependencies -
@@ -54,7 +56,14 @@ xpu = [
 whisper-cpp = ["cmake>=3.28,<5"]
 openvino = ["openvino>=2025,<2027", "openai-whisper>=20250625", "onnxscript>=0.2,<1"]
 onnx = ["onnxruntime>=1.19,<2"]
+gui = [
+  "fastapi>=0.115,<1",
+  "pywebview>=5,<7",
+  "uvicorn>=0.30,<1",
+]
 dev = [
+  "faster-whisper>=1.1,<2",
+  "httpx>=0.27,<1",
   "mypy>=1.11,<2",
   "pytest>=8.3,<9",
   "pytest-cov>=5,<7",
@@ -94,9 +103,10 @@ explicit = true
 
 [project.scripts]
 utteran = "utteran.cli:app"
+utteran-gui = "utteran_gui.app:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/utteran"]
+packages = ["src/utteran", "src/utteran_gui"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --capture=sys"
@@ -117,7 +127,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
-packages = ["utteran"]
+packages = ["utteran", "utteran_gui"]
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
@@ -127,10 +137,12 @@ module = [
   "huggingface_hub",
   "huggingface_hub.*",
   "keyring",
+  "numpy",
   "onnxruntime",
   "openvino",
   "pyannote.*",
   "torch",
+  "webview",
 ]
 ignore_missing_imports = true
 follow_imports = "skip"

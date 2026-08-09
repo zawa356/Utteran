@@ -1,0 +1,331 @@
+"""Single-job subprocess orchestration, progress parsing, and tree cancellation."""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import subprocess
+import threading
+import time
+import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any, Literal, cast
+
+from utteran_gui.cli import CliAdapter, TranscriptionOptions
+from utteran_gui.security import mask_secrets, sanitize_json
+
+JobStatus = Literal["starting", "running", "completed", "failed", "cancelled"]
+PopenFactory = Callable[..., subprocess.Popen[str]]
+TreeKiller = Callable[[subprocess.Popen[str]], None]
+TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+
+
+class JobBusyError(RuntimeError):
+    """A second request was made while the one allowed job is active."""
+
+
+class JobUnknownError(KeyError):
+    """A requested GUI job id does not exist in this process."""
+
+
+@dataclass
+class GuiJob:
+    id: str
+    options: TranscriptionOptions
+    command: list[str]
+    environment: dict[str, str]
+    status: JobStatus = "starting"
+    created_at: str = field(default_factory=lambda: _now())
+    started_at: str | None = None
+    finished_at: str | None = None
+    exit_code: int | None = None
+    events: list[dict[str, object]] = field(default_factory=list)
+    raw_logs: list[str] = field(default_factory=list)
+    outputs: list[str] = field(default_factory=list)
+    cancel_requested: bool = False
+    last_event_monotonic: float = field(default_factory=time.monotonic)
+    started_monotonic: float | None = None
+    process: subprocess.Popen[str] | None = None
+
+
+class JobManager:
+    """Run one profile CLI process and retain its complete diagnostic stream."""
+
+    def __init__(
+        self,
+        cli: CliAdapter,
+        *,
+        popen_factory: PopenFactory | None = None,
+        tree_killer: TreeKiller | None = None,
+        stall_seconds: float = 30.0,
+    ) -> None:
+        self.cli = cli
+        self._popen_factory = popen_factory or cast(PopenFactory, subprocess.Popen)
+        self._tree_killer = tree_killer or kill_process_tree
+        self._stall_seconds = stall_seconds
+        self._lock = threading.RLock()
+        self._jobs: dict[str, GuiJob] = {}
+        self._active_id: str | None = None
+
+    def start(self, options: TranscriptionOptions) -> dict[str, object]:
+        command, environment = self.cli.build_transcribe_command(options)
+        with self._lock:
+            if self._active_id is not None:
+                active = self._jobs[self._active_id]
+                if active.status not in TERMINAL_STATUSES:
+                    raise JobBusyError("Only one transcription can run at a time")
+            job_id = uuid.uuid4().hex
+            job = GuiJob(job_id, options, command, environment)
+            self._jobs[job_id] = job
+            self._active_id = job_id
+        threading.Thread(
+            target=self._run,
+            args=(job_id,),
+            name=f"utteran-gui-job-{job_id[:8]}",
+            daemon=True,
+        ).start()
+        return self.snapshot(job_id)
+
+    def cancel(self, job_id: str) -> dict[str, object]:
+        with self._lock:
+            job = self._job(job_id)
+            if job.status in TERMINAL_STATUSES:
+                return self._snapshot(job)
+            job.cancel_requested = True
+            process = job.process
+        if process is not None and process.poll() is None:
+            self._tree_killer(process)
+        return self.snapshot(job_id)
+
+    def snapshot(self, job_id: str) -> dict[str, object]:
+        with self._lock:
+            return self._snapshot(self._job(job_id))
+
+    def events_since(self, job_id: str, cursor: int) -> tuple[list[dict[str, object]], bool]:
+        with self._lock:
+            job = self._job(job_id)
+            events = [dict(event) for event in job.events[cursor:]]
+            terminal = job.status in TERMINAL_STATUSES
+        return events, terminal
+
+    def _run(self, job_id: str) -> None:
+        with self._lock:
+            job = self._job(job_id)
+            if job.cancel_requested:
+                self._finish_cancelled(job)
+                return
+            kwargs: dict[str, object] = {
+                "cwd": self.cli.repo_root,
+                "env": job.environment,
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "bufsize": 1,
+            }
+            if os.name == "nt":
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            else:
+                kwargs["start_new_session"] = True
+            try:
+                process = self._popen_factory(job.command, **kwargs)
+            except Exception as exc:
+                self._append_raw(job, f"Failed to launch CLI: {exc}")
+                self._append_event(
+                    job,
+                    {
+                        "schema_version": 1,
+                        "timestamp": _now(),
+                        "event": "error",
+                        "error_type": type(exc).__name__,
+                        "message": mask_secrets(str(exc)),
+                        "exit_code": 1,
+                    },
+                )
+                self._finish(job, 1)
+                return
+            job.process = process
+            job.status = "running"
+            job.started_at = _now()
+            job.started_monotonic = time.monotonic()
+
+        stdout_thread = threading.Thread(
+            target=self._read_plain_stream,
+            args=(job_id, process.stdout),
+            name=f"utteran-gui-stdout-{job_id[:8]}",
+            daemon=True,
+        )
+        stdout_thread.start()
+        if process.stderr is not None:
+            for line in process.stderr:
+                self._handle_stderr_line(job_id, line)
+        return_code = process.wait()
+        stdout_thread.join(timeout=2.0)
+        with self._lock:
+            job = self._job(job_id)
+            effective_code = 130 if job.cancel_requested else return_code
+            self._finish(job, effective_code)
+
+    def _read_plain_stream(self, job_id: str, stream: Any) -> None:
+        if stream is None:
+            return
+        for line in stream:
+            with self._lock:
+                self._append_raw(self._job(job_id), line)
+
+    def _handle_stderr_line(self, job_id: str, line: str) -> None:
+        parsed = parse_progress_line(line)
+        with self._lock:
+            job = self._job(job_id)
+            if parsed is None:
+                self._append_raw(job, line)
+                return
+            self._append_event(job, parsed)
+            if parsed.get("event") == "output_written":
+                path = parsed.get("path")
+                if isinstance(path, str) and path not in job.outputs:
+                    job.outputs.append(path)
+
+    def _finish(self, job: GuiJob, exit_code: int) -> None:
+        job.exit_code = exit_code
+        job.finished_at = _now()
+        job.process = None
+        if exit_code == 130:
+            job.status = "cancelled"
+        elif exit_code == 0:
+            job.status = "completed"
+        else:
+            job.status = "failed"
+        if not any(event.get("event") == "done" for event in job.events):
+            self._append_event(
+                job,
+                {
+                    "schema_version": 1,
+                    "timestamp": _now(),
+                    "event": "done",
+                    "duration_seconds": _duration(job),
+                    "exit_code": exit_code,
+                    "synthetic": True,
+                },
+            )
+        if self._active_id == job.id:
+            self._active_id = None
+
+    def _finish_cancelled(self, job: GuiJob) -> None:
+        self._finish(job, 130)
+
+    def _append_event(self, job: GuiJob, event: dict[str, object]) -> None:
+        sanitized = cast(dict[str, object], sanitize_json(event))
+        sanitized["id"] = len(job.events)
+        job.events.append(sanitized)
+        job.last_event_monotonic = time.monotonic()
+
+    def _append_raw(self, job: GuiJob, line: str) -> None:
+        text = mask_secrets(line.rstrip("\r\n"))
+        if text:
+            job.raw_logs.append(text)
+            job.last_event_monotonic = time.monotonic()
+
+    def _snapshot(self, job: GuiJob) -> dict[str, object]:
+        stalled = (
+            job.status == "running"
+            and time.monotonic() - job.last_event_monotonic >= self._stall_seconds
+        )
+        guidance = guidance_for(job.exit_code, job.raw_logs, job.events)
+        return {
+            "id": job.id,
+            "status": job.status,
+            "created_at": job.created_at,
+            "started_at": job.started_at,
+            "finished_at": job.finished_at,
+            "exit_code": job.exit_code,
+            "stalled": stalled,
+            "outputs": list(job.outputs),
+            "events": [dict(event) for event in job.events],
+            "logs": list(job.raw_logs),
+            "guidance": guidance,
+        }
+
+    def _job(self, job_id: str) -> GuiJob:
+        try:
+            return self._jobs[job_id]
+        except KeyError:
+            raise JobUnknownError(job_id) from None
+
+
+def parse_progress_line(line: str) -> dict[str, object] | None:
+    """Parse a complete JSON line; malformed or partial lines remain raw diagnostics."""
+    stripped = line.rstrip("\r\n")
+    if not stripped:
+        return None
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return cast(dict[str, object], sanitize_json(payload))
+
+
+def kill_process_tree(process: subprocess.Popen[str]) -> None:
+    """Terminate an entire CLI process tree using the platform's reliable primitive."""
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=2.0)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+
+
+def guidance_for(
+    exit_code: int | None,
+    logs: list[str],
+    events: list[dict[str, object]],
+) -> dict[str, str] | None:
+    """Map CLI exit semantics and common dependency failures to actionable UI copy keys."""
+    if exit_code is None or exit_code == 0:
+        return None
+    combined = " ".join(logs + [str(event.get("message", "")) for event in events]).casefold()
+    error_types = {str(event.get("error_type", "")).casefold() for event in events}
+    if exit_code == 130:
+        key = "cancelled"
+    elif "memorybudgeterror" in error_types or "memory" in combined or "メモリ" in combined:
+        key = "memory"
+    elif "token" in combined or "トークン" in combined:
+        key = "token"
+    elif "model" in combined or "モデル" in combined:
+        key = "model"
+    elif "ffmpeg" in combined:
+        key = "ffmpeg"
+    else:
+        key = {1: "general", 2: "configuration", 3: "dependency", 4: "input", 5: "partial"}.get(
+            exit_code, "general"
+        )
+    return {"key": key, "settings_anchor": "token" if key == "token" else ""}
+
+
+def _duration(job: GuiJob) -> float:
+    if job.started_monotonic is None:
+        return 0.0
+    return max(0.0, time.monotonic() - job.started_monotonic)
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()

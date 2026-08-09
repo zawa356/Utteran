@@ -21,7 +21,7 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - name: Install development dependencies
-        run: uv sync --extra dev --locked
+        run: uv sync --extra dev --extra gui --locked
       - name: Check lockfile
         run: uv lock --check
       - name: Lint
@@ -54,7 +54,7 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - name: Install development dependencies
-        run: uv sync --extra dev --locked
+        run: uv sync --extra dev --extra gui --locked
       - name: Test without models
         run: uv run --no-sync pytest -m "not requires_model"
       - name: Parse every PowerShell script with Windows PowerShell 5.1

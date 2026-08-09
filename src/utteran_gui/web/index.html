@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ja" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>utteran</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">u</span><span>utteran</span></div>
+      <nav aria-label="Primary">
+        <button class="nav-item active" data-view="workspace" data-i18n="navWorkspace">文字起こし</button>
+        <button class="nav-item" data-view="settings" data-i18n="navSettings">設定</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span class="status-dot" id="server-dot"></span>
+        <span data-i18n="localOnly">ローカル実行</span>
+      </div>
+    </aside>
+
+    <main>
+      <section id="view-workspace" class="view active">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow" data-i18n="workspaceEyebrow">TRANSCRIPTION WORKSPACE</p>
+            <h1 data-i18n="workspaceTitle">文字起こしを開始</h1>
+            <p class="lede" data-i18n="workspaceLead">この環境で実際に利用できる構成だけを表示します。</p>
+          </div>
+          <button id="refresh-environment" class="button secondary" data-i18n="refresh">再検出</button>
+        </header>
+
+        <div id="environment-alert" class="notice hidden" role="status"></div>
+        <section class="environment-strip" aria-label="Environment">
+          <article><span data-i18n="hardware">ハードウェア</span><strong id="hardware-summary">—</strong></article>
+          <article><span data-i18n="profile">プロファイル</span><strong id="profile-summary">—</strong></article>
+          <article><span data-i18n="models">導入済みモデル</span><strong id="model-summary">—</strong></article>
+          <article><span data-i18n="nativeBuild">ネイティブ構成</span><strong id="native-summary">—</strong></article>
+        </section>
+
+        <form id="job-form" class="panel form-panel">
+          <div class="section-heading">
+            <div><span class="step-number">01</span><h2 data-i18n="sourceOutput">入力と出力</h2></div>
+            <span class="section-note" data-i18n="dropHint">ファイルをウィンドウへドロップできます</span>
+          </div>
+          <div class="field-grid two">
+            <label><span data-i18n="inputPath">入力ファイル／フォルダ</span><input id="input-path" required autocomplete="off" placeholder="C:\Media\meeting.mp4"></label>
+            <label><span data-i18n="outputDir">出力先</span><input id="output-dir" required autocomplete="off" placeholder="C:\Transcripts"></label>
+          </div>
+          <div class="field-grid three batch-options">
+            <label class="check-field"><input id="recursive-input" type="checkbox"><span data-i18n="recursive">サブフォルダも処理</span></label>
+            <label><span data-i18n="includePatterns">対象glob（カンマ区切り）</span><input id="include-patterns" autocomplete="off" placeholder="**/*.wav, **/*.mp4"></label>
+            <label><span data-i18n="excludePatterns">除外glob（カンマ区切り）</span><input id="exclude-patterns" autocomplete="off" placeholder="**/archive/**"></label>
+          </div>
+
+          <div class="section-heading divided"><div><span class="step-number">02</span><h2 data-i18n="runtime">実行環境</h2></div></div>
+          <div class="field-grid three">
+            <label><span data-i18n="profile">プロファイル</span><select id="profile-select" required></select></label>
+            <label><span data-i18n="asrBackend">ASRバックエンド</span><select id="asr-backend" required></select></label>
+            <label><span data-i18n="asrModel">ASRモデル</span><select id="asr-model" required></select></label>
+            <label><span data-i18n="asrDevice">ASRデバイス</span><select id="asr-device" required></select></label>
+            <label><span data-i18n="language">言語</span><select id="language-select"></select></label>
+            <label><span data-i18n="resume">レジューム</span><select id="resume-mode"><option value="resume" data-i18n="resumeReuse">再利用する</option><option value="fresh" data-i18n="resumeFresh">キャッシュを使わない</option><option value="force" data-i18n="resumeForce">全段階を再実行</option></select></label>
+          </div>
+
+          <div class="section-heading divided compact">
+            <div><span class="step-number">03</span><h2 data-i18n="diarization">話者分離</h2></div>
+            <label class="switch"><input id="diarization-enabled" type="checkbox" checked><span></span><b data-i18n="enabled">有効</b></label>
+          </div>
+          <div id="diarization-fields" class="field-grid three">
+            <label><span data-i18n="diarBackend">バックエンド</span><select id="diarization-backend"></select></label>
+            <label><span data-i18n="diarModel">モデル</span><select id="diarization-model"></select></label>
+            <label><span data-i18n="diarDevice">デバイス</span><select id="diarization-device"></select></label>
+            <label><span data-i18n="speakerMode">話者数</span><select id="speaker-mode"><option value="auto" data-i18n="automatic">自動</option><option value="fixed" data-i18n="fixed">固定</option><option value="range" data-i18n="range">範囲</option></select></label>
+            <label id="speaker-fixed-field" class="hidden"><span data-i18n="speakerCount">人数</span><input id="speaker-count" type="number" min="1" max="100" value="2"></label>
+            <div id="speaker-range-fields" class="inline-fields hidden"><label><span data-i18n="minimum">最小</span><input id="speaker-min" type="number" min="1" max="100" value="2"></label><label><span data-i18n="maximum">最大</span><input id="speaker-max" type="number" min="1" max="100" value="6"></label></div>
+          </div>
+
+          <div class="section-heading divided compact"><div><span class="step-number">04</span><h2 data-i18n="outputFormats">出力形式</h2></div></div>
+          <div id="format-options" class="format-options"></div>
+          <div class="form-actions">
+            <span id="form-status" class="muted"></span>
+            <button id="start-button" class="button primary" type="submit" data-i18n="start">文字起こしを開始</button>
+          </div>
+        </form>
+
+        <section id="progress-panel" class="panel progress-panel hidden" aria-live="polite">
+          <div class="progress-header"><div><p class="eyebrow" data-i18n="inProgress">IN PROGRESS</p><h2 id="progress-title" data-i18n="processing">処理しています</h2></div><button id="cancel-button" class="button danger" data-i18n="cancel">キャンセル</button></div>
+          <div class="progress-metrics"><strong id="elapsed">00:00:00</strong><span data-i18n="elapsed">経過</span><strong id="eta">—</strong><span data-i18n="remaining">残り目安</span></div>
+          <div class="progress-track"><div id="progress-bar"></div></div>
+          <ol id="stage-list" class="stage-list"></ol>
+          <p id="stall-warning" class="notice warning hidden" data-i18n="stalled">しばらく進捗イベントがありません。処理は継続中です。</p>
+          <details class="logs"><summary data-i18n="details">詳細ログ</summary><pre id="log-output"></pre></details>
+        </section>
+
+        <section id="result-panel" class="panel result-panel hidden" aria-live="polite">
+          <p class="eyebrow" id="result-eyebrow">COMPLETE</p><h2 id="result-title" data-i18n="complete">完了しました</h2>
+          <p id="result-guidance" class="notice hidden"></p>
+          <ul id="output-list" class="output-list"></ul>
+          <button id="open-output" class="button secondary hidden" data-i18n="openFolder">出力フォルダを開く</button>
+        </section>
+      </section>
+
+      <section id="view-settings" class="view">
+        <header class="page-header"><div><p class="eyebrow">PREFERENCES</p><h1 data-i18n="settingsTitle">設定</h1><p class="lede" data-i18n="settingsLead">GUI専用の設定です。CLIのconfig.tomlとは分離して保存します。</p></div></header>
+        <form id="settings-form" class="panel form-panel">
+          <div class="field-grid two">
+            <label><span data-i18n="theme">テーマ</span><select id="theme-select"><option value="dark" data-i18n="dark">ダーク</option><option value="light" data-i18n="light">ライト</option></select></label>
+            <label><span data-i18n="displayLanguage">表示言語</span><select id="ui-language"><option value="ja">日本語</option><option value="en">English</option></select></label>
+            <label><span data-i18n="defaultProfile">既定プロファイル</span><select id="default-profile"></select></label>
+            <label><span data-i18n="defaultInput">既定入力先</span><input id="default-input" autocomplete="off"></label>
+            <label><span data-i18n="defaultOutput">既定出力先</span><input id="default-output" autocomplete="off"></label>
+          </div>
+          <div class="token-card" id="token"><div><h3>Hugging Face token</h3><p><span id="token-state"></span> · <span data-i18n="tokenPrivacy">保存済みの値は表示しません</span></p></div><div class="token-actions"><input id="token-input" type="password" autocomplete="new-password" placeholder="hf_••••••••"><button id="save-token" class="button secondary" type="button" data-i18n="saveToken">トークンを保存</button><button id="clear-token" class="button ghost" type="button" data-i18n="clear">削除</button></div></div>
+          <div class="privacy-note"><strong data-i18n="privacyTitle">プライバシー</strong><span data-i18n="privacyBody">入力ファイルの履歴は保存しません。ファイル名に個人情報が含まれる可能性があるためです。</span></div>
+          <div class="form-actions"><span id="settings-status" class="muted"></span><button class="button primary" type="submit" data-i18n="saveSettings">設定を保存</button></div>
+        </form>
+      </section>
+    </main>
+  </div>
+  <script src="/assets/i18n.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

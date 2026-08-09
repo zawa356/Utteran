@@ -1,9 +1,9 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidateSet("cpu", "cuda", "intel", "vulkan")]
+    [ValidateSet("cpu", "cuda", "intel", "vulkan", "gui")]
     [string]$Profile,
     [switch]$List,
-    [ValidateSet("cpu", "cuda", "intel", "vulkan")]
+    [ValidateSet("cpu", "cuda", "intel", "vulkan", "gui")]
     [string]$Remove,
     [ValidateSet("cpu", "cuda", "intel", "vulkan")]
     [string]$SetDefault,
@@ -34,8 +34,9 @@ $ProfileExtras = @{
     "cuda"   = @("cuda")
     "intel"  = @("xpu", "whisper-cpp", "openvino")
     "vulkan" = @("cpu", "whisper-cpp")
+    "gui"    = @("gui")
 }
-$AllProfiles = @("cpu", "cuda", "intel", "vulkan")
+$AllProfiles = @("cpu", "cuda", "intel", "vulkan", "gui")
 
 function Write-Step {
     param([string]$Message)
@@ -415,11 +416,13 @@ function Invoke-ProfileSetup {
         }
     }
 
-    Write-Step "Checking ffmpeg"
-    Install-Ffmpeg
+    if ($ProfileName -ne "gui") {
+        Write-Step "Checking ffmpeg"
+        Install-Ffmpeg
 
-    Write-Step "Preparing .env without exposing a token"
-    Show-EnvHelper
+        Write-Step "Preparing .env without exposing a token"
+        Show-EnvHelper
+    }
 
     Write-Step "Verifying profile '$ProfileName'"
     $ProfileVerificationSucceeded = $false
@@ -428,64 +431,75 @@ function Invoke-ProfileSetup {
     }
     else {
         try {
-            $DeviceText = Invoke-Utf8Captured {
-                & $script:UvCommand.Source run --no-sync utteran devices --json | Out-String
-            }
-            if ($LASTEXITCODE -ne 0) {
-                throw "utteran devices --json failed (exit $LASTEXITCODE)"
-            }
-            $DeviceData = $DeviceText | ConvertFrom-Json
-            if ($ProfileName -eq "cpu") {
-                $ProfileVerificationSucceeded = (
-                    $DeviceData.backends.'faster-whisper' -and $DeviceData.backends.pyannote
-                )
-            }
-            elseif ($ProfileName -eq "cuda") {
-                $UsableCTranslate2Cuda = @(
-                    $DeviceData.ctranslate2.cuda_devices | Where-Object { $_.usable }
-                ).Count -gt 0
-                $UsableTorchCuda = [bool]$DeviceData.pytorch.cuda_available
-                $ProfileVerificationSucceeded = $UsableCTranslate2Cuda -and $UsableTorchCuda
-                if (-not $UsableCTranslate2Cuda) {
-                    Write-Warning "CUDA profile: faster-whisper cannot initialize CTranslate2 CUDA."
-                    Write-Host "Install CUDA 12 compatible cuDNN 9 and cuBLAS, then rerun setup."
+            if ($ProfileName -eq "gui") {
+                $GuiProbe = & (Join-Path $VenvPath "Scripts\python.exe") -c `
+                    "import importlib.util; import fastapi, uvicorn, webview, utteran_gui; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('faster_whisper') is None; print('GUI_OK')" 2>&1
+                if ($LASTEXITCODE -ne 0 -or $GuiProbe -notmatch "GUI_OK") {
+                    throw "GUI dependency/isolation probe failed: $GuiProbe"
                 }
-                if (-not $UsableTorchCuda) {
-                    Write-Warning "CUDA profile: pyannote cannot execute the PyTorch CUDA probe kernel."
-                }
-            }
-            elseif ($ProfileName -eq "intel") {
-                $OpenVinoOk = [bool]$DeviceData.openvino.available
-                $XpuProbe = & (Join-Path $VenvPath "Scripts\python.exe") -c `
-                    "import torch; print(torch.xpu.is_available())" 2>&1
-                $XpuOk = ($XpuProbe -match "True")
-                $ProfileVerificationSucceeded = $OpenVinoOk
-                if (-not $OpenVinoOk) {
-                    Write-Warning "Intel profile: OpenVINO could not initialize."
-                }
-                if ($XpuOk) {
-                    Write-Host "torch XPU: 利用可能" -ForegroundColor Green
-                }
-                else {
-                    Write-Host "torch XPU: 未検出 ($XpuProbe)"
-                }
+                $ProfileVerificationSucceeded = $true
+                Write-Host "GUI environment: lightweight and isolated" -ForegroundColor Green
             }
             else {
-                # vulkan
-                $ProfileVerificationSucceeded = Invoke-VulkanPrerequisiteCheck -VenvPath $VenvPath
-            }
-            # Piping through Out-String before Write-Host (rather than letting the
-            # external command's output pass straight through) is required here: plain
-            # passthrough re-encodes using a different, unaffected setting even with
-            # [Console]::OutputEncoding forced to UTF-8 above, corrupting this table the
-            # same way the JSON capture was corrupted before it went through Out-String.
-            $DeviceDisplayText = Invoke-Utf8Captured {
-                & $script:UvCommand.Source run --no-sync utteran devices | Out-String
-            }
-            $DeviceExitCode = $LASTEXITCODE
-            Write-Host $DeviceDisplayText
-            if ($DeviceExitCode -ne 0) {
-                throw "utteran devices failed (exit $DeviceExitCode)"
+                $DeviceText = Invoke-Utf8Captured {
+                    & $script:UvCommand.Source run --no-sync utteran devices --json | Out-String
+                }
+                if ($LASTEXITCODE -ne 0) {
+                    throw "utteran devices --json failed (exit $LASTEXITCODE)"
+                }
+                $DeviceData = $DeviceText | ConvertFrom-Json
+                if ($ProfileName -eq "cpu") {
+                    $ProfileVerificationSucceeded = (
+                        $DeviceData.backends.'faster-whisper' -and $DeviceData.backends.pyannote
+                    )
+                }
+                elseif ($ProfileName -eq "cuda") {
+                    $UsableCTranslate2Cuda = @(
+                        $DeviceData.ctranslate2.cuda_devices | Where-Object { $_.usable }
+                    ).Count -gt 0
+                    $UsableTorchCuda = [bool]$DeviceData.pytorch.cuda_available
+                    $ProfileVerificationSucceeded = $UsableCTranslate2Cuda -and $UsableTorchCuda
+                    if (-not $UsableCTranslate2Cuda) {
+                        Write-Warning "CUDA profile: faster-whisper cannot initialize CTranslate2 CUDA."
+                        Write-Host "Install CUDA 12 compatible cuDNN 9 and cuBLAS, then rerun setup."
+                    }
+                    if (-not $UsableTorchCuda) {
+                        Write-Warning "CUDA profile: pyannote cannot execute the PyTorch CUDA probe kernel."
+                    }
+                }
+                elseif ($ProfileName -eq "intel") {
+                    $OpenVinoOk = [bool]$DeviceData.openvino.available
+                    $XpuProbe = & (Join-Path $VenvPath "Scripts\python.exe") -c `
+                        "import torch; print(torch.xpu.is_available())" 2>&1
+                    $XpuOk = ($XpuProbe -match "True")
+                    $ProfileVerificationSucceeded = $OpenVinoOk
+                    if (-not $OpenVinoOk) {
+                        Write-Warning "Intel profile: OpenVINO could not initialize."
+                    }
+                    if ($XpuOk) {
+                        Write-Host "torch XPU: 利用可能" -ForegroundColor Green
+                    }
+                    else {
+                        Write-Host "torch XPU: 未検出 ($XpuProbe)"
+                    }
+                }
+                else {
+                    # vulkan
+                    $ProfileVerificationSucceeded = Invoke-VulkanPrerequisiteCheck -VenvPath $VenvPath
+                }
+                # Piping through Out-String before Write-Host (rather than letting the
+                # external command's output pass straight through) is required here: plain
+                # passthrough re-encodes using a different, unaffected setting even with
+                # [Console]::OutputEncoding forced to UTF-8 above, corrupting this table the
+                # same way the JSON capture was corrupted before it went through Out-String.
+                $DeviceDisplayText = Invoke-Utf8Captured {
+                    & $script:UvCommand.Source run --no-sync utteran devices | Out-String
+                }
+                $DeviceExitCode = $LASTEXITCODE
+                Write-Host $DeviceDisplayText
+                if ($DeviceExitCode -ne 0) {
+                    throw "utteran devices failed (exit $DeviceExitCode)"
+                }
             }
         }
         catch {
@@ -500,12 +514,18 @@ function Invoke-ProfileSetup {
     }
 
     Write-Host "`nutteran setup completed successfully for profile '$ProfileName'." -ForegroundColor Green
-    Write-Host "Models are managed separately after setup. To choose from a numbered list, run:"
-    Write-Host "  .\run.ps1 -Profile $ProfileName models download"
-    Write-Host "To run transcription with this profile:"
-    Write-Host "  .\run.ps1 -Profile $ProfileName transcribe <入力ファイル>"
-    Write-Host "Or, if this is your only profile, simply:"
-    Write-Host "  .\run.ps1 transcribe <入力ファイル>"
+    if ($ProfileName -eq "gui") {
+        Write-Host "Start the GUI with:"
+        Write-Host "  .\gui.ps1"
+    }
+    else {
+        Write-Host "Models are managed separately after setup. To choose from a numbered list, run:"
+        Write-Host "  .\run.ps1 -Profile $ProfileName models download"
+        Write-Host "To run transcription with this profile:"
+        Write-Host "  .\run.ps1 -Profile $ProfileName transcribe <入力ファイル>"
+        Write-Host "Or, if this is your only profile, simply:"
+        Write-Host "  .\run.ps1 transcribe <入力ファイル>"
+    }
 }
 
 if ($Remove) {
