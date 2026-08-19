@@ -65,7 +65,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [CustomMessages]
 japanese.DownloadsNoticeCaption=追加のダウンロードが必要です
 japanese.DownloadsNoticeSubCaption=初回起動時にインターネット接続とディスク空き容量が必要です
-japanese.DownloadsNoticeBody=このインストーラー自体には推論に使うライブラリやAIモデルを含めていません（含めると数GB〜十数GBになるためです）。%n%n初回にGUIを起動すると、セットアップウィザードが以下を追加でダウンロードします。%n%n  ・uv（まだ無い場合、約15MB）%n  ・選んだプロファイルの実行環境（数百MB〜約5GB、GPU種別による）%n  ・文字起こしモデル（数百MB〜数GB）%n%nこれらのダウンロードにはインターネット接続と、合計で数GB程度の空きディスク容量が必要です。ダウンロード前に内容と概算サイズが画面に表示されます。
+japanese.DownloadsNoticeBody=このインストーラー自体には推論に使うライブラリやAIモデルを含めていません（含めると数GB〜十数GBになるためです）。%n%n初回にGUIを起動すると、セットアップウィザードが以下を追加でダウンロードします。%n%n  ・uv（まだ無い場合、約15MB）%n  ・選んだプロファイルの実行環境（数百MB〜約5GB、GPU種別による）%n  ・文字起こしモデル（数百MB〜数GB）%n%nこれらのダウンロードにはインターネット接続と、合計で数GB程度の空きディスク容量が必要です。ダウンロード前に内容と概算サイズが画面に表示されます。%n%nこのアプリはMicrosoft Edge WebView2ランタイムを使用します。Windows 11には標準搭載されています。Windows 10で画面が表示されない場合は、developer.microsoft.com/microsoft-edge/webview2/ から導入してください。
 japanese.ThirdPartyNoticeCaption=サードパーティ ライセンスについて
 japanese.ThirdPartyNoticeSubCaption=utteran 自体は MIT License ですが、依存ライブラリやモデルは別のライセンスです
 japanese.ThirdPartyNoticeBody=utteran のソースコードは MIT License で提供されますが、初回起動時に追加取得する依存ライブラリやAIモデルには個別のライセンス・利用条件が適用されます。%n%n特に注意が必要な項目:%n  ・ffmpeg（gyan.dev配布ビルド）: GPLv3%n  ・pyannote speaker-diarization モデル: Hugging Face 上での利用条件への同意が必要（CC-BY-4.0）%n%n詳細はインストール先の THIRD_PARTY_NOTICES.md を参照してください。
@@ -78,7 +78,7 @@ japanese.UninstallOptionFfmpeg=ffmpegも削除しますか? (uvは共有フォ�
 japanese.UninstallRemainingDataIntro=以下のデータは選択されなかったため残っています:
 english.DownloadsNoticeCaption=Additional downloads are required
 english.DownloadsNoticeSubCaption=First launch needs an internet connection and free disk space
-english.DownloadsNoticeBody=This installer does not bundle the inference libraries or AI models (doing so would add several to a dozen-plus GB).%n%nOn first launch, the setup wizard downloads:%n%n  - uv (if not already installed, about 15 MB)%n  - the runtime environment for your chosen profile (hundreds of MB to about 5 GB, depending on GPU)%n  - a transcription model (hundreds of MB to a few GB)%n%nThese downloads need an internet connection and a few GB of free disk space in total. Sizes are shown on screen before each download starts.
+english.DownloadsNoticeBody=This installer does not bundle the inference libraries or AI models (doing so would add several to a dozen-plus GB).%n%nOn first launch, the setup wizard downloads:%n%n  - uv (if not already installed, about 15 MB)%n  - the runtime environment for your chosen profile (hundreds of MB to about 5 GB, depending on GPU)%n  - a transcription model (hundreds of MB to a few GB)%n%nThese downloads need an internet connection and a few GB of free disk space in total. Sizes are shown on screen before each download starts.%n%nThis app uses the Microsoft Edge WebView2 runtime, built into Windows 11. If the window fails to appear on Windows 10, install it from developer.microsoft.com/microsoft-edge/webview2/.
 english.ThirdPartyNoticeCaption=Third-party licenses
 english.ThirdPartyNoticeSubCaption=utteran itself is MIT-licensed, but its dependencies and models are not
 english.ThirdPartyNoticeBody=utteran's own source code is MIT-licensed, but the dependencies and AI models fetched on first launch carry their own licenses and usage terms.%n%nNotably:%n  - ffmpeg (gyan.dev build): GPLv3%n  - pyannote speaker-diarization model: requires accepting usage terms on Hugging Face (CC-BY-4.0)%n%nSee THIRD_PARTY_NOTICES.md in the install folder for the full list.
