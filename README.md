@@ -290,6 +290,7 @@ CIはpatternを必要としない汎用のemail形式、user絶対path、media�
 - [Phase 5a GUI手動確認](docs/Phase5a_GUI_手動確認手順書.md)
 - [Phase 5b GUI手動確認](docs/Phase5b_GUI_手動確認手順書.md)
 - [Phase 5c セットアップウィザード手動確認](docs/Phase5c_GUI_セットアップウィザード_手動確認手順書.md)
+- [Phase 5d事前準備](docs/Phase5d事前準備.md)
 - [変更履歴](変更履歴.md)
 
 ## ライセンスとモデル利用条件

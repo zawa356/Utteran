@@ -1,5 +1,75 @@
 # AI 作業状態
 
+## Phase 5d 事前準備（2026-08-19、完了）
+
+`docs/utteran_Phase5d事前準備指示書.md`に従い、`chore/phase5d-preparation`で作業A（cp932関連flaky調査）と
+作業B（クリーン環境での初回フロー検証）を実施した。詳細は`docs/Phase5d事前準備.md`。
+
+- **作業A**: Phase 5c報告の「既知のcp932関連flaky 1件、無関係」は誤帰属だった。実際にflakyな
+  唯一のtestは`test_ctrl_c_is_confined_to_the_child_console`で、cp932とは無関係。Git Bash/ConPTY
+  （実consoleが未添付）から実行すると100%失敗（3/3timeout）、実PowerShell consoleからは100%成功
+  （5/5）と決定論的に環境と相関しており、Phase 3d時点で既にAISTATE.mdに記録済みだった
+  「試験ハーネスの実行環境依存、製品側の不具合ではない」という既存の根拠をPhase 5c報告が
+  引用し損ねていた。
+- 一方、GUI↔CLIのconsole非接続経路を再確認する過程で**新規のcp932不具合を発見・修正**した。
+  `setup.ps1`自身の`Write-Host`/`Write-Step`出力は、GUIウィザードが起動するときのように自身の
+  stdoutがpipe接続（非console）だと、`[Console]::OutputEncoding`がOEMコードページ
+  （cp932）へ既定化し、日本語進捗行が文字化けする。ステージマーカー行はASCIIのため
+  ステージ検出自体は壊れず、Phase 5cの実機検証（「6ステージマーカーが期待順序」）はこれを
+  検出できなかった。`[Console]::IsOutputRedirected`のときだけ起動時にUTF-8を強制する修正と、
+  `setup.ps1 -List`を実際にpipe経由で起動して復号する回帰test
+  （`tests/test_profiles.py::test_setup_list_writes_valid_utf8_when_stdout_is_piped`、Windows限定）
+  を追加した。
+- ついでに`utteran_gui/processes.py::kill_process_tree`がWindows上でmypy実行時に
+  `os.killpg`/`signal.SIGKILL`（POSIX専用）を解決できず失敗する問題を`getattr`ベースの解決へ
+  修正した。CIのmypyはLinuxでのみ走るため検出されていなかった。
+- **未解決の既知の問題（記録のみ、修正見送り）**: `setup.ps1`のverify段で
+  `Invoke-Utf8Captured { & uv run --no-sync utteran devices | Out-String }`を経由して表示する
+  device診断tableの罫線文字（┌┬┐├┼┤└┴┘等）が、cp932ロケール・pipe接続時に不規則に文字化けする
+  （同じ行内の日本語テキストは正しく復号される）。実機で`cpu`profileの実venv構築を通して再現。
+  `$OutputEncoding`（PowerShellの外部process出力capture用の別変数、`[Console]::OutputEncoding`とは
+  独立）を明示UTF-8にしても再現し、単純な既定コードページ問題ではなくpipe読み取りのbuffer境界に
+  絡む問題の可能性がある。影響は`verify`段の詳細ログ内の装飾的な罫線のみで、`devices --json`
+  （機能的な判定に実際に使われる経路）や`utteran transcribe`が直接出す同種のrich table
+  （box-drawing文字含む、PowerShellを経由しない経路）は正しく表示されることを確認済み。
+  この経路の`Out-String`ワークアラウンド自体、既存コード中のコメントで「JSON captureと同種の
+  問題が残る」と既に認識されていた。原因の完全な特定と修正は追加調査が必要なため見送り、記録した。
+- **作業B**: 別ディレクトリへのlocal clone（uvバイナリとuvパッケージcacheは共有、
+  `UTTERAN_MODEL_DIR`のみ隔離、GUI設定は`SettingsStore(path=...)`で隔離、job dirと
+  memory-calibrationは追記のみで既存を壊さないため意図的に共有）で真に空の`.venvs`を用意し、
+  `SetupWizardService`（GUIのAPIが呼ぶのと同じ層）を直接呼び出して初回フローを実機で完走させた。
+  - 初回起動判定: venv0個で`status().first_run == true`を確認。
+  - ハードウェア検出: 実Intel Arc GPUを検出し、`recommended="intel"`、話者分離のGPU実行可否を
+    含む理由文を確認。**この過程でウィザードのプロファイル選択カードが技術識別子
+    （`cpu`/`intel`等）を無翻訳のまま見出しに表示している不具合を発見**（指示書が要求する
+    「プロファイル名を知らなくても選べる表現」に反する）。ja/en翻訳ラベルを追加して修正、
+    回帰testを追加した。
+  - `cpu`profileのvenv構築を実機で完走（exit 0、6ステージ全て期待順序、40秒）。uvは既導入済み
+    分岐（"uv already available"）を実確認。uv未導入からの自動導入の実dl分岐は、実PATH・実
+    `%LOCALAPPDATA%\utteran\bin`を汚さずに検証する方法が確立できず、Phase 5c同様
+    **実機未検証のまま**とした。
+  - cancel/resume: `vulkan`profile構築を開始3秒後にcancelし、`status=cancelled`/`exit_code=130`、
+    process tree残留なしを確認。同一profileを再構築し31秒でexit 0完走、既存`.venvs`に影響なし。
+  - モデル取得: 隔離した空`UTTERAN_MODEL_DIR`へ`faster-whisper:large-v3-turbo`を実dlし、
+    事前表示の概算（1.6 GiB）と実サイズがほぼ一致することを確認。
+  - 実動作確認（smoke test）: 隔離venv・隔離モデルに対し合成無音WAVで実`transcribe`を実行し、
+    exit 0で完走。`complete()`はsmoke test成功前は`WizardNotReadyError`で拒否され、成功後は
+    `status().first_run`が`false`へ切り替わることを確認（2回目起動でウィザードが出ない設計の
+    実効性を確認）。
+  - 検証後、隔離clone・隔離モデルcache・共有job dirに生成された1件のsmoke.wav jobを削除し、
+    既存`.venvs`／実model cache／実job（他の実利用者jobを含む）が変更されていないことを確認した。
+  - uv cacheを共有したため、計測した所要時間（venv構築40秒等）は温cacheでの数値であり、
+    真の初回ネットワーク帯域律速の所要時間の代替にはならない。
+- 完了条件のうち、モデル不要test（280 passed）・ruff・mypyは合格。受入ハーネス
+  （既定実行、162件）は151 pass・4 fail・7 skip（CUDA不在の理由付き）で、4 failは個別再実行で
+  切り分けた: 2件（G4-09/P10-A）は一括実行時のリソース競合による一過性のtimeoutで単独実行では
+  pass、1件（G14-08）は今回G0〜G13を通しで実行していないための想定通りの集計未達、
+  残り1件（P4-11、`models download`ID省略時の非対話環境exit codeがtestの期待と不一致）は
+  Phase 5c時点のcommitでも同じ内容で失敗する既存の不整合で、Task A/Bの範囲外のため未修正・
+  記録のみとした。**今回の変更による新規の受入試験回帰は無い。** 4文書
+  （README／変更履歴／要件定義／AISTATE）は変更内容に応じて更新した
+  （要件定義は既存要求に対する適合修正のため変更なし、他3件を更新）。
+
 ## Phase 5c 初回セットアップウィザード（2026-08-17、着手・Step 0設計）
 
 ### Step 0 — 検証方法の設計（実装前に記録）
