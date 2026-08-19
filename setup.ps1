@@ -25,6 +25,8 @@ $LegacyDefaultEnvironment = Join-Path $ProjectRoot ".venv"
 $LegacyWindowsEnvironment = Join-Path $ProjectRoot ".venv-windows"
 $FfmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 $FfmpegChecksumUrl = "$FfmpegUrl.sha256"
+$UvReleaseApiUrl = "https://api.github.com/repos/astral-sh/uv/releases/latest"
+$UvAssetName = "uv-x86_64-pc-windows-msvc.zip"
 
 # Profile -> extras, matching src/utteran/profiles.py's PROFILE_EXTRAS. Kept
 # in sync manually since this script has no Python runtime available before
@@ -39,8 +41,18 @@ $ProfileExtras = @{
 $AllProfiles = @("cpu", "cuda", "intel", "vulkan", "gui")
 
 function Write-Step {
-    param([string]$Message)
+    <#
+    -Stage is optional and purely additive: when set, an extra machine-readable
+    line is printed alongside the normal human-readable "==> message" line, so
+    the GUI setup wizard (Phase 5c) can show a concrete stage name by parsing
+    an exact prefix instead of guessing one from free text. Existing callers
+    that omit -Stage are unaffected.
+    #>
+    param([string]$Message, [string]$Stage)
     Write-Host "`n==> $Message" -ForegroundColor Cyan
+    if ($Stage) {
+        Write-Host "##UTTERAN-WIZARD## stage=$Stage"
+    }
 }
 
 function Invoke-Utf8Captured {
@@ -318,6 +330,93 @@ function Show-EnvHelper {
     Write-Host "then set HF_TOKEN in .env. The token is never requested or printed by this script."
 }
 
+function Install-Uv {
+    <#
+    Mirrors Install-Ffmpeg's "download, verify SHA-256, then extract" shape:
+    astral-sh/uv publishes a per-asset <name>.sha256 sidecar on every GitHub
+    release (same "<hash> *<filename>" format ffmpeg's gyan.dev build uses),
+    so this applies the same standard to uv instead of piping the official
+    install script (irm .../install.ps1 | iex) straight into a shell unseen.
+    Does nothing if uv is already on PATH.
+    #>
+    $Existing = Get-Command uv -ErrorAction SilentlyContinue
+    if ($null -ne $Existing) {
+        Write-Host "uv already available: $($Existing.Source)"
+        return
+    }
+
+    Write-Host "uv was not found."
+    Write-Host "This will download uv (~15 MB) from astral-sh/uv's official GitHub releases:"
+    Write-Host "  $UvReleaseApiUrl"
+    Write-Host "The archive is verified against its published SHA-256 checksum before anything"
+    Write-Host "is extracted or run, the same way this script already verifies ffmpeg."
+    if (-not $Yes) {
+        $Answer = Read-Host "Download and install uv for the current user now? [y/N]"
+        if ($Answer.Trim().ToLowerInvariant() -notin @("y", "yes")) {
+            Write-Host "Skipped uv installation. Install it manually, then rerun setup:"
+            Write-Host "  https://docs.astral.sh/uv/getting-started/installation/"
+            return
+        }
+    }
+
+    $TempRoot = Join-Path ([IO.Path]::GetTempPath()) ("utteran-setup-uv-" + [Guid]::NewGuid())
+    $Archive = Join-Path $TempRoot $UvAssetName
+    $ChecksumFile = Join-Path $TempRoot "$UvAssetName.sha256"
+    $Expanded = Join-Path $TempRoot "expanded"
+    New-Item -ItemType Directory -Path $Expanded -Force | Out-Null
+    try {
+        $Release = Invoke-RestMethod -Uri $UvReleaseApiUrl -UseBasicParsing
+        $Asset = $Release.assets | Where-Object { $_.name -eq $UvAssetName } | Select-Object -First 1
+        $ChecksumAsset = $Release.assets |
+            Where-Object { $_.name -eq "$UvAssetName.sha256" } | Select-Object -First 1
+        if ($null -eq $Asset -or $null -eq $ChecksumAsset) {
+            throw "Could not find $UvAssetName or its .sha256 in the latest uv release."
+        }
+        Write-Host "Downloading uv $($Release.tag_name):"
+        Write-Host "  $($Asset.browser_download_url)"
+        Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $Archive -UseBasicParsing
+        Invoke-WebRequest -Uri $ChecksumAsset.browser_download_url -OutFile $ChecksumFile `
+            -UseBasicParsing
+        $ExpectedHash = ((Get-Content -LiteralPath $ChecksumFile -Raw).Trim() -split "\s+")[0]
+        $ActualHash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash
+        if ($ActualHash -ne $ExpectedHash) {
+            throw "uv archive SHA-256 verification failed."
+        }
+        Expand-Archive -LiteralPath $Archive -DestinationPath $Expanded -Force
+        $UvSource = Get-ChildItem -LiteralPath $Expanded -Filter "uv.exe" -Recurse |
+            Select-Object -First 1
+        if ($null -eq $UvSource) {
+            throw "Downloaded archive did not contain uv.exe."
+        }
+        New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
+        Copy-Item -LiteralPath $UvSource.FullName -Destination (Join-Path $BinDir "uv.exe") -Force
+        $UvxSource = Get-ChildItem -LiteralPath $Expanded -Filter "uvx.exe" -Recurse |
+            Select-Object -First 1
+        if ($null -ne $UvxSource) {
+            Copy-Item -LiteralPath $UvxSource.FullName -Destination (Join-Path $BinDir "uvx.exe") `
+                -Force
+        }
+        $env:PATH = "$BinDir;$env:PATH"
+        $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        $UserPathEntries = if ([string]::IsNullOrEmpty($UserPath)) { @() } else { $UserPath -split ";" }
+        if ($UserPathEntries -notcontains $BinDir) {
+            $NewUserPath = if ([string]::IsNullOrEmpty($UserPath)) { $BinDir } else { "$UserPath;$BinDir" }
+            [Environment]::SetEnvironmentVariable("Path", $NewUserPath, "User")
+            Write-Host "Added $BinDir to your user PATH. Open a new terminal for it to apply there."
+        }
+        Write-Host "Installed uv: $(Join-Path $BinDir 'uv.exe')" -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "uv download/setup failed: $($_.Exception.Message)"
+        Write-Host "Offline/manual setup: https://docs.astral.sh/uv/getting-started/installation/"
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempRoot) {
+            Remove-Item -LiteralPath $TempRoot -Recurse -Force
+        }
+    }
+}
+
 function Invoke-VulkanPrerequisiteCheck {
     param([Parameter(Mandatory = $true)][string]$VenvPath)
     $PythonExe = Join-Path $VenvPath "Scripts\python.exe"
@@ -369,7 +468,7 @@ function Invoke-ProfileSetup {
     Set-Location -LiteralPath $ProjectRoot
     Show-LegacyEnvironmentNotice
 
-    Write-Step "Checking Python 3.11 / 3.12"
+    Write-Step "Checking Python 3.11 / 3.12" -Stage "python_check"
     $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
     if ($null -eq $PythonCommand) {
         Write-Warning "python was not found on PATH. Install Python 3.11/3.12 or let uv manage it."
@@ -382,12 +481,14 @@ function Invoke-ProfileSetup {
         }
     }
 
-    Write-Step "Checking uv and syncing profile '$ProfileName'"
+    Write-Step "Checking uv" -Stage "uv_install"
+    Install-Uv
+
+    Write-Step "Syncing profile '$ProfileName'" -Stage "venv_sync"
     $DependencySyncSucceeded = $false
     $script:UvCommand = Get-Command uv -ErrorAction SilentlyContinue
     if ($null -eq $script:UvCommand) {
-        Write-Warning "uv was not found. Install it without administrator rights, then rerun setup:"
-        Write-Host "  winget install --id=astral-sh.uv -e"
+        Write-Warning "uv is still not available. Install it manually, then rerun setup:"
         Write-Host "  https://docs.astral.sh/uv/getting-started/installation/"
     }
     else {
@@ -417,14 +518,14 @@ function Invoke-ProfileSetup {
     }
 
     if ($ProfileName -ne "gui") {
-        Write-Step "Checking ffmpeg"
+        Write-Step "Checking ffmpeg" -Stage "ffmpeg"
         Install-Ffmpeg
 
-        Write-Step "Preparing .env without exposing a token"
+        Write-Step "Preparing .env without exposing a token" -Stage "env_setup"
         Show-EnvHelper
     }
 
-    Write-Step "Verifying profile '$ProfileName'"
+    Write-Step "Verifying profile '$ProfileName'" -Stage "verify"
     $ProfileVerificationSucceeded = $false
     if (-not $DependencySyncSucceeded) {
         Write-Warning "Skipping verification because dependency sync did not complete."

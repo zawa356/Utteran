@@ -255,6 +255,231 @@
     if (state.started) $("elapsed").textContent = formatTime((Date.now() - state.started) / 1000);
   }
 
+  const wizardState = {
+    hardware: null,
+    profile: null,
+    modelRef: "faster-whisper:large-v3-turbo",
+    diarizationModelRef: "pyannote:pyannote/speaker-diarization-community-1",
+    wantDiarization: false,
+    job: null,
+    source: null,
+    poller: null,
+    started: 0,
+    retry: null,
+  };
+
+  function showWizardStep(name) {
+    document.querySelectorAll(".wizard-step").forEach((node) => node.classList.add("hidden"));
+    $(`wizard-step-${name}`).classList.remove("hidden");
+  }
+
+  async function openWizard() {
+    showView("wizard");
+    showWizardStep("welcome");
+  }
+
+  function leaveWizardForLater() {
+    showView("workspace");
+  }
+
+  async function wizardBegin() {
+    try {
+      wizardState.hardware = await api("/api/wizard/hardware");
+    } catch (error) {
+      window.alert(error.message);
+      return;
+    }
+    renderWizardRecommendation();
+    showWizardStep("profile");
+  }
+
+  function renderWizardRecommendation() {
+    const recommendation = wizardState.hardware.recommendation;
+    wizardState.profile = recommendation.recommended;
+    $("wizard-reasons").replaceChildren(
+      ...recommendation.reasons.map((text) => {
+        const item = document.createElement("li");
+        item.textContent = text;
+        return item;
+      }),
+    );
+    $("wizard-detection-note").classList.toggle("hidden", recommendation.detection_confident);
+    $("wizard-profile-options").replaceChildren(
+      ...recommendation.alternatives.map((alternative) =>
+        wizardProfileCard(alternative, alternative.profile === recommendation.recommended),
+      ),
+    );
+  }
+
+  function wizardProfileCard(alternative, isRecommended) {
+    const label = document.createElement("label");
+    label.className = "wizard-profile-card";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "wizard-profile";
+    input.value = alternative.profile;
+    input.checked = isRecommended;
+    input.addEventListener("change", () => {
+      wizardState.profile = alternative.profile;
+    });
+    const title = document.createElement("strong");
+    title.textContent = alternative.profile + (isRecommended ? ` · ${t("wizardRecommended")}` : "");
+    const asr = document.createElement("p");
+    asr.textContent = `${t("wizardAsrAccel")}: ${alternative.asr_accelerated ? t("wizardYes") : t("wizardNo")}`;
+    const diarization = document.createElement("p");
+    diarization.className = "wizard-diarization-line";
+    diarization.textContent = `${t("wizardDiarizationAccel")}: ${
+      alternative.diarization_accelerated ? t("wizardYes") : t("wizardNo")
+    }`;
+    const size = document.createElement("p");
+    size.className = "muted";
+    size.textContent = `${t("wizardDiskUsage")}: ${formatBytes(alternative.approx_disk_bytes)}`;
+    label.append(input, title, asr, diarization, size);
+    if (alternative.caveat) {
+      const caveat = document.createElement("p");
+      caveat.className = "muted";
+      caveat.textContent = alternative.caveat;
+      label.appendChild(caveat);
+    }
+    alternative.extra_setup.forEach((note) => {
+      const extra = document.createElement("p");
+      extra.className = "muted";
+      extra.textContent = note;
+      label.appendChild(extra);
+    });
+    return label;
+  }
+
+  function wizardShowError(message, retry) {
+    $("wizard-error-message").textContent = message;
+    wizardState.retry = retry;
+    showWizardStep("error");
+  }
+
+  function runWizardJob(kind, extra = {}) {
+    return new Promise((resolve, reject) => {
+      $("wizard-job-log").textContent = "";
+      $("wizard-job-stage").textContent = "—";
+      $("wizard-job-stalled").classList.add("hidden");
+      wizardState.started = Date.now();
+      const payload = { kind, profile: wizardState.profile, ...extra };
+      api("/api/wizard/jobs", { method: "POST", body: JSON.stringify(payload) })
+        .then((job) => {
+          wizardState.job = job;
+          wizardState.source = new EventSource(`/api/wizard/jobs/${job.id}/events`);
+          const onLine = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.stage) $("wizard-job-stage").textContent = data.stage;
+            if (data.message) {
+              $("wizard-job-log").textContent += `${data.message}\n`;
+              $("wizard-job-log").scrollTop = $("wizard-job-log").scrollHeight;
+            }
+          };
+          ["stage_start", "log", "error"].forEach((name) =>
+            wizardState.source.addEventListener(name, onLine),
+          );
+          wizardState.poller = setInterval(async () => {
+            $("wizard-elapsed").textContent = formatTime((Date.now() - wizardState.started) / 1000);
+            const current = await api(`/api/wizard/jobs/${job.id}`);
+            $("wizard-job-stalled").classList.toggle("hidden", !current.stalled);
+            if (["completed", "failed", "cancelled"].includes(current.status)) {
+              clearInterval(wizardState.poller);
+              wizardState.source.close();
+              if (current.status === "completed") {
+                resolve(current);
+              } else {
+                const message = current.guidance
+                  ? t(`guide_${current.guidance.key}`)
+                  : t("wizardStepFailed");
+                reject(new Error(message));
+              }
+            }
+          }, 1000);
+        })
+        .catch(reject);
+    });
+  }
+
+  async function wizardStartVenvBuild() {
+    showWizardStep("progress");
+    $("wizard-progress-title").textContent = t("wizardStepVenv");
+    try {
+      await runWizardJob("venv_build");
+      showWizardStep("model");
+    } catch (error) {
+      wizardShowError(error.message, wizardStartVenvBuild);
+    }
+  }
+
+  async function wizardModelChoiceNext() {
+    wizardState.wantDiarization = $("wizard-diarization-toggle").checked;
+    if (wizardState.wantDiarization) {
+      $("wizard-token-state").textContent = (await api("/api/token")).configured
+        ? t("tokenSet")
+        : t("tokenUnset");
+      showWizardStep("token");
+    } else {
+      await wizardDownloadModelsAndVerify();
+    }
+  }
+
+  async function wizardDownloadModelsAndVerify() {
+    try {
+      showWizardStep("progress");
+      $("wizard-progress-title").textContent = t("wizardStepModel");
+      await runWizardJob("model_download", { model_ref: wizardState.modelRef });
+      if (wizardState.wantDiarization) {
+        $("wizard-progress-title").textContent = t("wizardStepDiarizationModel");
+        await runWizardJob("model_download", { model_ref: wizardState.diarizationModelRef });
+      }
+      $("wizard-progress-title").textContent = t("wizardStepSmoke");
+      await runWizardJob("smoke_test", {
+        model_ref: wizardState.modelRef,
+        diarization_enabled: wizardState.wantDiarization,
+      });
+      showWizardStep("done");
+    } catch (error) {
+      wizardShowError(error.message, wizardDownloadModelsAndVerify);
+    }
+  }
+
+  async function wizardSaveToken() {
+    const token = $("wizard-token-input").value;
+    if (!token) return;
+    await api("/api/token", { method: "PUT", body: JSON.stringify({ token }) });
+    $("wizard-token-input").value = "";
+    $("wizard-token-state").textContent = t("tokenSet");
+    state.settings.token_configured = true;
+  }
+
+  async function wizardFinishSetup() {
+    await api("/api/wizard/complete", { method: "POST" });
+    showView("workspace");
+    await loadEnvironment(wizardState.profile);
+  }
+
+  function bindWizard() {
+    $("wizard-begin").addEventListener("click", wizardBegin);
+    $("wizard-skip-welcome").addEventListener("click", leaveWizardForLater);
+    $("wizard-skip-profile").addEventListener("click", leaveWizardForLater);
+    $("wizard-skip-model").addEventListener("click", leaveWizardForLater);
+    $("wizard-profile-next").addEventListener("click", wizardStartVenvBuild);
+    $("wizard-model-next").addEventListener("click", wizardModelChoiceNext);
+    $("wizard-save-token").addEventListener("click", wizardSaveToken);
+    $("wizard-token-next").addEventListener("click", wizardDownloadModelsAndVerify);
+    $("wizard-token-skip").addEventListener("click", () => {
+      wizardState.wantDiarization = false;
+      wizardDownloadModelsAndVerify();
+    });
+    $("wizard-cancel").addEventListener("click", async () => {
+      if (wizardState.job) await api(`/api/wizard/jobs/${wizardState.job.id}/cancel`, { method: "POST" });
+    });
+    $("wizard-error-later").addEventListener("click", leaveWizardForLater);
+    $("wizard-error-retry").addEventListener("click", () => wizardState.retry?.());
+    $("wizard-finish").addEventListener("click", wizardFinishSetup);
+    $("relaunch-wizard").addEventListener("click", openWizard);
+  }
+
   function handleEvent(event) {
     const data = JSON.parse(event.data);
     const kind = data.event;
@@ -958,6 +1183,7 @@
       const file = event.dataTransfer.files[0];
       if (file) $("input-path").value = file.path || file.name;
     });
+    bindWizard();
   }
 
   async function boot() {
@@ -967,6 +1193,8 @@
     applySettings();
     await loadEnvironment(state.settings.default_profile);
     $("server-dot").title = "127.0.0.1";
+    const wizardStatus = await api("/api/wizard/status");
+    if (wizardStatus.first_run) await openWizard();
   }
 
   boot().catch((error) => {

@@ -17,6 +17,7 @@ from utteran_gui.environment import EnvironmentService, derive_options
 from utteran_gui.jobs import JobManager, guidance_for, parse_progress_line
 from utteran_gui.security import mask_secrets
 from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore
+from utteran_gui.setup_wizard import SetupWizardService
 
 
 class FakeKeyring:
@@ -43,18 +44,40 @@ def _create_profile(repo: Path, name: str) -> Path:
     return executable
 
 
-def test_gui_package_never_imports_core_package() -> None:
+_FORBIDDEN_MODULES = (
+    "utteran",
+    "torch",
+    "torchaudio",
+    "openvino",
+    "ctranslate2",
+    "faster_whisper",
+    "pyannote",
+    "onnxruntime",
+    "sherpa_onnx",
+)
+
+
+def test_gui_package_never_imports_core_package_or_inference_deps() -> None:
+    """The GUI (`.venvs/win-gui`) never installs inference packages (Phase 5c
+
+    指示書 Step 2: hardware detection must not pull torch/openvino in just to
+    probe the machine before any profile venv exists), so no module under
+    utteran_gui may import them, in addition to the pre-existing `utteran`
+    core-package prohibition.
+    """
     root = Path(__file__).parents[1] / "src" / "utteran_gui"
     for path in root.glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                assert all(
-                    alias.name != "utteran" and not alias.name.startswith("utteran.")
-                    for alias in node.names
-                )
+                for alias in node.names:
+                    assert not _is_forbidden(alias.name), f"{path.name} imports {alias.name}"
             if isinstance(node, ast.ImportFrom) and node.module is not None:
-                assert node.module != "utteran" and not node.module.startswith("utteran.")
+                assert not _is_forbidden(node.module), f"{path.name} imports {node.module}"
+
+
+def _is_forbidden(module: str) -> bool:
+    return any(module == name or module.startswith(f"{name}.") for name in _FORBIDDEN_MODULES)
 
 
 def test_settings_round_trip_and_token_is_never_returned(tmp_path: Path) -> None:
@@ -123,6 +146,32 @@ def test_theme_and_language_assets_are_externalized() -> None:
     assert 'item.event === "run_summary"' in script
     assert '"run_summary"' in script
     assert "executedStages" in translations and "reusedStages" in translations
+
+
+def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> None:
+    web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
+    index = (web / "index.html").read_text(encoding="utf-8")
+    script = (web / "app.js").read_text(encoding="utf-8")
+    translations = (web / "i18n.js").read_text(encoding="utf-8")
+
+    assert 'id="view-wizard"' in index
+    assert 'id="wizard-step-welcome"' in index
+    assert 'id="wizard-step-profile"' in index
+    assert 'id="wizard-step-model"' in index
+    assert 'id="wizard-step-token"' in index
+    assert 'id="wizard-step-progress"' in index
+    assert 'id="wizard-step-done"' in index
+    assert 'id="relaunch-wizard"' in index
+
+    assert 'api("/api/wizard/status")' in script
+    assert 'api("/api/wizard/hardware")' in script
+    assert '"/api/wizard/jobs"' in script
+    assert "if (wizardStatus.first_run) await openWizard()" in script
+    assert "wizardShowError" in script and "wizardState.retry" in script
+
+    assert "wizardTitle:" in translations
+    assert "wizardTitle:" in translations.split("\n  en: {")[1]
+    assert "guide_license:" in translations
 
 
 def test_viewer_assets_use_virtual_rows_and_ime_safe_ephemeral_search() -> None:
@@ -413,6 +462,39 @@ def test_memory_budget_error_has_specific_guidance() -> None:
     assert guidance == {"key": "memory", "settings_anchor": ""}
 
 
+def test_guidance_distinguishes_license_not_accepted_from_invalid_token() -> None:
+    """ModelAgreementError (license/terms not accepted) and
+
+    HuggingFaceAuthenticationError (the token itself is invalid) are
+    distinct Phase 1 error classes and must not collapse into one "token"
+    guidance message (Phase 5c 指示書 Step 4 explicit requirement).
+    """
+    license_guidance = guidance_for(
+        2,
+        [],
+        [
+            {
+                "event": "error",
+                "error_type": "ModelAgreementError",
+                "message": "利用条件に同意されていません",
+            }
+        ],
+    )
+    token_guidance = guidance_for(
+        2,
+        [],
+        [
+            {
+                "event": "error",
+                "error_type": "HuggingFaceAuthenticationError",
+                "message": "Hugging Face トークンが無効です",
+            }
+        ],
+    )
+    assert license_guidance == {"key": "license", "settings_anchor": "token"}
+    assert token_guidance == {"key": "token", "settings_anchor": "token"}
+
+
 class FakeProcess:
     pid = 12345
 
@@ -474,3 +556,81 @@ def test_job_manager_cancel_uses_injected_tree_killer(tmp_path: Path) -> None:
     assert killed == [12345]
     assert final["status"] == "cancelled"
     assert final["exit_code"] == 130
+
+
+class FakeWizardProcess:
+    pid = 99999
+
+    def __init__(self) -> None:
+        self.stdout = iter(["==> Checking Python 3.11 / 3.12\n"])
+        self.stderr = iter(())
+        self.returncode: int | None = 0
+        self.finished = threading.Event()
+        self.finished.set()
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        if not self.finished.wait(timeout):
+            raise TimeoutError
+        return self.returncode or 0
+
+
+def test_wizard_api_routes_run_status_events_and_complete(tmp_path: Path) -> None:
+    settings = SettingsStore(tmp_path / "settings.json")
+    wizard = SetupWizardService(
+        CliAdapter(tmp_path),
+        settings_store=settings,
+        popen_factory=lambda _command, **_kwargs: FakeWizardProcess(),
+    )
+    app = create_app(
+        "session-secret",
+        repo_root=tmp_path,
+        settings_store=settings,
+        wizard_service=wizard,
+    )
+    client = TestClient(app, headers={SESSION_HEADER: "session-secret"})
+
+    status = client.get("/api/wizard/status")
+    assert status.status_code == 200
+    assert status.json()["first_run"] is True
+
+    hardware = client.get("/api/wizard/hardware")
+    assert hardware.status_code == 200
+    assert "recommendation" in hardware.json()
+
+    not_ready = client.post("/api/wizard/complete")
+    assert not_ready.status_code == 409
+
+    _create_profile(tmp_path, "cpu")
+    started = client.post(
+        "/api/wizard/jobs",
+        json={"kind": "smoke_test", "profile": "cpu"},
+    )
+    assert started.status_code == 202
+    job_id = started.json()["id"]
+
+    deadline = time.monotonic() + 2
+    while (
+        client.get(f"/api/wizard/jobs/{job_id}").json()["status"] not in {"completed", "failed"}
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+    snapshot = client.get(f"/api/wizard/jobs/{job_id}").json()
+    assert snapshot["status"] == "completed"
+
+    events = client.get(f"/api/wizard/jobs/{job_id}/events")
+    assert events.status_code == 200
+    assert "event: done" in events.text
+
+    # The smoke_test job above already finished, so a new step is accepted rather than busy.
+    next_step = client.post("/api/wizard/jobs", json={"kind": "venv_build", "profile": "cpu"})
+    assert next_step.status_code == 202
+
+    completed = client.post("/api/wizard/complete")
+    assert completed.status_code == 200
+    assert completed.json()["setup_wizard_completed_at"]
+
+    missing = client.get("/api/wizard/jobs/does-not-exist")
+    assert missing.status_code == 404

@@ -17,11 +17,19 @@ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from utteran_gui import hardware
 from utteran_gui.cli import CliAdapter, CliError, RegenerationOptions, TranscriptionOptions
 from utteran_gui.environment import EnvironmentService
 from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
 from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore
+from utteran_gui.setup_wizard import (
+    SetupWizardService,
+    WizardBusyError,
+    WizardNotReadyError,
+    WizardProfileMissingError,
+    WizardUnknownJobError,
+)
 
 SESSION_COOKIE = "utteran_gui_session"
 SESSION_HEADER = "x-utteran-session"
@@ -65,6 +73,13 @@ class OpenFolderPayload(BaseModel):
     path: str = Field(min_length=1, max_length=32768)
 
 
+class WizardJobPayload(BaseModel):
+    kind: Literal["venv_build", "model_download", "smoke_test"]
+    profile: Literal["cpu", "cuda", "intel", "vulkan"]
+    model_ref: str | None = Field(default=None, max_length=200)
+    diarization_enabled: bool = False
+
+
 class RegenerationPayload(BaseModel):
     profile: Literal["cpu", "cuda", "intel", "vulkan"]
     output_dir: str = Field(min_length=1, max_length=32768)
@@ -82,6 +97,7 @@ def create_app(
     environment_service: EnvironmentService | None = None,
     job_manager: JobManager | None = None,
     history_service: HistoryService | None = None,
+    wizard_service: SetupWizardService | None = None,
 ) -> FastAPI:
     """Create one session-scoped application without importing the CLI package."""
     if not session_key:
@@ -92,6 +108,9 @@ def create_app(
     selected_environment = environment_service or EnvironmentService(selected_cli)
     selected_jobs = job_manager or JobManager(selected_cli)
     selected_history = history_service or HistoryService(selected_cli)
+    selected_wizard = wizard_service or SetupWizardService(
+        selected_cli, settings_store=selected_settings
+    )
     web_root = Path(__file__).with_name("web")
     app = FastAPI(title="utteran GUI", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/assets", StaticFiles(directory=web_root), name="assets")
@@ -183,6 +202,80 @@ def create_app(
         except Exception:
             raise HTTPException(status_code=503, detail="OS keyring is unavailable") from None
         return {"configured": False}
+
+    @app.get("/api/wizard/status")
+    def wizard_status() -> dict[str, object]:
+        return selected_wizard.status()
+
+    @app.get("/api/wizard/hardware")
+    def wizard_hardware() -> dict[str, object]:
+        return hardware.detect_hardware(repo_root).to_dict()
+
+    @app.post("/api/wizard/jobs", status_code=202)
+    def start_wizard_job(payload: WizardJobPayload) -> dict[str, object]:
+        try:
+            if payload.kind == "venv_build":
+                return selected_wizard.start_venv_build(payload.profile)
+            if payload.kind == "model_download":
+                if not payload.model_ref or not payload.model_ref.strip():
+                    raise HTTPException(status_code=422, detail="model_ref is required")
+                return selected_wizard.start_model_download(payload.profile, payload.model_ref)
+            return selected_wizard.start_smoke_test(
+                payload.profile,
+                asr_model_ref=payload.model_ref,
+                diarization_enabled=payload.diarization_enabled,
+            )
+        except WizardBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except WizardProfileMissingError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+
+    @app.get("/api/wizard/jobs/{job_id}")
+    def get_wizard_job(job_id: str) -> dict[str, object]:
+        try:
+            return selected_wizard.snapshot(job_id)
+        except WizardUnknownJobError:
+            raise HTTPException(status_code=404, detail="Job not found") from None
+
+    @app.post("/api/wizard/jobs/{job_id}/cancel", status_code=202)
+    def cancel_wizard_job(job_id: str) -> dict[str, object]:
+        try:
+            return selected_wizard.cancel(job_id)
+        except WizardUnknownJobError:
+            raise HTTPException(status_code=404, detail="Job not found") from None
+
+    @app.get("/api/wizard/jobs/{job_id}/events")
+    async def stream_wizard_events(job_id: str, request: Request) -> StreamingResponse:
+        try:
+            selected_wizard.snapshot(job_id)
+        except WizardUnknownJobError:
+            raise HTTPException(status_code=404, detail="Job not found") from None
+
+        async def generate() -> AsyncIterator[str]:
+            cursor = 0
+            idle_ticks = 0
+            while not await request.is_disconnected():
+                events, terminal = selected_wizard.events_since(job_id, cursor)
+                for event in events:
+                    cursor += 1
+                    event_name = str(event.get("event", "message"))
+                    data = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+                    yield f"id: {cursor - 1}\nevent: {event_name}\ndata: {data}\n\n"
+                if terminal and not events:
+                    break
+                idle_ticks += 1
+                if idle_ticks % 30 == 0:
+                    yield ": keepalive\n\n"
+                await asyncio.sleep(0.5)
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+
+    @app.post("/api/wizard/complete")
+    def complete_wizard() -> dict[str, object]:
+        try:
+            return selected_wizard.complete()
+        except WizardNotReadyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
 
     @app.post("/api/jobs", status_code=202)
     def start_job(payload: TranscriptionPayload) -> dict[str, object]:

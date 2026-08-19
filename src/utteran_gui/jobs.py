@@ -3,23 +3,19 @@
 from __future__ import annotations
 
 import json
-import os
-import signal
 import subprocess
 import threading
 import time
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 from utteran_gui.cli import CliAdapter, TranscriptionOptions
+from utteran_gui.processes import PopenFactory, TreeKiller, build_popen_kwargs, kill_process_tree
 from utteran_gui.security import mask_secrets, sanitize_json
 
 JobStatus = Literal["starting", "running", "completed", "failed", "cancelled"]
-PopenFactory = Callable[..., subprocess.Popen[str]]
-TreeKiller = Callable[[subprocess.Popen[str]], None]
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 
 
@@ -117,21 +113,7 @@ class JobManager:
             if job.cancel_requested:
                 self._finish_cancelled(job)
                 return
-            kwargs: dict[str, object] = {
-                "cwd": self.cli.repo_root,
-                "env": job.environment,
-                "stdin": subprocess.DEVNULL,
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.PIPE,
-                "text": True,
-                "encoding": "utf-8",
-                "errors": "replace",
-                "bufsize": 1,
-            }
-            if os.name == "nt":
-                kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            else:
-                kwargs["start_new_session"] = True
+            kwargs = build_popen_kwargs(cwd=self.cli.repo_root, env=job.environment)
             try:
                 process = self._popen_factory(job.command, **kwargs)
             except Exception as exc:
@@ -272,34 +254,19 @@ def parse_progress_line(line: str) -> dict[str, object] | None:
     return cast(dict[str, object], sanitize_json(payload))
 
 
-def kill_process_tree(process: subprocess.Popen[str]) -> None:
-    """Terminate an entire CLI process tree using the platform's reliable primitive."""
-    if process.poll() is not None:
-        return
-    if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        return
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-        process.wait(timeout=2.0)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return
-
-
 def guidance_for(
     exit_code: int | None,
     logs: list[str],
     events: list[dict[str, object]],
 ) -> dict[str, str] | None:
-    """Map CLI exit semantics and common dependency failures to actionable UI copy keys."""
+    """Map CLI exit semantics and common dependency failures to actionable UI copy keys.
+
+    ``license`` (model usage terms not accepted, e.g. ModelAgreementError /
+    GatedRepoError / HTTP 403) is checked before the generic ``token`` bucket
+    (the token itself being invalid, e.g. HuggingFaceAuthenticationError /
+    HTTP 401) so the two Phase 1 error classes stay distinguishable in the UI
+    instead of collapsing into one "token" message (Phase 5c requirement).
+    """
     if exit_code is None or exit_code == 0:
         return None
     combined = " ".join(logs + [str(event.get("message", "")) for event in events]).casefold()
@@ -308,6 +275,12 @@ def guidance_for(
         key = "cancelled"
     elif "memorybudgeterror" in error_types or "memory" in combined or "メモリ" in combined:
         key = "memory"
+    elif (
+        "modelagreementerror" in error_types
+        or "利用条件" in combined
+        or "gatedrepoerror" in combined
+    ):
+        key = "license"
     elif "token" in combined or "トークン" in combined:
         key = "token"
     elif "model" in combined or "モデル" in combined:
@@ -318,7 +291,7 @@ def guidance_for(
         key = {1: "general", 2: "configuration", 3: "dependency", 4: "input", 5: "partial"}.get(
             exit_code, "general"
         )
-    return {"key": key, "settings_anchor": "token" if key == "token" else ""}
+    return {"key": key, "settings_anchor": "token" if key in ("token", "license") else ""}
 
 
 def _duration(job: GuiJob) -> float:

@@ -1,5 +1,119 @@
 # AI 作業状態
 
+## Phase 5c 初回セットアップウィザード（2026-08-17、着手・Step 0設計）
+
+### Step 0 — 検証方法の設計（実装前に記録）
+
+作業機（Windows 11、Intel機）は既に uv・`intel` profile・model・ffmpeg を導入済みのため、
+「何もない状態からの初回セットアップ」を実機で壊さずに再現することはできない。
+`docs/utteran_Phase5c_指示書.md` の要求に従い、以下の方法で検証する。
+
+- **hardware.py（ハードウェア検出・推奨profile算出）**: 偽の検出結果を注入したユニットテストで
+  NVIDIA / Intel / AMD等 / 不明 / GPUなし の各分岐を網羅する。実機のWMI呼び出し自体は読み取り専用
+  （`Get-CimInstance Win32_VideoController`）のため実機で一度実行し、本機がIntel iGPU搭載機として
+  正しく検出されることだけを確認する。既存環境への書き込みは発生しない。
+- **uv自動導入（setup.ps1の`Install-Uv`）**: ダウンロード関数を注入可能にし、fakeなユニットテストで
+  ロジックを検証する。加えて実機で、実際の`%LOCALAPPDATA%\utteran\bin`やユーザーPATHではない
+  **隔離した一時ディレクトリ**へ向けて、本物のGitHub releaseからのダウンロード→SHA-256検証→展開→
+  `uv.exe --version`実行までを本物のネットワークで通す。これによりダウンロード・検証・展開ロジック
+  全体を実機で確認できるが、本機は既にuv導入済みのため「実PATHへの永続書き込み」分岐そのものは
+  到達せず、**実機未検証**として扱う。
+- **venv構築の進捗ストリーミング（setup_wizard.py）**: `tests/test_gui.py`のJobManagerテストと同じ
+  `FakeProcess`注入パターンで、`setup.ps1`風の標準出力行（`##UTTERAN-WIZARD## stage=...`マーカー含む）
+  を与えてパース・SSE配信・cancelをユニットテストで検証する。加えて実機で、既存`intel`profileを
+  `setup.ps1`の既存`-VenvDir`引数を使って**一時ディレクトリへ**再構築し（既存`.venvs/win-intel`には
+  一切触れない）、本物の`setup.ps1`出力形式でステージ検出が機能することを確認したうえで
+  一時ディレクトリを削除する。
+- **モデル取得・HFトークン・実動作確認（smoke test）**: fakeによるユニットテストのみで分岐を確認する。
+  smoke test自体（無音の合成WAVでの文字起こし実行）は既存`intel`profileに対して実際に実行する
+  （新規job dirが1つ作られるだけで既存jobには影響しない）。
+- **実機で検証できない項目（「実機未検証」と明記する）**: `cuda`profile（本機にNVIDIA GPUなし）、
+  真に空の状態（`.venvs`が1つもない状態）からの初回起動フロー全体、Linuxでのuv自動導入
+  （Phase 5cではWindows GUI限定のため対象外）。
+- **ロールバック方針**: 実機検証の書き込みは常にOS一時ディレクトリまたは一時`-VenvDir`にのみ向け、
+  既存`.venvs/win-intel`・実ユーザーPATH・実`settings.json`・実keyringエントリには一切書き込まない。
+  そのため検証後の復元作業は不要（一時ディレクトリの削除のみ）。
+
+### 実装内容（新規/変更ファイル）
+
+- `src/utteran_gui/hardware.py`（新規）: GPUベンダー検出（`powershell.exe`経由の
+  `Get-CimInstance Win32_VideoController`）、メモリ（`ctypes` `GlobalMemoryStatusEx`）、
+  ディスク空き容量、推奨profile算出。`torch`/`openvino`等は一切importしない。
+- `src/utteran_gui/processes.py`（新規）: `jobs.py`から`kill_process_tree`とPopen kwargs構築を
+  切り出した共有モジュール。`jobs.py`と`setup_wizard.py`の両方が利用する。
+- `src/utteran_gui/setup_wizard.py`（新規）: `SetupWizardService`。venv構築
+  （`setup.ps1 -Profile <p> -Yes`をsubprocess起動）、モデル取得
+  （`utteran models download <ref>`）、実動作確認（合成無音WAVでの`transcribe`）を
+  `JobManager`と同型の1操作制限・event cursor・tree kill機構で実行する。
+- `src/utteran_gui/api.py`: `/api/wizard/status`、`/api/wizard/hardware`、
+  `/api/wizard/jobs`、`/api/wizard/jobs/{id}`、`/api/wizard/jobs/{id}/cancel`、
+  `/api/wizard/jobs/{id}/events`、`/api/wizard/complete`を追加。既存`/api/token`・
+  `/api/settings`はそのまま流用（新設しない）。
+- `src/utteran_gui/settings.py`: `GuiSettings`に`setup_wizard_completed_at`を追加。
+- `src/utteran_gui/jobs.py`: `guidance_for`に`license`カテゴリを追加し、
+  `ModelAgreementError`（利用条件未同意）と既存`token`（`HuggingFaceAuthenticationError`＝
+  トークン自体が無効）を区別するようにした（Phase 1で既に別クラスだった2つのエラーを
+  GUI側で初めて区別）。
+- `setup.ps1`: `Install-Uv`関数を追加（`Install-Ffmpeg`と同じ「取得前確認→ダウンロード→
+  SHA-256検証→展開」の型。astral-sh/uvのGitHub最新releaseの`uv-x86_64-pc-windows-msvc.zip`と
+  公開`.zip.sha256`を使用）。`Write-Step`に任意の`-Stage`パラメータを追加し、
+  `##UTTERAN-WIZARD## stage=<slug>`という機械可読マーカーを主要ステップ
+  （python_check/uv_install/venv_sync/ffmpeg/env_setup/verify）に付与した。
+  既存のトップレベル`param()`は変更していない。
+
+### 実機検証結果（2026-08-17実施、Windows 11 / Intel Arc 140T機）
+
+- **ハードウェア検出**: `hardware.detect_hardware()`を実行し、
+  `"Intel(R) Arc(TM) 140T GPU (32GB)"`を正しく検出、`recommended="intel"`、
+  話者分離がXPUで動くことを含む理由文を確認した。副作用なし（読み取り専用）。
+  実測ディスク使用量（`setup.ps1 -List`の実表示）: cpu=1.0 GiB、intel=5.3 GiB
+  （指示書記載の5.3GBと一致）、vulkan=1.1 GiB。`cuda`はNVIDIA GPU不在のため未測定
+  （指示書記載の約2.4GBのまま採用）。
+- **uv自動導入ロジック**: 本機は既にuv導入済みのため`Install-Uv`関数自体は早期returnし、
+  ダウンロード分岐へ到達しない（**実機未検証**の分岐）。ダウンロード→SHA-256検証→展開→
+  実行という実処理そのものは、実際のastral-sh/uv最新release（0.12.5、当時）に対して
+  隔離した一時ディレクトリ（`%TEMP%\utteran-verify-uv`、実`BinDir`・実PATHとは無関係）で
+  再現し、チェックサム一致・展開・`uv --version`実行まで成功を確認した。検証後は
+  一時ディレクトリを削除済み。ユーザーPATHへの永続書き込み分岐は本機では検証していない。
+- **venv構築の進捗ストリーミング**: `setup.ps1 -Profile cpu -VenvDir <一時ディレクトリ>
+  -SkipFfmpeg -Yes`を実行し、既存`.venvs/win-intel`等には触れずに独立したcpu venvを構築、
+  6つのステージマーカー（python_check/uv_install/venv_sync/ffmpeg/env_setup/verify）が
+  すべて期待順序で出力されることを確認した。検証後に一時ディレクトリを削除し、
+  既存`.venvs`（linux-ci/win-cpu/win-intel/win-vulkan）が変化していないことを確認した。
+- **実動作確認（smoke test）**: 既存`intel`profileに対して`SetupWizardService.start_smoke_test`
+  を実際に実行した。初回は`asr_model_ref`未指定のため、`intel`profileの自動選択
+  （whisper-cpp/vulkan）が未導入のモデルを指すエラー（exit 3、guidance=`model`）で
+  意図的に失敗を確認——この結果を受けて`start_smoke_test`に`asr_model_ref`引数を追加し、
+  ウィザードのモデル取得ステップで実際に取得したモデル参照を渡す設計に修正した
+  （設計判断、下記参照）。`asr_model_ref="faster-whisper:large-v3-turbo"`
+  （導入済み）を指定した再実行はexit 0で完了し、実ジョブが生成された。検証用に作成した
+  2件のsmoke.wavジョブ（1件失敗・1件成功）は`jobs clean --job-id --yes`で削除済みで、
+  既存の実利用者ジョブ（実ファイル名を含む）は一切変更・削除していない。
+- **実機で検証できなかった項目**: `cuda`profile（本機にNVIDIA GPUなし）、真に空の
+  `.venvs`からの初回起動フロー全体、Linuxでのuv自動導入（対象外）、
+  ユーザーPATHへの永続書き込み分岐、GUIウィザード画面自体の目視確認
+  （`docs/Phase5c_GUI_セットアップウィザード_手動確認手順書.md`へ委ねる）。
+
+### 設計上の判断とその理由（追加分）
+
+- `start_smoke_test`に`asr_model_ref`引数を追加した。当初は`--no-diarization`のみで
+  profileの自動選択に任せる設計だったが、実機検証で`intel`profileの自動選択
+  （whisper-cpp/vulkan）と実際に導入済みのモデル（faster-whisper）が一致せず
+  smoke testが失敗する実例を確認したため。ウィザードのモデル取得ステップで
+  取得した`model_ref`（`"<backend>:<model_id>"`形式、カタログの`key`と同じ書式）を
+  そのまま`--asr-backend`/`--asr-model`へ渡すことで、実際に導入したモデルで
+  確実に検証できるようにした。
+- 初回起動判定（`SetupWizardService.status()`）は、指示書の字面どおり
+  「設定完了記録がない」ことだけでは判定せず、「設定ファイル自体が存在しない」
+  ことを条件にした。Phase 5c以前から使っているGUI利用者は`setup_wizard_completed_at`
+  フィールドを持たない`settings.json`を既に持っているため、字面どおりの判定では
+  既存利用者全員に毎回ウィザードが出てしまい、指示書自身が禁止する
+  「既に使っている利用者に対して毎回ウィザードを出す」状態になる。既存利用者を
+  煩わせない方を優先した。
+- `kill_process_tree`とPopen kwargs構築を`jobs.py`から`processes.py`へ切り出した。
+  `setup_wizard.py`が同じプロセスツリー終了・分離ロジックを必要とし、
+  重複実装を避けるため。
+
 ## レジューム挙動調査（2026-08-09、実機調査・是正完了）
 
 - `fix/resume-behavior-investigation`でWindows CUDA／`cuda:0`、`large-v3-turbo`／`large-v3`、

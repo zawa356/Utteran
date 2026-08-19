@@ -37,13 +37,18 @@ PowerShellでrepository直下から実行します。管理者権限は不要で
 .\start.ps1
 ```
 
-GUIを使う場合は、軽量なGUI環境と実際に推論するprofileを別々に構築します。
+GUIを使う場合は、軽量なGUI環境だけを構築して起動すれば、初回セットアップウィザードが
+ハードウェアを検出し、推奨profileの構築・uv導入・モデル取得・トークン設定・実動作確認まで
+案内します（Phase 5c）。
 
 ```powershell
 .\setup.ps1 -Profile gui
-.\setup.ps1 -Profile cuda
 .\gui.ps1
 ```
+
+推論用profile（`cuda`／`intel`／`vulkan`／`cpu`）を手動で構築する場合は、下記の
+[Install profile](#install-profile)を直接実行しても構いません。ウィザードは
+`setup.ps1`を呼び出すだけなので、どちらの手順でも同じ結果になります。
 
 GUI環境`.venvs/win-gui`はFastAPI／pywebview専用で、PyTorchとfaster-whisperを含みません。
 `utteran_gui`は推論coreをimportせず、選択したprofileの`utteran` CLIだけを子processとして起動します。
@@ -66,13 +71,21 @@ GUIは結果の仮想スクロール、全文検索、話者／時間フィル�
 .\setup.ps1 -SetDefault intel
 ```
 
-| Profile | 用途 | 主な依存 |
-|---|---|---|
-| `cpu` | GPUなし | CPU PyTorch、faster-whisper、pyannote |
-| `cuda` | NVIDIA | CUDA 12.6 PyTorch、faster-whisper、pyannote |
-| `intel` | Intel Arc/NPU | XPU PyTorch、OpenVINO、whisper.cpp |
-| `vulkan` | AMD等 | CPU PyTorch、Vulkan whisper.cpp |
-| `gui` | Windows GUI | FastAPI、Uvicorn、pywebview（推論依存なし） |
+「どのハードウェアか」ではなく「選ぶとどう動くか」を基準に選んでください。特に**話者分離が
+GPUで動くかどうか**は、`intel`と`vulkan`の間で処理時間に最も大きく影響します。
+
+| Profile | 対象ハードウェア | 文字起こしの高速化 | 話者分離のGPU実行 | 主な依存 |
+|---|---|---|---|---|
+| `cuda` | NVIDIA GPU | ○（CUDA） | ○（CUDA） | CUDA 12.6 PyTorch、faster-whisper、pyannote |
+| `intel` | Intel GPU（Arc／内蔵GPU） | ○（OpenVINO／Vulkan） | ○（XPU） | XPU PyTorch、OpenVINO、whisper.cpp |
+| `vulkan` | AMD等のGPU、またはNVIDIA/Intel以外 | ○（Vulkan） | ×（CPUで実行） | CPU PyTorch、Vulkan whisper.cpp |
+| `cpu` | GPUなし | ×（CPUで実行） | ×（CPUで実行） | CPU PyTorch、faster-whisper、pyannote |
+| `gui` | （GUI専用、推論しない） | — | — | FastAPI、Uvicorn、pywebview（推論依存なし） |
+
+Intel製CPUでも専用GPU（Arc等）を積んでいない場合は`intel`ではなく`cpu`を選んでください。
+`intel`は「CPUがIntel製」ではなく「Intel GPU（Arc／内蔵GPU）を積んでいる」ことが基準です。
+どちらか判断が難しい場合や、迷わず選びたい場合はGUIの初回セットアップウィザードが
+ハードウェアを自動検出して推奨profileを提示します。
 
 各venvは`.venvs/<os>-<profile>`へ分離されます。model、job、native buildはprofile間で共有します。
 `setup.ps1`は依存、ffmpeg、device診断だけを担当し、modelを暗黙downloadしません。
@@ -276,6 +289,7 @@ CIはpatternを必要としない汎用のemail形式、user絶対path、media�
 - [Phase 4a照合走査](docs/照合走査_Phase4a.md)
 - [Phase 5a GUI手動確認](docs/Phase5a_GUI_手動確認手順書.md)
 - [Phase 5b GUI手動確認](docs/Phase5b_GUI_手動確認手順書.md)
+- [Phase 5c セットアップウィザード手動確認](docs/Phase5c_GUI_セットアップウィザード_手動確認手順書.md)
 - [変更履歴](変更履歴.md)
 
 ## ライセンスとモデル利用条件

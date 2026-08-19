@@ -160,8 +160,96 @@
         </section>
       </section>
 
+      <section id="view-wizard" class="view">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">FIRST-RUN SETUP</p>
+            <h1 data-i18n="wizardTitle">セットアップウィザード</h1>
+            <p class="lede" data-i18n="wizardLead">お使いのハードウェアに合わせて、文字起こしの準備をします。</p>
+          </div>
+        </header>
+
+        <div id="wizard-step-welcome" class="wizard-step panel form-panel">
+          <h2 data-i18n="wizardWelcomeTitle">はじめに</h2>
+          <p class="muted" data-i18n="wizardWelcomeBody">お使いのPCのハードウェアを確認し、最適な構成を提案します。ネットワーク環境により数分から数十分かかります。</p>
+          <div class="form-actions">
+            <button id="wizard-skip-welcome" class="button secondary" type="button" data-i18n="wizardLater">後で行う</button>
+            <button id="wizard-begin" class="button primary" type="button" data-i18n="wizardBegin">始める</button>
+          </div>
+        </div>
+
+        <div id="wizard-step-profile" class="wizard-step panel form-panel hidden">
+          <h2 data-i18n="wizardProfileTitle">構成の選択</h2>
+          <div id="wizard-detection-note" class="notice warning hidden" data-i18n="wizardDetectionFailed">この環境のハードウェアを自動検出できませんでした。CPU構成で開始できます。他の構成はREADMEを参照して後から追加できます。</div>
+          <ul id="wizard-reasons" class="wizard-reasons"></ul>
+          <div id="wizard-profile-options" class="wizard-profile-grid"></div>
+          <div class="form-actions">
+            <button id="wizard-skip-profile" class="button secondary" type="button" data-i18n="wizardLater">後で行う</button>
+            <button id="wizard-profile-next" class="button primary" type="button" data-i18n="wizardContinue">この構成で始める</button>
+          </div>
+        </div>
+
+        <div id="wizard-step-model" class="wizard-step panel form-panel hidden">
+          <h2 data-i18n="wizardModelTitle">モデルを選ぶ</h2>
+          <p class="muted" data-i18n="wizardModelBody">既定モデル (large-v3-turbo) を取得します。話者分離も使う場合は、pyannoteモデルの利用条件への同意とHugging Faceトークンが追加で必要です。</p>
+          <label class="check-field"><input id="wizard-diarization-toggle" type="checkbox"><span data-i18n="wizardUseDiarization">話者分離も使う</span></label>
+          <div class="form-actions">
+            <button id="wizard-skip-model" class="button secondary" type="button" data-i18n="wizardLater">後で行う</button>
+            <button id="wizard-model-next" class="button primary" type="button" data-i18n="wizardDownload">モデルを取得</button>
+          </div>
+        </div>
+
+        <div id="wizard-step-token" class="wizard-step panel form-panel hidden">
+          <h2 data-i18n="wizardTokenTitle">Hugging Faceトークン</h2>
+          <p class="muted" data-i18n="wizardTokenBody">話者分離モデルの利用には、利用条件への同意とread tokenが必要です。</p>
+          <p><a id="wizard-token-agreement-link" href="https://huggingface.co/pyannote/speaker-diarization-community-1" target="_blank" rel="noreferrer" data-i18n="wizardTokenAgreementLink">モデル利用条件のページを開く</a></p>
+          <div class="token-card">
+            <div><span id="wizard-token-state"></span> · <span data-i18n="tokenPrivacy">保存済みの値は表示しません</span></div>
+            <div class="token-actions">
+              <input id="wizard-token-input" type="password" autocomplete="new-password" placeholder="hf_••••••••">
+              <button id="wizard-save-token" class="button secondary" type="button" data-i18n="saveToken">トークンを保存</button>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button id="wizard-token-skip" class="button secondary" type="button" data-i18n="wizardSkipDiarization">話者分離なしで進める</button>
+            <button id="wizard-token-next" class="button primary" type="button" data-i18n="wizardContinue">続ける</button>
+          </div>
+        </div>
+
+        <div id="wizard-step-progress" class="wizard-step panel progress-panel hidden" aria-live="polite">
+          <div class="progress-header">
+            <div><p class="eyebrow">SETTING UP</p><h2 id="wizard-progress-title">—</h2></div>
+            <button id="wizard-cancel" class="button danger" type="button" data-i18n="cancel">キャンセル</button>
+          </div>
+          <div class="progress-metrics"><strong id="wizard-elapsed">00:00:00</strong><span data-i18n="elapsed">経過</span><strong id="wizard-job-stage">—</strong><span data-i18n="wizardCurrentStage">現在の処理</span></div>
+          <p id="wizard-job-stalled" class="notice warning hidden" data-i18n="stalled">しばらく進捗イベントがありません。処理は継続中です。</p>
+          <details class="logs" open><summary data-i18n="details">詳細ログ</summary><pre id="wizard-job-log"></pre></details>
+        </div>
+
+        <div id="wizard-step-error" class="wizard-step panel form-panel hidden">
+          <h2 data-i18n="wizardErrorTitle">この手順でエラーが発生しました</h2>
+          <p id="wizard-error-message" class="notice"></p>
+          <div class="form-actions">
+            <button id="wizard-error-later" class="button secondary" type="button" data-i18n="wizardLater">後で行う</button>
+            <button id="wizard-error-retry" class="button primary" type="button" data-i18n="wizardRetry">再試行</button>
+          </div>
+        </div>
+
+        <div id="wizard-step-done" class="wizard-step panel form-panel hidden">
+          <h2 data-i18n="wizardDoneTitle">準備が完了しました</h2>
+          <p class="muted" data-i18n="wizardDoneBody">実際の音声ファイルで文字起こしを試せます。</p>
+          <div class="form-actions">
+            <button id="wizard-finish" class="button primary" type="button" data-i18n="wizardFinish">文字起こしを始める</button>
+          </div>
+        </div>
+      </section>
+
       <section id="view-settings" class="view">
         <header class="page-header"><div><p class="eyebrow">PREFERENCES</p><h1 data-i18n="settingsTitle">設定</h1><p class="lede" data-i18n="settingsLead">GUI専用の設定です。CLIのconfig.tomlとは分離して保存します。</p></div></header>
+        <div class="panel form-panel wizard-relaunch">
+          <div><h3 data-i18n="relaunchWizardTitle">セットアップウィザード</h3><p class="muted" data-i18n="relaunchWizardBody">新しいプロファイルの追加や、モデル・トークンの再設定にも使えます。</p></div>
+          <button id="relaunch-wizard" class="button secondary" type="button" data-i18n="relaunchWizard">ウィザードを開く</button>
+        </div>
         <form id="settings-form" class="panel form-panel">
           <div class="field-grid two">
             <label><span data-i18n="theme">テーマ</span><select id="theme-select"><option value="dark" data-i18n="dark">ダーク</option><option value="light" data-i18n="light">ライト</option></select></label>

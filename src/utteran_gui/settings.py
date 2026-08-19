@@ -27,6 +27,7 @@ class GuiSettings:
     default_profile: str | None = None
     default_input_dir: str = ""
     default_output_dir: str = ""
+    setup_wizard_completed_at: str | None = None
 
     @classmethod
     def from_dict(cls, payload: object) -> GuiSettings:
@@ -36,12 +37,16 @@ class GuiSettings:
         theme = payload.get("theme")
         language = payload.get("language")
         profile = payload.get("default_profile")
+        completed_at = payload.get("setup_wizard_completed_at")
         return cls(
             theme=cast(Theme, theme if theme in {"dark", "light"} else "dark"),
             language=cast(Language, language if language in {"ja", "en"} else "ja"),
             default_profile=(str(profile) if profile in PROFILE_NAMES else None),
             default_input_dir=_bounded_string(payload.get("default_input_dir")),
             default_output_dir=_bounded_string(payload.get("default_output_dir")),
+            setup_wizard_completed_at=(
+                str(completed_at) if isinstance(completed_at, str) and completed_at else None
+            ),
         )
 
     def to_dict(self) -> dict[str, object]:

@@ -31,15 +31,18 @@ matching hardware, not by CI.
 Run `.\start.ps1` for the numbered interactive menu. Available profiles are `cpu`, `cuda`,
 `intel`, and `vulkan`; each uses an isolated virtual environment under `.venvs`.
 
-For the desktop GUI, install its lightweight environment and at least one inference profile:
+For the desktop GUI, install its lightweight environment and launch it; a first-run setup wizard
+detects your hardware and walks through building the recommended inference profile, installing uv,
+fetching a model, configuring a token, and verifying everything actually works (Phase 5c):
 
 ```powershell
 .\setup.ps1 -Profile gui
-.\setup.ps1 -Profile cuda
 .\gui.ps1
 ```
 
-`.venvs/win-gui` contains FastAPI, Uvicorn, and pywebview, but no PyTorch or faster-whisper.
+You can still build an inference profile manually first with `.\setup.ps1 -Profile cuda` (or
+another profile) - the wizard just calls `setup.ps1` itself, so either order produces the same
+result. `.venvs/win-gui` contains FastAPI, Uvicorn, and pywebview, but no PyTorch or faster-whisper.
 The independent `utteran_gui` package never imports the inference core; it runs the selected
 profile's `utteran` executable as a child process. The GUI includes a virtualized transcript viewer,
 full-text search, speaker/time filters, prominent model and device metadata, job history, deletion,
