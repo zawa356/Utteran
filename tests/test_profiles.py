@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -142,6 +144,56 @@ def test_setup_forces_utf8_for_devices_json() -> None:
     assert "Invoke-Utf8Captured" in setup_script[json_call - 100 : json_call]
     assert "Remove-Item Env:PYTHONIOENCODING" in setup_script[helper:json_call]
     assert "[Console]::OutputEncoding = $PreviousConsoleEncoding" in setup_script
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Spawns Windows PowerShell")
+def test_setup_list_writes_valid_utf8_when_stdout_is_piped() -> None:
+    """`setup.ps1`'s own Write-Host output must decode as UTF-8 when piped.
+
+    `Invoke-Utf8Captured` only fixes encoding for *external commands that
+    setup.ps1 captures* (e.g. `utteran devices --json`). It does not affect
+    how PowerShell itself encodes the Japanese text it writes via
+    `Write-Host`/`Write-Step` (e.g. `Show-ProfileList`'s "venv ルート: ..."
+    and per-profile "作成済み"/"未作成" state). The GUI setup wizard
+    (`utteran_gui.setup_wizard.SetupWizardService`) launches setup.ps1 with
+    stdout redirected to a pipe (never a real console) and decodes it as
+    UTF-8 (`processes.build_popen_kwargs`). On a genuine cp932-locale
+    Windows machine, when PowerShell's own stdout is not attached to a
+    console, `[Console]::OutputEncoding` resolves to the OEM codepage
+    (cp932), so Write-Host's Japanese text comes out as cp932 bytes -
+    exactly the mismatch that corrupts the wizard's progress log.
+    """
+    setup_script = Path(__file__).parents[1] / "setup.ps1"
+    env = dict(os.environ)
+    env.pop("PYTHONIOENCODING", None)
+    env.pop("PYTHONUTF8", None)
+
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(setup_script),
+            "-List",
+        ],
+        capture_output=True,
+        env=env,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    try:
+        decoded = completed.stdout.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise AssertionError(
+            f"setup.ps1 -List stdout is not valid UTF-8 when piped: {exc}\n"
+            f"raw bytes: {completed.stdout!r}"
+        ) from exc
+    assert "venv ルート" in decoded, decoded
+    assert "�" not in decoded, "replacement characters indicate a decode mismatch"
 
 
 def test_start_forces_utf8_for_captured_json() -> None:

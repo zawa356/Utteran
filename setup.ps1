@@ -15,6 +15,26 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+if ([Console]::IsOutputRedirected) {
+    # When this script's own stdout is piped rather than attached to a real
+    # console (as when the GUI setup wizard launches it via
+    # SetupWizardService.start_venv_build), Windows PowerShell 5.1 still
+    # encodes Write-Host/Write-Step output using [Console]::OutputEncoding,
+    # which for a non-console process resolves to the OEM codepage (e.g.
+    # cp932 on Japanese Windows) - not UTF-8. The wizard decodes the pipe as
+    # UTF-8 (utteran_gui.processes.build_popen_kwargs), so without this the
+    # Japanese progress text it displays comes out as mojibake. Scoped to
+    # the redirected case only, so interactive console runs (a user's own
+    # terminal, whose OutputEncoding already matches its console codepage)
+    # are unaffected.
+    try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    }
+    catch {
+        # Some hosts refuse to change OutputEncoding; leave the default.
+    }
+}
+
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DataRoot = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "utteran"
 $BinDir = Join-Path $DataRoot "bin"

@@ -13,6 +13,7 @@ import signal
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 PopenFactory = Callable[..., subprocess.Popen[str]]
 TreeKiller = Callable[[subprocess.Popen[str]], None]
@@ -51,10 +52,18 @@ def kill_process_tree(process: subprocess.Popen[str]) -> None:
             check=False,
         )
         return
+    # os.killpg/signal.SIGKILL are POSIX-only; typeshed omits them from the
+    # win32 stubs, so mypy fails here when run on a Windows machine even
+    # though this branch never executes there (os.name == "nt" returns
+    # above). CI's type check runs on Linux and would not catch this, so
+    # resolve both through getattr to stay mypy-clean on every platform,
+    # matching the precedent in utteran.native for the same class of issue.
+    killpg = cast(Callable[[int, int], None], getattr(os, "killpg"))  # noqa: B009
+    sigkill = cast(int, getattr(signal, "SIGKILL", signal.SIGTERM))
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        killpg(process.pid, signal.SIGTERM)
         process.wait(timeout=2.0)
     except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
+        killpg(process.pid, sigkill)
     except ProcessLookupError:
         return
