@@ -1,5 +1,108 @@
 # AI 作業状態
 
+## Phase 5d インストーラー化（2026-08-19、実装・実機検証完了）
+
+`docs/utteran_Phase5d_指示書.md`に従い、`feature/phase5d-installer`で実装した。
+推論／GUIのPythonコードは一切変更していない（29.5章参照）。設計判断とその理由の全文は
+`要件定義.md`29章、実機検証手順は`docs/Phase5d_インストーラー_手動確認手順書.md`を参照。
+
+### 実装内容
+
+- `pyproject.toml`に`build`extra（`pyinstaller`、Windows限定）を追加。`gui`venvには混ぜず、
+  ビルド専用venv（`.venvs/win-gui-build`）を`build.ps1`が管理する。
+- `packaging/gui.spec`: PyInstaller onedirビルド。`src/utteran_gui`とFastAPI／uvicorn／
+  pywebviewだけを対象とし、推論コア（`utteran`、torch、faster-whisper、pyannote、
+  ctranslate2）がビルド成果物へ混入した場合はビルド自体を`SystemExit`で中断する検査を
+  組み込んだ。
+- `packaging/installer.iss`: Inno Setup（管理者権限不要、`{localappdata}\Programs\utteran`
+  へインストール、日本語／英語）。ライセンスページ直後にサードパーティライセンス告知、
+  インストール先選択直後に初回起動時の追加ダウンロード告知を、それぞれ`CreateOutputMsgPage`
+  で表示する。アンインストール時は`MsgBox`によるYes/No確認chainでGUI設定／プロファイル
+  実行環境（`.venvs`）／モデル／ジョブ履歴／ffmpegの削除可否を個別に確認し（既定は削除しない、
+  サイレントアンインストールでは一切確認せずすべて保持）、uvは削除対象にしない
+  （ffmpegとuvが`%LocalAppData%\utteran\bin`を共有するため、削除はディレクトリ単位でなく
+  `ffmpeg.exe`/`ffprobe.exe`のファイル単位で行う）。
+- `build.ps1`: ISCC.exe不在を即座に検出して（uv sync等を試みる前に）導入方法付きで終了する。
+  存在すればビルド専用venv同期→PyInstaller→推論コア非混入の実ファイル走査→
+  `pyproject.toml`のversionを渡してのInno Setup compile→SHA-256算出まで1コマンドで実行する。
+- 署名は実施しない（要件定義29.6章に判断理由を記録）。`installer.iss`に
+  `#ifdef SignInstaller`で囲んだ`SignTool`宣言を用意し、`build.ps1 -SignCommand`経由で
+  将来のCA署名導入に備えた（未署名ビルドでは`SignTool`自体が定義されないため、
+  署名ツール未登録でもcompileが失敗しない）。
+- README: インストーラーからの導入を最初の選択肢として提示し、SmartScreen警告の内容・
+  回避手順・警告が出る理由、SHA-256検証手順（`Get-FileHash`）を追記。既存の`setup.ps1`
+  手順は「開発者向け」として保持。`docs/リリース手順.md`にインストーラーのビルド・
+  SHA-256記載・GitHub Releasesへの添付手順を追加。
+
+### 実装中に発見・修正したバグ
+
+- `packaging/gui.spec`のPyInstaller `SPECPATH`はspec fileの**あるディレクトリ**を指す
+  （spec file自体のfull pathではない）。当初`os.path.dirname(SPECPATH)`としたため
+  repository rootの1つ上（`C:\UserDataFile\git\src\...`）を誤って参照し、実際に
+  `python -m PyInstaller`を実行して`ERROR: script ... not found`で検出・修正した。
+  ドキュメントだけで判断せず実行して見つけた不具合。
+- `packaging/installer.iss`の`[Code]`section冒頭、`{ ... }`形式のPascalコメント内で
+  Inno定数の記法（`{app}`）をそのまま文字として書くと、コメント自体が`{app}`の`}`で
+  early-closeしてしまい以降が構文エラーになることをISCCの実compileで検出。該当箇所を
+  `//`形式のコメントへ書き換えて解消した。
+- 当初`CreateInputOptionPage`が返す`TInputOptionWizardPage`を`.ShowModal()`で単独表示する
+  設計だったが、実際にISCC 6.7.3でcompileすると`Unknown identifier 'SHOWMODAL'`で失敗した。
+  この型はインストーラーの自動page遷移に組み込まれることが前提で、アンインストーラーには
+  その遷移機構が存在しないため単独表示メソッドを持たない。確実に動作する`MsgBox`による
+  Yes/No確認chainへ設計変更した（要件定義29.7章に判断経緯を記録）。
+
+### 実機検証（2026-08-19、Windows 11 / Intel機、本機のuv package cacheは温cache）
+
+- `winget install --id JRSoftware.InnoSetup`でInno Setup 6.7.3を導入（ユーザー領域
+  `%LocalAppData%\Programs\Inno Setup 6`、管理者権限不要）。
+- `.\build.ps1`を実PowerShell 7と実**Windows PowerShell 5.1**（`powershell.exe`）の両方で
+  実行し、いずれも成功（PyInstallerビルド→推論コア非混入確認→Inno Setup compile→
+  SHA-256算出まで完走）。README記載の対応環境（Windows PowerShell 5.1）と実際に一致することを
+  確認した。
+- PyInstaller onedirビルド結果は43MB。`torch`/`utteran`/`faster_whisper`/`pyannote`/
+  `ctranslate2`ディレクトリが含まれないことを実ファイル走査で確認。
+- ビルドした`utteran-gui.exe`を単独起動し、プロセスが生存したまま`127.0.0.1`の
+  OS割当portへlistenすることを確認。認証なしで`/launch`を叩くと401（セッションkey
+  未検証）が返ることを確認し、FastAPI/uvicornが凍結exe内で正しくrequestを処理することを
+  検証した（pywebviewのネイティブウィンドウ描画自体は目視が必要なため未検証、
+  手動確認手順書へ委譲）。
+- 生成したインストーラー（`utteran-setup-0.1.0.exe`、約19.7MB）を`/VERYSILENT
+  /SUPPRESSMSGBOXES /DIR=<一時ディレクトリ>`でサイレントインストールし、想定した
+  フラットな配置（`utteran-gui.exe`、`_internal/`、`pyproject.toml`、`uv.lock`、
+  `setup.ps1`、`run.ps1`、`src/utteran/`、`src/utteran_gui/`等が`{app}`直下に並ぶ）を
+  実際のfile存在確認で検証した。スタートメニューショートカットの作成も確認。
+- インストール先から`utteran-gui.exe`をcwd=インストール先で起動し（ショートカットの
+  `WorkingDir`挙動を再現）、`/launch`が同じく401を返すことを確認。`project_root()`が
+  Pythonコード変更なしに正しく動作することを実機で確認した。
+- `.venvs/win-cpu/marker.txt`を模擬配置した状態で`unins000.exe /VERYSILENT
+  /SUPPRESSMSGBOXES`を実行し、アプリ本体（exe、`pyproject.toml`等）は削除される一方、
+  `.venvs`配下のmarkerは残ることを確認した。レジストリのUninstallエントリも
+  正しく消去されることを確認。サイレント経路が対話確認を一切行わず「すべて保持」に
+  倒れる安全側デフォルトを実機で検証できた。
+- Inno Setupのインストールディレクトリを一時的にrenameしてISCC.exe不在を再現し、
+  `build.ps1`が`uv sync`等を一切試みずに即座に導入方法付きのエラーで終了することを確認、
+  検証後に元へrenameし直した。
+- 品質確認: モデル不要pytest 280 passed・1 failed（`test_ctrl_c_is_confined_to_the_child_console`、
+  Phase 5d事前準備で既に環境依存と特定済みの既知flaky、無関係）。ruff check/format、mypy
+  55 source files、PowerShell BOM 4 file（`build.ps1`は未commit時点のためcheck対象外、
+  commit後は5 fileになる想定）、`uv lock --check`、`[System.Management.Automation.Language.Parser]`
+  による全`.ps1`の静的構文検査、いずれも合格。
+
+### 未検証の項目（記録）
+
+- 署名付きビルド（`-SignCommand`経路）は証明書を持たないため未検証。
+- 実際のSmartScreen警告表示は、ローカルビルドしたexeでは再現しない（Zone Identifierが
+  付与されないため）。GitHub Releases公開後、ブラウザ経由でダウンロードしての確認が必要。
+- インストーラーのライセンス／追加ダウンロード告知page、アンインストールの`MsgBox`
+  Yes/No確認chain、ネイティブWebViewの実際の描画は、対話操作を伴うため未検証
+  （`docs/Phase5d_インストーラー_手動確認手順書.md`へ委譲）。
+- uv未導入環境からの`Install-Uv`実PATH書き込み分岐は、Phase 5c・Phase 5d事前準備から
+  引き続き実機未検証。
+- 本機のuv package cacheは温cacheのため、ビルド・初回セットアップの所要時間は
+  真にネットワーク帯域律速となる初回導入の代替にならない（Phase 5d事前準備からの
+  申し送り事項がそのまま5dにも残る）。
+- インストーラーCIへの組み込みは行っていない（要件定義29.9章に判断理由を記録）。
+
 ## Phase 5d 事前準備（2026-08-19、完了）
 
 `docs/utteran_Phase5d事前準備指示書.md`に従い、`chore/phase5d-preparation`で作業A（cp932関連flaky調査）と
