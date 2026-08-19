@@ -1,5 +1,29 @@
 # AI 作業状態
 
+## v0.1.0 リリース公開（2026-08-19）
+
+利用者の指示により、Phase 5d完了後に`docs/リリース手順.md`のrelease gateに沿って
+`main`へ`feature/phase5d-installer`をfast-forward merge・push、`変更履歴.md`の
+`未リリース`section全体（Phase 3d〜5dの蓄積分）を`## [0.1.0] - 2026-08-19`として切り出し、
+annotated tag `v0.1.0`を作成・push、tag時点のcommitから`build.ps1`でインストーラーを
+再ビルドし、GitHub Releaseへexe（19,744,006 byte）とSHA-256 sidecarを添付して公開した
+（`https://github.com/zawa356/Utteran/releases/tag/v0.1.0`、draft/prerelease指定なし）。
+SHA-256（`dbed1aeca4197f10c5f78c72ee9791eaa32b4e99a2d4620e98a32c76e7a3981c`）はGitHubが
+アセットから独立に算出した digest と完全一致することを確認した。
+
+release gateのうち、`tools/public_history_scan.py --worktree --fail-on-findings`
+（blocking 0件）とruff/mypy/pytest（モデル不要、既知flaky1件のみ）は実行したが、
+**全hardware・profileを対象にした統合受入ハーネスのフル再実行（cuda groupを含む、
+実測約72分）と、`public_history_scan.py`の全履歴監査は今回実行していない**。
+本機にNVIDIA GPUがなくcuda groupは元々実行不能であること、直近のPhase 3d/4a/5c/
+Phase 5d事前準備で個別に実施・記録済みの受入結果があること、利用者の依頼が
+「push and release」という限定的な内容だったことから、今回は简略化した。
+次回リリース時、または利用者が求める場合は、`docs/リリース手順.md`のrelease gateを
+省略せず全項目実行することを推奨する。
+
+`v0.0.1`（GitHub上draft状態のまま、要件定義29章・リリース手順に記録済み）には
+一切手を加えていない。
+
 ## Phase 5d インストーラー化（2026-08-19、実装・実機検証完了）
 
 `docs/utteran_Phase5d_指示書.md`に従い、`feature/phase5d-installer`で実装した。
