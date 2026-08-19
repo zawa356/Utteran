@@ -311,6 +311,18 @@
     );
   }
 
+  const WIZARD_PROFILE_LABEL_KEYS = {
+    cpu: "wizardProfileCpu",
+    cuda: "wizardProfileCuda",
+    intel: "wizardProfileIntel",
+    vulkan: "wizardProfileVulkan",
+  };
+
+  function wizardProfileLabel(profile) {
+    const key = WIZARD_PROFILE_LABEL_KEYS[profile];
+    return key ? t(key) : profile;
+  }
+
   function wizardProfileCard(alternative, isRecommended) {
     const label = document.createElement("label");
     label.className = "wizard-profile-card";
@@ -323,7 +335,8 @@
       wizardState.profile = alternative.profile;
     });
     const title = document.createElement("strong");
-    title.textContent = alternative.profile + (isRecommended ? ` · ${t("wizardRecommended")}` : "");
+    title.textContent =
+      wizardProfileLabel(alternative.profile) + (isRecommended ? ` · ${t("wizardRecommended")}` : "");
     const asr = document.createElement("p");
     asr.textContent = `${t("wizardAsrAccel")}: ${alternative.asr_accelerated ? t("wizardYes") : t("wizardNo")}`;
     const diarization = document.createElement("p");

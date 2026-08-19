@@ -173,6 +173,20 @@ def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> Non
     assert "wizardTitle:" in translations.split("\n  en: {")[1]
     assert "guide_license:" in translations
 
+    # A profile card's title must show a translated label, not the raw
+    # technical identifier ("cpu"/"cuda"/"intel"/"vulkan") - discovered
+    # during Phase 5d clean-environment verification: a first-time user
+    # has no way to know what those words mean, contradicting the Phase 5c
+    # 指示書's requirement that profiles be selectable without knowing
+    # their technical names.
+    assert "wizardProfileLabel(alternative.profile)" in script
+    assert "title.textContent = alternative.profile +" not in script
+    for language_block in (translations.split("\n  en: {")[0], translations.split("\n  en: {")[1]):
+        assert "wizardProfileCpu:" in language_block
+        assert "wizardProfileCuda:" in language_block
+        assert "wizardProfileIntel:" in language_block
+        assert "wizardProfileVulkan:" in language_block
+
 
 def test_viewer_assets_use_virtual_rows_and_ime_safe_ephemeral_search() -> None:
     web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
