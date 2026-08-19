@@ -1,0 +1,179 @@
+﻿<#
+.SYNOPSIS
+    Build the utteran Windows installer end to end: PyInstaller GUI shell,
+    then Inno Setup installer, then SHA-256.
+
+.DESCRIPTION
+    One command from a clean checkout to a signed-or-not installer .exe plus
+    its .sha256 sidecar:
+
+      1. Sync a dedicated build venv (.venvs\win-gui-build) with the `gui`
+         and `build` extras (pyinstaller lives only in `build`, never in a
+         profile extra - see pyproject.toml).
+      2. Run PyInstaller against packaging\gui.spec (onedir).
+      3. Verify the PyInstaller output does not embed the inference core
+         (belt-and-suspenders on top of gui.spec's own build-time check).
+      4. Compile packaging\installer.iss with Inno Setup, passing the
+         version read from pyproject.toml so the installer, the exe
+         metadata, and the release tag can never drift apart.
+      5. Compute and write the installer's SHA-256 next to it.
+
+    Every previous dist\ and build\ directory is removed first so a stale
+    artifact from an earlier version can never masquerade as this run's
+    output.
+
+.PARAMETER SignCommand
+    Optional. A signtool.exe invocation template (Inno Setup's [Setup]
+    SignTool syntax, e.g. 'signtool.exe sign /f cert.pfx /p $p $f') used to
+    sign both utteran-gui.exe and the installer itself. Omitted by default:
+    this project does not self-sign (see docs/utteran_Phase5d_指示書.md and
+    要件定義.md 29章 for why - a fresh self-signed cert cannot buy the
+    SmartScreen reputation only a paid publish history earns). Passing this
+    is how a future Azure Trusted Signing (or other CA) step plugs in
+    without changing installer.iss's structure.
+
+.EXAMPLE
+    .\build.ps1
+
+.EXAMPLE
+    .\build.ps1 -SignCommand 'signtool.exe sign /f cert.pfx /p secret /fd sha256 $f'
+#>
+[CmdletBinding()]
+param(
+    [string]$SignCommand
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$PackagingDir = Join-Path $RepoRoot "packaging"
+$DistDir = Join-Path $RepoRoot "dist"
+$BuildDir = Join-Path $RepoRoot "build"
+$GuiDistDir = Join-Path $DistDir "utteran-gui"
+$BuildVenvDir = Join-Path $RepoRoot ".venvs\win-gui-build"
+
+function Write-BuildStep {
+    param([string]$Message)
+    Write-Host "`n==> $Message" -ForegroundColor Cyan
+}
+
+function Resolve-ProjectVersion {
+    $PyprojectPath = Join-Path $RepoRoot "pyproject.toml"
+    $Content = Get-Content -LiteralPath $PyprojectPath -Raw
+    if ($Content -notmatch '(?m)^\s*version\s*=\s*"([^"]+)"\s*$') {
+        throw "Could not resolve project version from pyproject.toml"
+    }
+    return $Matches[1]
+}
+
+function Find-InnoSetupCompiler {
+    $Existing = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
+    if ($null -ne $Existing) {
+        return $Existing.Source
+    }
+    $Candidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+        (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),
+        (Join-Path $env:LocalAppData "Programs\Inno Setup 6\ISCC.exe")
+    )
+    foreach ($Candidate in $Candidates) {
+        if ($Candidate -and (Test-Path -LiteralPath $Candidate -PathType Leaf)) {
+            return $Candidate
+        }
+    }
+    return $null
+}
+
+# Fail fast, before touching uv/PyInstaller, when Inno Setup is not
+# installed: this is by far the most likely missing prerequisite on a
+# fresh machine (or CI, which intentionally does not install it - see
+# 要件定義.md 29章), and there is no point spending minutes syncing a build
+# venv only to fail at the very last step.
+$Iscc = Find-InnoSetupCompiler
+if ($null -eq $Iscc) {
+    Write-Error @"
+Inno Setup 6 (ISCC.exe) was not found on PATH or in its default install location.
+Install it, then re-run this script:
+  https://jrsoftware.org/isdl.php
+Or via winget:
+  winget install --id JRSoftware.InnoSetup -e
+"@
+    exit 2
+}
+
+$Version = Resolve-ProjectVersion
+Write-Host "utteran installer build - version $Version"
+Write-Host "Inno Setup compiler: $Iscc"
+
+Write-BuildStep "Cleaning previous build output"
+foreach ($Path in @($DistDir, $BuildDir)) {
+    if (Test-Path -LiteralPath $Path) {
+        Remove-Item -LiteralPath $Path -Recurse -Force
+    }
+}
+
+Write-BuildStep "Syncing GUI build environment ($BuildVenvDir)"
+$env:UV_PROJECT_ENVIRONMENT = $BuildVenvDir
+uv sync --locked --extra gui --extra build
+if ($LASTEXITCODE -ne 0) {
+    throw "uv sync failed (exit $LASTEXITCODE)"
+}
+$PythonExe = Join-Path $BuildVenvDir "Scripts\python.exe"
+
+Write-BuildStep "Running PyInstaller (onedir)"
+& $PythonExe -m PyInstaller --noconfirm --distpath $DistDir --workpath $BuildDir `
+    (Join-Path $PackagingDir "gui.spec")
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller failed (exit $LASTEXITCODE)"
+}
+$GuiExe = Join-Path $GuiDistDir "utteran-gui.exe"
+if (-not (Test-Path -LiteralPath $GuiExe -PathType Leaf)) {
+    throw "PyInstaller did not produce $GuiExe"
+}
+
+Write-BuildStep "Verifying the distributable excludes the inference core"
+# Belt-and-suspenders on top of packaging\gui.spec's own build-time check
+# (which inspects PyInstaller's dependency graph): this instead inspects
+# what actually landed on disk, catching the case where a forbidden module
+# is present only as data rather than as an analyzed pure-Python module.
+$ForbiddenDirNames = @("torch", "utteran", "faster_whisper", "pyannote", "ctranslate2")
+foreach ($Name in $ForbiddenDirNames) {
+    $Hit = Get-ChildItem -LiteralPath $GuiDistDir -Recurse -Directory -Filter $Name -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -ne $Hit) {
+        throw "Distributable unexpectedly bundles '$Name': $($Hit.FullName)"
+    }
+}
+
+Write-BuildStep "Compiling installer with Inno Setup"
+$IsccArgs = [System.Collections.Generic.List[string]]::new()
+$IsccArgs.Add("/DMyAppVersion=$Version")
+if ($SignCommand) {
+    $IsccArgs.Add("/DSignInstaller=1")
+    $IsccArgs.Add("/Sutteran=$SignCommand")
+}
+$IsccArgs.Add((Join-Path $PackagingDir "installer.iss"))
+& $Iscc @IsccArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup compilation failed (exit $LASTEXITCODE)"
+}
+
+$InstallerDir = Join-Path $DistDir "installer"
+$Installer = Get-ChildItem -LiteralPath $InstallerDir -Filter "utteran-setup-*.exe" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($null -eq $Installer) {
+    throw "Installer executable was not found in $InstallerDir after compilation"
+}
+
+Write-BuildStep "Computing SHA-256"
+$Hash = Get-FileHash -LiteralPath $Installer.FullName -Algorithm SHA256
+$HashLine = "$($Hash.Hash.ToLowerInvariant())  $($Installer.Name)"
+$HashFile = "$($Installer.FullName).sha256"
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[IO.File]::WriteAllText($HashFile, "$HashLine`n", $Utf8NoBom)
+Write-Host $HashLine
+
+Write-Host "`nBuild complete." -ForegroundColor Green
+Write-Host "Installer: $($Installer.FullName)"
+Write-Host "SHA-256:   $HashFile"

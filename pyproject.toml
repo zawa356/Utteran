@@ -61,6 +61,13 @@ gui = [
   "pywebview>=5,<7",
   "uvicorn>=0.30,<1",
 ]
+# Windows-only, used solely by build.ps1 to package src/utteran_gui into the
+# Phase 5d installer. Never combined with an inference profile extra - the
+# distributable must not embed torch/faster-whisper/pyannote (see
+# packaging/gui.spec's forbidden-module check).
+build = [
+  "pyinstaller>=6.11,<7; sys_platform == 'win32'",
+]
 dev = [
   "faster-whisper>=1.1,<2",
   "httpx>=0.27,<1",
