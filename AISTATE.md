@@ -1,5 +1,45 @@
 # AI 作業状態
 
+## Phase 5g ウィザード無人実行（2026-08-24、実装・実バックエンド検証完了）
+
+`fix/phase5e-gui-settings`から`fix/phase5g-wizard-unattended`を分岐した。ウィザードを
+profile→話者分離→Token（ON時）→model→confirmの入力フェーズと、venv→preflight→pyannote→
+ASR→smoke testの実行フェーズへ変更した。話者分離は独立step・既定ON。confirmは10～45分、
+profile＋modelの概算download量、以降は席を外せることを表示する。各入力値と5つの完了段階は
+Token本文を含めず`settings.json`へ原子的に保存し、再起動時は未完了段階だけを再実行する。
+pyannoteをASRより先にした理由は、preflight後にもgated file側の失敗が残る場合に34MiB級の取得で
+先に検出し、1.6GiB級ASR downloadを無駄にしないため。Token系guidanceは汎用errorへ送らず、分類を
+保持したToken画面へ戻す。設定画面の既存ウィザード入口は、中断時の再開と完了後の再設定を兼ねる。
+
+Token再発は実機で原因を特定した。従来`ModelManager.check_access()`はgated repositoryの
+`model_info`だけを取得していたが、このmetadataは合成した無効Tokenでも公開され、`available`を
+返した。その後のmodel file取得で初めて失敗するため、報告された「preflight通過後に
+`guide_token`汎用error」の経路と一致する。修正後は`HfApi.whoami()`でTokenを検証し、続けて
+pyannote `config.yaml`を`hf_hub_download(..., dry_run=True)`で確認する。実model重みは取得せず、
+合成無効Tokenは`token_invalid`、本機の実効`.env` credentialは`available`になった。Token本文は
+command出力、API、log、文書に残していない。
+
+Intel検証は初回／2回目を個別計測し、`devices --json`が8.260秒／7.757秒、別torch XPU probeが
+2.154秒／2.199秒だった。JSONには既に`pytorch.xpu_available=true`とXPU device情報が含まれたため、
+別probeと人間向けdevicesの再起動を削除した。`verify_devices`前に初回時間の案内を出し、終了後に
+秒数を記録する。修正後の`setup.ps1 -Profile intel -Yes`はdevice probe 7.2秒、全体8.47秒で成功。
+
+実バックエンドの無人試験は一時GUI設定を使い、既存Intel venv/modelを壊さず全5段階を自動実行。
+venv、preflight、pyannote model、faster-whisper large-v3-turbo、話者分離ON smoke testが全てexit 0、
+`completed_stages=[venv, preflight, diarization_model, asr_model, smoke]`と`step=done`を確認した。
+モデル不要pytest 303件、関連85件、ruff、mypy、
+JavaScript／PowerShell構文検査は合格。受入基盤pytest 21件も合格した。
+
+`build.ps1`はPyInstaller→推論core非混入検査→Inno Setup→SHA-256まで成功し、未署名installer
+`dist/installer/utteran-setup-0.1.1.exe`（SHA-256
+`9d9470b39a3f67c739bf8c5989d1ed05708b17e1b69aae8bb7d0bdd99b2d9152`）を生成した。dist直下exeと
+隔離silent install版の`--diagnose-keyring`はいずれもWinVault backendのget/set/deleteがexit 0で、
+隔離installはsilent uninstall済み。接続可能なBrowser実体がセッションになかったため、配布版
+WebViewの目視操作と「配布版画面でconfirm後に無人完了」は未確認。実ハーネス既定セットは起動したが、
+実model／長時間の既存G系が多数failしG11/G12がtimeout、summary未生成のため合格扱いにしない。
+今回のコマンドを照合したprocess treeは停止済み。リリース完了条件としては配布版GUI目視と、対象
+環境を整えた受入ハーネス再実行が残る。
+
 ## Phase 5f HF Token／セットアップウィザード再修正（2026-08-24、実装・自動検証完了）
 
 `fix/phase5e-gui-settings`で、HF Token画面を話者分離ON/OFF共通の正式ステップへ変更した。
