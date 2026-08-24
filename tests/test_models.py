@@ -346,3 +346,68 @@ def test_download_classifies_invalid_token(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr("huggingface_hub.snapshot_download", unauthorized_download)
     with pytest.raises(HuggingFaceAuthenticationError, match="無効"):
         ModelManager(tmp_path / "models", StaticTokenProvider("hf_invalid")).download(entry)
+
+
+def test_preflight_validates_identity_and_dry_runs_a_gated_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = get_model("pyannote:pyannote/speaker-diarization-community-1")
+    calls: list[tuple[str, str]] = []
+
+    class FakeApi:
+        def whoami(self, *, token: str) -> dict[str, str]:
+            calls.append(("whoami", token))
+            return {"name": "synthetic"}
+
+    def fake_download(**kwargs: object) -> object:
+        assert kwargs["repo_id"] == entry.repository_id
+        assert kwargs["filename"] == "config.yaml"
+        assert kwargs["token"] == "hf_synthetic"
+        assert kwargs["dry_run"] is True
+        calls.append(("dry_run", str(kwargs["filename"])))
+        return object()
+
+    monkeypatch.setattr("huggingface_hub.HfApi", FakeApi)
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_download)
+
+    ModelManager(tmp_path / "models", StaticTokenProvider("hf_synthetic")).check_access(entry)
+
+    assert calls == [("whoami", "hf_synthetic"), ("dry_run", "config.yaml")]
+
+
+def test_preflight_rejects_invalid_token_before_file_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = get_model("pyannote:pyannote/speaker-diarization-community-1")
+    response = httpx.Response(
+        401, request=httpx.Request("GET", "https://huggingface.co/api/whoami-v2")
+    )
+
+    class FakeApi:
+        def whoami(self, *, token: str) -> object:
+            del token
+            raise HfHubHTTPError("unauthorized", response=response)
+
+    monkeypatch.setattr("huggingface_hub.HfApi", FakeApi)
+    with pytest.raises(HuggingFaceAuthenticationError, match="無効"):
+        ModelManager(tmp_path / "models", StaticTokenProvider("hf_invalid")).check_access(entry)
+
+
+def test_preflight_classifies_missing_model_agreement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = get_model("pyannote:pyannote/speaker-diarization-community-1")
+    response = httpx.Response(403, request=httpx.Request("HEAD", entry.agreement_url))
+
+    class FakeApi:
+        def whoami(self, *, token: str) -> dict[str, str]:
+            del token
+            return {"name": "synthetic"}
+
+    def gated_file(**_kwargs: object) -> object:
+        raise GatedRepoError("gated", response=response)
+
+    monkeypatch.setattr("huggingface_hub.HfApi", FakeApi)
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", gated_file)
+    with pytest.raises(ModelAgreementError, match="利用条件"):
+        ModelManager(tmp_path / "models", StaticTokenProvider("hf_valid")).check_access(entry)

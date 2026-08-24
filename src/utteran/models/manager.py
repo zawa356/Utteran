@@ -190,14 +190,29 @@ class ModelManager:
         return downloaded
 
     def check_access(self, entry: ModelEntry) -> None:
-        """Perform a metadata-only Hub access check for a gated model."""
+        """Validate the token and dry-run access to a gated model file.
+
+        Public repository metadata can remain readable for a gated model even
+        when the supplied token is invalid or has not accepted the terms. A
+        model-info call alone therefore produces false-positive preflights.
+        Validate the identity first, then HEAD the small pipeline config via
+        ``dry_run`` so no model weights are downloaded.
+        """
         token = self._token_provider.get_token()
         if entry.gated and not token:
             raise HuggingFaceTokenMissingError
         try:
-            from huggingface_hub import HfApi
+            from huggingface_hub import HfApi, hf_hub_download
 
-            HfApi().model_info(entry.repository_id, token=token)
+            if token:
+                HfApi().whoami(token=token)
+            filename = "config.yaml" if entry.format == "pyannote pipeline" else "config.json"
+            hf_hub_download(
+                repo_id=entry.repository_id,
+                filename=filename,
+                token=token,
+                dry_run=True,
+            )
         except Exception as exc:
             _raise_download_error(entry, exc)
 
