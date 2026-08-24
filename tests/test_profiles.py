@@ -146,6 +146,19 @@ def test_setup_forces_utf8_for_devices_json() -> None:
     assert "[Console]::OutputEncoding = $PreviousConsoleEncoding" in setup_script
 
 
+def test_setup_reuses_devices_json_xpu_probe_and_reports_elapsed_time() -> None:
+    setup_script = (Path(__file__).parents[1] / "setup.ps1").read_text(encoding="utf-8")
+    verification = setup_script.split('Write-Step "Verifying profile', 1)[1]
+
+    assert 'Stage "verify_devices"' in verification
+    assert "DeviceProbeTimer" in verification
+    assert "Runtime device probe completed in" in verification
+    assert "$DeviceData.pytorch.xpu_available" in verification
+    assert 'import torch; print(torch.xpu.is_available())' not in verification
+    assert verification.count("utteran devices --json") == 2  # command plus failure text
+    assert "utteran devices | Out-String" not in verification
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Spawns Windows PowerShell")
 def test_setup_list_writes_valid_utf8_when_stdout_is_piped() -> None:
     """`setup.ps1`'s own Write-Host output must decode as UTF-8 when piped.

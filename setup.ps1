@@ -562,9 +562,17 @@ function Invoke-ProfileSetup {
                 Write-Host "GUI environment: lightweight and isolated" -ForegroundColor Green
             }
             else {
+                Write-Step "Inspecting runtime devices (the first probe can take a while)" `
+                    -Stage "verify_devices"
+                $DeviceProbeTimer = [System.Diagnostics.Stopwatch]::StartNew()
                 $DeviceText = Invoke-Utf8Captured {
                     & $script:UvCommand.Source run --no-sync utteran devices --json | Out-String
                 }
+                $DeviceProbeTimer.Stop()
+                Write-Host (
+                    "Runtime device probe completed in {0:N1} seconds." -f `
+                        $DeviceProbeTimer.Elapsed.TotalSeconds
+                ) -ForegroundColor Green
                 if ($LASTEXITCODE -ne 0) {
                     throw "utteran devices --json failed (exit $LASTEXITCODE)"
                 }
@@ -590,9 +598,10 @@ function Invoke-ProfileSetup {
                 }
                 elseif ($ProfileName -eq "intel") {
                     $OpenVinoOk = [bool]$DeviceData.openvino.available
-                    $XpuProbe = & (Join-Path $VenvPath "Scripts\python.exe") -c `
-                        "import torch; print(torch.xpu.is_available())" 2>&1
-                    $XpuOk = ($XpuProbe -match "True")
+                    # devices --json already imports torch and performs the XPU
+                    # availability/device probe. Reusing it avoids a second costly
+                    # Python process and repeated DLL/device initialization.
+                    $XpuOk = [bool]$DeviceData.pytorch.xpu_available
                     $ProfileVerificationSucceeded = $OpenVinoOk
                     if (-not $OpenVinoOk) {
                         Write-Warning "Intel profile: OpenVINO could not initialize."
@@ -601,26 +610,17 @@ function Invoke-ProfileSetup {
                         Write-Host "torch XPU: 利用可能" -ForegroundColor Green
                     }
                     else {
-                        Write-Host "torch XPU: 未検出 ($XpuProbe)"
+                        Write-Host "torch XPU: 未検出"
                     }
                 }
                 else {
                     # vulkan
                     $ProfileVerificationSucceeded = Invoke-VulkanPrerequisiteCheck -VenvPath $VenvPath
                 }
-                # Piping through Out-String before Write-Host (rather than letting the
-                # external command's output pass straight through) is required here: plain
-                # passthrough re-encodes using a different, unaffected setting even with
-                # [Console]::OutputEncoding forced to UTF-8 above, corrupting this table the
-                # same way the JSON capture was corrupted before it went through Out-String.
-                $DeviceDisplayText = Invoke-Utf8Captured {
-                    & $script:UvCommand.Source run --no-sync utteran devices | Out-String
-                }
-                $DeviceExitCode = $LASTEXITCODE
-                Write-Host $DeviceDisplayText
-                if ($DeviceExitCode -ne 0) {
-                    throw "utteran devices failed (exit $DeviceExitCode)"
-                }
+                Write-Step "Summarizing verified devices" -Stage "verify_summary"
+                Write-Host "PyTorch: $($DeviceData.pytorch.version)"
+                Write-Host "OpenVINO devices: $(@($DeviceData.openvino.values) -join ', ')"
+                Write-Host "CTranslate2 CUDA devices: $(@($DeviceData.ctranslate2.cuda_devices).Count)"
             }
         }
         catch {
