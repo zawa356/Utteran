@@ -25,10 +25,46 @@ from __future__ import annotations
 import os
 
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata
+from PyInstaller.utils.win32.versioninfo import (
+    FixedFileInfo,
+    StringFileInfo,
+    StringStruct,
+    StringTable,
+    VarFileInfo,
+    VarStruct,
+    VSVersionInfo,
+)
 
 REPO_ROOT = os.path.dirname(os.path.abspath(SPECPATH))  # noqa: F821  (SPECPATH is packaging/'s own dir)
 SRC_ROOT = os.path.join(REPO_ROOT, "src")
 WEB_ASSETS_DIR = os.path.join(SRC_ROOT, "utteran_gui", "web")
+BUILD_VERSION = os.environ.get("UTTERAN_BUILD_VERSION", "0.0.0")
+version_parts = tuple(int(part) for part in BUILD_VERSION.split("."))
+if len(version_parts) != 3:
+    raise SystemExit(f"packaging/gui.spec: invalid build version: {BUILD_VERSION}")
+numeric_version = (*version_parts, 0)
+version_info = VSVersionInfo(
+    ffi=FixedFileInfo(filevers=numeric_version, prodvers=numeric_version),
+    kids=[
+        StringFileInfo(
+            [
+                StringTable(
+                    "040904B0",
+                    [
+                        StringStruct("CompanyName", "utteran contributors"),
+                        StringStruct("FileDescription", "utteran GUI"),
+                        StringStruct("FileVersion", BUILD_VERSION),
+                        StringStruct("InternalName", "utteran-gui"),
+                        StringStruct("OriginalFilename", "utteran-gui.exe"),
+                        StringStruct("ProductName", "utteran"),
+                        StringStruct("ProductVersion", BUILD_VERSION),
+                    ],
+                )
+            ]
+        ),
+        VarFileInfo([VarStruct("Translation", [1033, 1200])]),
+    ],
+)
 
 # Never let the inference core (or the frameworks a profile venv installs
 # it through) slip into this bundle. This is a build-time guard on top of
@@ -78,6 +114,7 @@ exe = EXE(  # noqa: F821
     exclude_binaries=True,
     name="utteran-gui",
     console=False,
+    version=version_info,
 )
 
 coll = COLLECT(  # noqa: F821

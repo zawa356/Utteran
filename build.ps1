@@ -122,6 +122,7 @@ if ($LASTEXITCODE -ne 0) {
 $PythonExe = Join-Path $BuildVenvDir "Scripts\python.exe"
 
 Write-BuildStep "Running PyInstaller (onedir)"
+$env:UTTERAN_BUILD_VERSION = $Version
 & $PythonExe -m PyInstaller --noconfirm --distpath $DistDir --workpath $BuildDir `
     (Join-Path $PackagingDir "gui.spec")
 if ($LASTEXITCODE -ne 0) {
@@ -130,6 +131,10 @@ if ($LASTEXITCODE -ne 0) {
 $GuiExe = Join-Path $GuiDistDir "utteran-gui.exe"
 if (-not (Test-Path -LiteralPath $GuiExe -PathType Leaf)) {
     throw "PyInstaller did not produce $GuiExe"
+}
+$GuiVersion = (Get-Item -LiteralPath $GuiExe).VersionInfo.ProductVersion
+if ($GuiVersion -ne $Version) {
+    throw "GUI ProductVersion '$GuiVersion' does not match project version '$Version'"
 }
 
 Write-BuildStep "Verifying the distributable excludes the inference core"
@@ -160,11 +165,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $InstallerDir = Join-Path $DistDir "installer"
-$Installer = Get-ChildItem -LiteralPath $InstallerDir -Filter "utteran-setup-*.exe" -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if ($null -eq $Installer) {
-    throw "Installer executable was not found in $InstallerDir after compilation"
+$InstallerPath = Join-Path $InstallerDir "utteran-setup-$Version.exe"
+if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
+    throw "Expected installer executable was not found: $InstallerPath"
 }
+$Installer = Get-Item -LiteralPath $InstallerPath
 
 Write-BuildStep "Computing SHA-256"
 $Hash = Get-FileHash -LiteralPath $Installer.FullName -Algorithm SHA256

@@ -337,7 +337,7 @@
         return;
       }
       if (status.step === "token") {
-        await showWizardToken(status.token_error);
+        await showWizardToken(wizardState.resumeExecution ? status.token_error : null);
         return;
       }
       if (status.step === "profile") {
@@ -677,6 +677,8 @@
   async function wizardSaveToken() {
     try {
       await saveToken("wizard-token-input");
+      $("wizard-token-input").value = "";
+      await saveWizardState("token", { token_error: null });
       showTokenPreflightError(t("wizardTokenSavedCheckProfile"));
     } catch (error) {
       showTokenPreflightError(error.message);
@@ -1442,6 +1444,8 @@
   async function boot() {
     bind();
     renderStageList();
+    const version = await api("/api/version");
+    $("app-version").textContent = `v${version.version}`;
     state.settings = await api("/api/settings");
     applySettings();
     await loadEnvironment(state.settings.default_profile);

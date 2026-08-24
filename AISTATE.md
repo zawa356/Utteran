@@ -1,5 +1,23 @@
 # AI 作業状態
 
+## 0.1.2配布版・Token error誤再表示修正（2026-08-24）
+
+配布版を同じ0.1.1のまま上書きbuildしていたため、利用者が古いinstaller／新しいinstallerを識別
+できず、さらに`utteran_gui.__version__`だけ0.1.0のままという不一致があった。project、CLI、GUI、
+lockfileを0.1.2へ統一し、GUI sidebarへ`v0.1.2`を表示するsession保護version APIを追加した。
+PyInstaller exeへFileVersion／ProductVersionを埋め込み、`build.ps1`はproject versionとの一致と
+`utteran-setup-$Version.exe`の厳密な存在を検証する。古い版の最新時刻検索は廃止した。
+
+Token stepの復元時は、profile venv stageが完了している再開処理でのみ保存済みToken errorを表示する。
+新規／未構築状態では古い`token_invalid`をfrontendでも抑止し、Token保存成功後はpassword入力欄と
+永続化済みerrorを消す。関連50件、全pytest 320件、ruff、mypy、JavaScript構文検査が合格した。
+0.1.2 installerをbuild・既定install先へ上書きし、installer名、レジストリDisplayVersion、installed
+exe ProductVersion、WebView起動引数、実配布版sidebar表示がすべて0.1.2で一致した。実配布版の
+accessibility treeではセットアップウィザードと設定済みToken状態を確認し、古い「トークンが無効」
+表示がないことを確認した。さらにinstall先をcurrent directoryとしてIntel profile CLIから同じ
+keyring credentialを検査し、`source=keyring`／`access=available`を再確認した。installer SHA-256は
+`3fdfd8af9088c3c9d8d456ce486abb77a42c79c3e9b4977eead09ffa2be17aa7`。
+
 ## Windows GUI子processのconsole抑止（2026-08-24）
 
 `fix/no-console-window`をPhase 5g実装済みの現在地点から作成した。`src/utteran_gui`を全検索し、

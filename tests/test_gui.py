@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from utteran_gui import __version__
 from utteran_gui.api import SESSION_HEADER, create_app
 from utteran_gui.app import bind_loopback_socket
 from utteran_gui.cli import CliAdapter, RegenerationOptions, TranscriptionOptions
@@ -173,6 +174,8 @@ def test_session_key_is_required_for_every_api_request(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["token_configured"] is False
     assert response.headers["cache-control"] == "no-store"
+    version = client.get("/api/version", headers={SESSION_HEADER: "session-secret"})
+    assert version.json() == {"version": __version__}
 
     launched = client.get("/launch?session=session-secret", follow_redirects=False)
     assert launched.status_code == 303
@@ -231,6 +234,7 @@ def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> Non
     assert 'href="https://huggingface.co/join"' in index
     assert 'href="https://huggingface.co/settings/tokens/new?tokenType=read"' in index
     assert 'id="wizard-token-input" type="password"' in index
+    assert 'id="app-version"' in index
 
     assert 'api("/api/wizard/status")' in script
     assert 'api("/api/wizard/hardware")' in script
@@ -242,6 +246,9 @@ def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> Non
     assert "wizardTitle:" in translations.split("\n  en: {")[1]
     assert "guide_license:" in translations
     assert 'await saveToken("wizard-token-input")' in script
+    assert 'api("/api/version")' in script
+    assert "wizardState.resumeExecution ? status.token_error : null" in script
+    assert '$("wizard-token-input").value = ""' in script
     assert 'await saveToken("token-input")' in script
 
     # A profile card's title must show a translated label, not the raw

@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from utteran_gui import hardware
+from utteran_gui import __version__, hardware
 from utteran_gui.cli import CliAdapter, CliError, RegenerationOptions, TranscriptionOptions
 from utteran_gui.environment import EnvironmentService
 from utteran_gui.history import HistoryError, HistoryService
@@ -189,6 +189,10 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/version")
+    def version() -> dict[str, str]:
+        return {"version": __version__}
 
     @app.get("/api/environment")
     def environment(profile: str | None = None) -> dict[str, object]:
