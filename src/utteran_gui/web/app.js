@@ -36,9 +36,21 @@
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      throw new Error(body.detail || `${response.status} ${response.statusText}`);
+      throw new Error(apiErrorMessage(body.detail, `${response.status} ${response.statusText}`));
     }
     return response.status === 204 ? null : response.json();
+  }
+
+  function apiErrorMessage(detail, fallback) {
+    if (typeof detail === "string" && detail) return detail;
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) => (typeof item?.msg === "string" ? item.msg : ""))
+        .filter(Boolean);
+      if (messages.length) return messages.join(" / ");
+    }
+    if (detail && typeof detail.message === "string") return detail.message;
+    return fallback;
   }
 
   function translate() {
@@ -586,6 +598,13 @@
 
   async function wizardRunUnattended() {
     if (wizardState.running) return;
+    if (!wizardState.profile) {
+      await saveWizardState("profile");
+      await ensureWizardHardware();
+      renderWizardRecommendation();
+      showWizardStep("profile");
+      return;
+    }
     wizardState.running = true;
     showWizardStep("progress");
     $("wizard-job-log").textContent = "";

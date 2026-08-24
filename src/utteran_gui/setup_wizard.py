@@ -113,23 +113,36 @@ class SetupWizardService:
         venvs triggers it.
         """
         settings = self._settings.load()
-        first_run = self._no_profile_exists() or (
+        step = settings.setup_wizard_step
+        completed_stages = list(settings.setup_wizard_completed_stages)
+        # A profile is required for every step after the recommendation screen.
+        # Older/interrupted frontends could persist execution with profile=null;
+        # recover by showing the proven hardware recommendation UX again instead
+        # of sending an invalid job that can only fail with HTTP 422.
+        if settings.setup_wizard_profile is None and step not in {"welcome", "profile"}:
+            step = "profile"
+            completed_stages = []
+        persisted_in_progress = (
+            settings.setup_wizard_completed_at is None
+            and settings.setup_wizard_step != "welcome"
+        )
+        first_run = self._no_profile_exists() or persisted_in_progress or (
             settings.setup_wizard_completed_at is None
             and (settings.setup_wizard_started_at is not None or not self._settings.path.is_file())
         )
         return {
             "first_run": first_run,
             "resume_available": (
-                settings.setup_wizard_started_at is not None
-                and settings.setup_wizard_completed_at is None
+                settings.setup_wizard_completed_at is None
+                and (settings.setup_wizard_started_at is not None or persisted_in_progress)
             ),
             "started_at": settings.setup_wizard_started_at,
             "completed_at": settings.setup_wizard_completed_at,
-            "step": settings.setup_wizard_step,
+            "step": step,
             "profile": settings.setup_wizard_profile,
             "diarization_enabled": settings.setup_wizard_diarization_enabled,
             "model_ref": settings.setup_wizard_model_ref,
-            "completed_stages": list(settings.setup_wizard_completed_stages),
+            "completed_stages": completed_stages,
             "token_error": settings.setup_wizard_token_error,
         }
 
@@ -164,10 +177,19 @@ class SetupWizardService:
         """Persist non-secret wizard input so the UI can resume after restart."""
         if step not in WIZARD_STEPS:
             raise ValueError(f"Unknown wizard step: {step}")
+        current = self._settings.load()
+        effective_profile = profile or current.setup_wizard_profile
+        if effective_profile is None and step not in {"welcome", "profile"}:
+            step = "profile"
         changes: dict[str, object] = {"setup_wizard_step": step}
         if profile is not None:
             _validate_profile(profile)
             changes["setup_wizard_profile"] = profile
+            if profile != current.setup_wizard_profile:
+                changes["setup_wizard_completed_stages"] = []
+                changes["setup_wizard_token_error"] = None
+        elif effective_profile is None:
+            changes["setup_wizard_completed_stages"] = []
         if diarization_enabled is not None:
             changes["setup_wizard_diarization_enabled"] = diarization_enabled
         if model_ref is not None:

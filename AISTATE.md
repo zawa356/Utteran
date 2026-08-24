@@ -2,6 +2,14 @@
 
 ## Phase 5g ウィザード無人実行（2026-08-24、実装・実バックエンド検証完了）
 
+配布版GUIで`setup_wizard_step=execution`、`setup_wizard_profile=null`、完了段階が`preflight`だけという
+不整合状態を実際に確認した。実行APIのPydantic 422 detail（object配列）をJavaScriptの`Error`へ
+直接渡したため画面は`[object Object]`となり、再試行もprofileなし実行を繰り返していた。
+`status()`はこの状態を`step=profile`／完了段階なし／再開対象へ正規化し、次回起動時にCPU/GPUの
+自動検出・おすすめ構成カードへ戻す。`save_state()`側もprofileなしで後続stepを永続化できないよう
+防御し、profile変更時は旧profileの完了段階を破棄する。API detail配列は`msg`を抽出して表示する。
+修正版installerを既定インストール先へ上書きし、設定・venv・modelを保持したままGUIを再起動した。
+
 `fix/phase5e-gui-settings`から`fix/phase5g-wizard-unattended`を分岐した。ウィザードを
 profile→話者分離→Token（ON時）→model→confirmの入力フェーズと、venv→preflight→pyannote→
 ASR→smoke testの実行フェーズへ変更した。話者分離は独立step・既定ON。confirmは10～45分、
@@ -27,12 +35,12 @@ Intel検証は初回／2回目を個別計測し、`devices --json`が8.260秒�
 実バックエンドの無人試験は一時GUI設定を使い、既存Intel venv/modelを壊さず全5段階を自動実行。
 venv、preflight、pyannote model、faster-whisper large-v3-turbo、話者分離ON smoke testが全てexit 0、
 `completed_stages=[venv, preflight, diarization_model, asr_model, smoke]`と`step=done`を確認した。
-モデル不要pytest 303件、関連85件、ruff、mypy、
+モデル不要pytest 307件、関連85件、ruff、mypy、
 JavaScript／PowerShell構文検査は合格。受入基盤pytest 21件も合格した。
 
 `build.ps1`はPyInstaller→推論core非混入検査→Inno Setup→SHA-256まで成功し、未署名installer
 `dist/installer/utteran-setup-0.1.1.exe`（SHA-256
-`9d9470b39a3f67c739bf8c5989d1ed05708b17e1b69aae8bb7d0bdd99b2d9152`）を生成した。dist直下exeと
+`fc0b24c897dbb3bdf5d7d5ba640ab6ab2b338972b07fbb7d3b04dd4b2cd7b7a8`）を生成した。dist直下exeと
 隔離silent install版の`--diagnose-keyring`はいずれもWinVault backendのget/set/deleteがexit 0で、
 隔離installはsilent uninstall済み。接続可能なBrowser実体がセッションになかったため、配布版
 WebViewの目視操作と「配布版画面でconfirm後に無人完了」は未確認。実ハーネス既定セットは起動したが、

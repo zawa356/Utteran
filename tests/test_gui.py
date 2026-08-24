@@ -868,3 +868,19 @@ def test_wizard_frontend_separates_input_from_unattended_execution_and_resumes()
     assert 'status.step === "profile"' in app_js and "renderWizardRecommendation()" in app_js
     assert "completed_stages" in app_js
     assert "wizardState.wantDiarization = false" in app_js
+
+
+def test_wizard_formats_validation_errors_and_recovers_missing_profile() -> None:
+    app_js = (Path(__file__).parents[1] / "src" / "utteran_gui" / "web" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    unattended = app_js.split("async function wizardRunUnattended()", 1)[1].split(
+        "async function wizardSaveToken()", 1
+    )[0]
+
+    assert "apiErrorMessage(body.detail" in app_js
+    assert "Array.isArray(detail)" in app_js
+    assert "item?.msg" in app_js
+    assert "if (!wizardState.profile)" in unattended
+    assert 'saveWizardState("profile")' in unattended
+    assert "renderWizardRecommendation()" in unattended

@@ -280,6 +280,54 @@ def test_started_wizard_is_offered_for_resume_after_restart(tmp_path: Path) -> N
     assert status["resume_available"] is True
 
 
+def test_invalid_execution_state_without_profile_recovers_to_recommendation(
+    tmp_path: Path,
+) -> None:
+    store = SettingsStore(tmp_path / "settings.json")
+    store.update(
+        {
+            "setup_wizard_started_at": "2026-08-24T00:00:00+00:00",
+            "setup_wizard_step": "execution",
+            "setup_wizard_profile": None,
+            "setup_wizard_completed_stages": ["preflight"],
+        }
+    )
+
+    status = SetupWizardService(CliAdapter(tmp_path), settings_store=store).status()
+
+    assert status["step"] == "profile"
+    assert status["profile"] is None
+    assert status["completed_stages"] == []
+    assert status["first_run"] is True
+    assert status["resume_available"] is True
+
+
+def test_service_refuses_to_persist_execution_without_a_profile(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+
+    saved = service.save_state("execution", diarization_enabled=True)
+
+    assert saved["setup_wizard_step"] == "profile"
+    assert saved["setup_wizard_profile"] is None
+    assert saved["setup_wizard_completed_stages"] == ()
+
+
+def test_selecting_a_different_profile_discards_stale_execution_progress(tmp_path: Path) -> None:
+    store = SettingsStore(tmp_path / "settings.json")
+    store.update(
+        {
+            "setup_wizard_profile": "cpu",
+            "setup_wizard_completed_stages": ["venv", "preflight", "asr_model"],
+        }
+    )
+    service = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
+
+    service.save_state("diarization", profile="intel", diarization_enabled=True)
+
+    assert service.status()["profile"] == "intel"
+    assert service.status()["completed_stages"] == []
+
+
 def test_status_is_first_run_with_no_settings_file_and_no_profile(tmp_path: Path) -> None:
     service = _service(tmp_path)
     assert service.status()["first_run"] is True
