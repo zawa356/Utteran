@@ -1,5 +1,26 @@
 # AI 作業状態
 
+## 0.1.3 ウィザード失敗分類の修正（2026-08-24）
+
+0.1.2配布版で再発したToken errorを実状態から再調査した。settingsは`completed_stages=[]`、install先に
+profile venvなし、`token_invalid`だけが保存されており、Token preflightへ到達していなかった。
+原因は、venv構築中の`setup.ps1`が正常な一般案内として出す「read token」「HF_TOKEN」を、共通の
+`guidance_for()`がvenv構築の別原因による失敗時にもToken認証エラーと誤分類していたことだった。
+
+0.1.3ではguidance分類へoperation contextを追加し、venv構築ではToken／license／model分類を禁止した。
+frontendもToken画面へ戻すのはmodel download／smoke testのToken系失敗だけに限定し、二重に防御する。
+その他のsubprocess失敗ではmask済み末尾12行をerror画面へ表示し、本来の原因を次回その場で確認できる。
+再発testはToken案内を含みexit 1となる偽venv buildが`general`分類となり、Token errorを作らないことを
+固定した。
+
+install先の手動profile構築はIntelで成功。そのCLIをinstall先cwdから実行し、同じkeyring credentialが
+`source=keyring`／`access=available`であること、pyannoteとfaster-whisper modelの実取得成功を確認した。
+0.1.3配布版をbuild・上書きinstallし、実WebViewをUI Automationで操作した。venv→preflight→pyannote→
+ASR→話者分離ON smokeの全5段階が連続成功し、settingsは`step=done`、5段階完了、Token errorなし、
+完了時刻ありとなった。完了画面の後に文字起こしworkspaceまで遷移し、sidebar `v0.1.3`を確認した。
+pytest 321件、ruff、mypy、JavaScript構文検査が合格。installer SHA-256は
+`d8905f8eff8542c3c7e53d57b1766ed71da8173c2a120dd15425c83025e80b9f`。
+
 ## 0.1.2配布版・Token error誤再表示修正（2026-08-24）
 
 配布版を同じ0.1.1のまま上書きbuildしていたため、利用者が古いinstaller／新しいinstallerを識別

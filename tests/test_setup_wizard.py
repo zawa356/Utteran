@@ -87,6 +87,29 @@ def test_venv_build_streams_stage_markers_and_completes(tmp_path: Path) -> None:
     assert service.status()["completed_stages"] == ["venv"]
 
 
+def test_failed_venv_build_does_not_misclassify_setup_advice_as_invalid_token(
+    tmp_path: Path,
+) -> None:
+    process = FakeWizardProcess(
+        [
+            "For pyannote, create a read token at https://huggingface.co/settings/tokens\n",
+            "then set HF_TOKEN in .env. The token is never printed.\n",
+            "uv sync failed\n",
+        ]
+    )
+    process.returncode = 1
+    service = _service(tmp_path, popen=lambda _command, **_kwargs: process)
+
+    started = service.start_venv_build("intel")
+    job_id = str(started["id"])
+    process.finished.set()
+    _wait_until(lambda: service.snapshot(job_id)["status"] == "failed")
+
+    snapshot = service.snapshot(job_id)
+    assert snapshot["guidance"] == {"key": "general", "settings_anchor": ""}
+    assert service.status()["completed_stages"] == []
+
+
 def test_wizard_input_and_execution_progress_survive_service_restart(tmp_path: Path) -> None:
     store = SettingsStore(tmp_path / "settings.json")
     service = SetupWizardService(CliAdapter(tmp_path), settings_store=store)

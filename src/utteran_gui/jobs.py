@@ -258,6 +258,8 @@ def guidance_for(
     exit_code: int | None,
     logs: list[str],
     events: list[dict[str, object]],
+    *,
+    operation: str | None = None,
 ) -> dict[str, str] | None:
     """Map CLI exit semantics and common dependency failures to actionable UI copy keys.
 
@@ -269,21 +271,22 @@ def guidance_for(
     """
     if exit_code is None or exit_code == 0:
         return None
+    model_operation = operation != "venv_build"
     combined = " ".join(logs + [str(event.get("message", "")) for event in events]).casefold()
     error_types = {str(event.get("error_type", "")).casefold() for event in events}
     if exit_code == 130:
         key = "cancelled"
     elif "memorybudgeterror" in error_types or "memory" in combined or "メモリ" in combined:
         key = "memory"
-    elif (
+    elif model_operation and (
         "modelagreementerror" in error_types
         or "利用条件" in combined
         or "gatedrepoerror" in combined
     ):
         key = "license"
-    elif "token" in combined or "トークン" in combined:
+    elif model_operation and ("token" in combined or "トークン" in combined):
         key = "token"
-    elif "model" in combined or "モデル" in combined:
+    elif model_operation and ("model" in combined or "モデル" in combined):
         key = "model"
     elif "ffmpeg" in combined:
         key = "ffmpeg"

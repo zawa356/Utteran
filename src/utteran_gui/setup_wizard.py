@@ -554,7 +554,12 @@ class SetupWizardService:
             "stalled": stalled,
             "events": [dict(event) for event in job.events],
             "logs": list(job.raw_logs),
-            "guidance": guidance_for(job.exit_code, job.raw_logs, job.events),
+            "guidance": guidance_for(
+                job.exit_code,
+                job.raw_logs,
+                job.events,
+                operation=job.kind,
+            ),
         }
 
     def _job(self, job_id: str) -> WizardJob:

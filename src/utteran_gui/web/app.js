@@ -497,8 +497,10 @@
                 const message = current.guidance
                   ? t(`guide_${current.guidance.key}`)
                   : t("wizardStepFailed");
-                const error = new Error(message);
+                const diagnostic = (current.logs || []).slice(-12).join("\n");
+                const error = new Error(diagnostic ? `${message}\n\n${diagnostic}` : message);
                 error.guidanceKey = current.guidance?.key || "";
+                error.wizardKind = kind;
                 reject(error);
               }
             }
@@ -658,7 +660,11 @@
       }
       showWizardStep("done");
     } catch (error) {
-      if (wizardState.wantDiarization && ["token", "license"].includes(error.guidanceKey)) {
+      if (
+        wizardState.wantDiarization &&
+        ["model_download", "smoke_test"].includes(error.wizardKind) &&
+        ["token", "license"].includes(error.guidanceKey)
+      ) {
         wizardState.resumeExecution = true;
         await saveWizardState("token", {
           token_error: error.guidanceKey === "license" ? "agreement_required" : "token_invalid",

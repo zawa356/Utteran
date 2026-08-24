@@ -249,6 +249,9 @@ def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> Non
     assert 'api("/api/version")' in script
     assert "wizardState.resumeExecution ? status.token_error : null" in script
     assert '$("wizard-token-input").value = ""' in script
+    assert "error.wizardKind = kind" in script
+    assert '["model_download", "smoke_test"].includes(error.wizardKind)' in script
+    assert "(current.logs || []).slice(-12)" in script
     assert 'await saveToken("token-input")' in script
 
     # A profile card's title must show a translated label, not the raw

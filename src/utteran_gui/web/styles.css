@@ -41,6 +41,7 @@ nav { display: grid; gap: 6px; }
 .nav-item { border: 1px solid transparent; background: transparent; text-align: left; padding: 11px 13px; border-radius: var(--radius); color: var(--muted); cursor: pointer; }
 .nav-item:hover, .nav-item.active { background: var(--panel-alt); border-color: var(--border); color: var(--text); }
 .sidebar-foot { margin-top: auto; padding: 12px; font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.wizard-error-message { white-space: pre-wrap; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 main { min-width: 0; padding: 44px clamp(28px, 5vw, 72px) 72px; }
 .view { display: none; max-width: 1120px; margin: 0 auto; }
