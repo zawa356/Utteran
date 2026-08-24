@@ -22,6 +22,7 @@ from utteran.cli import (
     _run_interruptibly,
     app,
 )
+from utteran.config import TokenResolution
 from utteran.devices import (
     AutoSelection,
     CPUReport,
@@ -35,7 +36,12 @@ from utteran.devices import (
     TorchReport,
     VulkanReport,
 )
-from utteran.errors import CancelledError, ConfigurationError
+from utteran.errors import (
+    CancelledError,
+    ConfigurationError,
+    HuggingFaceAuthenticationError,
+    ModelAgreementError,
+)
 from utteran.jobs import Job, JobStore
 from utteran.models.catalog import ModelEntry, get_model, list_models
 from utteran.models.manager import ModelManager, ModelStatus
@@ -50,6 +56,50 @@ from utteran.types import (
     TranscriptionResult,
     Word,
 )
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (None, "available"),
+        (HuggingFaceAuthenticationError("rejected"), "token_invalid"),
+        (ModelAgreementError("agreement"), "agreement_required"),
+    ],
+)
+def test_config_token_status_classifies_preflight_without_exposing_token(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception | None, expected: str
+) -> None:
+    monkeypatch.setattr(
+        "utteran.cli.resolve_token_status",
+        lambda: TokenResolution(True, "keyring", True),
+    )
+
+    def check_access(_self: object, _entry: object) -> None:
+        if failure is not None:
+            raise failure
+
+    monkeypatch.setattr("utteran.cli.ModelManager.check_access", check_access)
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "token-status",
+            "--json",
+            "--check-model",
+            "pyannote:pyannote/speaker-diarization-community-1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == {
+        "configured": True,
+        "source": "keyring",
+        "keyring_available": True,
+        "access": expected,
+    }
+    assert "hf_" not in result.output
+
 
 runner = CliRunner()
 

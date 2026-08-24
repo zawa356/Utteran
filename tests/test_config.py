@@ -9,6 +9,7 @@ from utteran.config import (
     DotEnvTokenProvider,
     default_token_provider,
     initialize_config,
+    resolve_token_status,
 )
 from utteran.errors import ConfigurationError
 from utteran.jobs import stage_config_hashes
@@ -98,6 +99,21 @@ def test_token_priority_environment_over_dotenv(
     monkeypatch.setenv("HF_TOKEN", "hf_from_environment")
 
     assert default_token_provider(dotenv_path).get_token() == "hf_from_environment"
+
+
+def test_token_status_reports_effective_source_without_returning_secret(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("HF_TOKEN=hf_synthetic_dotenv_value\n", encoding="utf-8")
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+
+    status = resolve_token_status(dotenv_path)
+
+    assert status.configured is True
+    assert status.source == "dotenv"
+    assert "hf_synthetic" not in repr(status)
 
 
 def test_documented_empty_path_sentinels_use_platform_defaults(tmp_path: Path) -> None:

@@ -314,6 +314,7 @@
 
   async function wizardBegin() {
     try {
+      await api("/api/wizard/start", { method: "POST" });
       wizardState.hardware = await api("/api/wizard/hardware");
     } catch (error) {
       window.alert(error.message);
@@ -456,14 +457,46 @@
 
   async function wizardModelChoiceNext() {
     wizardState.wantDiarization = $("wizard-diarization-toggle").checked;
-    if (wizardState.wantDiarization) {
-      const tokenStatus = await api("/api/token");
-      state.settings.token_configured = tokenStatus.configured;
-      state.settings.token_store_available = tokenStatus.available;
-      renderTokenState();
-      showWizardStep("token");
-    } else {
+    const tokenStatus = await api("/api/token");
+    state.settings.token_configured = tokenStatus.configured;
+    state.settings.token_store_available = tokenStatus.available;
+    renderTokenState();
+    $("wizard-token-preflight").classList.add("hidden");
+    showWizardStep("token");
+  }
+
+  function showTokenPreflightError(message) {
+    $("wizard-token-preflight").textContent = message;
+    $("wizard-token-preflight").classList.remove("hidden");
+  }
+
+  async function wizardTokenNext() {
+    if (!wizardState.wantDiarization) {
       await wizardDownloadModelsAndVerify();
+      return;
+    }
+    try {
+      const result = await api("/api/wizard/token-preflight", {
+        method: "POST",
+        body: JSON.stringify({
+          profile: wizardState.profile,
+          check_model: wizardState.diarizationModelRef,
+        }),
+      });
+      if (result.access !== "available") {
+        const keys = {
+          token_missing: "wizardTokenMissing",
+          token_invalid: "wizardTokenInvalid",
+          agreement_required: "wizardTokenAgreementRequired",
+          network_error: "wizardTokenNetworkError",
+        };
+        showTokenPreflightError(t(keys[result.access] || "wizardTokenProfileFailed"));
+        return;
+      }
+      $("wizard-token-preflight").classList.add("hidden");
+      await wizardDownloadModelsAndVerify();
+    } catch (error) {
+      showTokenPreflightError(`${t("wizardTokenProfileFailed")} ${error.message}`);
     }
   }
 
@@ -490,8 +523,9 @@
   async function wizardSaveToken() {
     try {
       await saveToken("wizard-token-input");
+      showTokenPreflightError(t("wizardTokenSavedCheckProfile"));
     } catch (error) {
-      wizardShowError(error.message, () => showWizardStep("token"));
+      showTokenPreflightError(error.message);
     }
   }
 
@@ -509,7 +543,7 @@
     $("wizard-profile-next").addEventListener("click", wizardStartVenvBuild);
     $("wizard-model-next").addEventListener("click", wizardModelChoiceNext);
     $("wizard-save-token").addEventListener("click", wizardSaveToken);
-    $("wizard-token-next").addEventListener("click", wizardDownloadModelsAndVerify);
+    $("wizard-token-next").addEventListener("click", wizardTokenNext);
     $("wizard-token-skip").addEventListener("click", () => {
       wizardState.wantDiarization = false;
       wizardDownloadModelsAndVerify();

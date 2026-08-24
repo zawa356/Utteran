@@ -34,13 +34,17 @@ from utteran.config import (
     default_config_path,
     default_token_provider,
     initialize_config,
+    resolve_token_status,
 )
 from utteran.devices import DeviceReport, detect_devices
 from utteran.diarization.registry import preflight_diarization_backend
 from utteran.errors import (
     CancelledError,
     ConfigurationError,
+    HuggingFaceAuthenticationError,
+    HuggingFaceTokenMissingError,
     JobNotFoundError,
+    ModelAgreementError,
     ModelNotFoundError,
     UtteranError,
 )
@@ -968,6 +972,47 @@ def config_show(
 def config_path_command() -> None:
     """Print the platform-specific default config.toml path."""
     typer.echo(default_config_path())
+
+
+@config_app.command("token-status")
+def config_token_status(
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで表示")] = False,
+    check_model: Annotated[
+        str | None, typer.Option("--check-model", help="gated modelへのアクセスも確認")
+    ] = None,
+) -> None:
+    """Report effective HF credential/access state without exposing the token."""
+    resolution = resolve_token_status()
+    access = "not_checked"
+    if check_model:
+        if not resolution.configured:
+            access = "token_missing"
+        else:
+            try:
+                ModelManager(token_provider=default_token_provider()).check_access(
+                    get_model(check_model)
+                )
+                access = "available"
+            except HuggingFaceTokenMissingError:
+                access = "token_missing"
+            except HuggingFaceAuthenticationError:
+                access = "token_invalid"
+            except ModelAgreementError:
+                access = "agreement_required"
+            except (ModelNotFoundError, OSError):
+                access = "network_error"
+    payload = {
+        "configured": resolution.configured,
+        "source": resolution.source,
+        "keyring_available": resolution.keyring_available,
+        "access": access,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        return
+    console.print(
+        f"configured={payload['configured']} source={payload['source']} access={payload['access']}"
+    )
 
 
 @profiles_app.command("list")

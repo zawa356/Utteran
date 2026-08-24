@@ -767,3 +767,92 @@ def test_wizard_api_routes_run_status_events_and_complete(tmp_path: Path) -> Non
 
     missing = client.get("/api/wizard/jobs/does-not-exist")
     assert missing.status_code == 404
+
+
+def test_wizard_token_preflight_uses_profile_cli_and_never_returns_token(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    cli = CliAdapter(tmp_path)
+    token_store = TokenStore(FakeKeyring())
+    calls: list[tuple[str, list[str]]] = []
+
+    def run_json(profile: str, arguments: list[str], *, timeout: float = 60.0) -> object:
+        del timeout
+        calls.append((profile, arguments))
+        return {
+            "configured": True,
+            "source": "keyring",
+            "keyring_available": True,
+            "access": "available",
+            "token": "hf_must_never_escape",
+        }
+
+    monkeypatch.setattr(cli, "run_json", run_json)
+    app = create_app("session-secret", repo_root=tmp_path, cli=cli, token_store=token_store)
+    client = TestClient(app, headers={SESSION_HEADER: "session-secret"})
+
+    saved = client.put("/api/token", json={"token": "hf_synthetic_saved_in_settings"})
+    assert saved.status_code == 200
+    assert saved.json()["configured"] is True
+
+    response = client.post(
+        "/api/wizard/token-preflight",
+        json={"profile": "cpu"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["access"] == "available"
+    assert calls[0][0] == "cpu"
+    assert calls[0][1][:3] == ["config", "token-status", "--json"]
+    assert "hf_" not in response.text
+
+
+def test_wizard_detects_gui_keyring_success_but_profile_token_failure(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    cli = CliAdapter(tmp_path)
+    token_store = TokenStore(FakeKeyring())
+    monkeypatch.setattr(
+        cli,
+        "run_json",
+        lambda _profile, _arguments: {
+            "configured": False,
+            "source": "none",
+            "keyring_available": False,
+            "access": "token_missing",
+        },
+    )
+    app = create_app("session-secret", repo_root=tmp_path, cli=cli, token_store=token_store)
+    client = TestClient(app, headers={SESSION_HEADER: "session-secret"})
+
+    assert client.put("/api/token", json={"token": "hf_synthetic_boundary"}).json()["configured"]
+    preflight = client.post("/api/wizard/token-preflight", json={"profile": "cpu"})
+
+    assert preflight.status_code == 200
+    assert preflight.json() == {
+        "configured": False,
+        "source": "none",
+        "keyring_available": False,
+        "access": "token_missing",
+    }
+    assert "hf_synthetic" not in preflight.text
+
+
+def test_wizard_frontend_requires_preflight_and_always_routes_through_token_step() -> None:
+    app_js = (Path(__file__).parents[1] / "src" / "utteran_gui" / "web" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    model_choice = app_js.split("async function wizardModelChoiceNext()", 1)[1].split(
+        "function showTokenPreflightError", 1
+    )[0]
+    token_next = app_js.split("async function wizardTokenNext()", 1)[1].split(
+        "async function wizardDownloadModelsAndVerify()", 1
+    )[0]
+
+    assert 'showWizardStep("token")' in model_choice
+    assert "wizardDownloadModelsAndVerify" not in model_choice
+    assert 'api("/api/wizard/token-preflight"' in token_next
+    assert 'result.access !== "available"' in token_next
+    assert 'token_invalid: "wizardTokenInvalid"' in token_next
+    assert 'agreement_required: "wizardTokenAgreementRequired"' in token_next
+    assert "wizardState.wantDiarization = false" in app_js

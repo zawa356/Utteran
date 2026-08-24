@@ -1,5 +1,21 @@
 # AI 作業状態
 
+## Phase 5f HF Token／セットアップウィザード再修正（2026-08-24、実装・自動検証完了）
+
+`fix/phase5e-gui-settings`で、HF Token画面を話者分離ON/OFF共通の正式ステップへ変更した。
+話者分離ON時は選択profileの`utteran config token-status --json --check-model ...`を子process実行し、
+実効Tokenの取得元（`HF_TOKEN`／`.env`／keyring）とpyannote gated modelへの軽量アクセスを確認する。
+Token本文はCLI JSONにもGUI APIにも返さず、未設定、401相当の無効Token、403／gatedの利用条件未同意、
+ネットワーク／profile CLI失敗をToken画面内で区別する。GUI keyring保存後のread-back確認は維持した。
+
+`GuiSettings`へ`setup_wizard_started_at`を追加し、開始後未完了は再起動時の再開対象とした。
+smoke testがexit 0になった時点で`setup_wizard_completed_at`を永続化し、完了APIは再起動後も同じ値を
+返す冪等動作にした。profileあり・wizard fieldなしの旧版環境は自動表示しない互換性を維持した。
+
+検証: モデル不要pytest 297 passed（うち関連pytest 105 passed）、ruff check・format check、
+mypy 53 source files、JavaScript構文検査、`git diff --check`が合格。実Hugging Face credentialを使う
+アクセス確認と、配布版GUI→profile CLIのWindows実機credential共有は未実施で、配布版受入時に必要。
+
 ## Phase 5e GUI設定修正（2026-08-24、実装・配布版診断完了）
 
 `fix/phase5e-gui-settings`でE-1〜E-4を実装した。指示書の原因候補は推測のまま採用せず、旧

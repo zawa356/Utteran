@@ -189,6 +189,18 @@ class ModelManager:
             )
         return downloaded
 
+    def check_access(self, entry: ModelEntry) -> None:
+        """Perform a metadata-only Hub access check for a gated model."""
+        token = self._token_provider.get_token()
+        if entry.gated and not token:
+            raise HuggingFaceTokenMissingError
+        try:
+            from huggingface_hub import HfApi
+
+            HfApi().model_info(entry.repository_id, token=token)
+        except Exception as exc:
+            _raise_download_error(entry, exc)
+
     def remove(self, entry: ModelEntry) -> bool:
         """Remove a complete/partial managed copy or all revisions in the default HF cache."""
         status = self.status(entry)

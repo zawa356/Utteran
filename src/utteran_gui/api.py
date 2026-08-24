@@ -88,6 +88,13 @@ class WizardJobPayload(BaseModel):
     diarization_enabled: bool = False
 
 
+class WizardTokenPreflightPayload(BaseModel):
+    profile: Literal["cpu", "cuda", "intel", "vulkan"]
+    check_model: str = Field(
+        default="pyannote:pyannote/speaker-diarization-community-1", max_length=200
+    )
+
+
 class RegenerationPayload(BaseModel):
     profile: Literal["cpu", "cuda", "intel", "vulkan"]
     output_dir: str = Field(min_length=1, max_length=32768)
@@ -229,6 +236,45 @@ def create_app(
     @app.get("/api/wizard/status")
     def wizard_status() -> dict[str, object]:
         return selected_wizard.status()
+
+    @app.post("/api/wizard/start")
+    def start_wizard() -> dict[str, object]:
+        return selected_wizard.start()
+
+    @app.post("/api/wizard/token-preflight")
+    def wizard_token_preflight(payload: WizardTokenPreflightPayload) -> dict[str, object]:
+        try:
+            result = selected_cli.run_json(
+                payload.profile,
+                ["config", "token-status", "--json", "--check-model", payload.check_model],
+            )
+        except CliError as exc:
+            logging.getLogger(__name__).warning(
+                "Profile token preflight failed: %s", type(exc).__name__
+            )
+            raise HTTPException(
+                status_code=409, detail="Profile CLI token preflight failed"
+            ) from None
+        if not isinstance(result, dict):
+            raise HTTPException(status_code=409, detail="Profile CLI returned invalid token status")
+        allowed = {
+            "configured": bool(result.get("configured")),
+            "source": result.get("source")
+            if result.get("source") in {"environment", "dotenv", "keyring", "none"}
+            else "none",
+            "keyring_available": bool(result.get("keyring_available")),
+            "access": result.get("access")
+            if result.get("access")
+            in {
+                "available",
+                "token_missing",
+                "token_invalid",
+                "agreement_required",
+                "network_error",
+            }
+            else "network_error",
+        }
+        return allowed
 
     @app.get("/api/wizard/hardware")
     def wizard_hardware() -> dict[str, object]:

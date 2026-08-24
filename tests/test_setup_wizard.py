@@ -208,9 +208,29 @@ def test_complete_persists_after_a_successful_smoke_test(tmp_path: Path) -> None
     process.finished.set()
     _wait_until(lambda: service.snapshot(job_id)["status"] == "completed")
 
+    persisted = settings_store.load().setup_wizard_completed_at
+    assert persisted, "smoke success must persist completion before the Done button is clicked"
+    restarted = SetupWizardService(CliAdapter(tmp_path), settings_store=settings_store)
+    assert restarted.status()["completed_at"] == persisted
+    assert restarted.complete()["setup_wizard_completed_at"] == persisted
+
     result = service.complete()
     assert result["setup_wizard_completed_at"]
     assert settings_store.load().setup_wizard_completed_at == result["setup_wizard_completed_at"]
+
+
+def test_started_wizard_is_offered_for_resume_after_restart(tmp_path: Path) -> None:
+    _create_profile(tmp_path, "cpu")
+    store = SettingsStore(tmp_path / "settings.json")
+    service = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
+
+    started = service.start()
+    assert started["setup_wizard_started_at"]
+
+    restarted = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
+    status = restarted.status()
+    assert status["first_run"] is True
+    assert status["resume_available"] is True
 
 
 def test_status_is_first_run_with_no_settings_file_and_no_profile(tmp_path: Path) -> None:

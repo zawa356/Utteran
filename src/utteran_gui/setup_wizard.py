@@ -112,11 +112,39 @@ class SetupWizardService:
         venvs triggers it.
         """
         settings = self._settings.load()
-        first_run = self._no_profile_exists() or not self._settings.path.is_file()
-        return {"first_run": first_run, "completed_at": settings.setup_wizard_completed_at}
+        first_run = self._no_profile_exists() or (
+            settings.setup_wizard_completed_at is None
+            and (settings.setup_wizard_started_at is not None or not self._settings.path.is_file())
+        )
+        return {
+            "first_run": first_run,
+            "resume_available": (
+                settings.setup_wizard_started_at is not None
+                and settings.setup_wizard_completed_at is None
+            ),
+            "started_at": settings.setup_wizard_started_at,
+            "completed_at": settings.setup_wizard_completed_at,
+        }
+
+    def start(self) -> dict[str, object]:
+        """Persist that a fresh/manual wizard flow has begun."""
+        current = self._settings.load()
+        if current.setup_wizard_completed_at is not None:
+            changes: dict[str, object] = {
+                "setup_wizard_started_at": _now(),
+                "setup_wizard_completed_at": None,
+            }
+        elif current.setup_wizard_started_at is None:
+            changes = {"setup_wizard_started_at": _now()}
+        else:
+            return current.to_dict()
+        return self._settings.update(changes).to_dict()
 
     def complete(self) -> dict[str, object]:
         """Mark the wizard complete - only once a smoke test has actually passed."""
+        current = self._settings.load()
+        if current.setup_wizard_completed_at is not None:
+            return current.to_dict()
         if self._last_successful_smoke_test_profile is None:
             raise WizardNotReadyError(
                 "A smoke test must succeed before the wizard can be marked complete"
@@ -198,11 +226,13 @@ class SetupWizardService:
             *model_flags,
             *diarization_flags,
         ]
-        snapshot = self._start("smoke_test", profile, command, self.cli.environment(profile))
-        with self._lock:
-            job = self._job(str(snapshot["id"]))
-            job.cleanup = lambda: shutil.rmtree(workdir, ignore_errors=True)
-        return snapshot
+        return self._start(
+            "smoke_test",
+            profile,
+            command,
+            self.cli.environment(profile),
+            cleanup=lambda: shutil.rmtree(workdir, ignore_errors=True),
+        )
 
     def cancel(self, job_id: str) -> dict[str, object]:
         with self._lock:
@@ -235,6 +265,8 @@ class SetupWizardService:
         profile: str,
         command: list[str],
         environment: dict[str, str],
+        *,
+        cleanup: Callable[[], None] | None = None,
     ) -> dict[str, object]:
         with self._lock:
             if self._active_id is not None:
@@ -242,7 +274,7 @@ class SetupWizardService:
                 if active.status not in TERMINAL_STATUSES:
                     raise WizardBusyError("Only one setup step can run at a time")
             job_id = uuid.uuid4().hex
-            job = WizardJob(job_id, kind, profile, command, environment)
+            job = WizardJob(job_id, kind, profile, command, environment, cleanup=cleanup)
             self._jobs[job_id] = job
             self._active_id = job_id
         threading.Thread(
@@ -283,14 +315,10 @@ class SetupWizardService:
                 self._handle_line(job_id, line)
         return_code = process.wait()
         stdout_thread.join(timeout=2.0)
-        cleanup: Callable[[], None] | None = None
         with self._lock:
             job = self._job(job_id)
             effective_code = 130 if job.cancel_requested else return_code
             self._finish(job, effective_code)
-            cleanup = job.cleanup
-        if cleanup is not None:
-            cleanup()
 
     def _read_stream(self, job_id: str, stream: Any) -> None:
         if stream is None:
@@ -336,6 +364,10 @@ class SetupWizardService:
         )
 
     def _finish(self, job: WizardJob, exit_code: int) -> None:
+        cleanup = job.cleanup
+        job.cleanup = None
+        if cleanup is not None:
+            cleanup()
         job.exit_code = exit_code
         job.finished_at = _now()
         job.process = None
@@ -345,6 +377,7 @@ class SetupWizardService:
             job.status = "completed"
             if job.kind == "smoke_test":
                 self._last_successful_smoke_test_profile = job.profile
+                self._settings.update({"setup_wizard_completed_at": _now()})
         else:
             job.status = "failed"
         self._append_event(

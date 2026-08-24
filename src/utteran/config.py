@@ -6,6 +6,7 @@ import os
 import tomllib
 import warnings
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -339,6 +340,36 @@ class KeyringTokenProvider(TokenProvider):
             return value if isinstance(value, str) else None
         except Exception:
             return None
+
+
+@dataclass(frozen=True)
+class TokenResolution:
+    """Non-secret details about the effective token selected by the CLI."""
+
+    configured: bool
+    source: Literal["environment", "dotenv", "keyring", "none"]
+    keyring_available: bool
+
+
+def resolve_token_status(dotenv_path: Path | None = None) -> TokenResolution:
+    """Resolve the effective token source without returning or logging its value."""
+    if EnvironmentTokenProvider().get_token():
+        source: Literal["environment", "dotenv", "keyring", "none"] = "environment"
+    elif DotEnvTokenProvider(dotenv_path or Path.cwd() / ".env").get_token():
+        source = "dotenv"
+    else:
+        source = "none"
+    keyring_available = False
+    try:
+        import keyring
+
+        keyring_token = keyring.get_password("utteran", "huggingface")
+        keyring_available = True
+        if source == "none" and isinstance(keyring_token, str) and keyring_token:
+            source = "keyring"
+    except Exception:
+        pass
+    return TokenResolution(source != "none", source, keyring_available)
 
 
 class ChainedTokenProvider(TokenProvider):
