@@ -154,7 +154,7 @@ def test_setup_reuses_devices_json_xpu_probe_and_reports_elapsed_time() -> None:
     assert "DeviceProbeTimer" in verification
     assert "Runtime device probe completed in" in verification
     assert "$DeviceData.pytorch.xpu_available" in verification
-    assert 'import torch; print(torch.xpu.is_available())' not in verification
+    assert "import torch; print(torch.xpu.is_available())" not in verification
     assert verification.count("utteran devices --json") == 2  # command plus failure text
     assert "utteran devices | Out-String" not in verification
 

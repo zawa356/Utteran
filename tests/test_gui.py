@@ -863,7 +863,8 @@ def test_wizard_frontend_separates_input_from_unattended_execution_and_resumes()
     assert unattended.index("wizardState.diarizationModelRef") < unattended.index(
         "wizardState.modelRef"
     )
-    assert 'await showWizardToken(result.access)' in unattended
+    assert "await showWizardToken(result.access)" in unattended
     assert 'status.step === "execution"' in app_js
+    assert 'status.step === "profile"' in app_js and "renderWizardRecommendation()" in app_js
     assert "completed_stages" in app_js
     assert "wizardState.wantDiarization = false" in app_js

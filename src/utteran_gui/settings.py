@@ -87,12 +87,8 @@ class GuiSettings:
             setup_wizard_completed_at=(
                 str(completed_at) if isinstance(completed_at, str) and completed_at else None
             ),
-            setup_wizard_step=(
-                str(wizard_step) if wizard_step in WIZARD_STEPS else "welcome"
-            ),
-            setup_wizard_profile=(
-                str(wizard_profile) if wizard_profile in PROFILE_NAMES else None
-            ),
+            setup_wizard_step=(str(wizard_step) if wizard_step in WIZARD_STEPS else "welcome"),
+            setup_wizard_profile=(str(wizard_profile) if wizard_profile in PROFILE_NAMES else None),
             setup_wizard_diarization_enabled=(
                 wizard_diarization if isinstance(wizard_diarization, bool) else None
             ),

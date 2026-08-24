@@ -193,12 +193,12 @@ class SetupWizardService:
             self._record_stage("preflight")
             self._settings.update({"setup_wizard_token_error": None})
             return
-        error = access if access in {
-            "token_missing", "token_invalid", "agreement_required", "network_error"
-        } else "network_error"
-        self._settings.update(
-            {"setup_wizard_step": "token", "setup_wizard_token_error": error}
+        error = (
+            access
+            if access in {"token_missing", "token_invalid", "agreement_required", "network_error"}
+            else "network_error"
         )
+        self._settings.update({"setup_wizard_step": "token", "setup_wizard_token_error": error})
 
     def complete(self) -> dict[str, object]:
         """Mark the wizard complete - only once a smoke test has actually passed."""

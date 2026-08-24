@@ -102,9 +102,9 @@ class WizardStatePayload(BaseModel):
     profile: Literal["cpu", "cuda", "intel", "vulkan"] | None = None
     diarization_enabled: bool | None = None
     model_ref: str | None = Field(default=None, max_length=200)
-    token_error: Literal[
-        "token_missing", "token_invalid", "agreement_required", "network_error"
-    ] | None = None
+    token_error: (
+        Literal["token_missing", "token_invalid", "agreement_required", "network_error"] | None
+    ) = None
 
 
 class RegenerationPayload(BaseModel):

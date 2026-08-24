@@ -328,6 +328,10 @@
         await showWizardToken(status.token_error);
         return;
       }
+      if (status.step === "profile") {
+        await ensureWizardHardware();
+        renderWizardRecommendation();
+      }
       if (status.step === "confirm") {
         renderWizardConfirmation();
       }
@@ -640,12 +644,9 @@
         await saveWizardState("token", {
           token_error: error.guidanceKey === "license" ? "agreement_required" : "token_invalid",
         });
-        showTokenPreflightError(
-          error.guidanceKey === "license"
-            ? t("wizardTokenAgreementRequired")
-            : t("wizardTokenInvalid"),
+        await showWizardToken(
+          error.guidanceKey === "license" ? "agreement_required" : "token_invalid",
         );
-        showWizardStep("token");
       } else {
         wizardShowError(error.message, wizardRunUnattended);
       }
