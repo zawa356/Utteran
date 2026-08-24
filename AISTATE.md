@@ -1,5 +1,52 @@
 # AI 作業状態
 
+## Phase 5e GUI設定修正（2026-08-24、実装・配布版診断完了）
+
+`fix/phase5e-gui-settings`でE-1〜E-4を実装した。指示書の原因候補は推測のまま採用せず、旧
+`dist/utteran-gui/utteran-gui.exe`を`pyi-archive_viewer -r`で調査した。その結果、旧specに
+keyringの明示指定がなくてもPyInstaller 6.22.2標準`hook-keyring.py`が働き、`keyring`、
+`keyring.backends.Windows`、`keyring-25.7.0.dist-info/entry_points.txt`は全て既に収集されていた。
+したがって「hidden import欠落だけがv0.1.0症状の原因」という候補は否定された。ただしhookへの
+暗黙依存をなくすため、specへ`collect_submodules("keyring")`と`copy_metadata("keyring")`を明示し、
+両方の存在を検査する回帰testを追加した。
+
+配布版で動的状態を確認できる`utteran-gui.exe --diagnose-keyring <json-path>`を追加した。実token
+slotを触らずrandomな診断usernameと合成tokenだけでget/set/get/deleteを行い、token値を結果へ
+含めない。`build.ps1`でonedir＋installerを再build後、(1) dist直下exe、(2) installerを隔離した
+`.tmp/phase5e-installed`へsilent installしたexeの双方で実行し、いずれもimport成功、backend=
+`keyring.backends.Windows.WinVaultKeyring`、get/set/delete全成功、exit 0を確認した。隔離installは
+silent uninstall済みで、既存profile/model/job/settings/tokenを変更していない。
+
+E-1の実障害点は、`TokenStore._get_token`があらゆる例外を`None`へ変換し、保存先利用不能と未設定を
+区別できなかったこと、および`set_password`後に再取得せずAPIが無条件でconfigured=trueを返した
+ことだった。`TokenStatus`でconfigured/available/backend/errorを分離し、保存直後に同じservice
+`utteran`／username `huggingface`から値を再取得して一致を確認する。利用不能時はGUIでWindows
+資格情報マネージャー、`HF_TOKEN`、`.env`を案内する。CLIは従来通りenv > `.env` > keyringの順で、
+GUIと同じservice/usernameを使うことを回帰testで固定した。インストール版に`.env`は既定で存在
+しないが、インストールrootがCLI cwdになるため利用者が作成した場合は従来の優先順位で参照される。
+
+E-2は設定画面が項目ごとにPUTしていたのではなく、明示保存の全体PUTとは別に、言語変更やtoken
+保存／削除が`applySettings()`を呼び、serverへ未保存の別項目を古い`state.settings`からDOMへ
+再投入していたことが直接原因だった。再描画を翻訳／token表示だけへ限定し、設定保存を
+`PATCH /api/settings`の部分更新に変更した。`SettingsStore.update()`はprocess内RLockの下で原子的に
+read-modify-writeするため、連続／並行更新とwizard完了時刻を巻き戻さない。
+
+E-3はwizardと設定画面を共通`saveToken()`へ統合し、アカウント作成・利用条件同意・read token発行
+の3リンク、password入力、保存後read-back、「話者分離なしで進める」、keyring失敗案内を実装した。
+無効tokenと利用条件未同意は既存`guidance_for`の`token`／`license`分類をモデル取得とsmoke testで
+引き続き区別する。E-4はthemeをsystem/light/darkとし、field欠落時だけsystem、既存dark/lightは
+維持する。systemはWebView2が対応する`prefers-color-scheme` media queryで実行中のOS変更にも
+再評価される。Windowsタイトルバーはpywebview/WebView2のOS管理枠を変更せず、client領域だけを
+CSS theme化した。native WebView上でWindows themeを実際に切り替える目視確認は自動化できず、
+今回はCSS契約とWebView2同梱までの確認に留めた。
+
+品質結果: モデル不要pytest 288 passed、ruff check、ruff format check、mypy 55 source files、
+JavaScript構文検査、`git diff --check`が合格。受入ハーネスは変更に近いG8〜G12を実行して23/23
+pass（設定優先順位、token無し、秘密mask、README例、Windows frontを含む）。`build.ps1`は
+PyInstaller→推論core非混入検査→Inno Setup→SHA-256まで成功。開発環境で動作してもPyInstaller
+bundleでは動的importが解決されない場合があるため、動的backend検出libraryはhidden importsと
+metadata収集を明示し、配布版の実診断で確認する。
+
 ## v0.1.0 リリース公開（2026-08-19）
 
 利用者の指示により、Phase 5d完了後に`docs/リリース手順.md`のrelease gateに沿って
