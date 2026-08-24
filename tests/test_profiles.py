@@ -159,6 +159,23 @@ def test_setup_reuses_devices_json_xpu_probe_and_reports_elapsed_time() -> None:
     assert "utteran devices | Out-String" not in verification
 
 
+def test_setup_retries_uv_sync_and_fails_before_unrelated_guidance() -> None:
+    setup_script = (Path(__file__).parents[1] / "setup.ps1").read_text(encoding="utf-8")
+
+    retry_helper = setup_script.index("function Invoke-UvSyncWithRetry")
+    sync_call = setup_script.index("= Invoke-UvSyncWithRetry", retry_helper + 1)
+    final_sync_failure = setup_script.index("Dependency sync failed after 3 attempts", sync_call)
+    fail_fast = setup_script.index("Resolve the uv errors above and rerun", final_sync_failure)
+    ffmpeg = setup_script.index('Write-Step "Checking ffmpeg"', fail_fast)
+
+    assert "$MaxAttempts = 3" in setup_script[retry_helper:sync_call]
+    assert "Retrying dependency sync" in setup_script[retry_helper:sync_call]
+    assert "Start-Sleep -Seconds $DelaySeconds" in setup_script[retry_helper:sync_call]
+    assert "ForEach-Object { Write-Host $_ }" in setup_script[retry_helper:sync_call]
+    assert sync_call < final_sync_failure < fail_fast < ffmpeg
+    assert "exit 1" in setup_script[fail_fast:ffmpeg]
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Spawns Windows PowerShell")
 def test_setup_list_writes_valid_utf8_when_stdout_is_piped() -> None:
     """`setup.ps1`'s own Write-Host output must decode as UTF-8 when piped.

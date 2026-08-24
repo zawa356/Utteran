@@ -1,5 +1,26 @@
 # AI 作業状態
 
+## 0.1.4 初回uv同期の自動回復（2026-08-24）
+
+ユーザーのクリーン再install試験では、Intel profileの`uv sync --locked --extra xpu --extra
+whisper-cpp --extra openvino`がexit 2となり、venv構築が失敗していた。添付ログはその後も続行した
+ffmpeg／Token一般案内が末尾を占め、uv自身の詳細errorは残っていなかった。同じinstall先・引数で
+直後に手動再実行すると依存148 packageの同期とIntel検証が成功し、固定的なlockfile／権限不良では
+なく、初回のnative DLL展開、scanner、cache、通信等に伴う一時失敗と判断した。
+
+`setup.ps1`へlocked環境の同じuv同期を最大3回、2秒／4秒backoffで自動再試行するhelperを追加した。
+uvのstdoutはGUI logへstreamしつつBoolean結果と混ざらないようhost streamへ転送する。3回失敗時は
+ffmpeg確認やToken案内へ進まず即時exit 1とし、uv本体のerror、試行回数、exit codeを診断末尾に残す。
+回帰testはretry helper、既定3回、backoff、stdout転送、およびffmpegより前のfail-fast順序を固定した。
+
+0.1.4の実配布版検証では、既存GUIをuninstallし、install先venvとwizard settingsを退避／消去、
+Keyring Tokenだけを保持してfresh installした。実WebViewを最初の「始める」からUI Automationで操作し、
+Intel自動推奨→話者分離ON→Token設定済み→confirm→venv→preflight→pyannote→ASR→smokeの全経路が
+成功した。最終settingsは`step=done`、5段階完了、Token errorなし。退避venvは成功後に削除し、新しい
+Intel venvを保持した。pytest 322件、ruff、mypy、PowerShell／JavaScript構文検査が合格。最終buildを
+上書きinstallしてGUIを起動済み。installer SHA-256は
+`051604a7bc622cbe00a1c48c3f5e36379f8b407ea902dbad0edfa6aa0285b28c`。
+
 ## 0.1.3 ウィザード失敗分類の修正（2026-08-24）
 
 0.1.2配布版で再発したToken errorを実状態から再調査した。settingsは`completed_stages=[]`、install先に

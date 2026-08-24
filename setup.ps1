@@ -106,6 +106,42 @@ function Invoke-Utf8Captured {
     }
 }
 
+function Invoke-UvSyncWithRetry {
+    <#
+    A clean first install writes and imports many large native DLLs. Windows
+    Defender, another scanner, or a short network/cache interruption can make
+    that first uv sync fail even though an immediate rerun succeeds. Keep the
+    operation resumable and retry the same locked environment automatically.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$UvPath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [int]$MaxAttempts = 3
+    )
+    for ($Attempt = 1; $Attempt -le $MaxAttempts; $Attempt++) {
+        try {
+            # Keep uv's stdout visible in the GUI log without letting it join
+            # this function's Boolean return value on PowerShell's success stream.
+            & $UvPath @Arguments | ForEach-Object { Write-Host $_ }
+            $ExitCode = $LASTEXITCODE
+        }
+        catch {
+            $ExitCode = if ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
+            Write-Warning "uv sync attempt $Attempt raised: $($_.Exception.Message)"
+        }
+        if ($ExitCode -eq 0) {
+            return $true
+        }
+        Write-Warning "uv sync attempt $Attempt/$MaxAttempts failed (exit $ExitCode)."
+        if ($Attempt -lt $MaxAttempts) {
+            $DelaySeconds = 2 * $Attempt
+            Write-Host "Retrying dependency sync in $DelaySeconds seconds..."
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+    return $false
+}
+
 function Get-VenvRoot {
     if ($VenvDir) {
         return [IO.Path]::GetFullPath($VenvDir)
@@ -524,17 +560,19 @@ function Invoke-ProfileSetup {
         if ($ProfileName -eq "cuda") {
             Write-Host "CUDA profile uses the PyTorch CUDA 12.6 wheel (approximately 2.4 GiB)."
         }
-        try {
-            & $script:UvCommand.Source @SyncArgs
-            if ($LASTEXITCODE -ne 0) {
-                throw "uv $($SyncArgs -join ' ') failed (exit $LASTEXITCODE)"
-            }
-            $DependencySyncSucceeded = $true
-        }
-        catch {
-            Write-Warning "Dependency sync failed: $($_.Exception.Message)"
+        $DependencySyncSucceeded = Invoke-UvSyncWithRetry `
+            -UvPath $script:UvCommand.Source `
+            -Arguments ([string[]]$SyncArgs)
+        if (-not $DependencySyncSucceeded) {
+            Write-Warning "Dependency sync failed after 3 attempts."
             Write-Host "If this machine is offline, reconnect and run: uv $($SyncArgs -join ' ')"
         }
+    }
+
+    if (-not $DependencySyncSucceeded) {
+        Write-Host "`nutteran setup (profile: $ProfileName) is incomplete. Resolve the uv errors above and rerun." `
+            -ForegroundColor Red
+        exit 1
     }
 
     if ($ProfileName -ne "gui") {
@@ -547,11 +585,7 @@ function Invoke-ProfileSetup {
 
     Write-Step "Verifying profile '$ProfileName'" -Stage "verify"
     $ProfileVerificationSucceeded = $false
-    if (-not $DependencySyncSucceeded) {
-        Write-Warning "Skipping verification because dependency sync did not complete."
-    }
-    else {
-        try {
+    try {
             if ($ProfileName -eq "gui") {
                 $GuiProbe = & (Join-Path $VenvPath "Scripts\python.exe") -c `
                     "import importlib.util; import fastapi, uvicorn, webview, utteran_gui; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('faster_whisper') is None; print('GUI_OK')" 2>&1
@@ -623,12 +657,11 @@ function Invoke-ProfileSetup {
                 Write-Host "CTranslate2 CUDA devices: $(@($DeviceData.ctranslate2.cuda_devices).Count)"
             }
         }
-        catch {
-            Write-Warning "Verification could not complete: $($_.Exception.Message)"
-        }
+    catch {
+        Write-Warning "Verification could not complete: $($_.Exception.Message)"
     }
 
-    if (-not $DependencySyncSucceeded -or -not $ProfileVerificationSucceeded) {
+    if (-not $ProfileVerificationSucceeded) {
         Write-Host "`nutteran setup (profile: $ProfileName) is incomplete. Resolve the warnings above and rerun." `
             -ForegroundColor Red
         exit 1
