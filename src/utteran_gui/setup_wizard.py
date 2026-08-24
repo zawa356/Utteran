@@ -122,6 +122,17 @@ class SetupWizardService:
         if settings.setup_wizard_profile is None and step not in {"welcome", "profile"}:
             step = "profile"
             completed_stages = []
+        # Token errors are meaningful only after the selected profile has
+        # actually run its preflight. Older interrupted runs could leave an
+        # error behind after their profile/stages were reset, which made a new
+        # wizard session claim that a configured token had just been rejected.
+        token_error = settings.setup_wizard_token_error
+        profile_ready = (
+            settings.setup_wizard_profile is not None
+            and self.cli.profile_info(settings.setup_wizard_profile).exists
+        )
+        if "venv" not in completed_stages or not profile_ready:
+            token_error = None
         persisted_in_progress = (
             settings.setup_wizard_completed_at is None
             and settings.setup_wizard_step != "welcome"
@@ -143,7 +154,7 @@ class SetupWizardService:
             "diarization_enabled": settings.setup_wizard_diarization_enabled,
             "model_ref": settings.setup_wizard_model_ref,
             "completed_stages": completed_stages,
-            "token_error": settings.setup_wizard_token_error,
+            "token_error": token_error,
         }
 
     def start(self) -> dict[str, object]:
@@ -160,7 +171,11 @@ class SetupWizardService:
                 "setup_wizard_token_error": None,
             }
         elif current.setup_wizard_started_at is None:
-            changes = {"setup_wizard_started_at": _now(), "setup_wizard_step": "profile"}
+            changes = {
+                "setup_wizard_started_at": _now(),
+                "setup_wizard_step": "profile",
+                "setup_wizard_token_error": None,
+            }
         else:
             return current.to_dict()
         return self._settings.update(changes).to_dict()
@@ -205,7 +220,7 @@ class SetupWizardService:
             }:
                 raise ValueError(f"Unknown token error: {token_error}")
             changes["setup_wizard_token_error"] = token_error
-        elif step != "token":
+        else:
             changes["setup_wizard_token_error"] = None
         return self._settings.update(changes).to_dict()
 
@@ -220,7 +235,17 @@ class SetupWizardService:
             if access in {"token_missing", "token_invalid", "agreement_required", "network_error"}
             else "network_error"
         )
-        self._settings.update({"setup_wizard_step": "token", "setup_wizard_token_error": error})
+        current = self._settings.load()
+        completed = [
+            stage for stage in current.setup_wizard_completed_stages if stage != "preflight"
+        ]
+        self._settings.update(
+            {
+                "setup_wizard_step": "token",
+                "setup_wizard_completed_stages": completed,
+                "setup_wizard_token_error": error,
+            }
+        )
 
     def complete(self) -> dict[str, object]:
         """Mark the wizard complete - only once a smoke test has actually passed."""

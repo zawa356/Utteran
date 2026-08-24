@@ -91,8 +91,10 @@ def test_wizard_input_and_execution_progress_survive_service_restart(tmp_path: P
     store = SettingsStore(tmp_path / "settings.json")
     service = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
 
+    _create_profile(tmp_path, "intel")
     service.start()
     service.save_state("token", profile="intel", diarization_enabled=True)
+    store.update({"setup_wizard_completed_stages": ["venv"]})
     service.record_preflight("token_invalid")
 
     restarted = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
@@ -100,13 +102,55 @@ def test_wizard_input_and_execution_progress_survive_service_restart(tmp_path: P
     assert status["step"] == "token"
     assert status["profile"] == "intel"
     assert status["diarization_enabled"] is True
-    assert status["completed_stages"] == []
+    assert status["completed_stages"] == ["venv"]
     assert status["token_error"] == "token_invalid"
 
     restarted.record_preflight("available")
     resumed = SetupWizardService(CliAdapter(tmp_path), settings_store=store).status()
-    assert resumed["completed_stages"] == ["preflight"]
+    assert resumed["completed_stages"] == ["venv", "preflight"]
     assert resumed["token_error"] is None
+
+
+def test_wizard_does_not_replay_stale_token_error_without_profile_venv(tmp_path: Path) -> None:
+    store = SettingsStore(tmp_path / "settings.json")
+    service = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
+    service.start()
+    service.save_state("token", profile="intel", diarization_enabled=True)
+    service.record_preflight("token_invalid")
+
+    status = SetupWizardService(CliAdapter(tmp_path), settings_store=store).status()
+
+    assert status["step"] == "token"
+    assert status["token_error"] is None
+
+
+def test_entering_token_step_clears_error_from_previous_attempt(tmp_path: Path) -> None:
+    store = SettingsStore(tmp_path / "settings.json")
+    service = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
+    _create_profile(tmp_path, "intel")
+    service.start()
+    service.save_state("token", profile="intel")
+    store.update({"setup_wizard_completed_stages": ["venv"]})
+    service.record_preflight("token_invalid")
+
+    service.save_state("token")
+
+    assert store.load().setup_wizard_token_error is None
+
+
+def test_failed_recheck_removes_previous_preflight_completion(tmp_path: Path) -> None:
+    store = SettingsStore(tmp_path / "settings.json")
+    service = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
+    _create_profile(tmp_path, "intel")
+    service.start()
+    service.save_state("token", profile="intel")
+    store.update({"setup_wizard_completed_stages": ["venv", "preflight"]})
+
+    service.record_preflight("token_missing")
+
+    saved = store.load()
+    assert saved.setup_wizard_completed_stages == ("venv",)
+    assert saved.setup_wizard_token_error == "token_missing"
 
 
 def test_model_download_persists_asr_and_diarization_as_distinct_stages(tmp_path: Path) -> None:

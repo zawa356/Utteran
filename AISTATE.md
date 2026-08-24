@@ -2,6 +2,11 @@
 
 ## Phase 5g Token preflight再発修正（2026-08-24）
 
+再修正では、画面の`token_invalid`が今回の認証結果ではなく、profile venvと完了stageがない状態で
+過去の`setup_wizard_token_error`だけ再表示されていたことを実settingsの時刻・状態から特定した。
+venv preflightを実行していない状態では保存済みエラーを表示せず、wizard開始時とToken stepへの
+通常遷移時にも古いエラーを消去する。
+
 実機では同じtokenをIntel/CPU profile CLIから検査して`access=available`、pyannote community-1も
 完全にインストール済みだった。従来はこの状態でもHubのonline認証を毎回必須にしていたため、
 外部APIの失敗でウィザードが`token_invalid`へ戻り得た。`ModelManager.check_access()`は完全な
