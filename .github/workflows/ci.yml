@@ -73,11 +73,15 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
-      - name: Start every PowerShell script with Windows PowerShell 5.1
+      - name: Start headless-safe PowerShell scripts with Windows PowerShell 5.1
         shell: powershell
         run: |
           foreach ($file in (git ls-files '*.ps1')) {
-            if ($file -eq 'setup.ps1') {
+            if ($file -eq 'build.ps1' -or $file -eq 'gui.ps1') {
+              # build.ps1 requires Inno Setup and gui.ps1 opens a native window;
+              # both are syntax-checked above but have no safe headless startup mode.
+              continue
+            } elseif ($file -eq 'setup.ps1') {
               $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file -List 2>&1
             } elseif ($file -eq 'start.ps1') {
               $output = '0' | & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file 2>&1
