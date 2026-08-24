@@ -26,3 +26,15 @@ def test_windows_build_embeds_and_verifies_project_version() -> None:
     assert "$env:UTTERAN_BUILD_VERSION = $Version" in build
     assert ".VersionInfo.ProductVersion" in build
     assert '"utteran-setup-$Version.exe"' in build
+
+
+def test_installer_does_not_launch_gui_before_setup_exits() -> None:
+    """Postinstall children inherit Inno Setup's RedirectionGuard policy."""
+    project = Path(__file__).parents[1]
+    installer = (project / "packaging" / "installer.iss").read_text(encoding="utf-8")
+    directives = "\n".join(
+        line for line in installer.splitlines() if not line.lstrip().startswith(";")
+    )
+
+    assert "[Run]" not in directives
+    assert "postinstall" not in directives

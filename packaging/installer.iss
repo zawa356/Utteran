@@ -111,8 +111,14 @@ Source: "{#RepoRoot}\src\utteran_gui\*"; DestDir: "{app}\src\utteran_gui"; Flags
 Name: "{autoprograms}\utteran"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\utteran"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
-[Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,utteran}"; Flags: nowait postinstall skipifsilent
+; Do not launch the GUI from Setup's completion page. Inno Setup enables
+; Windows RedirectionGuard on its own process. A GUI started here inherits
+; that mitigation, and uv then fails with Win32 error 448 while inspecting
+; the user's managed Python below AppData. Starting the installed shortcut
+; after Setup exits creates a normal process and avoids that inherited state.
+; Keep this invariant covered by tests: reintroducing a [Run] postinstall
+; entry makes first-run setup fail even though the exact same GUI works after
+; it is closed and opened again.
 
 [Code]
 { ---- Install-time informational pages (no user input, just disclosure) ---- }

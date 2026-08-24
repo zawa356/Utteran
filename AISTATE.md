@@ -1,5 +1,32 @@
 # AI 作業状態
 
+## 0.1.5 installer起動元のRedirectionGuard分離（2026-08-24）
+
+ユーザーの詳細logでは、Inno Setup完了画面から起動したGUIだけが
+`AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\python.exe`の検査で
+Windows error 448（信頼されていないmount point）となり、GUIを終了してshortcutから起動し直すと
+先へ進んだ。前回の配布版検証はsilent install（`skipifsilent`で`[Run]`を通らない）後にGUIを
+別processで起動していたため、この起動元固有の状態を検証できていなかった。
+
+CLI診断では、通常の`uv python find 3.12`とinstall先からのprofile同期は成功する一方、Win32
+`SetProcessMitigationPolicy(ProcessRedirectionTrustPolicy, EnforceRedirectionTrust=1)`で
+RedirectionGuardを有効化したprocessから、実際と同じ
+`uv sync --locked --extra xpu --extra whisper-cpp --extra openvino`を実行すると、同一path・同一error
+448・exit 2を再現した。通信、Hugging Face Token、profile権限ではなく、Inno Setupが有効化する
+RedirectionGuardを完了画面の子GUIが継承することが原因と確定した。
+
+`packaging/installer.iss`から`[Run]`のpostinstall GUI起動を廃止した。install完了後はSetupを終了し、
+Start menuまたはdesktop shortcutからGUIを通常起動する。installerのsecurity mitigation自体は無効化
+しない。回帰testはinstaller sourceに`[Run]`と`postinstall`が存在しないことを固定し、versionを
+0.1.5へ更新した。
+
+0.1.5配布版をbuildして既定install先へ上書きした。installer終了後にGUI processが起動していないこと、
+installed exeとGUI表示用versionが0.1.5であること、通常起動したGUIのRedirectionGuard policyが0で
+あることを確認した。その状態でinstall先の`setup.ps1 -Profile intel -Yes`を実行し、同じlocked sync、
+XPU、OpenVINO（CPU/GPU/NPU）、CTranslate2確認がすべて成功した。pytest 323件、ruff、mypy、
+PowerShell／JavaScript構文検査が合格。installer SHA-256は
+`3d2a88caf599eca71032e6cf703a51b08610c46a02afa5b51a6db67c41718a89`。
+
 ## 0.1.4 初回uv同期の自動回復（2026-08-24）
 
 ユーザーのクリーン再install試験では、Intel profileの`uv sync --locked --extra xpu --extra
