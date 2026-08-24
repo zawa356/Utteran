@@ -22,6 +22,7 @@ from utteran_gui.cli import CliAdapter, CliError, RegenerationOptions, Transcrip
 from utteran_gui.environment import EnvironmentService
 from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
+from utteran_gui.processes import build_creation_kwargs
 from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
 from utteran_gui.setup_wizard import (
     SetupWizardService,
@@ -483,6 +484,7 @@ def create_app(
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                **build_creation_kwargs(),
             )
         except OSError:
             raise HTTPException(status_code=503, detail="Could not open folder") from None

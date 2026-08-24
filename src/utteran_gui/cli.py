@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from utteran_gui.processes import build_creation_kwargs
 from utteran_gui.security import mask_secrets, sanitize_json
 
 PROFILE_NAMES = ("cpu", "cuda", "intel", "vulkan")
@@ -126,6 +127,7 @@ class CliAdapter:
             errors="replace",
             timeout=timeout,
             check=False,
+            **build_creation_kwargs(),
         )
         if completed.returncode != 0:
             detail = mask_secrets(completed.stderr.strip() or completed.stdout.strip())

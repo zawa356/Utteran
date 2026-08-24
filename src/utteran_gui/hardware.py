@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from utteran_gui.processes import build_creation_kwargs
 from utteran_gui.settings import PROFILE_NAMES
 
 GpuVendor = Literal["nvidia", "intel", "amd", "other", "none"]
@@ -265,6 +266,7 @@ def detect_gpu() -> GpuReport:
             encoding="utf-8",
             errors="replace",
             timeout=15,
+            **build_creation_kwargs(),
         )
         if completed.returncode != 0 or not completed.stdout.strip():
             return GpuReport((), "none", error=_bounded_error(completed.stderr or "empty output"))

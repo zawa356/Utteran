@@ -13,10 +13,29 @@ import signal
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import TypedDict, cast
 
 PopenFactory = Callable[..., subprocess.Popen[str]]
 TreeKiller = Callable[[subprocess.Popen[str]], None]
+
+
+class CreationKwargs(TypedDict, total=False):
+    creationflags: int
+
+
+def build_creation_kwargs(*, new_process_group: bool = False) -> CreationKwargs:
+    """Return Windows flags that keep GUI child processes invisible.
+
+    Long-running job trees additionally retain ``CREATE_NEW_PROCESS_GROUP``
+    for cancellation. Every Windows child gets ``CREATE_NO_WINDOW`` so a
+    console-less GUI never flashes a console when starting a CLI program.
+    """
+    if os.name != "nt":
+        return {}
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if new_process_group:
+        flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    return {"creationflags": flags}
 
 
 def build_popen_kwargs(*, cwd: Path, env: dict[str, str]) -> dict[str, object]:
@@ -33,7 +52,7 @@ def build_popen_kwargs(*, cwd: Path, env: dict[str, str]) -> dict[str, object]:
         "bufsize": 1,
     }
     if os.name == "nt":
-        kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        kwargs.update(build_creation_kwargs(new_process_group=True))
     else:
         kwargs["start_new_session"] = True
     return kwargs
@@ -50,6 +69,7 @@ def kill_process_tree(process: subprocess.Popen[str]) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
+            **build_creation_kwargs(),
         )
         return
     # os.killpg/signal.SIGKILL are POSIX-only; typeshed omits them from the
