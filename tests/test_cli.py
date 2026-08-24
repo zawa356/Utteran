@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import _thread
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -124,11 +125,15 @@ def interrupt_when_ready():
 threading.Thread(target=interrupt_when_ready, daemon=True).start()
 _run_interruptibly(operation, hard_exit_on_interrupt=True)
 """
+    environment = os.environ.copy()
+    environment["PYTHONIOENCODING"] = "utf-8"
     completed = subprocess.run(
         [sys.executable, "-c", probe],
         check=False,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=environment,
         timeout=10,
     )
 
