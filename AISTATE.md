@@ -1,5 +1,28 @@
 # AI 作業状態
 
+## Windows GUI子processのconsole抑止（2026-08-24）
+
+`fix/no-console-window`をPhase 5g実装済みの現在地点から作成した。`src/utteran_gui`を全検索し、
+子process起動は共通job/wizard `Popen`、profile CLIの同期`run`、hardware検出PowerShell、
+process tree終了用`taskkill`、folder表示用`explorer.exe`の5経路と確認した。
+`processes.build_creation_kwargs()`へWindows creation flagを集約し、全経路へ`CREATE_NO_WINDOW`を
+適用した。job/wizardだけはcancelに必要な既存`CREATE_NEW_PROCESS_GROUP`をbit ORで併用し、POSIXの
+`start_new_session`経路は変更していない。
+
+回帰testは両flagの併用、CLI、PowerShell、taskkill、Explorer、非Windows、および実PowerShell
+process treeの`taskkill /T /F`終了を検証する。既存GUI cancelのexit 130 testに加え、CLIの
+hard interrupt exit 130とWindows acceptance scenarioのconsole Ctrl+C隔離testも合格した。
+`ruff check .`、`mypy src`、model不要を含む全test 319件が合格。実受入ハーネスはG5を実行し、
+実SIGINTでexit 130を要求するG5-09を含む9件すべて合格（74.7秒）した。
+配布版installerをbuildし、SHA-256は
+`08e77226c7feb3086f74ff59792a720f855f70f626be4f34f1f5e3ed0a5ee4b2`。既定install先へ上書き後、
+`console=False`のexeを起動してtop-level `ConsoleWindowClass`を5ms間隔で監視した。起動時の
+hardware検出を含む12秒間で新規console windowは0件。さらに配布版GUIをUI Automationで操作し、
+既存acceptanceの10分相当test音声を実際に文字起こし開始、GUIのcancel buttonをInvokeした。
+`utteran.exe`起動から`taskkill /T /F`によるtree終了まで新規console windowは0件、child processは
+15秒以内に確実に終了した（実測では約2秒）。wizardと通常jobは同一`build_popen_kwargs()`を使い、
+全wizard stageのflagは同じ回帰testで固定している。設定・model・venvは削除していない。
+
 ## Phase 5g Token preflight再発修正（2026-08-24）
 
 再修正では、画面の`token_invalid`が今回の認証結果ではなく、profile venvと完了stageがない状態で
