@@ -28,7 +28,7 @@ from utteran_gui.cli import CliAdapter
 from utteran_gui.jobs import guidance_for
 from utteran_gui.processes import PopenFactory, TreeKiller, build_popen_kwargs, kill_process_tree
 from utteran_gui.security import mask_secrets
-from utteran_gui.settings import PROFILE_NAMES, SettingsStore
+from utteran_gui.settings import PROFILE_NAMES, WIZARD_EXECUTION_STAGES, WIZARD_STEPS, SettingsStore
 
 WizardJobKind = Literal["venv_build", "model_download", "smoke_test"]
 WizardJobStatus = Literal["starting", "running", "completed", "failed", "cancelled"]
@@ -63,6 +63,7 @@ class WizardJob:
     profile: str
     command: list[str]
     environment: dict[str, str]
+    model_ref: str | None = None
     status: WizardJobStatus = "starting"
     stage: str | None = None
     created_at: str = field(default_factory=lambda: _now())
@@ -124,6 +125,12 @@ class SetupWizardService:
             ),
             "started_at": settings.setup_wizard_started_at,
             "completed_at": settings.setup_wizard_completed_at,
+            "step": settings.setup_wizard_step,
+            "profile": settings.setup_wizard_profile,
+            "diarization_enabled": settings.setup_wizard_diarization_enabled,
+            "model_ref": settings.setup_wizard_model_ref,
+            "completed_stages": list(settings.setup_wizard_completed_stages),
+            "token_error": settings.setup_wizard_token_error,
         }
 
     def start(self) -> dict[str, object]:
@@ -133,12 +140,65 @@ class SetupWizardService:
             changes: dict[str, object] = {
                 "setup_wizard_started_at": _now(),
                 "setup_wizard_completed_at": None,
+                "setup_wizard_step": "profile",
+                "setup_wizard_profile": None,
+                "setup_wizard_diarization_enabled": None,
+                "setup_wizard_completed_stages": [],
+                "setup_wizard_token_error": None,
             }
         elif current.setup_wizard_started_at is None:
-            changes = {"setup_wizard_started_at": _now()}
+            changes = {"setup_wizard_started_at": _now(), "setup_wizard_step": "profile"}
         else:
             return current.to_dict()
         return self._settings.update(changes).to_dict()
+
+    def save_state(
+        self,
+        step: str,
+        *,
+        profile: str | None = None,
+        diarization_enabled: bool | None = None,
+        model_ref: str | None = None,
+        token_error: str | None = None,
+    ) -> dict[str, object]:
+        """Persist non-secret wizard input so the UI can resume after restart."""
+        if step not in WIZARD_STEPS:
+            raise ValueError(f"Unknown wizard step: {step}")
+        changes: dict[str, object] = {"setup_wizard_step": step}
+        if profile is not None:
+            _validate_profile(profile)
+            changes["setup_wizard_profile"] = profile
+        if diarization_enabled is not None:
+            changes["setup_wizard_diarization_enabled"] = diarization_enabled
+        if model_ref is not None:
+            if not model_ref.strip():
+                raise ValueError("model_ref must not be empty")
+            changes["setup_wizard_model_ref"] = model_ref
+        if token_error is not None:
+            if token_error not in {
+                "token_missing",
+                "token_invalid",
+                "agreement_required",
+                "network_error",
+            }:
+                raise ValueError(f"Unknown token error: {token_error}")
+            changes["setup_wizard_token_error"] = token_error
+        elif step != "token":
+            changes["setup_wizard_token_error"] = None
+        return self._settings.update(changes).to_dict()
+
+    def record_preflight(self, access: str) -> None:
+        """Persist a successful preflight or route a classified failure back to token input."""
+        if access == "available":
+            self._record_stage("preflight")
+            self._settings.update({"setup_wizard_token_error": None})
+            return
+        error = access if access in {
+            "token_missing", "token_invalid", "agreement_required", "network_error"
+        } else "network_error"
+        self._settings.update(
+            {"setup_wizard_step": "token", "setup_wizard_token_error": error}
+        )
 
     def complete(self) -> dict[str, object]:
         """Mark the wizard complete - only once a smoke test has actually passed."""
@@ -178,7 +238,13 @@ class SetupWizardService:
         if not info.exists:
             raise WizardProfileMissingError(f"Profile venv does not exist yet: {profile}")
         command = [str(info.executable), "models", "download", model_ref]
-        return self._start("model_download", profile, command, self.cli.environment(profile))
+        return self._start(
+            "model_download",
+            profile,
+            command,
+            self.cli.environment(profile),
+            model_ref=model_ref,
+        )
 
     def start_smoke_test(
         self,
@@ -267,6 +333,7 @@ class SetupWizardService:
         environment: dict[str, str],
         *,
         cleanup: Callable[[], None] | None = None,
+        model_ref: str | None = None,
     ) -> dict[str, object]:
         with self._lock:
             if self._active_id is not None:
@@ -274,7 +341,9 @@ class SetupWizardService:
                 if active.status not in TERMINAL_STATUSES:
                     raise WizardBusyError("Only one setup step can run at a time")
             job_id = uuid.uuid4().hex
-            job = WizardJob(job_id, kind, profile, command, environment, cleanup=cleanup)
+            job = WizardJob(
+                job_id, kind, profile, command, environment, model_ref=model_ref, cleanup=cleanup
+            )
             self._jobs[job_id] = job
             self._active_id = job_id
         threading.Thread(
@@ -375,9 +444,21 @@ class SetupWizardService:
             job.status = "cancelled"
         elif exit_code == 0:
             job.status = "completed"
+            if job.kind == "venv_build":
+                self._record_stage("venv")
+            elif job.kind == "model_download":
+                stage = (
+                    "diarization_model"
+                    if (job.model_ref or "").startswith("pyannote:")
+                    else "asr_model"
+                )
+                self._record_stage(stage)
             if job.kind == "smoke_test":
                 self._last_successful_smoke_test_profile = job.profile
-                self._settings.update({"setup_wizard_completed_at": _now()})
+                self._record_stage("smoke")
+                self._settings.update(
+                    {"setup_wizard_completed_at": _now(), "setup_wizard_step": "done"}
+                )
         else:
             job.status = "failed"
         self._append_event(
@@ -392,6 +473,15 @@ class SetupWizardService:
         )
         if self._active_id == job.id:
             self._active_id = None
+
+    def _record_stage(self, stage: str) -> None:
+        if stage not in WIZARD_EXECUTION_STAGES:
+            raise ValueError(f"Unknown execution stage: {stage}")
+        current = self._settings.load()
+        stages = list(current.setup_wizard_completed_stages)
+        if stage not in stages:
+            stages.append(stage)
+            self._settings.update({"setup_wizard_completed_stages": stages})
 
     def _append_event(self, job: WizardJob, event: dict[str, object]) -> None:
         event = dict(event)

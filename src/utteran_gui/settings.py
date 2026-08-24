@@ -19,6 +19,17 @@ from utteran_gui.security import mask_secrets, register_secret
 Theme = Literal["system", "dark", "light"]
 Language = Literal["ja", "en"]
 PROFILE_NAMES = ("cpu", "cuda", "intel", "vulkan")
+WIZARD_STEPS = (
+    "welcome",
+    "profile",
+    "diarization",
+    "token",
+    "model",
+    "confirm",
+    "execution",
+    "done",
+)
+WIZARD_EXECUTION_STAGES = ("venv", "preflight", "diarization_model", "asr_model", "smoke")
 
 
 @dataclass(frozen=True)
@@ -32,6 +43,12 @@ class GuiSettings:
     default_output_dir: str = ""
     setup_wizard_started_at: str | None = None
     setup_wizard_completed_at: str | None = None
+    setup_wizard_step: str = "welcome"
+    setup_wizard_profile: str | None = None
+    setup_wizard_diarization_enabled: bool | None = None
+    setup_wizard_model_ref: str = "faster-whisper:large-v3-turbo"
+    setup_wizard_completed_stages: tuple[str, ...] = ()
+    setup_wizard_token_error: str | None = None
 
     @classmethod
     def from_dict(cls, payload: object) -> GuiSettings:
@@ -43,6 +60,21 @@ class GuiSettings:
         profile = payload.get("default_profile")
         started_at = payload.get("setup_wizard_started_at")
         completed_at = payload.get("setup_wizard_completed_at")
+        wizard_step = payload.get("setup_wizard_step")
+        wizard_profile = payload.get("setup_wizard_profile")
+        wizard_diarization = payload.get("setup_wizard_diarization_enabled")
+        wizard_model = payload.get("setup_wizard_model_ref")
+        raw_stages = payload.get("setup_wizard_completed_stages")
+        token_error = payload.get("setup_wizard_token_error")
+        completed_stages = (
+            tuple(
+                str(stage)
+                for stage in raw_stages
+                if isinstance(stage, str) and stage in WIZARD_EXECUTION_STAGES
+            )
+            if isinstance(raw_stages, (list, tuple))
+            else ()
+        )
         return cls(
             theme=cast(Theme, theme if theme in {"system", "dark", "light"} else "system"),
             language=cast(Language, language if language in {"ja", "en"} else "ja"),
@@ -54,6 +86,32 @@ class GuiSettings:
             ),
             setup_wizard_completed_at=(
                 str(completed_at) if isinstance(completed_at, str) and completed_at else None
+            ),
+            setup_wizard_step=(
+                str(wizard_step) if wizard_step in WIZARD_STEPS else "welcome"
+            ),
+            setup_wizard_profile=(
+                str(wizard_profile) if wizard_profile in PROFILE_NAMES else None
+            ),
+            setup_wizard_diarization_enabled=(
+                wizard_diarization if isinstance(wizard_diarization, bool) else None
+            ),
+            setup_wizard_model_ref=(
+                str(wizard_model)[:200]
+                if isinstance(wizard_model, str) and wizard_model.strip()
+                else "faster-whisper:large-v3-turbo"
+            ),
+            setup_wizard_completed_stages=tuple(dict.fromkeys(completed_stages)),
+            setup_wizard_token_error=(
+                str(token_error)
+                if token_error
+                in {
+                    "token_missing",
+                    "token_invalid",
+                    "agreement_required",
+                    "network_error",
+                }
+                else None
             ),
         )
 

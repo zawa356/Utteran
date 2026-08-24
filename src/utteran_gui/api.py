@@ -95,6 +95,18 @@ class WizardTokenPreflightPayload(BaseModel):
     )
 
 
+class WizardStatePayload(BaseModel):
+    step: Literal[
+        "welcome", "profile", "diarization", "token", "model", "confirm", "execution", "done"
+    ]
+    profile: Literal["cpu", "cuda", "intel", "vulkan"] | None = None
+    diarization_enabled: bool | None = None
+    model_ref: str | None = Field(default=None, max_length=200)
+    token_error: Literal[
+        "token_missing", "token_invalid", "agreement_required", "network_error"
+    ] | None = None
+
+
 class RegenerationPayload(BaseModel):
     profile: Literal["cpu", "cuda", "intel", "vulkan"]
     output_dir: str = Field(min_length=1, max_length=32768)
@@ -241,6 +253,16 @@ def create_app(
     def start_wizard() -> dict[str, object]:
         return selected_wizard.start()
 
+    @app.put("/api/wizard/state")
+    def save_wizard_state(payload: WizardStatePayload) -> dict[str, object]:
+        return selected_wizard.save_state(
+            payload.step,
+            profile=payload.profile,
+            diarization_enabled=payload.diarization_enabled,
+            model_ref=payload.model_ref,
+            token_error=payload.token_error,
+        )
+
     @app.post("/api/wizard/token-preflight")
     def wizard_token_preflight(payload: WizardTokenPreflightPayload) -> dict[str, object]:
         try:
@@ -252,6 +274,7 @@ def create_app(
             logging.getLogger(__name__).warning(
                 "Profile token preflight failed: %s", type(exc).__name__
             )
+            selected_wizard.record_preflight("network_error")
             raise HTTPException(
                 status_code=409, detail="Profile CLI token preflight failed"
             ) from None
@@ -274,6 +297,7 @@ def create_app(
             }
             else "network_error",
         }
+        selected_wizard.record_preflight(str(allowed["access"]))
         return allowed
 
     @app.get("/api/wizard/hardware")

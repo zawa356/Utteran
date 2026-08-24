@@ -84,6 +84,53 @@ def test_venv_build_streams_stage_markers_and_completes(tmp_path: Path) -> None:
     stages = [event["stage"] for event in snapshot["events"] if event.get("event") == "stage_start"]
     assert stages == ["python_check", "uv_install"]
     assert any("Checking Python" in line for line in snapshot["logs"])
+    assert service.status()["completed_stages"] == ["venv"]
+
+
+def test_wizard_input_and_execution_progress_survive_service_restart(tmp_path: Path) -> None:
+    store = SettingsStore(tmp_path / "settings.json")
+    service = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
+
+    service.start()
+    service.save_state("token", profile="intel", diarization_enabled=True)
+    service.record_preflight("token_invalid")
+
+    restarted = SetupWizardService(CliAdapter(tmp_path), settings_store=store)
+    status = restarted.status()
+    assert status["step"] == "token"
+    assert status["profile"] == "intel"
+    assert status["diarization_enabled"] is True
+    assert status["completed_stages"] == []
+    assert status["token_error"] == "token_invalid"
+
+    restarted.record_preflight("available")
+    resumed = SetupWizardService(CliAdapter(tmp_path), settings_store=store).status()
+    assert resumed["completed_stages"] == ["preflight"]
+    assert resumed["token_error"] is None
+
+
+def test_model_download_persists_asr_and_diarization_as_distinct_stages(tmp_path: Path) -> None:
+    _create_profile(tmp_path, "cpu")
+    diar_process = FakeWizardProcess()
+    asr_process = FakeWizardProcess()
+    processes = [diar_process, asr_process]
+    service = _service(tmp_path, popen=lambda _command, **_kwargs: processes.pop(0))
+
+    diarization = service.start_model_download(
+        "cpu", "pyannote:pyannote/speaker-diarization-community-1"
+    )
+    _wait_until(lambda: service.snapshot(str(diarization["id"]))["status"] == "running")
+    diar_process.returncode = 0
+    diar_process.finished.set()
+    _wait_until(lambda: service.snapshot(str(diarization["id"]))["status"] == "completed")
+
+    asr = service.start_model_download("cpu", "faster-whisper:large-v3-turbo")
+    _wait_until(lambda: service.snapshot(str(asr["id"]))["status"] == "running")
+    asr_process.returncode = 0
+    asr_process.finished.set()
+    _wait_until(lambda: service.snapshot(str(asr["id"]))["status"] == "completed")
+
+    assert service.status()["completed_stages"] == ["diarization_model", "asr_model"]
 
 
 def test_only_one_wizard_step_runs_at_a_time(tmp_path: Path) -> None:

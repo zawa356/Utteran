@@ -189,13 +189,41 @@
           </div>
         </div>
 
+        <div id="wizard-step-diarization" class="wizard-step panel form-panel hidden">
+          <h2 data-i18n="wizardDiarizationTitle">話者分離を使いますか？</h2>
+          <p class="muted" data-i18n="wizardDiarizationBody">話者分離は、文字起こしに「誰が話したか」を追加する中心機能です。</p>
+          <div class="wizard-choice-grid">
+            <label class="wizard-choice-card"><input name="wizard-diarization" value="yes" type="radio" checked><strong data-i18n="wizardDiarizationUse">使う（おすすめ）</strong><span data-i18n="wizardDiarizationRequirements">Hugging Faceアカウント、モデル利用条件への同意、read tokenが必要です。</span></label>
+            <label class="wizard-choice-card"><input name="wizard-diarization" value="no" type="radio"><strong data-i18n="wizardDiarizationNoUse">今は使わない</strong><span data-i18n="wizardDiarizationLimitation">誰が話したかは出力されません。設定画面から後で有効にできます。</span></label>
+          </div>
+          <div class="form-actions">
+            <button id="wizard-diarization-next" class="button primary" type="button" data-i18n="wizardContinue">続ける</button>
+          </div>
+        </div>
+
         <div id="wizard-step-model" class="wizard-step panel form-panel hidden">
           <h2 data-i18n="wizardModelTitle">モデルを選ぶ</h2>
           <p class="muted" data-i18n="wizardModelBody">既定モデル (large-v3-turbo) を取得します。話者分離も使う場合は、pyannoteモデルの利用条件への同意とHugging Faceトークンが追加で必要です。</p>
-          <label class="check-field"><input id="wizard-diarization-toggle" type="checkbox"><span data-i18n="wizardUseDiarization">話者分離も使う</span></label>
+          <div class="notice neutral" data-i18n="wizardModelSelected">large-v3-turbo（高精度・既定）を使用します。</div>
           <div class="form-actions">
             <button id="wizard-skip-model" class="button secondary" type="button" data-i18n="wizardLater">後で行う</button>
             <button id="wizard-model-next" class="button primary" type="button" data-i18n="wizardDownload">モデルを取得</button>
+          </div>
+        </div>
+
+        <div id="wizard-step-confirm" class="wizard-step panel form-panel hidden">
+          <h2 data-i18n="wizardConfirmTitle">準備を開始します</h2>
+          <p class="muted" data-i18n="wizardConfirmBody">ここから先は操作不要です。画面の前を離れて構いません。</p>
+          <dl class="wizard-summary">
+            <div><dt data-i18n="profile">プロファイル</dt><dd id="wizard-confirm-profile">—</dd></div>
+            <div><dt data-i18n="wizardUseDiarization">話者分離</dt><dd id="wizard-confirm-diarization">—</dd></div>
+            <div><dt data-i18n="wizardConfirmTasks">実行内容</dt><dd data-i18n="wizardConfirmTaskList">環境構築、トークン確認、モデル取得、動作確認</dd></div>
+            <div><dt data-i18n="wizardConfirmTime">所要時間の目安</dt><dd data-i18n="wizardConfirmTimeValue">10～45分（初回・回線速度により変動）</dd></div>
+            <div><dt data-i18n="wizardConfirmDownload">ダウンロード量の目安</dt><dd id="wizard-confirm-download">—</dd></div>
+          </dl>
+          <div class="form-actions">
+            <button id="wizard-confirm-back" class="button secondary" type="button" data-i18n="back">戻る</button>
+            <button id="wizard-confirm-start" class="button primary" type="button" data-i18n="wizardConfirmStart">無人セットアップを開始</button>
           </div>
         </div>
 

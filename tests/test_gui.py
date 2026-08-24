@@ -221,8 +221,10 @@ def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> Non
     assert 'id="view-wizard"' in index
     assert 'id="wizard-step-welcome"' in index
     assert 'id="wizard-step-profile"' in index
+    assert 'id="wizard-step-diarization"' in index
     assert 'id="wizard-step-model"' in index
     assert 'id="wizard-step-token"' in index
+    assert 'id="wizard-step-confirm"' in index
     assert 'id="wizard-step-progress"' in index
     assert 'id="wizard-step-done"' in index
     assert 'id="relaunch-wizard"' in index
@@ -838,21 +840,30 @@ def test_wizard_detects_gui_keyring_success_but_profile_token_failure(
     assert "hf_synthetic" not in preflight.text
 
 
-def test_wizard_frontend_requires_preflight_and_always_routes_through_token_step() -> None:
+def test_wizard_frontend_separates_input_from_unattended_execution_and_resumes() -> None:
     app_js = (Path(__file__).parents[1] / "src" / "utteran_gui" / "web" / "app.js").read_text(
         encoding="utf-8"
     )
-    model_choice = app_js.split("async function wizardModelChoiceNext()", 1)[1].split(
-        "function showTokenPreflightError", 1
+    profile_next = app_js.split("async function wizardProfileNext()", 1)[1].split(
+        "async function wizardDiarizationNext()", 1
     )[0]
-    token_next = app_js.split("async function wizardTokenNext()", 1)[1].split(
-        "async function wizardDownloadModelsAndVerify()", 1
+    model_next = app_js.split("async function wizardModelChoiceNext()", 1)[1].split(
+        "function renderWizardConfirmation()", 1
+    )[0]
+    unattended = app_js.split("async function wizardRunUnattended()", 1)[1].split(
+        "async function wizardSaveToken()", 1
     )[0]
 
-    assert 'showWizardStep("token")' in model_choice
-    assert "wizardDownloadModelsAndVerify" not in model_choice
-    assert 'api("/api/wizard/token-preflight"' in token_next
-    assert 'result.access !== "available"' in token_next
-    assert 'token_invalid: "wizardTokenInvalid"' in token_next
-    assert 'agreement_required: "wizardTokenAgreementRequired"' in token_next
+    assert 'saveWizardState("diarization")' in profile_next
+    assert 'saveWizardState("confirm")' in model_next
+    assert 'api("/api/wizard/token-preflight"' in unattended
+    assert unattended.index('runWizardJob("venv_build")') < unattended.index(
+        'api("/api/wizard/token-preflight"'
+    )
+    assert unattended.index("wizardState.diarizationModelRef") < unattended.index(
+        "wizardState.modelRef"
+    )
+    assert 'await showWizardToken(result.access)' in unattended
+    assert 'status.step === "execution"' in app_js
+    assert "completed_stages" in app_js
     assert "wizardState.wantDiarization = false" in app_js
