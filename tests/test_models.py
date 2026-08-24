@@ -375,6 +375,58 @@ def test_preflight_validates_identity_and_dry_runs_a_gated_file(
     assert calls == [("whoami", "hf_synthetic"), ("dry_run", "config.yaml")]
 
 
+def test_preflight_accepts_complete_local_gated_model_without_online_authentication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = get_model("pyannote:pyannote/speaker-diarization-community-1")
+    manager = ModelManager(tmp_path / "models", StaticTokenProvider(None))
+    path = manager.managed_path(entry)
+    for relative in (
+        "config.yaml",
+        "embedding/pytorch_model.bin",
+        "segmentation/pytorch_model.bin",
+        "plda/plda.npz",
+        "plda/xvec_transform.npz",
+    ):
+        target = path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"installed")
+
+    def unexpected_api() -> object:
+        raise AssertionError("online authentication must not run for an installed model")
+
+    monkeypatch.setattr("huggingface_hub.HfApi", unexpected_api)
+
+    manager.check_access(entry)
+
+
+def test_download_reuses_complete_local_gated_model_without_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = get_model("pyannote:pyannote/speaker-diarization-community-1")
+    manager = ModelManager(tmp_path / "models", StaticTokenProvider(None))
+    path = manager.managed_path(entry)
+    for relative in (
+        "config.yaml",
+        "embedding/pytorch_model.bin",
+        "segmentation/pytorch_model.bin",
+        "plda/plda.npz",
+        "plda/xvec_transform.npz",
+    ):
+        target = path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"installed")
+    events: list[ProgressEvent] = []
+
+    def unexpected_download(**_kwargs: object) -> object:
+        raise AssertionError("an installed model must not be downloaded again")
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", unexpected_download)
+
+    assert manager.download(entry, progress=events.append) == path
+    assert events[-1].completed == events[-1].total == 1.0
+
+
 def test_preflight_rejects_invalid_token_before_file_access(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -130,6 +130,18 @@ class ModelManager:
     ) -> Path:
         """Explicitly download one snapshot into the utteran model directory."""
         _check_cancel(cancel)
+        installed, _managed = self.find_installed(entry)
+        if installed is not None:
+            if progress is not None:
+                progress(
+                    ProgressEvent(
+                        "model-download",
+                        1.0,
+                        1.0,
+                        f"{entry.key} は取得済みです",
+                    )
+                )
+            return installed
         token = self._token_provider.get_token()
         if entry.gated and not token:
             raise HuggingFaceTokenMissingError
@@ -192,12 +204,19 @@ class ModelManager:
     def check_access(self, entry: ModelEntry) -> None:
         """Validate the token and dry-run access to a gated model file.
 
+        A complete local copy is already usable and must not be blocked by a
+        later Hub authentication failure. This also keeps first-run recovery
+        deterministic when a model was installed by an earlier setup attempt.
+
         Public repository metadata can remain readable for a gated model even
         when the supplied token is invalid or has not accepted the terms. A
         model-info call alone therefore produces false-positive preflights.
         Validate the identity first, then HEAD the small pipeline config via
         ``dry_run`` so no model weights are downloaded.
         """
+        installed, _managed = self.find_installed(entry)
+        if installed is not None:
+            return
         token = self._token_provider.get_token()
         if entry.gated and not token:
             raise HuggingFaceTokenMissingError

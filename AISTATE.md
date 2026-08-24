@@ -1,5 +1,13 @@
 # AI 作業状態
 
+## Phase 5g Token preflight再発修正（2026-08-24）
+
+実機では同じtokenをIntel/CPU profile CLIから検査して`access=available`、pyannote community-1も
+完全にインストール済みだった。従来はこの状態でもHubのonline認証を毎回必須にしていたため、
+外部APIの失敗でウィザードが`token_invalid`へ戻り得た。`ModelManager.check_access()`は完全な
+local copyを先に検証し、存在すればonline認証なしで利用可能とする。後続のmodel downloadも
+完全なlocal copyを再利用し、再認証・再取得しない。
+
 ## Phase 5g ウィザード無人実行（2026-08-24、実装・実バックエンド検証完了）
 
 配布版GUIで`setup_wizard_step=execution`、`setup_wizard_profile=null`、完了段階が`preflight`だけという
