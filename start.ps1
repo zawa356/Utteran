@@ -131,7 +131,7 @@ function Resolve-ActiveProfile {
     if ($ConfiguredDefault -and (Get-ExistingProfiles) -contains $ConfiguredDefault) {
         return $ConfiguredDefault
     }
-    $Existing = Get-ExistingProfiles
+    $Existing = @(Get-ExistingProfiles)
     if ($Existing.Count -eq 1) {
         return $Existing[0]
     }
@@ -141,7 +141,7 @@ function Resolve-ActiveProfile {
 function Get-UtteranLauncher {
     $Active = Resolve-ActiveProfile
     if ($null -eq $Active) {
-        $Existing = Get-ExistingProfiles
+        $Existing = @(Get-ExistingProfiles)
         if ($Existing.Count -eq 0) {
             throw "作成済みのプロファイルがありません。先に .\setup.ps1 -Profile cpu|cuda|intel|vulkan を実行してください。"
         }
@@ -824,7 +824,7 @@ function Invoke-HostedSetup {
 function Show-ProfileMenu {
     while ($true) {
         $Active = Resolve-ActiveProfile
-        $Existing = Get-ExistingProfiles
+        $Existing = @(Get-ExistingProfiles)
         Write-Host "`n===== プロファイル管理 =====" -ForegroundColor Cyan
         Write-Host "現在のセッション選択: $(if ($script:SelectedProfile) { $script:SelectedProfile } else { '未選択（既定解決を使用）' })"
         Write-Host "作成済み: $(if ($Existing.Count -gt 0) { $Existing -join ', ' } else { 'なし' })"

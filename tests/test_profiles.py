@@ -212,6 +212,35 @@ def test_start_forces_utf8_for_captured_json() -> None:
     assert "[Console]::OutputEncoding = $PreviousConsoleEncoding" in helper_body
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Spawns Windows PowerShell")
+def test_start_exits_cleanly_when_no_profiles_exist(tmp_path: Path) -> None:
+    start_script = Path(__file__).parents[1] / "start.ps1"
+    environment = dict(os.environ)
+    environment["UTTERAN_VENV_DIR"] = str(tmp_path / "empty-venvs")
+    environment["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
+
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(start_script),
+        ],
+        input="0\r\n",
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=environment,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "property 'Count'" not in completed.stderr
+
+
 def test_setup_feeds_vulkan_probe_over_stdin_for_powershell_51() -> None:
     setup_script = (Path(__file__).parents[1] / "setup.ps1").read_text(encoding="utf-8")
 
