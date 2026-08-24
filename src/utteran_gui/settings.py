@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import tempfile
+import threading
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
 from platformdirs import user_config_dir
 
-from utteran_gui.security import register_secret
+from utteran_gui.security import mask_secrets, register_secret
 
-Theme = Literal["dark", "light"]
+Theme = Literal["system", "dark", "light"]
 Language = Literal["ja", "en"]
 PROFILE_NAMES = ("cpu", "cuda", "intel", "vulkan")
 
@@ -22,7 +25,7 @@ PROFILE_NAMES = ("cpu", "cuda", "intel", "vulkan")
 class GuiSettings:
     """Non-sensitive preferences persisted separately from CLI config and jobs."""
 
-    theme: Theme = "dark"
+    theme: Theme = "system"
     language: Language = "ja"
     default_profile: str | None = None
     default_input_dir: str = ""
@@ -39,7 +42,7 @@ class GuiSettings:
         profile = payload.get("default_profile")
         completed_at = payload.get("setup_wizard_completed_at")
         return cls(
-            theme=cast(Theme, theme if theme in {"dark", "light"} else "dark"),
+            theme=cast(Theme, theme if theme in {"system", "dark", "light"} else "system"),
             language=cast(Language, language if language in {"ja", "en"} else "ja"),
             default_profile=(str(profile) if profile in PROFILE_NAMES else None),
             default_input_dir=_bounded_string(payload.get("default_input_dir")),
@@ -58,33 +61,43 @@ class SettingsStore:
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or Path(user_config_dir("utteran-gui")) / "settings.json"
+        self._lock = threading.RLock()
 
     def load(self) -> GuiSettings:
-        try:
-            with self.path.open(encoding="utf-8") as file:
-                return GuiSettings.from_dict(json.load(file))
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            return GuiSettings()
+        with self._lock:
+            try:
+                with self.path.open(encoding="utf-8") as file:
+                    return GuiSettings.from_dict(json.load(file))
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                return GuiSettings()
 
     def save(self, settings: GuiSettings) -> GuiSettings:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(
-            prefix=f".{self.path.name}.",
-            suffix=".tmp",
-            dir=self.path.parent,
-        )
-        temporary_path = Path(temporary)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as file:
-                json.dump(settings.to_dict(), file, ensure_ascii=False, indent=2)
-                file.write("\n")
-                file.flush()
-                os.fsync(file.fileno())
-            temporary_path.replace(self.path)
-        except Exception:
-            temporary_path.unlink(missing_ok=True)
-            raise
-        return settings
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor, temporary = tempfile.mkstemp(
+                prefix=f".{self.path.name}.",
+                suffix=".tmp",
+                dir=self.path.parent,
+            )
+            temporary_path = Path(temporary)
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as file:
+                    json.dump(settings.to_dict(), file, ensure_ascii=False, indent=2)
+                    file.write("\n")
+                    file.flush()
+                    os.fsync(file.fileno())
+                temporary_path.replace(self.path)
+            except Exception:
+                temporary_path.unlink(missing_ok=True)
+                raise
+            return settings
+
+    def update(self, changes: dict[str, object]) -> GuiSettings:
+        """Atomically merge known fields so concurrent partial saves cannot roll back."""
+        with self._lock:
+            current = self.load().to_dict()
+            current.update(changes)
+            return self.save(GuiSettings.from_dict(current))
 
 
 class KeyringLike(Protocol):
@@ -93,6 +106,24 @@ class KeyringLike(Protocol):
     def set_password(self, service_name: str, username: str, password: str) -> None: ...
 
     def delete_password(self, service_name: str, username: str) -> None: ...
+
+
+class TokenStoreUnavailable(RuntimeError):
+    """The configured OS credential store cannot be used."""
+
+
+@dataclass(frozen=True)
+class TokenStatus:
+    """Non-secret state suitable for diagnostics and API responses."""
+
+    configured: bool
+    available: bool
+    backend: str
+    error_type: str = ""
+    error_message: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
 class TokenStore:
@@ -105,29 +136,93 @@ class TokenStore:
         self._backend = backend
 
     def is_configured(self) -> bool:
-        token = self._get_token()
-        register_secret(token)
-        return bool(token)
+        status = self.status()
+        if not status.available:
+            raise TokenStoreUnavailable(status.error_message or "OS keyring is unavailable")
+        return status.configured
+
+    def status(self) -> TokenStatus:
+        """Return configured/unavailable as distinct states without exposing a token."""
+        backend_name = "unavailable"
+        try:
+            backend = self._keyring()
+            backend_name = self._backend_name(backend)
+            token = backend.get_password(self.SERVICE, self.USERNAME)
+            register_secret(token)
+            return TokenStatus(bool(token), True, backend_name)
+        except Exception as exc:
+            return TokenStatus(
+                False,
+                False,
+                backend_name,
+                type(exc).__name__,
+                str(exc),
+            )
 
     def set(self, token: str) -> None:
         selected = token.strip()
         if not selected:
             raise ValueError("token must not be empty")
         register_secret(selected)
-        self._keyring().set_password(self.SERVICE, self.USERNAME, selected)
+        try:
+            backend = self._keyring()
+            backend.set_password(self.SERVICE, self.USERNAME, selected)
+            restored = backend.get_password(self.SERVICE, self.USERNAME)
+            register_secret(restored)
+        except Exception as exc:
+            raise TokenStoreUnavailable(str(exc)) from exc
+        if restored != selected:
+            raise TokenStoreUnavailable("OS keyring did not return the saved credential")
 
     def clear(self) -> None:
         try:
             self._keyring().delete_password(self.SERVICE, self.USERNAME)
-        except Exception:
-            if self._get_token() is not None:
-                raise
+        except Exception as exc:
+            status = self.status()
+            if not status.available or status.configured:
+                raise TokenStoreUnavailable(str(exc)) from exc
 
-    def _get_token(self) -> str | None:
+    def diagnose(self) -> dict[str, object]:
+        """Probe import/backend/get/set/delete using an isolated synthetic credential."""
+        result: dict[str, object] = {
+            "import_success": False,
+            "backend": "unavailable",
+            "get_success": False,
+            "set_success": False,
+            "delete_success": False,
+            "error_type": "",
+            "error_message": "",
+        }
+        diagnostic_username = f"{self.USERNAME}-diagnostic-{secrets.token_hex(8)}"
+        diagnostic_token = f"hf_diagnostic_{secrets.token_hex(16)}"
+        register_secret(diagnostic_token)
+        backend: KeyringLike | None = None
+        stored = False
         try:
-            return self._keyring().get_password(self.SERVICE, self.USERNAME)
-        except Exception:
-            return None
+            backend = self._keyring()
+            result["import_success"] = True
+            result["backend"] = self._backend_name(backend)
+            existing = backend.get_password(self.SERVICE, self.USERNAME)
+            register_secret(existing)
+            result["get_success"] = True
+            backend.set_password(self.SERVICE, diagnostic_username, diagnostic_token)
+            stored = True
+            restored = backend.get_password(self.SERVICE, diagnostic_username)
+            register_secret(restored)
+            if restored != diagnostic_token:
+                raise TokenStoreUnavailable("OS keyring did not return the diagnostic credential")
+            result["set_success"] = True
+            backend.delete_password(self.SERVICE, diagnostic_username)
+            stored = False
+            result["delete_success"] = True
+        except Exception as exc:
+            result["error_type"] = type(exc).__name__
+            result["error_message"] = mask_secrets(str(exc))
+        finally:
+            if stored and backend is not None:
+                with suppress(Exception):
+                    backend.delete_password(self.SERVICE, diagnostic_username)
+        return result
 
     def _keyring(self) -> KeyringLike:
         if self._backend is None:
@@ -135,6 +230,14 @@ class TokenStore:
 
             self._backend = cast(KeyringLike, keyring)
         return self._backend
+
+    def _backend_name(self, backend: KeyringLike) -> str:
+        selected = backend
+        get_keyring = getattr(backend, "get_keyring", None)
+        if callable(get_keyring):
+            selected = cast(KeyringLike, get_keyring())
+        selected_type = type(selected)
+        return f"{selected_type.__module__}.{selected_type.__qualname__}"
 
 
 def _bounded_string(value: object) -> str:

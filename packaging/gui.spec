@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 REPO_ROOT = os.path.dirname(os.path.abspath(SPECPATH))  # noqa: F821  (SPECPATH is packaging/'s own dir)
 SRC_ROOT = os.path.join(REPO_ROOT, "src")
@@ -41,9 +41,16 @@ hidden_imports = (
     collect_submodules("uvicorn")
     + collect_submodules("webview")
     + collect_submodules("fastapi")
+    + collect_submodules("keyring")
 )
 
-datas = [(WEB_ASSETS_DIR, os.path.join("utteran_gui", "web"))]
+datas = [
+    (WEB_ASSETS_DIR, os.path.join("utteran_gui", "web")),
+    # keyring discovers even its built-in Windows backend through the
+    # ``keyring.backends`` entry-point metadata.  Collecting Python modules
+    # alone therefore leaves a frozen executable with the fail backend.
+    *copy_metadata("keyring"),
+]
 
 a = Analysis(  # noqa: F821
     [os.path.join(SRC_ROOT, "utteran_gui", "__main__.py")],

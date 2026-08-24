@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import socket
+import sys
 import threading
 import time
 from pathlib import Path
 from urllib.parse import quote
 
 from utteran_gui.api import create_app
+from utteran_gui.settings import TokenStore
 
 
 def project_root() -> Path:
@@ -34,6 +37,13 @@ def bind_loopback_socket() -> socket.socket:
 
 def main() -> None:
     """Start uvicorn in the background and pywebview on the GUI thread."""
+    if len(sys.argv) == 3 and sys.argv[1] == "--diagnose-keyring":
+        destination = Path(sys.argv[2]).resolve()
+        destination.write_text(
+            json.dumps(TokenStore().diagnose(), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return
     import uvicorn
     import webview
 

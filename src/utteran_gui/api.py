@@ -22,7 +22,7 @@ from utteran_gui.cli import CliAdapter, CliError, RegenerationOptions, Transcrip
 from utteran_gui.environment import EnvironmentService
 from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
-from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore
+from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
 from utteran_gui.setup_wizard import (
     SetupWizardService,
     WizardBusyError,
@@ -36,11 +36,19 @@ SESSION_HEADER = "x-utteran-session"
 
 
 class SettingsPayload(BaseModel):
-    theme: Literal["dark", "light"] = "dark"
+    theme: Literal["system", "dark", "light"] = "system"
     language: Literal["ja", "en"] = "ja"
     default_profile: Literal["cpu", "cuda", "intel", "vulkan"] | None = None
     default_input_dir: str = Field(default="", max_length=4096)
     default_output_dir: str = Field(default="", max_length=4096)
+
+
+class SettingsPatchPayload(BaseModel):
+    theme: Literal["system", "dark", "light"] | None = None
+    language: Literal["ja", "en"] | None = None
+    default_profile: Literal["cpu", "cuda", "intel", "vulkan"] | None = None
+    default_input_dir: str | None = Field(default=None, max_length=4096)
+    default_output_dir: str | None = Field(default=None, max_length=4096)
 
 
 class TokenPayload(BaseModel):
@@ -170,38 +178,53 @@ def create_app(
     @app.get("/api/settings")
     def get_settings() -> dict[str, object]:
         payload = selected_settings.load().to_dict()
-        payload["token_configured"] = selected_tokens.is_configured()
+        token_status = selected_tokens.status()
+        payload["token_configured"] = token_status.configured
+        payload["token_store_available"] = token_status.available
+        payload["token_store_backend"] = token_status.backend
+        payload["token_store_error"] = token_status.error_type
         return payload
 
     @app.put("/api/settings")
     def put_settings(payload: SettingsPayload) -> dict[str, object]:
         saved = selected_settings.save(GuiSettings.from_dict(payload.model_dump()))
         response = saved.to_dict()
-        response["token_configured"] = selected_tokens.is_configured()
+        token_status = selected_tokens.status()
+        response["token_configured"] = token_status.configured
+        response["token_store_available"] = token_status.available
+        return response
+
+    @app.patch("/api/settings")
+    def patch_settings(payload: SettingsPatchPayload) -> dict[str, object]:
+        saved = selected_settings.update(payload.model_dump(exclude_unset=True))
+        response = saved.to_dict()
+        token_status = selected_tokens.status()
+        response["token_configured"] = token_status.configured
+        response["token_store_available"] = token_status.available
         return response
 
     @app.get("/api/token")
-    def token_status() -> dict[str, bool]:
-        return {"configured": selected_tokens.is_configured()}
+    def token_status() -> dict[str, object]:
+        return selected_tokens.status().to_dict()
 
     @app.put("/api/token")
-    def set_token(payload: TokenPayload) -> dict[str, bool]:
+    def set_token(payload: TokenPayload) -> dict[str, object]:
         try:
             selected_tokens.set(payload.token)
-        except Exception as exc:
+        except TokenStoreUnavailable as exc:
             logging.getLogger(__name__).warning(
                 "OS keyring rejected token storage: %s", type(exc).__name__
             )
             raise HTTPException(status_code=503, detail="OS keyring is unavailable") from None
-        return {"configured": True}
+        return selected_tokens.status().to_dict()
 
     @app.delete("/api/token")
-    def clear_token() -> dict[str, bool]:
+    def clear_token() -> dict[str, object]:
         try:
             selected_tokens.clear()
-        except Exception:
+        except TokenStoreUnavailable:
             raise HTTPException(status_code=503, detail="OS keyring is unavailable") from None
-        return {"configured": False}
+        return selected_tokens.status().to_dict()
 
     @app.get("/api/wizard/status")
     def wizard_status() -> dict[str, object]:

@@ -59,12 +59,42 @@
     $("default-output").value = state.settings.default_output_dir || "";
     if (!$("input-path").value) $("input-path").value = state.settings.default_input_dir || "";
     if (!$("output-dir").value) $("output-dir").value = state.settings.default_output_dir || "";
-    $("token-state").textContent = state.settings.token_configured ? t("tokenSet") : t("tokenUnset");
+    renderTokenState();
     translate();
     renderHistory();
     if (state.detail?.result) {
       renderViewerMetadata(state.detail.result);
       renderStatistics(state.detail.result);
+    }
+  }
+
+  function tokenStateText() {
+    if (state.settings.token_store_available === false) return t("tokenStoreUnavailable");
+    return state.settings.token_configured ? t("tokenSet") : t("tokenUnset");
+  }
+
+  function renderTokenState() {
+    const message = tokenStateText();
+    $("token-state").textContent = message;
+    $("wizard-token-state").textContent = message;
+  }
+
+  async function saveToken(inputId) {
+    const input = $(inputId);
+    const token = input.value;
+    if (!token) return false;
+    try {
+      const status = await api("/api/token", { method: "PUT", body: JSON.stringify({ token }) });
+      input.value = "";
+      state.settings.token_configured = status.configured;
+      state.settings.token_store_available = status.available;
+      renderTokenState();
+      return true;
+    } catch (error) {
+      state.settings.token_configured = false;
+      state.settings.token_store_available = false;
+      renderTokenState();
+      throw new Error(`${t("tokenSaveFailed")} ${error.message}`);
     }
   }
 
@@ -427,9 +457,10 @@
   async function wizardModelChoiceNext() {
     wizardState.wantDiarization = $("wizard-diarization-toggle").checked;
     if (wizardState.wantDiarization) {
-      $("wizard-token-state").textContent = (await api("/api/token")).configured
-        ? t("tokenSet")
-        : t("tokenUnset");
+      const tokenStatus = await api("/api/token");
+      state.settings.token_configured = tokenStatus.configured;
+      state.settings.token_store_available = tokenStatus.available;
+      renderTokenState();
       showWizardStep("token");
     } else {
       await wizardDownloadModelsAndVerify();
@@ -457,12 +488,11 @@
   }
 
   async function wizardSaveToken() {
-    const token = $("wizard-token-input").value;
-    if (!token) return;
-    await api("/api/token", { method: "PUT", body: JSON.stringify({ token }) });
-    $("wizard-token-input").value = "";
-    $("wizard-token-state").textContent = t("tokenSet");
-    state.settings.token_configured = true;
+    try {
+      await saveToken("wizard-token-input");
+    } catch (error) {
+      wizardShowError(error.message, () => showWizardStep("token"));
+    }
   }
 
   async function wizardFinishSetup() {
@@ -1099,7 +1129,7 @@
       default_input_dir: $("default-input").value,
       default_output_dir: $("default-output").value,
     };
-    state.settings = await api("/api/settings", { method: "PUT", body: JSON.stringify(payload) });
+    state.settings = await api("/api/settings", { method: "PATCH", body: JSON.stringify(payload) });
     applySettings();
     $("settings-status").textContent = t("saved");
   }
@@ -1130,20 +1160,26 @@
     });
     $("ui-language").addEventListener("change", (event) => {
       state.settings.language = event.target.value;
-      applySettings();
+      translate();
+      renderHistory();
+      if (state.detail?.result) {
+        renderViewerMetadata(state.detail.result);
+        renderStatistics(state.detail.result);
+      }
     });
     $("save-token").addEventListener("click", async () => {
-      const token = $("token-input").value;
-      if (!token) return;
-      await api("/api/token", { method: "PUT", body: JSON.stringify({ token }) });
-      $("token-input").value = "";
-      state.settings.token_configured = true;
-      applySettings();
+      try {
+        await saveToken("token-input");
+        $("settings-status").textContent = t("saved");
+      } catch (error) {
+        $("settings-status").textContent = error.message;
+      }
     });
     $("clear-token").addEventListener("click", async () => {
       await api("/api/token", { method: "DELETE" });
       state.settings.token_configured = false;
-      applySettings();
+      state.settings.token_store_available = true;
+      renderTokenState();
     });
     $("open-output").addEventListener("click", async () => {
       const first = state.job?.outputs?.[0];

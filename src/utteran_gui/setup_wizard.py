@@ -19,7 +19,7 @@ import time
 import uuid
 import wave
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -121,8 +121,7 @@ class SetupWizardService:
             raise WizardNotReadyError(
                 "A smoke test must succeed before the wizard can be marked complete"
             )
-        settings = self._settings.load()
-        saved = self._settings.save(replace(settings, setup_wizard_completed_at=_now()))
+        saved = self._settings.update({"setup_wizard_completed_at": _now()})
         return saved.to_dict()
 
     def start_venv_build(self, profile: str) -> dict[str, object]:

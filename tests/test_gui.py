@@ -5,6 +5,7 @@ import json
 import platform
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,7 @@ from utteran_gui.cli import CliAdapter, RegenerationOptions, TranscriptionOption
 from utteran_gui.environment import EnvironmentService, derive_options
 from utteran_gui.jobs import JobManager, guidance_for, parse_progress_line
 from utteran_gui.security import mask_secrets
-from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore
+from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
 from utteran_gui.setup_wizard import SetupWizardService
 
 
@@ -32,6 +33,15 @@ class FakeKeyring:
 
     def delete_password(self, _service: str, _username: str) -> None:
         self.value = None
+
+
+class UnavailableKeyring(FakeKeyring):
+    def get_password(self, _service: str, _username: str) -> str | None:
+        raise RuntimeError("credential vault unavailable")
+
+    def set_password(self, _service: str, _username: str, password: str) -> None:
+        del password
+        raise RuntimeError("credential vault unavailable")
 
 
 def _create_profile(repo: Path, name: str) -> Path:
@@ -95,6 +105,57 @@ def test_settings_round_trip_and_token_is_never_returned(tmp_path: Path) -> None
     assert mask_secrets("value=hf_gui_private_token") == "value=hf_****"
 
 
+def test_missing_theme_migrates_to_system_but_explicit_existing_theme_is_preserved() -> None:
+    assert GuiSettings.from_dict({}).theme == "system"
+    assert GuiSettings.from_dict({"theme": "dark"}).theme == "dark"
+    assert GuiSettings.from_dict({"theme": "light"}).theme == "light"
+
+
+def test_unavailable_keyring_is_distinct_from_an_unconfigured_keyring() -> None:
+    unconfigured = TokenStore(FakeKeyring()).status()
+    unavailable = TokenStore(UnavailableKeyring()).status()
+
+    assert unconfigured.available is True
+    assert unconfigured.configured is False
+    assert unavailable.available is False
+    assert unavailable.configured is False
+    assert unavailable.error_type == "RuntimeError"
+
+    try:
+        TokenStore(UnavailableKeyring()).set("hf_synthetic_test_value")
+    except TokenStoreUnavailable:
+        pass
+    else:
+        raise AssertionError("an unavailable keyring must reject token storage")
+
+
+def test_keyring_diagnostic_uses_isolated_credential_and_never_returns_token() -> None:
+    backend = FakeKeyring()
+    result = TokenStore(backend).diagnose()
+
+    assert result["import_success"] is True
+    assert result["get_success"] is True
+    assert result["set_success"] is True
+    assert result["delete_success"] is True
+    assert backend.value is None
+    assert "hf_" not in json.dumps(result)
+
+
+def test_gui_spec_collects_keyring_modules_and_entry_point_metadata() -> None:
+    spec = (Path(__file__).parents[1] / "packaging" / "gui.spec").read_text(encoding="utf-8")
+    assert 'collect_submodules("keyring")' in spec
+    assert 'copy_metadata("keyring")' in spec
+
+
+def test_cli_and_gui_use_the_same_keyring_service_and_username() -> None:
+    core_config = (Path(__file__).parents[1] / "src" / "utteran" / "config.py").read_text(
+        encoding="utf-8"
+    )
+    assert TokenStore.SERVICE == "utteran"
+    assert TokenStore.USERNAME == "huggingface"
+    assert 'keyring.get_password("utteran", "huggingface")' in core_config
+
+
 def test_session_key_is_required_for_every_api_request(tmp_path: Path) -> None:
     settings = SettingsStore(tmp_path / "settings.json")
     token_store = TokenStore(FakeKeyring())
@@ -136,9 +197,12 @@ def test_theme_and_language_assets_are_externalized() -> None:
     script = (web / "app.js").read_text(encoding="utf-8")
     translations = (web / "i18n.js").read_text(encoding="utf-8")
 
-    assert 'data-theme="dark"' in index
+    assert 'data-theme="system"' in index
     assert 'id="theme-select"' in index and 'id="ui-language"' in index
     assert 'html[data-theme="light"]' in styles
+    assert 'html[data-theme="system"]' in styles
+    assert "prefers-color-scheme: light" in styles
+    assert '<option value="system"' in index
     assert "dataset.theme" in script and 'api("/api/settings"' in script
     assert "window.UTTERAN_I18N" in translations
     assert "ja:" in translations and "en:" in translations
@@ -162,6 +226,9 @@ def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> Non
     assert 'id="wizard-step-progress"' in index
     assert 'id="wizard-step-done"' in index
     assert 'id="relaunch-wizard"' in index
+    assert 'href="https://huggingface.co/join"' in index
+    assert 'href="https://huggingface.co/settings/tokens/new?tokenType=read"' in index
+    assert 'id="wizard-token-input" type="password"' in index
 
     assert 'api("/api/wizard/status")' in script
     assert 'api("/api/wizard/hardware")' in script
@@ -172,13 +239,11 @@ def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> Non
     assert "wizardTitle:" in translations
     assert "wizardTitle:" in translations.split("\n  en: {")[1]
     assert "guide_license:" in translations
+    assert 'await saveToken("wizard-token-input")' in script
+    assert 'await saveToken("token-input")' in script
 
     # A profile card's title must show a translated label, not the raw
-    # technical identifier ("cpu"/"cuda"/"intel"/"vulkan") - discovered
-    # during Phase 5d clean-environment verification: a first-time user
-    # has no way to know what those words mean, contradicting the Phase 5c
-    # 指示書's requirement that profiles be selectable without knowing
-    # their technical names.
+    # technical identifier ("cpu"/"cuda"/"intel"/"vulkan").
     assert "wizardProfileLabel(alternative.profile)" in script
     assert "title.textContent = alternative.profile +" not in script
     for language_block in (translations.split("\n  en: {")[0], translations.split("\n  en: {")[1]):
@@ -186,6 +251,60 @@ def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> Non
         assert "wizardProfileCuda:" in language_block
         assert "wizardProfileIntel:" in language_block
         assert "wizardProfileVulkan:" in language_block
+
+
+def test_settings_partial_updates_preserve_other_changes_and_wizard_state(tmp_path: Path) -> None:
+    settings = SettingsStore(tmp_path / "settings.json")
+    settings.save(
+        GuiSettings(
+            theme="dark",
+            language="ja",
+            default_input_dir="C:/before",
+            setup_wizard_completed_at="2026-08-24T00:00:00+00:00",
+        )
+    )
+    app = create_app(
+        "session-secret",
+        repo_root=tmp_path,
+        settings_store=settings,
+        token_store=TokenStore(FakeKeyring()),
+    )
+    client = TestClient(app, headers={SESSION_HEADER: "session-secret"})
+
+    first = client.patch("/api/settings", json={"theme": "light"})
+    second = client.patch("/api/settings", json={"language": "en"})
+    third = client.patch("/api/settings", json={"default_input_dir": "C:/after"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 200
+    saved = settings.load()
+    assert saved.theme == "light"
+    assert saved.language == "en"
+    assert saved.default_input_dir == "C:/after"
+    assert saved.setup_wizard_completed_at == "2026-08-24T00:00:00+00:00"
+    script = (Path(__file__).parents[1] / "src" / "utteran_gui" / "web" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'method: "PATCH"' in script
+    assert "state.settings.language = event.target.value;\n      applySettings();" not in script
+
+
+def test_simultaneous_settings_updates_do_not_roll_each_other_back(tmp_path: Path) -> None:
+    settings = SettingsStore(tmp_path / "settings.json")
+    settings.save(GuiSettings())
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        updates = [
+            executor.submit(settings.update, {"theme": "dark"}),
+            executor.submit(settings.update, {"language": "en"}),
+        ]
+        for update in updates:
+            update.result()
+
+    saved = settings.load()
+    assert saved.theme == "dark"
+    assert saved.language == "en"
 
 
 def test_viewer_assets_use_virtual_rows_and_ime_safe_ephemeral_search() -> None:

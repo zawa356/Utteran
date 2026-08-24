@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja" data-theme="dark">
+<html lang="ja" data-theme="system">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -201,12 +201,16 @@
 
         <div id="wizard-step-token" class="wizard-step panel form-panel hidden">
           <h2 data-i18n="wizardTokenTitle">Hugging Faceトークン</h2>
-          <p class="muted" data-i18n="wizardTokenBody">話者分離モデルの利用には、利用条件への同意とread tokenが必要です。</p>
-          <p><a id="wizard-token-agreement-link" href="https://huggingface.co/pyannote/speaker-diarization-community-1" target="_blank" rel="noreferrer" data-i18n="wizardTokenAgreementLink">モデル利用条件のページを開く</a></p>
+          <p class="muted" data-i18n="wizardTokenBody">Hugging Faceのアカウントを作成し、モデル利用条件へ同意してからread tokenを発行してください。</p>
+          <ol class="token-steps">
+            <li><a href="https://huggingface.co/join" target="_blank" rel="noreferrer" data-i18n="wizardTokenAccountLink">Hugging Faceアカウントを作成</a></li>
+            <li><a id="wizard-token-agreement-link" href="https://huggingface.co/pyannote/speaker-diarization-community-1" target="_blank" rel="noreferrer" data-i18n="wizardTokenAgreementLink">モデル利用条件に同意</a></li>
+            <li><a href="https://huggingface.co/settings/tokens/new?tokenType=read" target="_blank" rel="noreferrer" data-i18n="wizardTokenIssueLink">read tokenを発行</a></li>
+          </ol>
           <div class="token-card">
             <div><span id="wizard-token-state"></span> · <span data-i18n="tokenPrivacy">保存済みの値は表示しません</span></div>
             <div class="token-actions">
-              <input id="wizard-token-input" type="password" autocomplete="new-password" placeholder="hf_••••••••">
+              <input id="wizard-token-input" type="password" autocomplete="new-password" placeholder="hf_••••••••" data-i18n-placeholder="tokenPlaceholder">
               <button id="wizard-save-token" class="button secondary" type="button" data-i18n="saveToken">トークンを保存</button>
             </div>
           </div>
@@ -252,13 +256,13 @@
         </div>
         <form id="settings-form" class="panel form-panel">
           <div class="field-grid two">
-            <label><span data-i18n="theme">テーマ</span><select id="theme-select"><option value="dark" data-i18n="dark">ダーク</option><option value="light" data-i18n="light">ライト</option></select></label>
+            <label><span data-i18n="theme">テーマ</span><select id="theme-select"><option value="system" data-i18n="systemTheme">システム設定</option><option value="light" data-i18n="light">ライト</option><option value="dark" data-i18n="dark">ダーク</option></select></label>
             <label><span data-i18n="displayLanguage">表示言語</span><select id="ui-language"><option value="ja">日本語</option><option value="en">English</option></select></label>
             <label><span data-i18n="defaultProfile">既定プロファイル</span><select id="default-profile"></select></label>
             <label><span data-i18n="defaultInput">既定入力先</span><input id="default-input" autocomplete="off"></label>
             <label><span data-i18n="defaultOutput">既定出力先</span><input id="default-output" autocomplete="off"></label>
           </div>
-          <div class="token-card" id="token"><div><h3>Hugging Face token</h3><p><span id="token-state"></span> · <span data-i18n="tokenPrivacy">保存済みの値は表示しません</span></p></div><div class="token-actions"><input id="token-input" type="password" autocomplete="new-password" placeholder="hf_••••••••"><button id="save-token" class="button secondary" type="button" data-i18n="saveToken">トークンを保存</button><button id="clear-token" class="button ghost" type="button" data-i18n="clear">削除</button></div></div>
+          <div class="token-card" id="token"><div><h3>Hugging Face token</h3><p><span id="token-state"></span> · <span data-i18n="tokenPrivacy">保存済みの値は表示しません</span></p></div><div class="token-actions"><input id="token-input" type="password" autocomplete="new-password" placeholder="hf_••••••••" data-i18n-placeholder="tokenPlaceholder"><button id="save-token" class="button secondary" type="button" data-i18n="saveToken">トークンを保存</button><button id="clear-token" class="button ghost" type="button" data-i18n="clear">削除</button></div></div>
           <div class="privacy-note"><strong data-i18n="privacyTitle">プライバシー</strong><span data-i18n="privacyBody">入力ファイルの履歴は保存しません。ファイル名に個人情報が含まれる可能性があるためです。</span></div>
           <div class="form-actions"><span id="settings-status" class="muted"></span><button class="button primary" type="submit" data-i18n="saveSettings">設定を保存</button></div>
         </form>
