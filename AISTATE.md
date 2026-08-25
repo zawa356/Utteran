@@ -1,5 +1,49 @@
 # AI 作業状態
 
+## Phase 5h 性能問題・モデル管理（2026-08-25）
+
+H-1は実機とコードの両方で原因を特定した。Intel profileの`devices --json`は
+`whisper-cpp / vulkan`をauto選択し、native 4構成もすべてrunnableだった。一方、導入済みASRモデルは
+`faster-whisper:large-v3-turbo`だけでGGMLモデルがなく、Phase 5gウィザードもprofileにかかわらず
+このfaster-whisperモデルを固定取得していた。さらにGUIはCLIの`auto_selection`を参照せず、独自生成した
+ASR一覧の先頭（faster-whisper）、device一覧の先頭（CPU）を既定にしていた。このため、速いnative構成が
+存在してもGUI経由では`large-v3-turbo · cpu`となった。
+
+> CLI では auto が Vulkan を選ぶ環境で、GUI 経由では CPU が選ばれていた。
+> GUI が独自に既定を持つと、CLI 側の最適化が届かない。
+
+GUIの既定を`devices --json`のauto結果へ接続し、利用可能なbackend/model/deviceに一致する場合だけ
+その組み合わせを選ぶ。前提不足ならnative buildまたはGGML取得の案内を表示する。Intel/Vulkan
+ウィザードはwhisper.cpp用GGML、CPU/CUDAはfaster-whisper用モデルを選択可能にした。推奨GGML
+`large-v3-turbo-q5_0`取得後の実機snapshotは`whisper-cpp / large-v3-turbo-q5_0 / vulkan`、話者分離
+`xpu:0`を既定にした。
+
+同一の300秒クリップ（内容・ファイル名は記録せず、成果物は測定後に削除）で比較した。
+修正前相当のfaster-whisper/CPUは74.34秒、実時間比4.04倍。修正後のwhisper.cpp/Vulkanは
+21.62秒、実時間比13.88倍で、3.44倍高速だった。両方exit 0で、完了条件の5倍以上を満たした。
+
+モデル管理画面を追加し、全カタログ／推奨表示、導入状態・用途・概算／実サイズ・保存先、明示確認付き
+取得／削除、検証、OpenVINO encoder IR生成／削除をprofile CLI経由で提供した。取得・IR生成は進捗ログと
+キャンセルに対応し、既存のToken未設定／無効／利用条件未同意分類を再利用する。native buildはVulkan SDK
+等の前提確認と長時間診断を伴うため自動実行せず、状態と`native status`／`native build`手順の案内に留めた。
+
+pywebviewのfile/folder dialog（単一入力root。folder batchは既存recursiveで複数fileを処理）を追加し、
+手入力とdrag-and-dropを維持した。選択pathは設定へ保存しない。新iconをPyInstaller、Inno Setup、shortcut、
+GUIロゴへ反映し、仮想行の左右marginによる横幅超過を修正した。Browserスキルで実表示確認を試みたが、
+このsessionに利用可能なbrowserがなく、ライト／ダークとresizeの自動visual確認は未実施。
+
+model不要test 329件、ruff check、mypy、JavaScript構文検査は合格した。受入G5初回はG5-01〜08が
+合格し、G5-09が既存logの再作成を旧size位置から読んで120秒待つハーネス不具合で失敗した。
+force実行でlogが短くなった場合は先頭から読むよう修正し、単体testと既存jobがある同一G5-09を
+再実行して合格、子CLIのexit 130を確認した。
+
+0.1.5配布版を再buildし、PyInstallerがicon resourceをcopy、Inno SetupがSetup iconとshortcut設定を
+含めて正常compileした。installer SHA-256は
+`98ae3aa64d026daf20759ab24bb93862419704793db7ce8a81b96757c009f212`。配布exeはProductVersion
+0.1.5、associated icon 32x32を持ち、実起動でtitle `utteran`のnative windowを生成した。bundle内の
+model管理画面とdialog bridgeも確認した。browser不在のため画面内icon、theme、resize、dialog clickの
+目視確認と、installerを実installしたshortcut/taskbar確認は未実施であり、全項目完了とは扱わない。
+
 ## 0.1.5 installer起動元のRedirectionGuard分離（2026-08-24）
 
 ユーザーの詳細logでは、Inno Setup完了画面から起動したGUIだけが

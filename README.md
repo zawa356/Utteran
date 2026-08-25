@@ -121,6 +121,15 @@ GUIは結果の仮想スクロール、全文検索、話者／時間フィル�
 ジョブ履歴、個別削除、形式・話者表示名・出力先を変えた再生成に対応します。再生成はジョブ内の
 `merged.json`からexportだけを実行し、ASRや話者分離を再実行しません。
 
+「モデル管理」では推奨／全カタログ、導入状態、用途、概算／実サイズ、保存先を確認し、取得・削除・
+検証とOpenVINO encoder IRの生成・削除を行えます。取得やIR生成は確認後にだけ始まり、進捗表示中に
+キャンセルできます。IR生成では追加のPyTorch重み（最大約3GB）が必要です。native buildはSDK等の
+前提があるため画面の案内に従ってCLIで実行します。
+
+入力file、入力folder、出力folderは選択dialogから指定でき、pathの手入力とdrag-and-dropも利用できます。
+単一の入力rootを選ぶ仕様で、folder内の複数fileは「サブフォルダも処理」とglob指定でbatch処理します。
+選択したpathは履歴として保存しません。
+
 テーマは既定でWindowsのライト／ダーク設定に追従し、設定画面からライトまたはダークへ固定
 できます。既に明示保存されているテーマはそのまま尊重されます。
 
@@ -270,6 +279,12 @@ pyannote 4.0.7には安定したチャンク処理APIがなく、全体cluster�
 CPU基礎量も入らない場合は`--no-diarization`または入力fileの事前分割を使用してください。
 
 ## whisper.cppとbenchmark
+
+GUIは独自のbackend既定を持たず、選択profileの`utteran devices --json`が返すauto構成を既定にします。
+Intel/Vulkan環境ではnative buildとGGMLモデルが揃うとwhisper.cppのVulkan等が選ばれます。不足時は
+モデル管理または`utteran native build`の案内が表示されます。構成差は大きく、単一Intel Arc 140T環境の
+300秒素材ではfaster-whisper/CPUが74.34秒（実時間比4.04倍）、whisper.cpp/Vulkanが21.62秒
+（13.88倍）でした。素材・driver・modelで変動するため保証値ではありません。
 
 ```console
 uv run utteran native build
