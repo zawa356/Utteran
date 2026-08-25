@@ -16,6 +16,8 @@ from urllib.parse import quote
 from utteran_gui.api import create_app
 from utteran_gui.settings import TokenStore
 
+WINDOWS_APP_USER_MODEL_ID = "Utteran.Utteran"
+
 
 class NativeDialogApi:
     """pywebview dialog bridge; returned paths are deliberately not persisted."""
@@ -63,6 +65,23 @@ def bind_loopback_socket() -> socket.socket:
     return server_socket
 
 
+def set_windows_app_user_model_id() -> bool:
+    """Give the process a stable Windows shell identity before creating a window."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        loader = getattr(ctypes, "WinDLL", None)
+        if loader is None:
+            return False
+        shell32 = loader("shell32")
+        result = shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_USER_MODEL_ID)
+        return int(result) == 0
+    except (AttributeError, OSError):
+        return False
+
+
 def main() -> None:
     """Start uvicorn in the background and pywebview on the GUI thread."""
     if len(sys.argv) == 3 and sys.argv[1] == "--diagnose-keyring":
@@ -72,6 +91,7 @@ def main() -> None:
             encoding="utf-8",
         )
         return
+    set_windows_app_user_model_id()
     import uvicorn
     import webview
 
@@ -103,7 +123,8 @@ def main() -> None:
     )
     native_api.window = window
     try:
-        webview.start()
+        icon_path = project_root() / "icon" / "utteran.ico"
+        webview.start(icon=str(icon_path) if icon_path.is_file() else None)
     finally:
         server.should_exit = True
         thread.join(timeout=5.0)
