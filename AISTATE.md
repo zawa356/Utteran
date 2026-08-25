@@ -30,14 +30,14 @@ queue/subprocess経路12.81秒（RTF約0.071）で約5.1%差、外側総時間�
 このsessionではbrowser backendが0件で未実施。DOM/CSS回帰testでoverflow対策、raw警告、log folder導線を
 固定した。
 
-最終検証はmodel不要test 344件、ruff、mypy、JavaScript構文検査が合格した。受入P6はCPU、OpenVINO、
+最終検証はmodel不要test 345件、ruff、mypy、JavaScript構文検査が合格した。受入P6はCPU、OpenVINO、
 Vulkan、OpenVINO+Vulkanの実model推論を含む6/6件が合格した。破壊的な`P3-7a clean → P6-7 missing
 確認 → P3-7c build`の中間caseだけがP6 groupに属し、P6単独実行で前提なしに走る既存不整合を修正した。
 既定G系は現在未導入のfaster-whisperモデルを要求する環境不一致により合格扱いにできず、今回変更の
 回帰判定には用いていない。
 
 0.1.6配布版をclean buildし、推論core非同梱check、ProductVersion 0.1.6、Inno Setup compileに成功した。
-installer SHA-256は`0ffcdfb46c61261fff5f0d8efe00691eecb0a26fe106fe6dcb459231586b96f8`。
+installer SHA-256は`c3a9cc77d23a2821618add3ff67183b94cd774912b80586c312bea5fea31eb05`。
 配布onedir exeを実起動し4秒後も稼働、配布directoryの`logs/app.log`生成、bundle内CSS/HTMLへの
 overflow修正とraw警告同梱を確認後、検証用processだけ終了した。既存のインストール済みGUI processは
 操作していない。browser不在のためlight/dark・resizeの目視だけは未完了として残す。
