@@ -1025,6 +1025,15 @@ def _wait_for(
     raise AssertionError(f"timed out waiting for {description}")
 
 
+def _new_log_contains(path: Path, initial_size: int, needle: bytes) -> bool:
+    """Read appended bytes, or the whole file when a force run replaced it."""
+    current_size = path.stat().st_size
+    offset = initial_size if current_size >= initial_size else 0
+    with path.open("rb") as stream:
+        stream.seek(offset)
+        return needle in stream.read()
+
+
 def _start(command: list[str]) -> subprocess.Popen[str]:
     options: dict[str, Any] = {
         "stdout": subprocess.PIPE,
@@ -1093,9 +1102,9 @@ def interrupt_asr(
             current_log = job / "utteran.log"
             if not current_log.is_file() or current_log.stat().st_size <= initial_log_size:
                 return False
-            with current_log.open("rb") as stream:
-                stream.seek(initial_log_size)
-                return b"Processing audio with duration" in stream.read()
+            return _new_log_contains(
+                current_log, initial_log_size, b"Processing audio with duration"
+            )
         except (AssertionError, KeyError, OSError, json.JSONDecodeError):
             return False
 

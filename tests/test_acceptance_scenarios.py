@@ -81,6 +81,16 @@ def test_postflight_accepts_environment_skips_and_no_retained_cuda_job(tmp_path:
     validate_postflight(results, jobs, tmp_path / "missing.mp4", testdata)
 
 
+def test_interrupt_log_probe_handles_force_run_replacing_a_longer_log(tmp_path: Path) -> None:
+    probe = _scenario_namespace()["_new_log_contains"]
+    log = tmp_path / "utteran.log"
+    log.write_bytes(b"old log" * 100)
+    old_size = log.stat().st_size
+    log.write_bytes(b"Processing audio with duration 03:00")
+
+    assert probe(log, old_size, b"Processing audio with duration") is True
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows console control regression")
 def test_ctrl_c_is_confined_to_the_child_console() -> None:
     probe = """
