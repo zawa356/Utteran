@@ -72,6 +72,8 @@
     $("default-output").value = state.settings.default_output_dir || "";
     if (!$("input-path").value) $("input-path").value = state.settings.default_input_dir || "";
     if (!$("output-dir").value) $("output-dir").value = state.settings.default_output_dir || "";
+    $("log-path").textContent = state.settings.log_dir || "—";
+    $("raw-log-warning").classList.toggle("hidden", !state.settings.raw_subprocess_logs);
     renderTokenState();
     translate();
     renderHistory();
@@ -1626,6 +1628,7 @@
       if (state.job) await api(`/api/jobs/${state.job.id}/cancel`, { method: "POST" });
     });
     $("settings-form").addEventListener("submit", saveSettings);
+    $("open-logs").addEventListener("click", () => openFolder(state.settings.log_dir));
     $("theme-select").addEventListener("change", (event) => {
       document.documentElement.dataset.theme = event.target.value;
     });

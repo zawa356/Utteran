@@ -340,11 +340,31 @@ uv run utteran jobs export <job_id> --format txt,json \
 uv run utteran jobs clean --job-id <job_id>
 uv run utteran config init
 uv run utteran config show
+uv run utteran logs path
+uv run utteran logs clean
 ```
 
 一般設定の優先順位は`CLI 引数 > 環境変数 > .env > config.toml > 既定値`です。
 トークンの参照元は環境変数、`.env`、OS キーリングの3段階で、この順に優先します。全設定、終了code、JSON schema、resume hashは
 [要件定義](要件定義.md)を参照してください。
+
+## ログ
+
+既定の保存先はインストール先（ソース実行ではリポジトリ直下）の`logs/`です。書き込みできない
+場合はOSのユーザーログ領域へ自動退避し、`utteran logs path`とGUI設定画面で実効パスを確認
+できます。`app.log`はローテーションされ、CLIごとの構造化イベントは`cli/*.jsonl`、デバイス診断は
+`diagnostics/`へ保存されます。ジョブ内の従来の`utteran.log`も互換性のため維持します。既定保持は
+30日、通常ログ100 MiB、rawログ1 GiBで、日数と容量の両方を起動時に適用します。
+
+構造化イベントは実行構成、OpenVINO IRロード成否、フォールバック、device、stage所要時間、実時間比、
+モデル取得／IR生成、エラー分類だけを記録し、文字起こし本文を含みません。保存先と保持量は
+`[general]`の`log_dir`、`log_retention_days`、`log_max_mib`、`raw_log_max_mib`、または対応する
+`UTTERAN_GENERAL__...`環境変数で変更できます。
+
+`raw_subprocess_logs = true`（環境変数は`UTTERAN_GENERAL__RAW_SUBPROCESS_LOGS=true`）を明示すると、
+秘密値をマスクしたサブプロセスstderrを`raw/<job_id>/`へ保存します。**ここには文字起こし本文が含まれる
+可能性があります。既定はfalseです。** 有効時は起動時に警告し、GUI設定画面にも常時警告を表示します。
+不要になったら無効へ戻し、`utteran logs clean`で削除してください。
 
 GUIが「保存先を利用できません」と表示する場合はWindows資格情報マネージャーを確認してください。
 回復できない環境では、`HF_TOKEN`環境変数、またはインストール先（開発版ではrepository直下）の

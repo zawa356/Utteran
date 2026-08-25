@@ -250,6 +250,21 @@ def test_theme_and_language_assets_are_externalized() -> None:
     assert "executedStages" in translations and "reusedStages" in translations
 
 
+def test_workspace_grids_and_logging_controls_cannot_force_horizontal_overflow() -> None:
+    web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
+    index = (web / "index.html").read_text(encoding="utf-8")
+    styles = (web / "styles.css").read_text(encoding="utf-8")
+    script = (web / "app.js").read_text(encoding="utf-8")
+
+    assert "repeat(5, minmax(0, 1fr))" in styles
+    assert ".stage-list li { min-width: 0; overflow-wrap: anywhere;" in styles
+    assert ".stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }" in styles
+    assert ".token-actions input { width: min(220px, 100%); min-width: 0; }" in styles
+    assert 'class="view viewer-view"' not in index
+    assert 'id="raw-log-warning"' in index and 'id="open-logs"' in index
+    assert 'state.settings.raw_subprocess_logs' in script
+
+
 def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> None:
     web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
     index = (web / "index.html").read_text(encoding="utf-8")

@@ -126,7 +126,7 @@
         </div>
       </section>
 
-      <section id="view-viewer" class="view viewer-view">
+      <section id="view-viewer" class="view">
         <header class="page-header viewer-header">
           <div><button id="viewer-back" class="text-button" data-i18n="backHistory">← 履歴へ戻る</button><p class="eyebrow">TRANSCRIPT RESULT</p><h1 id="viewer-title">—</h1><p id="viewer-subtitle" class="lede"></p></div>
           <div class="viewer-header-actions"><button id="viewer-open-folder" class="button secondary" data-i18n="openFolder">出力フォルダを開く</button><button id="viewer-delete" class="button danger" data-i18n="deleteJob">ジョブを削除</button></div>
@@ -315,6 +315,8 @@
             <label><span data-i18n="defaultOutput">既定出力先</span><input id="default-output" autocomplete="off"></label>
           </div>
           <div class="token-card" id="token"><div><h3>Hugging Face token</h3><p><span id="token-state"></span> · <span data-i18n="tokenPrivacy">保存済みの値は表示しません</span></p></div><div class="token-actions"><input id="token-input" type="password" autocomplete="new-password" placeholder="hf_••••••••" data-i18n-placeholder="tokenPlaceholder"><button id="save-token" class="button secondary" type="button" data-i18n="saveToken">トークンを保存</button><button id="clear-token" class="button ghost" type="button" data-i18n="clear">削除</button></div></div>
+          <div id="raw-log-warning" class="notice warning hidden" data-i18n="rawLogWarning">生のサブプロセスログが有効です。文字起こし本文が保存される可能性があります。</div>
+          <div class="log-location"><div><strong data-i18n="logLocation">ログ保存先</strong><span id="log-path"></span></div><button id="open-logs" class="button secondary" type="button" data-i18n="openLogFolder">ログフォルダーを開く</button></div>
           <div class="privacy-note"><strong data-i18n="privacyTitle">プライバシー</strong><span data-i18n="privacyBody">入力ファイルの履歴は保存しません。ファイル名に個人情報が含まれる可能性があるためです。</span></div>
           <div class="form-actions"><span id="settings-status" class="muted"></span><button class="button primary" type="submit" data-i18n="saveSettings">設定を保存</button></div>
         </form>
