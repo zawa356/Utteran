@@ -18,7 +18,7 @@ from utteran.asr.base import ASRBackend
 from utteran.asr.whisper_cpp_words import has_dtw_timestamps, tokens_to_words
 from utteran.config import WhisperCppConfig
 from utteran.errors import BackendUnavailableError, CancelledError, ModelNotFoundError
-from utteran.logging import mask_secrets
+from utteran.logging import mask_secrets, structured_event, write_raw_subprocess_log
 from utteran.models.catalog import ModelEntry, get_model
 from utteran.models.manager import ModelManager
 from utteran.native import NativeBuilder, resolve_native_dir, resolve_runtime_library_dirs
@@ -33,6 +33,17 @@ from utteran.types import (
 )
 
 _PROGRESS = re.compile(r"progress\s*=\s*(\d{1,3})%")
+_OPENVINO_FAILURE_MARKERS = (
+    "in openvino encoder compile routine",
+    "openvino encoder init failed",
+    "failed to initialize openvino",
+)
+_OPENVINO_SUCCESS_MARKERS = (
+    "loading openvino model from",
+    "openvino model loaded",
+    "openvino encoder initialized",
+    "openvino encoder init succeeded",
+)
 
 
 class WhisperCppBackend(ASRBackend):
@@ -53,6 +64,7 @@ class WhisperCppBackend(ASRBackend):
         self._variant = ""
         self._device = ""
         self._backends: dict[str, Any] = {}
+        self._fallback_attempted = False
 
     @classmethod
     def is_available(cls) -> bool:
@@ -111,6 +123,15 @@ class WhisperCppBackend(ASRBackend):
         self._variant = requested
         self._device = requested
         self._backends = backends
+        self._fallback_attempted = False
+        structured_event(
+            "asr_backend_resolved",
+            backend=self.name,
+            variant=requested,
+            executable=str(self._executable),
+            model=str(self._model_path),
+            fallback_allowed=self._allow_fallback,
+        )
 
     def transcribe(
         self,
@@ -159,6 +180,12 @@ class WhisperCppBackend(ASRBackend):
                     fallback,
                     mask_secrets(str(error)),
                 )
+                structured_event(
+                    "variant_fallback",
+                    from_variant=self._variant,
+                    to_variant=fallback,
+                    reason=type(error).__name__,
+                )
                 self._variant = fallback
                 self._device = fallback
                 backend = self._backends[fallback]
@@ -177,7 +204,8 @@ class WhisperCppBackend(ASRBackend):
             output_path = output_prefix.with_suffix(".json")
             if not output_path.is_file():
                 raise BackendUnavailableError(
-                    "whisper-cliがJSONを生成しませんでした: " + mask_secrets(stderr[-500:])
+                    "whisper-cliがJSONを生成しませんでした: "
+                    + summarize_subprocess_error(stderr)
                 )
             raw_output = output_path.read_bytes()
             try:
@@ -201,9 +229,14 @@ class WhisperCppBackend(ASRBackend):
         self._model_path = None
         self._executable = None
         self._backends = {}
+        self._fallback_attempted = False
 
     def _fallback_variant(self, detail: str) -> str | None:
-        if not self._allow_fallback or not is_gpu_initialization_failure(detail):
+        if (
+            not self._allow_fallback
+            or self._fallback_attempted
+            or not is_gpu_initialization_failure(detail)
+        ):
             return None
         order = ("openvino_vulkan", "vulkan", "openvino")
         try:
@@ -213,6 +246,7 @@ class WhisperCppBackend(ASRBackend):
         for name in order[start:]:
             entry = self._backends.get(name)
             if isinstance(entry, dict) and Path(str(entry.get("executable", ""))).is_file():
+                self._fallback_attempted = True
                 return name
         return None
 
@@ -329,6 +363,35 @@ def is_gpu_initialization_failure(detail: str) -> bool:
     )
 
 
+def parse_openvino_ir_status(stderr: str) -> bool | None:
+    """Classify the centralized whisper.cpp OpenVINO initialization diagnostics."""
+    folded = stderr.casefold()
+    if any(marker in folded for marker in _OPENVINO_FAILURE_MARKERS):
+        return False
+    if any(marker in folded for marker in _OPENVINO_SUCCESS_MARKERS):
+        return True
+    return None
+
+
+def summarize_subprocess_error(stderr: str) -> str:
+    """Keep diagnostic lines while excluding possible recognition output."""
+    markers = (
+        "error",
+        "failed",
+        "exception",
+        "openvino",
+        "vulkan",
+        "could not open",
+        "not found",
+    )
+    diagnostics = [
+        line.strip()
+        for line in stderr.splitlines()
+        if any(marker in line.casefold() for marker in markers)
+    ]
+    return mask_secrets(" | ".join(diagnostics[-5:]) or "詳細はrawログの明示有効化後に確認")
+
+
 def _run_process(
     command: list[str],
     variant: str,
@@ -381,9 +444,22 @@ def _run_process(
         if percent is not None and progress is not None:
             progress(ProgressEvent("asr", percent, 100, "whisper.cpp文字起こし中"))
     stderr = "".join(captured)
+    write_raw_subprocess_log("whisper-cpp", stderr)
+    if variant in {"openvino", "openvino_vulkan"}:
+        status = parse_openvino_ir_status(stderr)
+        model_path = Path(command[command.index("-m") + 1])
+        ir_path = model_path.with_name(model_path.stem + "-encoder-openvino.xml")
+        structured_event(
+            "openvino_ir_loaded",
+            path=str(ir_path),
+            success=status is True and process.returncode == 0,
+            detected=status is not None,
+            variant=variant,
+        )
     if process.returncode:
         raise BackendUnavailableError(
-            f"whisper-cliが失敗しました(exit={process.returncode}): " + mask_secrets(stderr[-500:])
+            f"whisper-cliが失敗しました(exit={process.returncode}): "
+            + summarize_subprocess_error(stderr)
         )
     return stderr
 
