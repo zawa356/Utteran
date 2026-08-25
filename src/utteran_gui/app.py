@@ -10,10 +10,38 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 from utteran_gui.api import create_app
 from utteran_gui.settings import TokenStore
+
+
+class NativeDialogApi:
+    """pywebview dialog bridge; returned paths are deliberately not persisted."""
+
+    def __init__(self) -> None:
+        self.window: Any = None
+
+    def choose_path(self, kind: str) -> str | None:
+        if self.window is None:
+            return None
+        import webview
+
+        if kind == "input_file":
+            result = self.window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=False,
+                file_types=(
+                    "Media files (*.wav;*.mp3;*.m4a;*.flac;*.ogg;*.mp4;*.mkv;*.mov;*.webm)",
+                    "All files (*.*)",
+                ),
+            )
+        elif kind in {"input_folder", "output_folder"}:
+            result = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+        else:
+            raise ValueError(f"Unknown dialog kind: {kind}")
+        return str(result[0]) if result else None
 
 
 def project_root() -> Path:
@@ -69,7 +97,11 @@ def main() -> None:
         server_socket.close()
         raise RuntimeError("GUI server failed to start")
     url = f"http://127.0.0.1:{port}/launch?session={quote(session_key)}"
-    webview.create_window("utteran", url=url, width=1180, height=820, min_size=(900, 660))
+    native_api = NativeDialogApi()
+    window = webview.create_window(
+        "utteran", url=url, width=1180, height=820, min_size=(900, 660), js_api=native_api
+    )
+    native_api.window = window
     try:
         webview.start()
     finally:

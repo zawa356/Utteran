@@ -1,10 +1,11 @@
 window.UTTERAN_I18N = {
   ja: {
-    navWorkspace: "文字起こし", navHistory: "結果と履歴", navSettings: "設定", localOnly: "ローカル実行",
+    navWorkspace: "文字起こし", navHistory: "結果と履歴", navModels: "モデル管理", navSettings: "設定", localOnly: "ローカル実行",
     workspaceEyebrow: "TRANSCRIPTION WORKSPACE", workspaceTitle: "文字起こしを開始",
     workspaceLead: "この環境で実際に利用できる構成だけを表示します。", refresh: "再検出",
     hardware: "ハードウェア", profile: "プロファイル", models: "導入済みモデル", nativeBuild: "ネイティブ構成",
     sourceOutput: "入力と出力", dropHint: "ファイルをウィンドウへドロップできます", inputPath: "入力ファイル／フォルダ", outputDir: "出力先", recursive: "サブフォルダも処理", includePatterns: "対象glob（カンマ区切り）", excludePatterns: "除外glob（カンマ区切り）",
+    chooseFile: "ファイル", chooseFolder: "フォルダ", dialogUnavailable: "この起動方法では選択ダイアログを利用できません。パスを手入力してください。", modelsTitle: "モデル管理", modelsLead: "導入済みモデルと取得可能なカタログを管理します。ダウンロードは明示操作でのみ開始します。", modelStorage: "保存先", showAllModels: "英語専用を含む全件表示", openvinoIr: "OpenVINO エンコーダー IR", openvinoNotice: "生成時は追加のPyTorch重み（最大約3GB）を取得します。ネイティブビルドは前提を確認して `utteran native build` を実行してください。", installed: "導入済み", notInstalled: "未導入", download: "取得", verify: "検証", generate: "生成", downloadModelConfirm: "{name} を取得しますか？\n概算サイズ: {size}\n所要時間は回線速度により異なります。", deleteModelConfirm: "{name} を削除しますか？\n解放容量: {size}", prepareIrConfirm: "{size} のIRを生成しますか？\n追加のPyTorch重み（最大約3GB）を取得します。", removeIrConfirm: "OpenVINO IRを削除しますか？",
     runtime: "実行環境", asrBackend: "ASRバックエンド", asrModel: "ASRモデル", asrDevice: "ASRデバイス", language: "言語", resume: "レジューム",
     resumeReuse: "再利用する", resumeFresh: "キャッシュを使わない", resumeForce: "全段階を再実行",
     diarization: "話者分離", enabled: "有効", diarBackend: "バックエンド", diarModel: "モデル", diarDevice: "デバイス", speakerMode: "話者数", automatic: "自動", fixed: "固定", range: "範囲", speakerCount: "人数", minimum: "最小", maximum: "最大",
@@ -27,9 +28,10 @@ window.UTTERAN_I18N = {
     relaunchWizardTitle: "セットアップウィザード", relaunchWizardBody: "新しいプロファイルの追加や、モデル・トークンの再設定にも使えます。", relaunchWizard: "ウィザードを開く"
   },
   en: {
-    navWorkspace: "Transcribe", navHistory: "Results & history", navSettings: "Settings", localOnly: "Local only",
+    navWorkspace: "Transcribe", navHistory: "Results & history", navModels: "Models", navSettings: "Settings", localOnly: "Local only",
     workspaceEyebrow: "TRANSCRIPTION WORKSPACE", workspaceTitle: "Start transcription", workspaceLead: "Only combinations detected as usable in this environment are shown.", refresh: "Detect again",
     hardware: "Hardware", profile: "Profile", models: "Installed models", nativeBuild: "Native variants", sourceOutput: "Input and output", dropHint: "You can drop a file onto this window", inputPath: "Input file or folder", outputDir: "Output folder", recursive: "Include subfolders", includePatterns: "Include globs (comma-separated)", excludePatterns: "Exclude globs (comma-separated)",
+    chooseFile: "File", chooseFolder: "Folder", dialogUnavailable: "File dialogs are unavailable in this launch mode. Enter the path manually.", modelsTitle: "Model management", modelsLead: "Manage installed models and the available catalog. Downloads begin only after an explicit action.", modelStorage: "Storage", showAllModels: "Show all, including English-only models", openvinoIr: "OpenVINO encoder IR", openvinoNotice: "Generation downloads additional PyTorch weights (up to about 3 GB). Check prerequisites and run `utteran native build` for the native build.", installed: "Installed", notInstalled: "Not installed", download: "Download", verify: "Verify", generate: "Generate", downloadModelConfirm: "Download {name}?\nApproximate size: {size}\nTime depends on connection speed.", deleteModelConfirm: "Delete {name}?\nSpace freed: {size}", prepareIrConfirm: "Generate IR for {size}?\nThis downloads additional PyTorch weights (up to about 3 GB).", removeIrConfirm: "Delete the OpenVINO IR?",
     runtime: "Runtime", asrBackend: "ASR backend", asrModel: "ASR model", asrDevice: "ASR device", language: "Language", resume: "Resume", resumeReuse: "Reuse completed stages", resumeFresh: "Do not use cache", resumeForce: "Run every stage again",
     diarization: "Speaker diarization", enabled: "Enabled", diarBackend: "Backend", diarModel: "Model", diarDevice: "Device", speakerMode: "Speaker count", automatic: "Automatic", fixed: "Fixed", range: "Range", speakerCount: "Count", minimum: "Minimum", maximum: "Maximum", outputFormats: "Output formats", start: "Start transcription",
     inProgress: "IN PROGRESS", processing: "Processing", cancel: "Cancel", elapsed: "Elapsed", remaining: "Estimated left", stalled: "No progress event has arrived recently. Processing may still be active.", details: "Detailed log", complete: "Completed", openFolder: "Open output folder", openResult: "View result", executedStages: "Ran", reusedStages: "Reused", none: "none",

@@ -9,6 +9,7 @@
   const state = {
     settings: null,
     environment: null,
+    modelJob: null,
     job: null,
     source: null,
     started: 0,
@@ -176,7 +177,9 @@
     $("hardware-summary").textContent =
       gpu.join(", ") || `CPU · ${devices.cpu?.logical_cores || "—"} threads`;
     $("profile-summary").textContent = state.environment.active_profile || "—";
-    $("model-summary").textContent = String(state.environment.models.length || 0);
+    $("model-summary").textContent = String(
+      state.environment.models.filter((item) => item.installed).length,
+    );
     const variants = Object.entries(devices.native?.variants || {})
       .filter(([, available]) => available)
       .map(([name]) => name);
@@ -191,6 +194,9 @@
     } else if (state.environment.errors.length) {
       alert.textContent = state.environment.errors.join(" · ");
       alert.classList.remove("hidden");
+    } else if ((state.environment.options.guidance || []).length) {
+      alert.textContent = state.environment.options.guidance.join(" · ");
+      alert.classList.remove("hidden");
     } else {
       alert.classList.add("hidden");
     }
@@ -200,11 +206,12 @@
 
   function renderRuntimeOptions() {
     const asr = state.environment?.options.asr || [];
-    setOptions($("asr-backend"), asr, $("asr-backend").value);
-    renderAsrDetail();
+    const defaults = state.environment?.options.defaults || {};
+    setOptions($("asr-backend"), asr, defaults.asr_backend);
+    renderAsrDetail(defaults.asr_model, defaults.asr_device);
     const diarization = state.environment?.options.diarization || [];
-    setOptions($("diarization-backend"), diarization, $("diarization-backend").value);
-    renderDiarizationDetail();
+    setOptions($("diarization-backend"), diarization, defaults.diarization_backend);
+    renderDiarizationDetail(defaults.diarization_device);
     setOptions(
       $("language-select"),
       (state.environment?.options.languages || []).map((item) => ({
@@ -224,19 +231,23 @@
     return groups.find((item) => item.id === select.value) || groups[0];
   }
 
-  function renderAsrDetail() {
+  function renderAsrDetail(selectedModel = "", selectedDevice = "") {
     const group = selectedGroup(state.environment?.options.asr || [], $("asr-backend"));
-    setOptions($("asr-model"), group?.models || []);
-    setOptions($("asr-device"), group?.devices || []);
+    setOptions($("asr-model"), group?.models || [], selectedModel);
+    setOptions($("asr-device"), group?.devices || [], selectedDevice);
+    const defaults = state.environment?.options.defaults || {};
+    if ($("asr-backend").value !== defaults.asr_backend && defaults.asr_backend) {
+      $("form-status").textContent = `auto: ${defaults.asr_backend} / ${defaults.asr_device}`;
+    }
   }
 
-  function renderDiarizationDetail() {
+  function renderDiarizationDetail(selectedDevice = "") {
     const group = selectedGroup(
       state.environment?.options.diarization || [],
       $("diarization-backend"),
     );
     setOptions($("diarization-model"), group?.models || []);
-    setOptions($("diarization-device"), group?.devices || []);
+    setOptions($("diarization-device"), group?.devices || [], selectedDevice);
   }
 
   function renderSpeakerMode() {
@@ -347,6 +358,7 @@
       if (status.step === "confirm") {
         renderWizardConfirmation();
       }
+      if (status.step === "model") renderWizardModels();
       showWizardStep(status.step || "welcome");
     } catch (error) {
       window.alert(error.message);
@@ -525,6 +537,7 @@
       await showWizardToken();
     } else {
       await saveWizardState("model");
+      renderWizardModels();
       showWizardStep("model");
     }
   }
@@ -567,6 +580,7 @@
         wizardRunUnattended();
       } else {
         await saveWizardState("model");
+        renderWizardModels();
         showWizardStep("model");
       }
     } catch (error) {
@@ -575,9 +589,33 @@
   }
 
   async function wizardModelChoiceNext() {
+    wizardState.modelRef = $("wizard-model-select").value;
     await saveWizardState("confirm");
     renderWizardConfirmation();
     showWizardStep("confirm");
+  }
+
+  function renderWizardModels() {
+    const nativeProfile = ["intel", "vulkan"].includes(wizardState.profile);
+    const choices = nativeProfile
+      ? [
+          { id: "whisper-cpp:large-v3-turbo-q5_0", label: "Whisper.cpp large-v3-turbo q5 (推奨・高速)" },
+          { id: "whisper-cpp:large-v3-turbo", label: "Whisper.cpp large-v3-turbo (高精度)" },
+          { id: "whisper-cpp:large-v3-q5_0", label: "Whisper.cpp large-v3 q5" },
+        ]
+      : [
+          { id: "faster-whisper:large-v3-turbo", label: "large-v3-turbo (推奨)" },
+          { id: "faster-whisper:large-v3", label: "large-v3 (高精度・大容量)" },
+          { id: "faster-whisper:kotoba-whisper-v2.0", label: "Kotoba-Whisper v2.0 (日本語)" },
+        ];
+    const selected = choices.some((item) => item.id === wizardState.modelRef)
+      ? wizardState.modelRef
+      : choices[0].id;
+    setOptions($("wizard-model-select"), choices, selected);
+    wizardState.modelRef = selected;
+    $("wizard-model-note").textContent = nativeProfile
+      ? "このGPU構成に対応するGGMLモデルを取得します。"
+      : "この構成に対応するCTranslate2モデルを取得します。";
   }
 
   function renderWizardConfirmation() {
@@ -1332,6 +1370,133 @@
     await api("/api/open-folder", { method: "POST", body: JSON.stringify({ path }) });
   }
 
+  async function choosePath(kind, targetId) {
+    try {
+      const bridge = window.pywebview?.api;
+      if (!bridge) throw new Error(t("dialogUnavailable"));
+      const path = await bridge.choose_path(kind);
+      if (path) $(targetId).value = path;
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  async function loadModels() {
+    const profile = $("profile-select").value || state.environment?.active_profile;
+    if (profile) await loadEnvironment(profile);
+    renderModels();
+  }
+
+  function renderModels() {
+    const environment = state.environment || {};
+    $("models-profile").textContent = environment.active_profile || "—";
+    $("models-path").textContent = environment.model_path || "—";
+    const showAll = $("show-all-models").checked;
+    const rows = (environment.models || []).filter(
+      (item) => showAll || (item.recommended !== false && !item.english_only),
+    );
+    $("model-catalog").replaceChildren(...rows.map(modelCard));
+    const irBySize = new Map(
+      (environment.openvino_models || []).map((item) => [item.model_size, item]),
+    );
+    const ggmlSizes = [...new Set(rows.filter((item) => item.backend === "whisper-cpp").map((item) => item.model_size).filter(Boolean))];
+    $("openvino-list").replaceChildren(
+      ...ggmlSizes.map((size) => {
+        const row = document.createElement("div");
+        row.className = "model-card-actions";
+        const status = irBySize.get(size);
+        const label = document.createElement("span");
+        label.textContent = `${size}: ${status?.installed ? t("installed") : t("notInstalled")}`;
+        const model = rows.find((item) => item.backend === "whisper-cpp" && item.model_size === size);
+        const button = actionButton(status?.installed ? t("delete") : t("generate"), () => {
+          if (!model) return;
+          const action = status?.installed ? "remove_openvino" : "prepare_openvino";
+          const warning = status?.installed
+            ? t("removeIrConfirm")
+            : t("prepareIrConfirm").replace("{size}", size);
+          if (window.confirm(warning)) runModelAction(action, model.key, `${size} OpenVINO IR`);
+        }, status?.installed ? "danger" : "secondary");
+        row.append(label, button);
+        return row;
+      }),
+    );
+  }
+
+  function modelCard(model) {
+    const card = document.createElement("article");
+    card.className = "panel model-card";
+    const head = document.createElement("div");
+    head.className = "model-card-head";
+    const title = document.createElement("strong");
+    title.textContent = model.display_name || model.model_id;
+    const stateLabel = document.createElement("small");
+    stateLabel.textContent = model.installed ? t("installed") : t("notInstalled");
+    head.append(title, stateLabel);
+    const description = document.createElement("p");
+    description.textContent = model.description || "";
+    const metadata = document.createElement("small");
+    metadata.textContent = `${model.backend} · ${model.format || "—"} · ${formatBytes(model.installed ? model.size_bytes : model.approximate_size_bytes)}`;
+    const actions = document.createElement("div");
+    actions.className = "model-card-actions";
+    if (model.installed) {
+      actions.append(
+        actionButton(t("verify"), () => runModelAction("verify", model.key, model.display_name), "secondary"),
+        actionButton(t("delete"), () => {
+          if (window.confirm(t("deleteModelConfirm").replace("{name}", model.display_name).replace("{size}", formatBytes(model.size_bytes)))) {
+            runModelAction("remove", model.key, model.display_name);
+          }
+        }, "danger"),
+      );
+    } else {
+      actions.append(actionButton(t("download"), () => {
+        const message = t("downloadModelConfirm").replace("{name}", model.display_name).replace("{size}", formatBytes(model.approximate_size_bytes));
+        if (window.confirm(message)) runModelAction("download", model.key, model.display_name);
+      }, "primary"));
+    }
+    card.append(head, description, metadata, actions);
+    return card;
+  }
+
+  async function runModelAction(action, modelRef, label) {
+    const profile = state.environment?.active_profile;
+    if (!profile) return;
+    $("model-progress").classList.remove("hidden");
+    $("model-progress-title").textContent = label;
+    $("model-log").textContent = "";
+    try {
+      const job = await api("/api/models/actions", {
+        method: "POST",
+        body: JSON.stringify({ profile, action, model_ref: modelRef }),
+      });
+      state.modelJob = job;
+      let cursor = 0;
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const current = await api(`/api/wizard/jobs/${job.id}`);
+        const logs = current.logs || [];
+        if (logs.length > cursor) {
+          $("model-log").textContent += `${logs.slice(cursor).join("\n")}\n`;
+          cursor = logs.length;
+        }
+        if (["completed", "failed", "cancelled"].includes(current.status)) {
+          state.modelJob = null;
+          if (current.status !== "completed") {
+            const key = current.guidance?.key;
+            $("models-alert").textContent = key ? t(`guide_${key}`) : t(current.status === "cancelled" ? "cancelled" : "failed");
+            $("models-alert").classList.remove("hidden");
+          }
+          await loadModels();
+          break;
+        }
+      }
+    } catch (error) {
+      $("models-alert").textContent = error.message;
+      $("models-alert").classList.remove("hidden");
+    } finally {
+      $("model-progress").classList.add("hidden");
+    }
+  }
+
   async function saveSettings(event) {
     event.preventDefault();
     const payload = {
@@ -1352,6 +1517,7 @@
         if (state.detail) closeViewer();
         showView(button.dataset.view);
         if (button.dataset.view === "history") await loadHistory();
+        if (button.dataset.view === "models") await loadModels();
       }),
     );
     $("refresh-environment").addEventListener("click", () => loadEnvironment($("profile-select").value));
@@ -1363,6 +1529,16 @@
       $("diarization-fields").classList.toggle("hidden", !$("diarization-enabled").checked),
     );
     $("job-form").addEventListener("submit", startJob);
+    $("pick-input-file").addEventListener("click", () => choosePath("input_file", "input-path"));
+    $("pick-input-folder").addEventListener("click", () => choosePath("input_folder", "input-path"));
+    $("pick-output-folder").addEventListener("click", () => choosePath("output_folder", "output-dir"));
+    $("refresh-models").addEventListener("click", loadModels);
+    $("show-all-models").addEventListener("change", renderModels);
+    $("cancel-model-action").addEventListener("click", async () => {
+      if (state.modelJob) {
+        await api(`/api/wizard/jobs/${state.modelJob.id}/cancel`, { method: "POST" });
+      }
+    });
     $("cancel-button").addEventListener("click", async () => {
       if (state.job) await api(`/api/jobs/${state.job.id}/cancel`, { method: "POST" });
     });

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from utteran_gui import __version__
 from utteran_gui.api import SESSION_HEADER, create_app
-from utteran_gui.app import bind_loopback_socket
+from utteran_gui.app import NativeDialogApi, bind_loopback_socket
 from utteran_gui.cli import CliAdapter, RegenerationOptions, TranscriptionOptions
 from utteran_gui.environment import EnvironmentService, derive_options
 from utteran_gui.jobs import JobManager, guidance_for, parse_progress_line
@@ -146,6 +146,37 @@ def test_gui_spec_collects_keyring_modules_and_entry_point_metadata() -> None:
     spec = (Path(__file__).parents[1] / "packaging" / "gui.spec").read_text(encoding="utf-8")
     assert 'collect_submodules("keyring")' in spec
     assert 'copy_metadata("keyring")' in spec
+
+
+def test_packaging_and_gui_use_the_supplied_icon() -> None:
+    project = Path(__file__).parents[1]
+    spec = (project / "packaging" / "gui.spec").read_text(encoding="utf-8")
+    installer = (project / "packaging" / "installer.iss").read_text(encoding="utf-8")
+    index = (project / "src" / "utteran_gui" / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert "icon=APP_ICON" in spec
+    assert "SetupIconFile={#RepoRoot}\\icon\\utteran.ico" in installer
+    assert installer.count("IconFilename:") == 2
+    assert 'class="brand-logo" src="/logo"' in index
+
+
+def test_native_dialog_returns_one_selected_path_without_persisting(monkeypatch: Any) -> None:
+    import webview
+
+    calls: list[tuple[object, dict[str, object]]] = []
+
+    class Window:
+        @staticmethod
+        def create_file_dialog(kind: object, **kwargs: object) -> tuple[str, ...]:
+            calls.append((kind, kwargs))
+            return ("C:/Media/meeting.wav", "C:/Media/ignored.wav")
+
+    monkeypatch.setattr(webview, "OPEN_DIALOG", "open", raising=False)
+    api = NativeDialogApi()
+    api.window = Window()
+
+    assert api.choose_path("input_file") == "C:/Media/meeting.wav"
+    assert calls[0][1]["allow_multiple"] is False
 
 
 def test_cli_and_gui_use_the_same_keyring_service_and_username() -> None:
@@ -461,13 +492,16 @@ def test_environment_reads_all_state_from_profile_json_contracts(
             }
         if arguments == ["devices", "--json"]:
             return {"backends": {}}
-        if arguments == ["models", "list", "--json"]:
+        if arguments == ["models", "list", "--available", "--all", "--json"]:
             return []
         if arguments == ["native", "status", "--json"]:
             return {"runnable": {}}
+        if arguments == ["models", "list-openvino", "--json"]:
+            return []
         raise AssertionError(arguments)
 
     monkeypatch.setattr(cli, "run_json", run_json)
+    monkeypatch.setattr(cli, "run_text", lambda *_args, **_kwargs: "C:/models\n")
     snapshot = EnvironmentService(cli).snapshot("cuda")
 
     assert snapshot["active_profile"] == "cuda"
@@ -475,9 +509,56 @@ def test_environment_reads_all_state_from_profile_json_contracts(
     assert calls == [
         ("cuda", ("profiles", "list", "--json")),
         ("cuda", ("devices", "--json")),
-        ("cuda", ("models", "list", "--json")),
+        ("cuda", ("models", "list", "--available", "--all", "--json")),
         ("cuda", ("native", "status", "--json")),
+        ("cuda", ("models", "list-openvino", "--json")),
     ]
+
+
+def test_intel_auto_selection_defaults_to_whisper_cpp_not_cpu() -> None:
+    devices = {
+        "backends": {"faster-whisper": True, "whisper-cpp": True},
+        "ctranslate2": {"available": True, "cuda_devices": []},
+        "native": {"variants": {"cpu": True, "vulkan": True}},
+        "auto_selection": {
+            "asr_backend": "whisper-cpp",
+            "asr_device": "vulkan",
+            "diarization_backend": "pyannote",
+            "diarization_device": "xpu:0",
+        },
+    }
+    models = [
+        {"backend": "faster-whisper", "model_id": "large-v3-turbo", "installed": True},
+        {
+            "backend": "whisper-cpp",
+            "model_id": "large-v3-turbo-q5_0",
+            "installed": True,
+        },
+    ]
+
+    options = derive_options(devices, models, {"runnable": {"cpu": True, "vulkan": True}})
+
+    assert options["defaults"] == {
+        "asr_backend": "whisper-cpp",
+        "asr_model": "large-v3-turbo-q5_0",
+        "asr_device": "vulkan",
+        "diarization_backend": "pyannote",
+        "diarization_device": "xpu:0",
+    }
+
+
+def test_gui_assets_expose_model_management_dialogs_and_real_model_choice() -> None:
+    web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
+    index = (web / "index.html").read_text(encoding="utf-8")
+    script = (web / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="view-models"' in index
+    assert 'id="wizard-model-select"' in index
+    assert 'id="pick-input-file"' in index and 'id="pick-input-folder"' in index
+    assert 'id="pick-output-folder"' in index
+    assert 'api("/api/models/actions"' in script
+    assert "bridge.choose_path(kind)" in script
+    assert '"whisper-cpp:large-v3-turbo-q5_0"' in script
 
 
 def test_history_api_uses_profile_cli_contracts_without_persisting_result(

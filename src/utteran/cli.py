@@ -547,6 +547,14 @@ def models_list(
                         "model_id": status.entry.model_id,
                         "display_name": status.entry.display_name,
                         "backend": status.entry.backend,
+                        "format": status.entry.format,
+                        "description": status.entry.description,
+                        "approximate_size_bytes": status.entry.approximate_size_bytes,
+                        "size_bytes": status.size_bytes,
+                        "gated": status.entry.gated,
+                        "recommended": status.entry.recommended,
+                        "english_only": status.entry.english_only,
+                        "model_size": status.entry.model_size,
                         "installed": status.installed,
                         "path": None if status.path is None else str(status.path),
                     }
@@ -686,12 +694,31 @@ def models_prepare_openvino(
 
 
 @models_app.command("list-openvino")
-def models_list_openvino() -> None:
+def models_list_openvino(
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで表示")] = False,
+) -> None:
     """変換済みOpenVINO encoder IRを一覧表示します。"""
     from utteran.models.openvino import OpenVINOManager
 
+    statuses = OpenVINOManager(_model_manager()).list()
+    if json_output:
+        typer.echo(
+            json.dumps(
+                [
+                    {
+                        "model_size": status.model_size,
+                        "installed": status.installed,
+                        "xml_path": str(status.xml_path),
+                    }
+                    for status in statuses
+                ],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
     table = Table("モデルサイズ", "状態", "XML")
-    for status in OpenVINOManager(_model_manager()).list():
+    for status in statuses:
         table.add_row(
             status.model_size,
             "ok" if status.installed else "未生成",

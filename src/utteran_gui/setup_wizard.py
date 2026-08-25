@@ -30,7 +30,7 @@ from utteran_gui.processes import PopenFactory, TreeKiller, build_popen_kwargs, 
 from utteran_gui.security import mask_secrets
 from utteran_gui.settings import PROFILE_NAMES, WIZARD_EXECUTION_STAGES, WIZARD_STEPS, SettingsStore
 
-WizardJobKind = Literal["venv_build", "model_download", "smoke_test"]
+WizardJobKind = Literal["venv_build", "model_download", "model_action", "smoke_test"]
 WizardJobStatus = Literal["starting", "running", "completed", "failed", "cancelled"]
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 
@@ -134,12 +134,18 @@ class SetupWizardService:
         if "venv" not in completed_stages or not profile_ready:
             token_error = None
         persisted_in_progress = (
-            settings.setup_wizard_completed_at is None
-            and settings.setup_wizard_step != "welcome"
+            settings.setup_wizard_completed_at is None and settings.setup_wizard_step != "welcome"
         )
-        first_run = self._no_profile_exists() or persisted_in_progress or (
-            settings.setup_wizard_completed_at is None
-            and (settings.setup_wizard_started_at is not None or not self._settings.path.is_file())
+        first_run = (
+            self._no_profile_exists()
+            or persisted_in_progress
+            or (
+                settings.setup_wizard_completed_at is None
+                and (
+                    settings.setup_wizard_started_at is not None
+                    or not self._settings.path.is_file()
+                )
+            )
         )
         return {
             "first_run": first_run,
@@ -289,6 +295,32 @@ class SetupWizardService:
             "model_download",
             profile,
             command,
+            self.cli.environment(profile),
+            model_ref=model_ref,
+        )
+
+    def start_model_action(self, profile: str, action: str, model_ref: str) -> dict[str, object]:
+        """Run an explicit model-management operation with cancellation support."""
+        _validate_profile(profile)
+        if not model_ref.strip():
+            raise ValueError("model_ref must not be empty")
+        info = self.cli.profile_info(profile)
+        if not info.exists:
+            raise WizardProfileMissingError(f"Profile venv does not exist yet: {profile}")
+        commands = {
+            "download": ["models", "download", model_ref],
+            "remove": ["models", "remove", model_ref, "--yes"],
+            "verify": ["models", "verify", model_ref],
+            "prepare_openvino": ["models", "prepare-openvino", model_ref, "--yes"],
+            "remove_openvino": ["models", "remove-openvino", model_ref, "--yes"],
+        }
+        arguments = commands.get(action)
+        if arguments is None:
+            raise ValueError(f"Unknown model action: {action}")
+        return self._start(
+            "model_action",
+            profile,
+            [str(info.executable), *arguments],
             self.cli.environment(profile),
             model_ref=model_ref,
         )

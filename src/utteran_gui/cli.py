@@ -137,6 +137,28 @@ class CliAdapter:
         except json.JSONDecodeError as exc:
             raise CliError(f"CLI returned invalid JSON: {mask_secrets(str(exc))}") from None
 
+    def run_text(self, profile: str, arguments: list[str], *, timeout: float = 60.0) -> str:
+        """Run a profile CLI command whose stable contract is plain text."""
+        info = self.profile_info(profile)
+        if not info.exists:
+            raise CliError(f"Profile is not available: {profile}")
+        completed = subprocess.run(
+            [str(info.executable), *arguments],
+            cwd=self.repo_root,
+            env=self.environment(profile),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+            **build_creation_kwargs(),
+        )
+        if completed.returncode != 0:
+            detail = mask_secrets(completed.stderr.strip() or completed.stdout.strip())
+            raise CliError(f"CLI exited {completed.returncode}: {detail[:1000]}")
+        return mask_secrets(completed.stdout)
+
     def build_transcribe_command(
         self,
         options: TranscriptionOptions,

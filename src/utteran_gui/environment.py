@@ -65,7 +65,9 @@ class EnvironmentService:
         except CliError as exc:
             errors.append(mask_secrets(str(exc)))
         try:
-            raw_models = self.cli.run_json(active, ["models", "list", "--json"])
+            raw_models = self.cli.run_json(
+                active, ["models", "list", "--available", "--all", "--json"]
+            )
             if isinstance(raw_models, list):
                 models = [
                     cast(dict[str, Any], item) for item in raw_models if isinstance(item, dict)
@@ -82,6 +84,8 @@ class EnvironmentService:
                 "models": models,
                 "native": native or None,
                 "options": derive_options(devices, models, native),
+                "model_path": _read_model_path(self.cli, active, errors),
+                "openvino_models": _read_openvino_models(self.cli, active, errors),
                 "errors": errors,
             }
         )
@@ -180,16 +184,74 @@ def derive_options(
                 "devices": diarization_devices,
             }
         )
+    auto = _dict(devices.get("auto_selection"))
+    default_backend = str(auto.get("asr_backend", ""))
+    default_device = str(auto.get("asr_device", ""))
+    default_model = ""
+    selected_asr = next((item for item in asr if item.get("id") == default_backend), None)
+    if selected_asr is not None:
+        available_models = cast(list[dict[str, str]], selected_asr["models"])
+        preferred = "large-v3-turbo-q5_0" if default_backend == "whisper-cpp" else "large-v3-turbo"
+        default_model = str(
+            next(
+                (item["id"] for item in available_models if item["id"] == preferred),
+                available_models[0]["id"] if available_models else "",
+            )
+        )
+    guidance: list[str] = []
+    if default_backend == "whisper-cpp" and selected_asr is None:
+        fast_variants = ("vulkan", "openvino", "openvino_vulkan")
+        if not any(runnable.get(name) is True for name in fast_variants):
+            guidance.append(
+                "高速なwhisper.cpp構成が未ビルドです。`utteran native status`を確認し、"
+                "`utteran native build`を実行してください。"
+            )
+        if not by_backend.get("whisper-cpp"):
+            guidance.append("whisper.cpp用GGMLモデルがありません。モデル管理から取得してください。")
+    elif default_backend == "whisper-cpp":
+        guidance.append("CLIのauto選択に従い、whisper.cppの高速構成を既定にしました。")
     return {
         "asr": asr,
         "diarization": diarization,
         "languages": ["auto", "ja", "en"],
         "formats": ["srt", "vtt", "json", "txt", "md"],
+        "defaults": {
+            "asr_backend": default_backend,
+            "asr_model": default_model,
+            "asr_device": default_device,
+            "diarization_backend": str(auto.get("diarization_backend", "")),
+            "diarization_device": str(auto.get("diarization_device", "")),
+        },
+        "guidance": guidance,
     }
 
 
 def _empty_options() -> dict[str, object]:
-    return {"asr": [], "diarization": [], "languages": [], "formats": []}
+    return {
+        "asr": [],
+        "diarization": [],
+        "languages": [],
+        "formats": [],
+        "defaults": {},
+        "guidance": [],
+    }
+
+
+def _read_model_path(cli: CliAdapter, profile: str, errors: list[str]) -> str | None:
+    try:
+        return str(cli.run_text(profile, ["models", "path"]).strip())
+    except CliError as exc:
+        errors.append(mask_secrets(str(exc)))
+        return None
+
+
+def _read_openvino_models(cli: CliAdapter, profile: str, errors: list[str]) -> list[dict[str, Any]]:
+    try:
+        value = cli.run_json(profile, ["models", "list-openvino", "--json"])
+        return _list_of_dicts(value)
+    except CliError as exc:
+        errors.append(mask_secrets(str(exc)))
+        return []
 
 
 def _dict(value: object) -> dict[str, Any]:

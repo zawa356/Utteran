@@ -9,10 +9,11 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">u</span><span>utteran</span></div>
+      <div class="brand"><img class="brand-logo" src="/logo" alt=""><span>utteran</span></div>
       <nav aria-label="Primary">
         <button class="nav-item active" data-view="workspace" data-i18n="navWorkspace">文字起こし</button>
         <button class="nav-item" data-view="history" data-i18n="navHistory">結果と履歴</button>
+        <button class="nav-item" data-view="models" data-i18n="navModels">モデル管理</button>
         <button class="nav-item" data-view="settings" data-i18n="navSettings">設定</button>
       </nav>
       <div class="sidebar-foot">
@@ -47,8 +48,8 @@
             <span class="section-note" data-i18n="dropHint">ファイルをウィンドウへドロップできます</span>
           </div>
           <div class="field-grid two">
-            <label><span data-i18n="inputPath">入力ファイル／フォルダ</span><input id="input-path" required autocomplete="off" placeholder="C:\Media\meeting.mp4"></label>
-            <label><span data-i18n="outputDir">出力先</span><input id="output-dir" required autocomplete="off" placeholder="C:\Transcripts"></label>
+            <label><span data-i18n="inputPath">入力ファイル／フォルダ</span><span class="path-picker"><input id="input-path" required autocomplete="off" placeholder="C:\Media\meeting.mp4"><button id="pick-input-file" class="button secondary" type="button" data-i18n="chooseFile">ファイル</button><button id="pick-input-folder" class="button secondary" type="button" data-i18n="chooseFolder">フォルダ</button></span></label>
+            <label><span data-i18n="outputDir">出力先</span><span class="path-picker"><input id="output-dir" required autocomplete="off" placeholder="C:\Transcripts"><button id="pick-output-folder" class="button secondary" type="button" data-i18n="chooseFolder">フォルダ</button></span></label>
           </div>
           <div class="field-grid three batch-options">
             <label class="check-field"><input id="recursive-input" type="checkbox"><span data-i18n="recursive">サブフォルダも処理</span></label>
@@ -205,7 +206,8 @@
         <div id="wizard-step-model" class="wizard-step panel form-panel hidden">
           <h2 data-i18n="wizardModelTitle">モデルを選ぶ</h2>
           <p class="muted" data-i18n="wizardModelBody">既定モデル (large-v3-turbo) を取得します。話者分離も使う場合は、pyannoteモデルの利用条件への同意とHugging Faceトークンが追加で必要です。</p>
-          <div class="notice neutral" data-i18n="wizardModelSelected">large-v3-turbo（高精度・既定）を使用します。</div>
+          <label><span data-i18n="asrModel">ASRモデル</span><select id="wizard-model-select"></select></label>
+          <div id="wizard-model-note" class="notice neutral" data-i18n="wizardModelSelected">large-v3-turbo（高精度・既定）を使用します。</div>
           <div class="form-actions">
             <button id="wizard-skip-model" class="button secondary" type="button" data-i18n="wizardLater">後で行う</button>
             <button id="wizard-model-next" class="button primary" type="button" data-i18n="wizardDownload">モデルを取得</button>
@@ -276,6 +278,16 @@
             <button id="wizard-finish" class="button primary" type="button" data-i18n="wizardFinish">文字起こしを始める</button>
           </div>
         </div>
+      </section>
+
+      <section id="view-models" class="view">
+        <header class="page-header"><div><p class="eyebrow">MODEL MANAGEMENT</p><h1 data-i18n="modelsTitle">モデル管理</h1><p class="lede" data-i18n="modelsLead">導入済みモデルと取得可能なカタログを管理します。ダウンロードは明示操作でのみ開始します。</p></div><button id="refresh-models" class="button secondary" data-i18n="refresh">再検出</button></header>
+        <div id="models-alert" class="notice hidden"></div>
+        <section class="panel model-management-summary"><div><span data-i18n="profile">プロファイル</span><strong id="models-profile">—</strong></div><div><span data-i18n="modelStorage">保存先</span><strong id="models-path">—</strong></div></section>
+        <div class="model-toolbar"><label class="check-field"><input id="show-all-models" type="checkbox"><span data-i18n="showAllModels">英語専用を含む全件表示</span></label></div>
+        <section id="model-catalog" class="model-catalog"></section>
+        <section class="panel form-panel openvino-panel"><h2 data-i18n="openvinoIr">OpenVINO エンコーダー IR</h2><p class="muted" data-i18n="openvinoNotice">生成時は追加のPyTorch重み（最大約3GB）を取得します。ネイティブビルドは前提を確認して `utteran native build` を実行してください。</p><div id="openvino-list"></div></section>
+        <section id="model-progress" class="panel progress-panel hidden"><div class="progress-header"><div><p class="eyebrow">IN PROGRESS</p><h2 id="model-progress-title" data-i18n="processing">処理しています</h2></div><button id="cancel-model-action" class="button danger" data-i18n="cancel">キャンセル</button></div><div class="progress-track indeterminate"><div></div></div><pre id="model-log"></pre></section>
       </section>
 
       <section id="view-settings" class="view">

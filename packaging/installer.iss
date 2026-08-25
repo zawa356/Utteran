@@ -44,6 +44,7 @@ SolidCompression=yes
 WizardStyle=modern
 LicenseFile={#RepoRoot}\LICENSE
 UninstallDisplayIcon={app}\{#MyAppExeName}
+SetupIconFile={#RepoRoot}\icon\utteran.ico
 ChangesEnvironment=no
 ; Set only when build.ps1 is given a signing command (-SignCommand); an
 ; unsigned build never references SignTool at all, so ISCC does not
@@ -104,12 +105,14 @@ Source: "{#RepoRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\README.en.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#RepoRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\icon\utteran-glyph-512.png"; DestDir: "{app}\icon"; Flags: ignoreversion
+Source: "{#RepoRoot}\icon\utteran.ico"; DestDir: "{app}\icon"; Flags: ignoreversion
 Source: "{#RepoRoot}\src\utteran\*"; DestDir: "{app}\src\utteran"; Flags: recursesubdirs ignoreversion; Excludes: "__pycache__,*.pyc"
 Source: "{#RepoRoot}\src\utteran_gui\*"; DestDir: "{app}\src\utteran_gui"; Flags: recursesubdirs ignoreversion; Excludes: "__pycache__,*.pyc"
 
 [Icons]
-Name: "{autoprograms}\utteran"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
-Name: "{autodesktop}\utteran"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\utteran"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\utteran"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 ; Do not launch the GUI from Setup's completion page. Inno Setup enables
 ; Windows RedirectionGuard on its own process. A GUI started here inherits

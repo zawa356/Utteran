@@ -243,6 +243,32 @@ def test_model_download_requires_an_existing_profile_venv(tmp_path: Path) -> Non
         service.start_model_download("cpu", "faster-whisper:large-v3-turbo")
 
 
+def test_model_management_action_uses_explicit_cli_command_without_wizard_stage(
+    tmp_path: Path,
+) -> None:
+    executable = _create_profile(tmp_path, "intel")
+    process = FakeWizardProcess(["取得完了\n"])
+    captured: list[str] = []
+
+    def popen(command: list[str], **_kwargs: Any) -> FakeWizardProcess:
+        captured.extend(command)
+        return process
+
+    service = _service(tmp_path, popen=popen)
+    started = service.start_model_action("intel", "download", "whisper-cpp:large-v3-turbo-q5_0")
+    process.returncode = 0
+    process.finished.set()
+    _wait_until(lambda: service.snapshot(str(started["id"]))["status"] == "completed")
+
+    assert captured == [
+        str(executable),
+        "models",
+        "download",
+        "whisper-cpp:large-v3-turbo-q5_0",
+    ]
+    assert service.status()["completed_stages"] == []
+
+
 def test_smoke_test_requires_an_existing_profile_venv(tmp_path: Path) -> None:
     service = _service(tmp_path)
     with pytest.raises(WizardProfileMissingError):

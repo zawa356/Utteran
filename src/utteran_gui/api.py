@@ -89,6 +89,12 @@ class WizardJobPayload(BaseModel):
     diarization_enabled: bool = False
 
 
+class ModelActionPayload(BaseModel):
+    profile: Literal["cpu", "cuda", "intel", "vulkan"]
+    action: Literal["download", "remove", "verify", "prepare_openvino", "remove_openvino"]
+    model_ref: str = Field(min_length=1, max_length=200)
+
+
 class WizardTokenPreflightPayload(BaseModel):
     profile: Literal["cpu", "cuda", "intel", "vulkan"]
     check_model: str = Field(
@@ -185,6 +191,10 @@ def create_app(
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(web_root / "index.html")
+
+    @app.get("/logo", include_in_schema=False)
+    def logo() -> FileResponse:
+        return FileResponse(repo_root / "icon" / "utteran-glyph-512.png")
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -334,6 +344,19 @@ def create_app(
             return selected_wizard.snapshot(job_id)
         except WizardUnknownJobError:
             raise HTTPException(status_code=404, detail="Job not found") from None
+
+    @app.post("/api/models/actions", status_code=202)
+    def start_model_action(payload: ModelActionPayload) -> dict[str, object]:
+        try:
+            return selected_wizard.start_model_action(
+                payload.profile, payload.action, payload.model_ref
+            )
+        except WizardBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except WizardProfileMissingError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
 
     @app.post("/api/wizard/jobs/{job_id}/cancel", status_code=202)
     def cancel_wizard_job(job_id: str) -> dict[str, object]:

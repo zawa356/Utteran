@@ -38,6 +38,7 @@ from PyInstaller.utils.win32.versioninfo import (
 REPO_ROOT = os.path.dirname(os.path.abspath(SPECPATH))  # noqa: F821  (SPECPATH is packaging/'s own dir)
 SRC_ROOT = os.path.join(REPO_ROOT, "src")
 WEB_ASSETS_DIR = os.path.join(SRC_ROOT, "utteran_gui", "web")
+APP_ICON = os.path.join(REPO_ROOT, "icon", "utteran.ico")
 BUILD_VERSION = os.environ.get("UTTERAN_BUILD_VERSION", "0.0.0")
 version_parts = tuple(int(part) for part in BUILD_VERSION.split("."))
 if len(version_parts) != 3:
@@ -114,6 +115,7 @@ exe = EXE(  # noqa: F821
     exclude_binaries=True,
     name="utteran-gui",
     console=False,
+    icon=APP_ICON,
     version=version_info,
 )
 
