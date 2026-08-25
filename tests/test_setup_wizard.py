@@ -13,7 +13,6 @@ from utteran_gui.settings import SettingsStore
 from utteran_gui.setup_wizard import (
     STAGE_MARKER,
     SetupWizardService,
-    WizardBusyError,
     WizardNotReadyError,
     WizardProfileMissingError,
 )
@@ -200,18 +199,30 @@ def test_model_download_persists_asr_and_diarization_as_distinct_stages(tmp_path
     assert service.status()["completed_stages"] == ["diarization_model", "asr_model"]
 
 
-def test_only_one_wizard_step_runs_at_a_time(tmp_path: Path) -> None:
-    process = FakeWizardProcess()
-    service = _service(tmp_path, popen=lambda _command, **_kwargs: process)
+def test_wizard_steps_are_queued_and_run_one_at_a_time(tmp_path: Path) -> None:
+    first_process = FakeWizardProcess()
+    second_process = FakeWizardProcess()
+    launched: list[FakeWizardProcess] = []
+
+    def popen(_command: list[str], **_kwargs: Any) -> FakeWizardProcess:
+        process = [first_process, second_process][len(launched)]
+        launched.append(process)
+        return process
+
+    service = _service(tmp_path, popen=popen)
 
     started = service.start_venv_build("cpu")
     _wait_until(lambda: service.snapshot(str(started["id"]))["status"] == "running")
-    try:
-        with pytest.raises(WizardBusyError):
-            service.start_venv_build("cuda")
-    finally:
-        process.returncode = 0
-        process.finished.set()
+    queued = service.start_venv_build("cuda")
+    assert service.snapshot(str(queued["id"]))["status"] == "starting"
+    assert launched == [first_process]
+
+    first_process.returncode = 0
+    first_process.finished.set()
+    _wait_until(lambda: service.snapshot(str(queued["id"]))["status"] == "running")
+    assert launched == [first_process, second_process]
+    second_process.returncode = 0
+    second_process.finished.set()
 
 
 def test_cancel_uses_injected_tree_killer(tmp_path: Path) -> None:
@@ -265,6 +276,7 @@ def test_model_management_action_uses_explicit_cli_command_without_wizard_stage(
         "models",
         "download",
         "whisper-cpp:large-v3-turbo-q5_0",
+        "--progress-json",
     ]
     assert service.status()["completed_stages"] == []
 

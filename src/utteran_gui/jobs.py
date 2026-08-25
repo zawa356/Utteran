@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 from utteran_gui.cli import CliAdapter, TranscriptionOptions
+from utteran_gui.operation_queue import OperationQueue, QueueStatus
 from utteran_gui.processes import PopenFactory, TreeKiller, build_popen_kwargs, kill_process_tree
 from utteran_gui.security import mask_secrets, sanitize_json
 
@@ -57,44 +58,52 @@ class JobManager:
         popen_factory: PopenFactory | None = None,
         tree_killer: TreeKiller | None = None,
         stall_seconds: float = 30.0,
+        operation_queue: OperationQueue | None = None,
     ) -> None:
         self.cli = cli
         self._popen_factory = popen_factory or cast(PopenFactory, subprocess.Popen)
         self._tree_killer = tree_killer or kill_process_tree
         self._stall_seconds = stall_seconds
+        self.queue = operation_queue or OperationQueue()
         self._lock = threading.RLock()
         self._jobs: dict[str, GuiJob] = {}
-        self._active_id: str | None = None
 
     def start(self, options: TranscriptionOptions) -> dict[str, object]:
         command, environment = self.cli.build_transcribe_command(options)
         with self._lock:
-            if self._active_id is not None:
-                active = self._jobs[self._active_id]
-                if active.status not in TERMINAL_STATUSES:
-                    raise JobBusyError("Only one transcription can run at a time")
             job_id = uuid.uuid4().hex
             job = GuiJob(job_id, options, command, environment)
             self._jobs[job_id] = job
-            self._active_id = job_id
-        threading.Thread(
-            target=self._run,
-            args=(job_id,),
-            name=f"utteran-gui-job-{job_id[:8]}",
-            daemon=True,
-        ).start()
+        self.queue.submit(
+            job_id,
+            kind="transcription",
+            label=options.input_path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1],
+            runner=lambda: self._run_queued(job_id),
+            canceller=lambda: self._cancel_direct(job_id),
+        )
         return self.snapshot(job_id)
 
     def cancel(self, job_id: str) -> dict[str, object]:
+        self.queue.cancel(job_id)
+        return self.snapshot(job_id)
+
+    def _cancel_direct(self, job_id: str) -> None:
         with self._lock:
             job = self._job(job_id)
             if job.status in TERMINAL_STATUSES:
-                return self._snapshot(job)
+                return
             job.cancel_requested = True
             process = job.process
+            if process is None:
+                self._finish_cancelled(job)
+                return
         if process is not None and process.poll() is None:
             self._tree_killer(process)
-        return self.snapshot(job_id)
+
+    def _run_queued(self, job_id: str) -> QueueStatus:
+        self._run(job_id)
+        status = self.snapshot(job_id)["status"]
+        return cast(QueueStatus, status)
 
     def snapshot(self, job_id: str) -> dict[str, object]:
         with self._lock:
@@ -195,8 +204,6 @@ class JobManager:
                     "synthetic": True,
                 },
             )
-        if self._active_id == job.id:
-            self._active_id = None
 
     def _finish_cancelled(self, job: GuiJob) -> None:
         self._finish(job, 130)

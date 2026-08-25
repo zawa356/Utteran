@@ -22,6 +22,7 @@ from utteran_gui.cli import CliAdapter, CliError, RegenerationOptions, Transcrip
 from utteran_gui.environment import EnvironmentService
 from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
+from utteran_gui.operation_queue import OperationQueue
 from utteran_gui.processes import build_creation_kwargs
 from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
 from utteran_gui.setup_wizard import (
@@ -132,6 +133,7 @@ def create_app(
     job_manager: JobManager | None = None,
     history_service: HistoryService | None = None,
     wizard_service: SetupWizardService | None = None,
+    operation_queue: OperationQueue | None = None,
 ) -> FastAPI:
     """Create one session-scoped application without importing the CLI package."""
     if not session_key:
@@ -140,10 +142,17 @@ def create_app(
     selected_settings = settings_store or SettingsStore()
     selected_tokens = token_store or TokenStore()
     selected_environment = environment_service or EnvironmentService(selected_cli)
-    selected_jobs = job_manager or JobManager(selected_cli)
+    selected_queue = operation_queue or (
+        job_manager.queue
+        if job_manager is not None
+        else wizard_service.queue
+        if wizard_service is not None
+        else OperationQueue()
+    )
+    selected_jobs = job_manager or JobManager(selected_cli, operation_queue=selected_queue)
     selected_history = history_service or HistoryService(selected_cli)
     selected_wizard = wizard_service or SetupWizardService(
-        selected_cli, settings_store=selected_settings
+        selected_cli, settings_store=selected_settings, operation_queue=selected_queue
     )
     web_root = Path(__file__).with_name("web")
     app = FastAPI(title="utteran GUI", docs_url=None, redoc_url=None, openapi_url=None)
@@ -208,6 +217,17 @@ def create_app(
     def environment(profile: str | None = None) -> dict[str, object]:
         selected = profile or selected_settings.load().default_profile
         return selected_environment.snapshot(selected)
+
+    @app.get("/api/queue")
+    def operation_queue_status() -> list[dict[str, object]]:
+        return selected_queue.list()
+
+    @app.post("/api/queue/{item_id}/cancel", status_code=202)
+    def cancel_queue_item(item_id: str) -> dict[str, object]:
+        try:
+            return selected_queue.cancel(item_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Queue item not found") from None
 
     @app.get("/api/settings")
     def get_settings() -> dict[str, object]:

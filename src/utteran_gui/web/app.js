@@ -488,12 +488,17 @@
           const onLine = (event) => {
             const data = JSON.parse(event.data);
             if (data.stage) $("wizard-job-stage").textContent = data.stage;
+            if (data.event === "progress" && Number.isFinite(data.ratio)) {
+              $("wizard-progress-bar").style.width = `${Math.min(100, data.ratio * 100)}%`;
+              const detail = progressDetail(data);
+              if (detail) $("wizard-job-stage").textContent = detail;
+            }
             if (data.message) {
               $("wizard-job-log").textContent += `${data.message}\n`;
               $("wizard-job-log").scrollTop = $("wizard-job-log").scrollHeight;
             }
           };
-          ["stage_start", "log", "error"].forEach((name) =>
+          ["stage_start", "progress", "log", "error"].forEach((name) =>
             wizardState.source.addEventListener(name, onLine),
           );
           wizardState.poller = setInterval(async () => {
@@ -605,6 +610,10 @@
         ]
       : [
           { id: "faster-whisper:large-v3-turbo", label: "large-v3-turbo (推奨)" },
+          { id: "faster-whisper:small", label: "small (軽量・バランス)" },
+          { id: "faster-whisper:base", label: "base (軽量・高速)" },
+          { id: "faster-whisper:tiny", label: "tiny (最小・試用向け)" },
+          { id: "faster-whisper:medium", label: "medium (精度重視)" },
           { id: "faster-whisper:large-v3", label: "large-v3 (高精度・大容量)" },
           { id: "faster-whisper:kotoba-whisper-v2.0", label: "Kotoba-Whisper v2.0 (日本語)" },
         ];
@@ -678,6 +687,13 @@
           return;
         }
         wizardState.completedStages.add("preflight");
+      }
+      if (!wizardState.completedStages.has("vad_model")) {
+        $("wizard-progress-title").textContent = t("wizardStepVadModel");
+        await runWizardJob("model_download", {
+          model_ref: "whisper-cpp-vad:silero-v6.2.0",
+        });
+        wizardState.completedStages.add("vad_model");
       }
       if (wizardState.wantDiarization && !wizardState.completedStages.has("diarization_model")) {
         $("wizard-progress-title").textContent = t("wizardStepDiarizationModel");
@@ -888,12 +904,15 @@
     };
     try {
       $("start-button").disabled = true;
+      state.source?.close();
+      clearInterval(state.poller);
       $("result-panel").classList.add("hidden");
       $("progress-panel").classList.remove("hidden");
       $("log-output").textContent = "";
       renderStageList();
       state.started = Date.now();
       state.job = await api("/api/jobs", { method: "POST", body: JSON.stringify(payload) });
+      $("start-button").disabled = false;
       state.source = new EventSource(`/api/jobs/${state.job.id}/events`);
       [
         "job_resolved",
@@ -1434,8 +1453,12 @@
     head.append(title, stateLabel);
     const description = document.createElement("p");
     description.textContent = model.description || "";
+    const reason = document.createElement("p");
+    reason.className = "model-reason";
+    reason.textContent = `${model.execution_label || ""} · ${model.recommendation_reason || ""}`;
     const metadata = document.createElement("small");
-    metadata.textContent = `${model.backend} · ${model.format || "—"} · ${formatBytes(model.installed ? model.size_bytes : model.approximate_size_bytes)}`;
+    const quantization = model.quantization ? ` · ${model.quantization}` : "";
+    metadata.textContent = `${model.backend} · ${model.format || "—"}${quantization} · ${formatBytes(model.installed ? model.size_bytes : model.approximate_size_bytes)}`;
     const actions = document.createElement("div");
     actions.className = "model-card-actions";
     if (model.installed) {
@@ -1453,7 +1476,7 @@
         if (window.confirm(message)) runModelAction("download", model.key, model.display_name);
       }, "primary"));
     }
-    card.append(head, description, metadata, actions);
+    card.append(head, description, reason, metadata, actions);
     return card;
   }
 
@@ -1463,6 +1486,9 @@
     $("model-progress").classList.remove("hidden");
     $("model-progress-title").textContent = label;
     $("model-log").textContent = "";
+    $("model-progress-bar").style.width = "0%";
+    $("model-progress-bytes").textContent = "—";
+    $("model-progress-eta").textContent = "—";
     try {
       const job = await api("/api/models/actions", {
         method: "POST",
@@ -1473,6 +1499,10 @@
       while (true) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         const current = await api(`/api/wizard/jobs/${job.id}`);
+        const progress = [...(current.events || [])].reverse().find(
+          (item) => item.event === "progress",
+        );
+        if (progress) updateModelProgress(progress);
         const logs = current.logs || [];
         if (logs.length > cursor) {
           $("model-log").textContent += `${logs.slice(cursor).join("\n")}\n`;
@@ -1497,6 +1527,57 @@
     }
   }
 
+  function progressDetail(progress) {
+    if (!Number.isFinite(progress.downloaded_bytes) || !Number.isFinite(progress.total_bytes)) {
+      return "";
+    }
+    const rate = Number(progress.rate_bytes_per_second || 0);
+    return `${formatBytes(progress.downloaded_bytes)} / ${formatBytes(progress.total_bytes)}` +
+      (rate > 0 ? ` · ${formatBytes(rate)}/s` : "");
+  }
+
+  function updateModelProgress(progress) {
+    const ratio = Number(progress.ratio || 0);
+    $("model-progress-bar").style.width = `${Math.min(100, ratio * 100)}%`;
+    $("model-progress-bytes").textContent = progressDetail(progress) || "—";
+    $("model-progress-eta").textContent = Number.isFinite(progress.eta_seconds)
+      ? formatTime(progress.eta_seconds)
+      : "—";
+  }
+
+  async function loadQueue() {
+    const items = await api("/api/queue");
+    const visible = items.slice(-20).reverse();
+    $("queue-empty").classList.toggle("hidden", visible.length !== 0);
+    $("queue-list").replaceChildren(...visible.map(queueCard));
+    const active = items.some((item) => ["waiting", "running"].includes(item.status));
+    $("queued-settings-note").classList.toggle("hidden", !active);
+    if (active) $("start-button").textContent = state.settings?.language === "en"
+      ? "Add to queue"
+      : "キューに追加";
+    else $("start-button").textContent = t("start");
+  }
+
+  function queueCard(item) {
+    const card = document.createElement("article");
+    card.className = "panel queue-card";
+    const text = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = item.label || item.kind;
+    const detail = document.createElement("small");
+    detail.textContent = `${item.kind} · ${item.status}` +
+      (item.position ? ` · #${item.position}` : "");
+    text.append(title, detail);
+    card.append(text);
+    if (["waiting", "running"].includes(item.status)) {
+      card.append(actionButton(t("cancel"), async () => {
+        await api(`/api/queue/${item.id}/cancel`, { method: "POST" });
+        await loadQueue();
+      }, "danger"));
+    }
+    return card;
+  }
+
   async function saveSettings(event) {
     event.preventDefault();
     const payload = {
@@ -1518,6 +1599,7 @@
         showView(button.dataset.view);
         if (button.dataset.view === "history") await loadHistory();
         if (button.dataset.view === "models") await loadModels();
+        if (button.dataset.view === "queue") await loadQueue();
       }),
     );
     $("refresh-environment").addEventListener("click", () => loadEnvironment($("profile-select").value));
@@ -1533,6 +1615,7 @@
     $("pick-input-folder").addEventListener("click", () => choosePath("input_folder", "input-path"));
     $("pick-output-folder").addEventListener("click", () => choosePath("output_folder", "output-dir"));
     $("refresh-models").addEventListener("click", loadModels);
+    $("refresh-queue").addEventListener("click", loadQueue);
     $("show-all-models").addEventListener("change", renderModels);
     $("cancel-model-action").addEventListener("click", async () => {
       if (state.modelJob) {
@@ -1633,6 +1716,8 @@
     await loadEnvironment(state.settings.default_profile);
     $("server-dot").title = "127.0.0.1";
     const wizardStatus = await api("/api/wizard/status");
+    await loadQueue();
+    setInterval(() => loadQueue().catch(() => {}), 1000);
     if (wizardStatus.first_run) await openWizard();
   }
 

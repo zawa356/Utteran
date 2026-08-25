@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -157,23 +158,9 @@ class ModelManager:
                 )
             )
         try:
-            if entry.format in {"GGML", "GGML VAD"} and entry.artifact_filename:
-                from huggingface_hub import hf_hub_download
-
-                hf_hub_download(
-                    repo_id=entry.repository_id,
-                    filename=entry.artifact_filename,
-                    token=token,
-                    local_dir=_snapshot_download_path(destination),
-                )
-            else:
-                from huggingface_hub import snapshot_download
-
-                snapshot_download(
-                    repo_id=entry.repository_id,
-                    token=token,
-                    local_dir=_snapshot_download_path(destination),
-                )
+            progress_total = _download_hub_entry(
+                entry, destination, token, progress, cancel
+            )
             downloaded = destination
         except Exception as exc:
             _raise_download_error(entry, exc)
@@ -191,12 +178,19 @@ class ModelManager:
 
             OpenVINOManager(self).refresh_aliases(entry.model_size)
         if progress is not None:
+            final_total = progress_total or entry.approximate_size_bytes
             progress(
                 ProgressEvent(
                     "model-download",
                     1.0,
                     1.0,
                     f"{entry.key} の取得が完了しました",
+                    details={
+                        "downloaded_bytes": final_total,
+                        "total_bytes": final_total,
+                        "rate_bytes_per_second": 0.0,
+                        "eta_seconds": 0.0,
+                    },
                 )
             )
         return downloaded
@@ -466,6 +460,130 @@ def _snapshot_download_path(path: Path) -> Path:
     if os.name != "nt":
         return path
     return Path(_extend_windows_path(str(path.resolve())))
+
+
+def _download_hub_entry(
+    entry: ModelEntry,
+    destination: Path,
+    token: str | None,
+    progress: ProgressCallback | None,
+    cancel: CancelToken | None,
+) -> int | None:
+    """Download with byte progress when requested, retaining the fast default otherwise."""
+    from huggingface_hub import hf_hub_download, snapshot_download
+
+    local_dir = _snapshot_download_path(destination)
+    if progress is None:
+        if entry.format in {"GGML", "GGML VAD"} and entry.artifact_filename:
+            hf_hub_download(
+                repo_id=entry.repository_id,
+                filename=entry.artifact_filename,
+                token=token,
+                local_dir=local_dir,
+            )
+        else:
+            snapshot_download(repo_id=entry.repository_id, token=token, local_dir=local_dir)
+        return None
+
+    filenames: list[tuple[str, int, bool]]
+    try:
+        if entry.format in {"GGML", "GGML VAD"} and entry.artifact_filename:
+            info = hf_hub_download(
+                repo_id=entry.repository_id,
+                filename=entry.artifact_filename,
+                token=token,
+                local_dir=local_dir,
+                dry_run=True,
+            )
+            filenames = [(info.filename, info.file_size, info.is_cached)]
+        else:
+            infos = snapshot_download(
+                repo_id=entry.repository_id,
+                token=token,
+                local_dir=local_dir,
+                dry_run=True,
+            )
+            assert isinstance(infos, list)
+            filenames = [(info.filename, info.file_size, info.is_cached) for info in infos]
+    except TypeError:
+        # Compatibility with older Hub clients and simple injected test doubles.
+        if entry.format in {"GGML", "GGML VAD"} and entry.artifact_filename:
+            hf_hub_download(
+                repo_id=entry.repository_id,
+                filename=entry.artifact_filename,
+                token=token,
+                local_dir=local_dir,
+            )
+        else:
+            snapshot_download(repo_id=entry.repository_id, token=token, local_dir=local_dir)
+        return None
+
+    total = max(1, sum(size for _name, size, _cached in filenames))
+    completed = sum(size for _name, size, cached in filenames if cached)
+    started = time.monotonic()
+    last_emit = 0.0
+
+    def emit(*, force: bool = False) -> None:
+        nonlocal last_emit
+        now = time.monotonic()
+        if not force and now - last_emit < 0.2:
+            return
+        elapsed = max(now - started, 0.001)
+        rate = completed / elapsed
+        eta = (total - completed) / rate if rate > 0 else None
+        progress(
+            ProgressEvent(
+                "model-download",
+                float(min(completed, total)),
+                float(total),
+                f"{entry.key}: {completed} / {total} bytes",
+                details={
+                    "downloaded_bytes": completed,
+                    "total_bytes": total,
+                    "rate_bytes_per_second": rate,
+                    "eta_seconds": eta,
+                },
+            )
+        )
+        last_emit = now
+
+    emit(force=True)
+    for filename, size, cached in filenames:
+        _check_cancel(cancel)
+        if cached:
+            continue
+        file_completed = 0
+
+        from tqdm.auto import tqdm  # type: ignore[import-untyped]
+
+        class ProgressTqdm(tqdm):  # type: ignore[misc]
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                kwargs["disable"] = True
+                super().__init__(*args, **kwargs)
+
+            def update(self, amount: float | None = 1) -> bool | None:
+                nonlocal completed, file_completed
+                _check_cancel(cancel)
+                increment = float(amount or 0)
+                file_completed += int(increment)
+                completed += int(increment)
+                emit()
+                updated = super().update(amount)
+                return None if updated is None else bool(updated)
+
+        hf_hub_download(
+            repo_id=entry.repository_id,
+            filename=filename,
+            token=token,
+            local_dir=local_dir,
+            tqdm_class=ProgressTqdm,
+        )
+        if file_completed < size:
+            completed += size - file_completed
+            emit(force=True)
+    completed = total
+    emit(force=True)
+    return total
 
 
 def _extend_windows_path(path: str) -> str:

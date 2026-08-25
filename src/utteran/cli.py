@@ -555,6 +555,7 @@ def models_list(
                         "recommended": status.entry.recommended,
                         "english_only": status.entry.english_only,
                         "model_size": status.entry.model_size,
+                        "quantization": status.entry.quantization,
                         "installed": status.installed,
                         "path": None if status.path is None else str(status.path),
                     }
@@ -578,6 +579,9 @@ def models_download(
         str | None,
         typer.Argument(help="省略時は番号付き一覧から選択。モデル ID も指定可能"),
     ] = None,
+    progress_json: Annotated[
+        bool, typer.Option("--progress-json", help="進捗をJSON Linesで出力")
+    ] = False,
 ) -> None:
     """モデルIDを指定するか、対話一覧から選択して取得します。"""
     try:
@@ -597,8 +601,11 @@ def models_download(
                 f"取得: {entry.display_name} ({entry.key}, "
                 f"概算 {_format_size(entry.approximate_size_bytes)})"
             )
-            with Progress(console=console) as progress:
-                path = manager.download(entry, progress=RichProgressReporter(progress))
+            if progress_json:
+                path = manager.download(entry, progress=JsonProgressReporter())
+            else:
+                with Progress(console=console) as progress:
+                    path = manager.download(entry, progress=RichProgressReporter(progress))
             console.print(f"取得完了: {path}")
     except KeyboardInterrupt:
         _exit_expected(CancelledError())

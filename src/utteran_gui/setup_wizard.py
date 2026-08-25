@@ -10,6 +10,7 @@ package - it only launches other processes.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ from typing import Any, Literal, cast
 
 from utteran_gui.cli import CliAdapter
 from utteran_gui.jobs import guidance_for
+from utteran_gui.operation_queue import OperationQueue, QueueStatus
 from utteran_gui.processes import PopenFactory, TreeKiller, build_popen_kwargs, kill_process_tree
 from utteran_gui.security import mask_secrets
 from utteran_gui.settings import PROFILE_NAMES, WIZARD_EXECUTION_STAGES, WIZARD_STEPS, SettingsStore
@@ -90,15 +92,16 @@ class SetupWizardService:
         popen_factory: PopenFactory | None = None,
         tree_killer: TreeKiller | None = None,
         stall_seconds: float = 20.0,
+        operation_queue: OperationQueue | None = None,
     ) -> None:
         self.cli = cli
         self._settings = settings_store or SettingsStore()
         self._popen_factory = popen_factory or cast(PopenFactory, subprocess.Popen)
         self._tree_killer = tree_killer or kill_process_tree
         self._stall_seconds = stall_seconds
+        self.queue = operation_queue or OperationQueue()
         self._lock = threading.RLock()
         self._jobs: dict[str, WizardJob] = {}
-        self._active_id: str | None = None
         self._last_successful_smoke_test_profile: str | None = None
 
     def status(self) -> dict[str, object]:
@@ -290,7 +293,7 @@ class SetupWizardService:
         info = self.cli.profile_info(profile)
         if not info.exists:
             raise WizardProfileMissingError(f"Profile venv does not exist yet: {profile}")
-        command = [str(info.executable), "models", "download", model_ref]
+        command = [str(info.executable), "models", "download", model_ref, "--progress-json"]
         return self._start(
             "model_download",
             profile,
@@ -308,7 +311,7 @@ class SetupWizardService:
         if not info.exists:
             raise WizardProfileMissingError(f"Profile venv does not exist yet: {profile}")
         commands = {
-            "download": ["models", "download", model_ref],
+            "download": ["models", "download", model_ref, "--progress-json"],
             "remove": ["models", "remove", model_ref, "--yes"],
             "verify": ["models", "verify", model_ref],
             "prepare_openvino": ["models", "prepare-openvino", model_ref, "--yes"],
@@ -380,15 +383,25 @@ class SetupWizardService:
         )
 
     def cancel(self, job_id: str) -> dict[str, object]:
+        self.queue.cancel(job_id)
+        return self.snapshot(job_id)
+
+    def _cancel_direct(self, job_id: str) -> None:
         with self._lock:
             job = self._job(job_id)
             if job.status in TERMINAL_STATUSES:
-                return self._snapshot(job)
+                return
             job.cancel_requested = True
             process = job.process
+            if process is None:
+                self._finish(job, 130)
+                return
         if process is not None and process.poll() is None:
             self._tree_killer(process)
-        return self.snapshot(job_id)
+
+    def _run_queued(self, job_id: str) -> QueueStatus:
+        self._run(job_id)
+        return cast(QueueStatus, self.snapshot(job_id)["status"])
 
     def snapshot(self, job_id: str) -> dict[str, object]:
         with self._lock:
@@ -415,22 +428,18 @@ class SetupWizardService:
         model_ref: str | None = None,
     ) -> dict[str, object]:
         with self._lock:
-            if self._active_id is not None:
-                active = self._jobs[self._active_id]
-                if active.status not in TERMINAL_STATUSES:
-                    raise WizardBusyError("Only one setup step can run at a time")
             job_id = uuid.uuid4().hex
             job = WizardJob(
                 job_id, kind, profile, command, environment, model_ref=model_ref, cleanup=cleanup
             )
             self._jobs[job_id] = job
-            self._active_id = job_id
-        threading.Thread(
-            target=self._run,
-            args=(job_id,),
-            name=f"utteran-wizard-{job_id[:8]}",
-            daemon=True,
-        ).start()
+        self.queue.submit(
+            job_id,
+            kind=kind,
+            label=model_ref or kind,
+            runner=lambda: self._run_queued(job_id),
+            canceller=lambda: self._cancel_direct(job_id),
+        )
         return self.snapshot(job_id)
 
     def _run(self, job_id: str) -> None:
@@ -493,6 +502,20 @@ class SetupWizardService:
                     },
                 )
                 return
+            try:
+                progress_event = json.loads(stripped)
+            except json.JSONDecodeError:
+                progress_event = None
+            if (
+                isinstance(progress_event, dict)
+                and progress_event.get("event") == "progress"
+                and progress_event.get("schema_version") == 1
+            ):
+                self._append_event(job, progress_event)
+                message = progress_event.get("message")
+                if isinstance(message, str) and message:
+                    job.raw_logs.append(mask_secrets(message))
+                return
             self._append_log(job, stripped)
 
     def _append_log(self, job: WizardJob, line: str, *, is_error: bool = False) -> None:
@@ -529,7 +552,11 @@ class SetupWizardService:
                 stage = (
                     "diarization_model"
                     if (job.model_ref or "").startswith("pyannote:")
-                    else "asr_model"
+                    else (
+                        "vad_model"
+                        if (job.model_ref or "").startswith("whisper-cpp-vad:")
+                        else "asr_model"
+                    )
                 )
                 self._record_stage(stage)
             if job.kind == "smoke_test":
@@ -550,8 +577,6 @@ class SetupWizardService:
                 "duration_seconds": _duration(job),
             },
         )
-        if self._active_id == job.id:
-            self._active_id = None
 
     def _record_stage(self, stage: str) -> None:
         if stage not in WIZARD_EXECUTION_STAGES:

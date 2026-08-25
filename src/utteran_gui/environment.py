@@ -78,6 +78,7 @@ class EnvironmentService:
             native = as_json_dict(self.cli.run_json(active, ["native", "status", "--json"]))
         except CliError as exc:
             errors.append(mask_secrets(str(exc)))
+        models = annotate_model_capabilities(models, devices, native)
         response.update(
             {
                 "devices": devices or None,
@@ -90,6 +91,70 @@ class EnvironmentService:
             }
         )
         return response
+
+
+def annotate_model_capabilities(
+    models: list[dict[str, Any]],
+    devices: dict[str, Any],
+    native: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Describe execution capability independently from model quantization."""
+    ctranslate = _dict(devices.get("ctranslate2"))
+    faster_gpu = any(
+        item.get("usable") is True for item in _list_of_dicts(ctranslate.get("cuda_devices"))
+    )
+    runnable = _dict(native.get("runnable"))
+    native_variants = _dict(_dict(devices.get("native")).get("variants"))
+    whisper_gpu = any(
+        runnable.get(name) is True and native_variants.get(name) is True
+        for name in ("vulkan", "openvino", "openvino_vulkan")
+    )
+    torch = _dict(devices.get("pytorch"))
+    diar_gpu = any(
+        item.get("usable") is True
+        for key in ("cuda_devices", "xpu_devices")
+        for item in _list_of_dicts(torch.get(key))
+    )
+    annotated: list[dict[str, Any]] = []
+    for source in models:
+        model = dict(source)
+        backend = str(model.get("backend", ""))
+        gpu = (
+            faster_gpu
+            if backend == "faster-whisper"
+            else whisper_gpu
+            if backend == "whisper-cpp"
+            else diar_gpu
+            if backend == "pyannote"
+            else False
+        )
+        model["gpu_execution"] = gpu
+        model["execution_label"] = "GPU実行可" if gpu else "CPU実行"
+        if backend == "whisper-cpp-vad":
+            model["execution_label"] = "VAD補助モデル"
+            model["recommendation_reason"] = "無音区間を除き、反復を抑えて処理を高速化します。"
+        elif backend == "whisper-cpp":
+            quantization = str(model.get("quantization") or "f16")
+            model["recommendation_reason"] = (
+                f"この環境ではGPUを利用できます。{quantization}は量子化方式で、"
+                "GPU可否を決めるものではありません。"
+                if gpu
+                else "対応するGPUネイティブ構成がないため、この環境ではCPU実行です。"
+            )
+        elif backend == "faster-whisper":
+            model["recommendation_reason"] = (
+                "この環境のCUDA GPUで実行できます。"
+                if gpu
+                else "この環境ではCTranslate2のGPUが検出されないためCPU実行です。"
+            )
+        elif backend == "pyannote":
+            model["recommendation_reason"] = (
+                "検出済みGPU/XPUで話者分離できます。"
+                if gpu
+                else "この環境では話者分離はCPU実行です。"
+            )
+        annotated.append(model)
+    return annotated
 
 
 def derive_options(

@@ -62,6 +62,7 @@ class JsonProgressReporter:
                 total=progress.total,
                 ratio=ratio,
                 message=progress.message,
+                **progress.details,
             )
 
     def error(self, error: BaseException, exit_code: int) -> None:

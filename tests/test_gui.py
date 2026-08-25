@@ -15,7 +15,11 @@ from utteran_gui import __version__
 from utteran_gui.api import SESSION_HEADER, create_app
 from utteran_gui.app import NativeDialogApi, bind_loopback_socket
 from utteran_gui.cli import CliAdapter, RegenerationOptions, TranscriptionOptions
-from utteran_gui.environment import EnvironmentService, derive_options
+from utteran_gui.environment import (
+    EnvironmentService,
+    annotate_model_capabilities,
+    derive_options,
+)
 from utteran_gui.jobs import JobManager, guidance_for, parse_progress_line
 from utteran_gui.security import mask_secrets
 from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
@@ -468,6 +472,28 @@ def test_dynamic_choices_exclude_unusable_models_and_devices() -> None:
     assert [model["id"] for model in faster["models"]] == ["ready"]
     assert [device["id"] for device in faster["devices"]] == ["cpu", "cuda:0"]
     assert all(device["id"] != "cuda:1" for device in faster["devices"])
+
+
+def test_model_gpu_capability_uses_injected_detection_not_quantization() -> None:
+    devices = {
+        "ctranslate2": {"cuda_devices": []},
+        "native": {"variants": {"vulkan": True}},
+        "pytorch": {"cuda_devices": [], "xpu_devices": []},
+    }
+    models = [
+        {"backend": "faster-whisper", "model_id": "small", "quantization": None},
+        {"backend": "whisper-cpp", "model_id": "base", "quantization": "f16"},
+        {"backend": "whisper-cpp", "model_id": "base-q5_0", "quantization": "q5_0"},
+    ]
+
+    annotated = annotate_model_capabilities(
+        models, devices, {"runnable": {"vulkan": True}}
+    )
+
+    assert annotated[0]["gpu_execution"] is False
+    assert annotated[1]["gpu_execution"] is True
+    assert annotated[2]["gpu_execution"] is True
+    assert "量子化方式" in annotated[2]["recommendation_reason"]
 
 
 def test_environment_reads_all_state_from_profile_json_contracts(

@@ -29,7 +29,14 @@ WIZARD_STEPS = (
     "execution",
     "done",
 )
-WIZARD_EXECUTION_STAGES = ("venv", "preflight", "diarization_model", "asr_model", "smoke")
+WIZARD_EXECUTION_STAGES = (
+    "venv",
+    "preflight",
+    "diarization_model",
+    "vad_model",
+    "asr_model",
+    "smoke",
+)
 
 
 @dataclass(frozen=True)
