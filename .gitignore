@@ -64,3 +64,6 @@ site/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local icon design preview (the canonical assets under icon/ are tracked)
+/icon/preview-actual-size.png
