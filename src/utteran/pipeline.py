@@ -29,7 +29,7 @@ from utteran.errors import (
 )
 from utteran.exporters import export_all
 from utteran.jobs import STAGES, Job, JobStore, StageName, stage_config_hashes
-from utteran.logging import job_log, mask_secrets
+from utteran.logging import execution_context, job_log, mask_secrets, structured_event
 from utteran.memory import (
     GIB,
     CalibrationStore,
@@ -173,8 +173,13 @@ def run_pipeline(
     selected_calibration_store = calibration_store or CalibrationStore()
     try:
         job_log_level = "debug" if config.general.log_level == "debug" else "info"
-        with job.lock(force=force_unlock), job_log(job.root / "utteran.log", job_log_level):
+        with (
+            job.lock(force=force_unlock),
+            job_log(job.root / "utteran.log", job_log_level),
+            execution_context(job.manifest.job_id),
+        ):
             logging.getLogger(__name__).info("ジョブ開始: %s", job.manifest.job_id)
+            structured_event("job_started", job_id=job.manifest.job_id)
             job.reconcile(hashes, force=force or not resume)
             if progress is not None:
                 planned = [stage for stage in STAGES if not job.is_done(stage, hashes[stage])]
@@ -205,6 +210,7 @@ def run_pipeline(
             )
             output_paths = [Path(path) for path in job.manifest.stages["export"].artifacts]
             logging.getLogger(__name__).info("ジョブ完了: %s", job.manifest.job_id)
+            structured_event("job_completed", job_id=job.manifest.job_id)
             return PipelineOutcome(
                 result=result,
                 output_paths=output_paths,
@@ -407,6 +413,7 @@ def _execute_stage(
         elapsed = time.perf_counter() - started
         stage_durations[stage] = elapsed
         logging.getLogger(__name__).info("ステージ完了: %s (%.3f秒)", stage, elapsed)
+        structured_event("stage_completed", stage=stage, duration_seconds=elapsed)
         if progress is not None:
             progress(
                 ProgressEvent(
@@ -432,10 +439,17 @@ def _execute_stage(
     except (CancelledError, KeyboardInterrupt):
         job.interrupt_stage(stage)
         logging.getLogger(__name__).info("ステージ中断: %s", stage)
+        structured_event("stage_interrupted", stage=stage)
         raise
     except Exception as exc:
         job.fail_stage(stage, config_hash, mask_secrets(str(exc)))
         logging.getLogger(__name__).error("ステージ失敗: %s: %s", stage, exc)
+        structured_event(
+            "stage_error",
+            level=logging.ERROR,
+            stage=stage,
+            error_class=type(exc).__name__,
+        )
         raise
 
 
@@ -571,9 +585,21 @@ def _transcribe_asr_measured(
     calibration_store: CalibrationStore,
 ) -> TranscriptionResult:
     """Record a successful ASR stage separately from diarization."""
+    started = time.perf_counter()
     with measure_peak() as monitor:
         result = _transcribe_asr(pool, config, audio_path, progress, cancel)
+    elapsed = time.perf_counter() - started
     minutes = _wav_minutes(audio_path)
+    audio_seconds = minutes * 60.0
+    structured_event(
+        "asr_timing",
+        backend=result.backend,
+        model=result.model_id,
+        device=result.device,
+        duration_seconds=elapsed,
+        audio_seconds=audio_seconds,
+        realtime_factor=(elapsed / audio_seconds if audio_seconds > 0 else None),
+    )
     if monitor.peak_bytes is not None and minutes > 0:
         calibration_store.record(
             "asr",

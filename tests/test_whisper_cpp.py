@@ -10,7 +10,9 @@ from utteran.asr.whisper_cpp import (
     _stage_model,
     build_command,
     is_gpu_initialization_failure,
+    parse_openvino_ir_status,
     parse_progress,
+    summarize_subprocess_error,
 )
 from utteran.config import WhisperCppConfig
 from utteran.models.catalog import get_model
@@ -98,18 +100,34 @@ def test_auto_gpu_initialization_failure_falls_back_once(tmp_path: Path) -> None
 
     assert backend._fallback_variant("failed to initialize Vulkan device") == "vulkan"
     backend._variant = "vulkan"
-    assert backend._fallback_variant("failed to initialize Vulkan device") == "openvino"
+    assert backend._fallback_variant("failed to initialize Vulkan device") is None
 
 
 def test_explicit_whisper_cpp_variant_does_not_fallback(tmp_path: Path) -> None:
     fallback = tmp_path / "vulkan" / "whisper-cli.exe"
     fallback.parent.mkdir(parents=True)
     fallback.touch()
-    backend = WhisperCppBackend(allow_fallback=False)
+    backend = WhisperCppBackend(WhisperCppConfig(variant="openvino_vulkan"))
     backend._variant = "openvino_vulkan"
     backend._backends = {"vulkan": {"executable": str(fallback)}}
 
     assert backend._fallback_variant("failed to initialize Vulkan device") is None
+
+
+def test_openvino_ir_status_parser_is_centralized() -> None:
+    assert parse_openvino_ir_status("OpenVINO encoder initialized") is True
+    assert parse_openvino_ir_status("loading OpenVINO model from 'model.xml'") is True
+    assert parse_openvino_ir_status("in OpenVINO encoder compile routine: error") is False
+    assert parse_openvino_ir_status("whisper.cpp unrelated output") is None
+
+
+def test_error_summary_excludes_possible_recognized_text() -> None:
+    detail = summarize_subprocess_error(
+        "[00:00] recognized private transcript\nOpenVINO encoder init failed: device missing\n"
+    )
+
+    assert "private transcript" not in detail
+    assert "OpenVINO encoder init failed" in detail
 
 
 def test_model_and_openvino_ir_are_staged_together(tmp_path: Path) -> None:

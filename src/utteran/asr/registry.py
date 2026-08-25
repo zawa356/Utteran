@@ -19,10 +19,9 @@ def create_asr_backend(name: str, config: Config | None = None) -> ASRBackend:
             from utteran.asr.whisper_cpp import WhisperCppBackend
 
             settings = WhisperCppConfig() if config is None else config.asr.whisper_cpp
-            return WhisperCppBackend(
-                settings.model_copy(update={"variant": report.auto_selection.asr_device}),
-                allow_fallback=True,
-            )
+            # Keep ``auto`` intact: WhisperCppBackend owns the policy that only an
+            # automatic variant may fall back after native initialization fails.
+            return WhisperCppBackend(settings)
         from utteran.asr.faster_whisper import FasterWhisperBackend
 
         return FasterWhisperBackend()

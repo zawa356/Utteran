@@ -24,6 +24,11 @@ def test_whisper_cpp_defaults() -> None:
     assert config.asr.whisper_cpp.no_context is True
     assert config.asr.whisper_cpp.vad is True
     assert config.asr.whisper_cpp.repetition_limit == 10
+    assert config.general.log_dir is None
+    assert config.general.raw_subprocess_logs is False
+    assert config.general.log_retention_days == 30
+    assert config.general.log_max_mib == 100
+    assert config.general.raw_log_max_mib == 1024
 
 
 def test_vad_default_change_changes_asr_config_hash() -> None:

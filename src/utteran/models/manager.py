@@ -24,6 +24,7 @@ from utteran.errors import (
     ModelAgreementError,
     ModelNotFoundError,
 )
+from utteran.logging import structured_event
 from utteran.models.catalog import ModelEntry, get_model, list_models
 from utteran.types import CancelToken, ProgressCallback, ProgressEvent
 
@@ -133,6 +134,9 @@ class ModelManager:
         _check_cancel(cancel)
         installed, _managed = self.find_installed(entry)
         if installed is not None:
+            structured_event(
+                "model_acquisition", model=entry.key, status="already_installed"
+            )
             if progress is not None:
                 progress(
                     ProgressEvent(
@@ -177,6 +181,12 @@ class ModelManager:
             from utteran.models.openvino import OpenVINOManager
 
             OpenVINOManager(self).refresh_aliases(entry.model_size)
+        structured_event(
+            "model_acquisition",
+            model=entry.key,
+            status="downloaded",
+            bytes=progress_total or entry.approximate_size_bytes,
+        )
         if progress is not None:
             final_total = progress_total or entry.approximate_size_bytes
             progress(

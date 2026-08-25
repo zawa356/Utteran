@@ -88,7 +88,8 @@ NVIDIA hardwareがない環境のCUDA専用観点は失敗にせず、`requires`
 
 - 既定では実行しない（`--include-destructive`または該当ケースを含む明示`--group`指定でのみ実行）
 - 削除系ケースは同じグループ内に復元ケースを対で配置する
-  （例: `P1-7a`削除 → `P1-7b`復元、`P3-7a`clean → `P3-7c`rebuild）
+  （例: `P1-7a`削除 → `P1-7b`復元、`P3-7a`clean → `P6-7`のmissing確認 →
+  `P3-7c`rebuild）。依存する確認caseはID prefixにかかわらず復元sequenceと同じgroupへ置く。
 - 実行前に状態を記録し、実行後に復元することを個別ケースの並びで表現する
 
 ## スキップの判定方法

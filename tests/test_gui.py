@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import platform
 import threading
 import time
@@ -21,6 +22,7 @@ from utteran_gui.environment import (
     derive_options,
 )
 from utteran_gui.jobs import JobManager, guidance_for, parse_progress_line
+from utteran_gui.logging_runtime import _JsonFormatter
 from utteran_gui.security import mask_secrets
 from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
 from utteran_gui.setup_wizard import SetupWizardService
@@ -108,6 +110,17 @@ def test_settings_round_trip_and_token_is_never_returned(tmp_path: Path) -> None
     assert tokens.is_configured()
     assert backend.value == "hf_gui_private_token"
     assert mask_secrets("value=hf_gui_private_token") == "value=hf_****"
+
+
+def test_packaged_gui_app_log_masks_tokens() -> None:
+    record = logging.LogRecord(
+        "gui", logging.ERROR, __file__, 1, "failed hf_gui_app_secret", (), None
+    )
+
+    formatted = _JsonFormatter().format(record)
+
+    assert "hf_gui_app_secret" not in formatted
+    assert "hf_****" in formatted
 
 
 def test_missing_theme_migrates_to_system_but_explicit_existing_theme_is_preserved() -> None:
@@ -248,6 +261,21 @@ def test_theme_and_language_assets_are_externalized() -> None:
     assert 'item.event === "run_summary"' in script
     assert '"run_summary"' in script
     assert "executedStages" in translations and "reusedStages" in translations
+
+
+def test_workspace_grids_and_logging_controls_cannot_force_horizontal_overflow() -> None:
+    web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
+    index = (web / "index.html").read_text(encoding="utf-8")
+    styles = (web / "styles.css").read_text(encoding="utf-8")
+    script = (web / "app.js").read_text(encoding="utf-8")
+
+    assert "repeat(5, minmax(0, 1fr))" in styles
+    assert ".stage-list li { min-width: 0; overflow-wrap: anywhere;" in styles
+    assert ".stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }" in styles
+    assert ".token-actions input { width: min(220px, 100%); min-width: 0; }" in styles
+    assert 'class="view viewer-view"' not in index
+    assert 'id="raw-log-warning"' in index and 'id="open-logs"' in index
+    assert 'state.settings.raw_subprocess_logs' in script
 
 
 def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> None:

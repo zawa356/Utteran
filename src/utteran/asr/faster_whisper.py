@@ -16,6 +16,7 @@ from utteran.errors import (
     ModelNotFoundError,
     VramExhaustedError,
 )
+from utteran.logging import structured_event
 from utteran.models.manager import find_runtime_model
 from utteran.types import (
     ASROptions,
@@ -110,6 +111,14 @@ class FasterWhisperBackend(ASRBackend):
                 _raise_load_error(model_id, selected_device, exc)
         self._model_id = model_id
         self._device = f"cuda:{device_index}" if selected_device == "cuda" else selected_device
+        structured_event(
+            "asr_backend_resolved",
+            backend=self.name,
+            model=model_id,
+            device=self._device,
+            compute_type=selected_compute_type,
+            fallback_allowed=device == "auto",
+        )
 
     def transcribe(
         self,

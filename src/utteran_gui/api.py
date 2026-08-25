@@ -22,6 +22,7 @@ from utteran_gui.cli import CliAdapter, CliError, RegenerationOptions, Transcrip
 from utteran_gui.environment import EnvironmentService
 from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
+from utteran_gui.logging_runtime import gui_logging_status
 from utteran_gui.operation_queue import OperationQueue
 from utteran_gui.processes import build_creation_kwargs
 from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
@@ -237,6 +238,7 @@ def create_app(
         payload["token_store_available"] = token_status.available
         payload["token_store_backend"] = token_status.backend
         payload["token_store_error"] = token_status.error_type
+        payload.update(_logging_status(repo_root))
         return payload
 
     @app.put("/api/settings")
@@ -246,6 +248,7 @@ def create_app(
         token_status = selected_tokens.status()
         response["token_configured"] = token_status.configured
         response["token_store_available"] = token_status.available
+        response.update(_logging_status(repo_root))
         return response
 
     @app.patch("/api/settings")
@@ -255,6 +258,7 @@ def create_app(
         token_status = selected_tokens.status()
         response["token_configured"] = token_status.configured
         response["token_store_available"] = token_status.available
+        response.update(_logging_status(repo_root))
         return response
 
     @app.get("/api/token")
@@ -538,6 +542,16 @@ def create_app(
         return Response(status_code=204)
 
     return app
+
+
+def _logging_status(repo_root: Path) -> dict[str, object]:
+    """Return non-sensitive state needed to keep raw logging visibly apparent."""
+    active = gui_logging_status(install_dir=repo_root)
+    return {
+        "log_dir": str(active.log_dir),
+        "log_dir_fallback": active.fell_back,
+        "raw_subprocess_logs": active.raw_subprocess_logs,
+    }
 
 
 def _to_options(payload: TranscriptionPayload) -> TranscriptionOptions:

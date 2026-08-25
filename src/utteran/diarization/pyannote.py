@@ -25,6 +25,7 @@ from utteran.errors import (
     ModelNotFoundError,
     VramExhaustedError,
 )
+from utteran.logging import structured_event
 from utteran.models.manager import find_runtime_model
 from utteran.types import (
     CancelToken,
@@ -139,6 +140,13 @@ class PyannoteBackend(DiarizationBackend):
         self._pipeline = pipeline
         self._model_id = model_id
         self._device = selected_device
+        structured_event(
+            "diarization_device_resolved",
+            backend=self.name,
+            model=model_id,
+            device=selected_device,
+            fallback_allowed=device == "auto",
+        )
 
     @staticmethod
     def resolve_device(device: str) -> str:

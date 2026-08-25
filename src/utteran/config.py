@@ -29,6 +29,11 @@ CONFIG_TEMPLATE = """[general]
 output_dir = "./output"
 job_dir = ""
 log_level = "info"
+log_dir = ""
+raw_subprocess_logs = false
+log_retention_days = 30
+log_max_mib = 100
+raw_log_max_mib = 1024
 venv_dir = ""
 native_dir = ""
 default_profile = ""
@@ -101,11 +106,16 @@ class GeneralConfig(BaseModel):
     output_dir: Path = Path("./output")
     job_dir: Path | None = None
     log_level: LogLevel = "info"
+    log_dir: Path | None = None
+    raw_subprocess_logs: bool = False
+    log_retention_days: int = Field(default=30, ge=1)
+    log_max_mib: int = Field(default=100, ge=1)
+    raw_log_max_mib: int = Field(default=1024, ge=1)
     venv_dir: Path | None = None
     native_dir: Path | None = None
     default_profile: str | None = None
 
-    @field_validator("job_dir", "venv_dir", "native_dir", mode="before")
+    @field_validator("job_dir", "venv_dir", "native_dir", "log_dir", mode="before")
     @classmethod
     def empty_path_uses_default(cls, value: object) -> object:
         """Translate the documented empty-string sentinel to None."""

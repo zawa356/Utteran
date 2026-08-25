@@ -1,5 +1,47 @@
 # AI 作業状態
 
+## Phase 5j 明示指定・ログ基盤・レイアウト（2026-08-25）
+
+> `registry.py` が `allow_fallback=True` を無条件に渡し、
+> 「明示指定時はフォールバックしない」という Phase 1 以来の原則が
+> 破られていた。原則に対する回帰テストがなかったため、見過ごされた。
+
+この引数はPhase 3bでauto検出結果をwhisper.cppへ渡す際に追加されたが、明示variantまで退避可能にする
+必要はなく、単純なpolicy上書きだった。registryから指定を除去し、`WhisperCppBackend`が元来持つ
+`variant == "auto"`判定へ戻した。fallback試行済み状態を持たせ、同一実行で2回目へ進まないtestを追加した。
+faster-whisperとpyannoteは既に`device == "auto"`の場合だけCPUへ退避し、明示deviceではerrorを返す実装
+だったため変更せず、解決deviceを構造化eventへ記録した。
+
+ログrootはinstall先`logs/`、書込不可ならuser logへ退避する。`app.log`、event限定CLI JSONL、raw、
+diagnosticsを分離し、job内`utteran.log`は維持した。構造化eventは本文を受け付ける通常log recordをfilterし、
+構成、IR load、fallback、device、stage秒、RTF、model取得／IR生成、error分類だけを記録する。raw stderrは
+既定false、明示true時だけ秘密値mask後にjob別保存し、起動警告とGUI常時表示を行う。30日、通常100 MiB、
+raw 1 GiBを既定とした。30日は事後調査期間、100 MiBは小さいeventの余裕、1 GiBはraw肥大化と本文保持
+リスクの抑制という判断である。削除は起動時に日数→raw容量→通常容量の順で行い、手動cleanも提供する。
+
+J-4は内容・file名を記録しない同じ180秒実音声、一時成果物削除、`large-v3-turbo`、
+`openvino_vulkan`、話者分離なしで3回比較した。ASR平均は直接CLI 12.19秒（RTF約0.068）、GUIが使う
+queue/subprocess経路12.81秒（RTF約0.071）で約5.1%差、外側総時間は13.23秒対14.16秒で約7.0%差だった。
+全6回でIR load成功、fallback 0回、実構成`openvino_vulkan`を確認した。疑われた1.7倍差は再現せず、
+残差はprocess監視／queue overheadと実行間変動の範囲と判断した。
+
+`.stage-list`と同種gridを`minmax(0, 1fr)`へ揃え、itemを縮小可能にし、900px以下は2列、token入力は
+可変幅にした。未使用`viewer-view`は削除した。Browser skillによるlight/dark・resize実画面確認を試みたが、
+このsessionではbrowser backendが0件で未実施。DOM/CSS回帰testでoverflow対策、raw警告、log folder導線を
+固定した。
+
+最終検証はmodel不要test 346件、ruff、mypy、JavaScript構文検査が合格した。受入P6はCPU、OpenVINO、
+Vulkan、OpenVINO+Vulkanの実model推論を含む6/6件が合格した。破壊的な`P3-7a clean → P6-7 missing
+確認 → P3-7c build`の中間caseだけがP6 groupに属し、P6単独実行で前提なしに走る既存不整合を修正した。
+既定G系は現在未導入のfaster-whisperモデルを要求する環境不一致により合格扱いにできず、今回変更の
+回帰判定には用いていない。
+
+0.1.7配布版をclean buildし、推論core非同梱check、ProductVersion 0.1.7、Inno Setup compileに成功した。
+installer SHA-256は`4773edbbe85171d4bf65dc567c5ff563769c45817959c75e57ee0e439d6da24a`。
+配布onedir exeを実起動し4秒後も稼働、配布directoryの`logs/app.log`生成、bundle内CSS/HTMLへの
+overflow修正とraw警告同梱を確認後、検証用processだけ終了した。既存のインストール済みGUI processは
+操作していない。browser不在のためlight/dark・resizeの目視だけは未完了として残す。
+
 ## Phase 5i モデル体系・VAD・共通処理キュー（2026-08-25）
 
 > 未実装バックエンド（openvino GenAI）のモデルがカタログに残り、
