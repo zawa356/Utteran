@@ -70,8 +70,10 @@ def test_postflight_accepts_environment_skips_and_no_retained_cuda_job(tmp_path:
             "group": f"G{index}",
             "result": "skip" if index == 13 else "pass",
         }
-        for index in range(14)
+        for index in range(13)
     ]
+    # A rerun evaluates the aggregate before its replacement result is appended.
+    records.append({"id": "G14-08", "group": "G14", "result": "fail"})
     results.write_text("\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8")
     jobs = tmp_path / "jobs"
     testdata = tmp_path / "testdata"

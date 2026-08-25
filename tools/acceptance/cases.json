@@ -1082,7 +1082,11 @@
       0
     ],
     "timeout_seconds": 3600,
-    "requires": {},
+    "requires": {
+      "models": [
+        "faster-whisper:kotoba-whisper-v2.0"
+      ]
+    },
     "destructive": false,
     "estimated_seconds": 2
   },
@@ -1123,7 +1127,11 @@
       0
     ],
     "timeout_seconds": 3600,
-    "requires": {},
+    "requires": {
+      "models": [
+        "faster-whisper:kotoba-whisper-v2.0"
+      ]
+    },
     "destructive": false,
     "estimated_seconds": 2
   },
@@ -1165,7 +1173,11 @@
       0
     ],
     "timeout_seconds": 5400,
-    "requires": {},
+    "requires": {
+      "models": [
+        "faster-whisper:kotoba-whisper-v2.0"
+      ]
+    },
     "destructive": false,
     "estimated_seconds": 2
   },
@@ -1207,7 +1219,11 @@
       0
     ],
     "timeout_seconds": 5400,
-    "requires": {},
+    "requires": {
+      "models": [
+        "faster-whisper:kotoba-whisper-v2.0"
+      ]
+    },
     "destructive": false,
     "estimated_seconds": 2
   },
@@ -1821,7 +1837,9 @@
       "--contains",
       "faster-whisper:large-v3-turbo",
       "--contains",
-      "openvino:large-v3-turbo",
+      "faster-whisper:tiny",
+      "--contains",
+      "whisper-cpp:large-v3-turbo",
       "--",
       "{utteran}",
       "models",
@@ -1924,7 +1942,7 @@
       "--contains",
       "faster-whisper:large-v3-turbo",
       "--contains",
-      "openvino:large-v3-turbo",
+      "whisper-cpp:large-v3-turbo",
       "--",
       "{utteran}",
       "models",
@@ -3342,7 +3360,7 @@
   {
     "id": "G14-08",
     "group": "G14",
-    "description": "Aggregate G0-G13 and verify retained endurance state",
+    "description": "Aggregate G0-G12 and verify optional retained endurance state",
     "command": [
       "{python}",
       "{project}/tools/acceptance/scenarios.py",
@@ -4508,7 +4526,7 @@
       "{project}/tools/acceptance/scenarios.py",
       "command-output",
       "--exit",
-      "1",
+      "2",
       "--",
       "{utteran}",
       "models",
