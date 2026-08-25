@@ -104,6 +104,26 @@ def test_config_token_status_classifies_preflight_without_exposing_token(
 runner = CliRunner()
 
 
+def test_logs_path_and_clean_commands_use_effective_config(tmp_path: Path) -> None:
+    log_dir = tmp_path / "retained-logs"
+    log_dir.mkdir()
+    (log_dir / "old.jsonl").write_text("{}\n", encoding="utf-8")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f"[general]\nlog_dir = {json.dumps(str(log_dir))}\n",
+        encoding="utf-8",
+    )
+
+    shown = runner.invoke(app, ["logs", "path", "--config", str(config_path)])
+    cleaned = runner.invoke(app, ["logs", "clean", "--config", str(config_path)])
+
+    assert shown.exit_code == 0
+    assert str(log_dir.resolve()) in shown.output.replace("\n", "")
+    assert cleaned.exit_code == 0
+    assert "1 files" in cleaned.output
+    assert not log_dir.exists()
+
+
 def test_outcome_summary_exposes_runtime_and_resume_without_transcript() -> None:
     result = PipelineResult(
         input_path=Path("input.wav"),

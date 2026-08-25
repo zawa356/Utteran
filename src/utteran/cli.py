@@ -57,7 +57,15 @@ from utteran.jobs import (
     JobSummary,
     config_hash,
 )
-from utteran.logging import configure_logging, mask_secrets, register_secret
+from utteran.logging import (
+    close_runtime_logging,
+    configure_runtime_logging,
+    mask_secrets,
+    register_secret,
+    remove_all_logs,
+    resolve_log_dir,
+    write_diagnostic_snapshot,
+)
 from utteran.memory import (
     CALIBRATION_MIN_POINTS,
     CALIBRATION_MIN_SPAN_MINUTES,
@@ -101,12 +109,40 @@ config_app = typer.Typer(help="utteran の設定ファイルを管理します�
 profiles_app = typer.Typer(help="実行環境プロファイル (venv) を確認します。", no_args_is_help=True)
 native_app = typer.Typer(help="whisper.cpp ネイティブビルドを管理します。", no_args_is_help=True)
 memory_app = typer.Typer(help="メモリ推定のキャリブレーションを管理します。", no_args_is_help=True)
+logs_app = typer.Typer(help="実行ログの保存場所と削除を管理します。", no_args_is_help=True)
 app.add_typer(models_app, name="models")
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(config_app, name="config")
 app.add_typer(profiles_app, name="profiles")
 app.add_typer(native_app, name="native")
 app.add_typer(memory_app, name="memory")
+app.add_typer(logs_app, name="logs")
+
+
+@logs_app.command("path")
+def logs_path_command(
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """Show the effective log directory and whether fallback was necessary."""
+    config = Config.load(config_path=config_path)
+    selected, preferred, fell_back = resolve_log_dir(config.general.log_dir)
+    console.print(str(selected))
+    if fell_back:
+        console.print(f"書き込み不可のため退避: {preferred}")
+
+
+@logs_app.command("clean")
+def logs_clean_command(
+    config_path: Annotated[Path | None, typer.Option("--config")] = None,
+) -> None:
+    """Delete all retained application, CLI, raw, and diagnostic logs."""
+    config = Config.load(config_path=config_path)
+    selected, _preferred, _fell_back = resolve_log_dir(config.general.log_dir)
+    close_runtime_logging()
+    result = remove_all_logs(selected)
+    console.print(
+        f"ログを削除しました: {result.files_deleted} files / {result.bytes_deleted} bytes"
+    )
 
 
 @memory_app.command("show")
@@ -152,7 +188,7 @@ error_console = Console(stderr=True)
 
 
 @app.callback()
-def main() -> None:
+def main(ctx: typer.Context) -> None:
     """Run the utteran command group."""
     # On Windows, sys.stdout/stderr default to the system locale codepage (e.g. cp932)
     # whenever they are not attached to a real console (piped, redirected to a file, or
@@ -165,6 +201,24 @@ def main() -> None:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure") and (stream.encoding or "").lower() != "utf-8":
             stream.reconfigure(encoding="utf-8", errors="replace")
+    # Every CLI invocation gets an event-only JSONL stream. ``logs clean`` is
+    # excluded because Windows cannot remove the log file currently held open.
+    if ctx.invoked_subcommand != "transcribe" and sys.argv[1:3] != ["logs", "clean"]:
+        try:
+            config = Config.load()
+            configure_runtime_logging(
+                level=config.general.log_level,
+                log_dir=config.general.log_dir,
+                raw_enabled=config.general.raw_subprocess_logs,
+                retention_days=config.general.log_retention_days,
+                max_bytes=config.general.log_max_mib * 1024 * 1024,
+                raw_max_bytes=config.general.raw_log_max_mib * 1024 * 1024,
+                command=ctx.invoked_subcommand or "utteran",
+            )
+        except (OSError, UtteranError) as exc:
+            error_console.print(
+                f"[yellow]ログを初期化できません: {mask_secrets(str(exc))}[/yellow]"
+            )
 
 
 @app.command()
@@ -376,7 +430,15 @@ def transcribe(
             quiet=quiet,
         )
         config = Config.load(config_path=config_path, cli_overrides=overrides)
-        configure_logging(config.general.log_level)
+        configure_runtime_logging(
+            level=config.general.log_level,
+            log_dir=config.general.log_dir,
+            raw_enabled=config.general.raw_subprocess_logs,
+            retention_days=config.general.log_retention_days,
+            max_bytes=config.general.log_max_mib * 1024 * 1024,
+            raw_max_bytes=config.general.raw_log_max_mib * 1024 * 1024,
+            command="transcribe",
+        )
         token_provider = default_token_provider()
         register_secret(token_provider.get_token())
         _validate_transcribe_path(input_path)
@@ -514,6 +576,7 @@ def devices_command(
             venv_dir=config.general.venv_dir,
             native_dir=config.general.native_dir,
         )
+        write_diagnostic_snapshot("devices", report.to_dict())
     except UtteranError as exc:
         _exit_expected(exc)
     if json_output:

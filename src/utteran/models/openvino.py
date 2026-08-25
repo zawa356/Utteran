@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from utteran.errors import DependencyError, ModelNotFoundError
-from utteran.logging import mask_secrets
+from utteran.logging import mask_secrets, structured_event, write_raw_subprocess_log
 from utteran.models.catalog import get_model, list_models
 from utteran.models.manager import ModelManager
 
@@ -60,7 +60,14 @@ class OpenVINOManager:
             )
             generated_xml = work / f"ggml-{model_size}-encoder-openvino.xml"
             generated_bin = generated_xml.with_suffix(".bin")
+            write_raw_subprocess_log("openvino-converter", result.stderr or result.stdout)
             if result.returncode != 0 or not generated_xml.is_file() or not generated_bin.is_file():
+                structured_event(
+                    "openvino_ir_generation",
+                    model_size=model_size,
+                    success=False,
+                    error_class="converter_failed",
+                )
                 raise DependencyError(
                     "OpenVINO encoder IRの変換に失敗しました。"
                     "空き容量とopenvino extraを確認してください。詳細: "
@@ -71,7 +78,14 @@ class OpenVINOManager:
         self.refresh_aliases(model_size)
         if purge_cache:
             _purge_whisper_cache(model_size)
-        return self._status(model_size)
+        completed = self._status(model_size)
+        structured_event(
+            "openvino_ir_generation",
+            model_size=model_size,
+            success=True,
+            path=str(completed.xml_path),
+        )
+        return completed
 
     def list(self) -> list[OpenVINOStatus]:
         """Return a stable status list for every distinct catalog model size."""

@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import quote
 
 from utteran_gui.api import create_app
+from utteran_gui.logging_runtime import configure_gui_logging
 from utteran_gui.settings import TokenStore
 
 WINDOWS_APP_USER_MODEL_ID = "Utteran.Utteran"
@@ -92,6 +93,7 @@ def main() -> None:
         )
         return
     set_windows_app_user_model_id()
+    configure_gui_logging(install_dir=project_root())
     import uvicorn
     import webview
 
