@@ -30,7 +30,7 @@ queue/subprocess経路12.81秒（RTF約0.071）で約5.1%差、外側総時間�
 このsessionではbrowser backendが0件で未実施。DOM/CSS回帰testでoverflow対策、raw警告、log folder導線を
 固定した。
 
-最終検証はmodel不要test 345件、ruff、mypy、JavaScript構文検査が合格した。受入P6はCPU、OpenVINO、
+最終検証はmodel不要test 346件、ruff、mypy、JavaScript構文検査が合格した。受入P6はCPU、OpenVINO、
 Vulkan、OpenVINO+Vulkanの実model推論を含む6/6件が合格した。破壊的な`P3-7a clean → P6-7 missing
 確認 → P3-7c build`の中間caseだけがP6 groupに属し、P6単独実行で前提なしに走る既存不整合を修正した。
 既定G系は現在未導入のfaster-whisperモデルを要求する環境不一致により合格扱いにできず、今回変更の
