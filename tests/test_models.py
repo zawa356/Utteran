@@ -75,13 +75,33 @@ def test_catalog_keeps_same_model_separate_by_backend() -> None:
 
     assert {entry.backend for entry in turbo} == {
         "faster-whisper",
-        "openvino",
         "whisper-cpp",
     }
     assert get_model("faster-whisper:large-v3-turbo").format == "CTranslate2"
-    assert get_model("large-v3-turbo", backend="openvino").format == "OpenVINO IR"
     with pytest.raises(ConfigurationError, match="複数"):
         get_model("large-v3-turbo")
+
+
+def test_catalog_contains_only_implemented_runtime_backends() -> None:
+    implemented = {"faster-whisper", "whisper-cpp", "whisper-cpp-vad", "pyannote"}
+
+    assert {entry.backend for entry in list_models()} <= implemented
+    assert not any(entry.backend == "openvino" for entry in list_models())
+
+
+def test_faster_whisper_catalog_includes_verified_small_to_medium_repositories() -> None:
+    expected = {
+        "tiny": "Systran/faster-whisper-tiny",
+        "base": "Systran/faster-whisper-base",
+        "small": "Systran/faster-whisper-small",
+        "medium": "Systran/faster-whisper-medium",
+    }
+
+    assert {
+        entry.model_id: entry.repository_id
+        for entry in list_models(backend="faster-whisper")
+        if entry.model_id in expected
+    } == expected
 
 
 def test_catalog_has_human_oriented_names_and_japanese_model() -> None:

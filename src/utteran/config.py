@@ -50,7 +50,7 @@ variant = "auto"
 dtw = "auto"
 threads = 0
 no_context = true
-vad = false
+vad = true
 vad_model = ""
 vad_threshold = 0.5
 entropy_threshold = 2.4
@@ -125,7 +125,7 @@ class WhisperCppConfig(BaseModel):
     dtw: str = "auto"
     threads: int = Field(default=0, ge=0)
     no_context: bool = True
-    vad: bool = False
+    vad: bool = True
     vad_model: Path | None = None
     vad_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     entropy_threshold: float = 2.4

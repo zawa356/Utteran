@@ -127,10 +127,16 @@ class WhisperCppBackend(ASRBackend):
             staged_model = _stage_model(self._model_path, temporary_path / "model")
             run_settings = self.settings
             if self.settings.vad:
-                staged_vad = _stage_model(
-                    _resolve_vad_model(self.settings), temporary_path / "vad-model"
-                )
-                run_settings = self.settings.model_copy(update={"vad_model": staged_vad})
+                resolved_vad = _resolve_vad_model(self.settings)
+                if resolved_vad is None:
+                    logging.getLogger(__name__).warning(
+                        "Silero VADモデルが未取得のため、この実行だけVADを無効にします。"
+                        "モデル管理またはセットアップウィザードから取得できます。"
+                    )
+                    run_settings = self.settings.model_copy(update={"vad": False})
+                else:
+                    staged_vad = _stage_model(resolved_vad, temporary_path / "vad-model")
+                    run_settings = self.settings.model_copy(update={"vad_model": staged_vad})
             command = build_command(
                 self._executable,
                 staged_model,
@@ -259,15 +265,16 @@ def build_command(
     )
     if settings.vad:
         vad_model = _resolve_vad_model(settings)
-        command.extend(
-            [
-                "--vad",
-                "--vad-model",
-                str(vad_model),
-                "--vad-threshold",
-                str(settings.vad_threshold),
-            ]
-        )
+        if vad_model is not None:
+            command.extend(
+                [
+                    "--vad",
+                    "--vad-model",
+                    str(vad_model),
+                    "--vad-threshold",
+                    str(settings.vad_threshold),
+                ]
+            )
     if variant in {"openvino", "openvino_vulkan"}:
         command.extend(["-oved", "GPU"])
     if variant == "cpu":
@@ -284,17 +291,14 @@ def build_command(
     return command
 
 
-def _resolve_vad_model(settings: WhisperCppConfig) -> Path:
+def _resolve_vad_model(settings: WhisperCppConfig) -> Path | None:
     if settings.vad_model is not None:
         vad_model = settings.vad_model.expanduser().resolve()
     else:
         vad_entry = get_model("whisper-cpp-vad:silero-v6.2.0")
         installed, _managed = ModelManager().find_installed(vad_entry)
         if installed is None:
-            raise ModelNotFoundError(
-                "whisper.cpp VADモデルが未取得です。"
-                "`utteran models download whisper-cpp-vad:silero-v6.2.0`を実行してください。"
-            )
+            return None
         vad_model = installed / (vad_entry.artifact_filename or "")
     if not vad_model.is_file():
         raise ModelNotFoundError(
