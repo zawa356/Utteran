@@ -14,6 +14,8 @@ from pathlib import Path
 
 from platformdirs import user_config_dir, user_log_dir
 
+from utteran_gui.security import mask_secrets
+
 
 @dataclass(frozen=True)
 class GuiLoggingSettings:
@@ -36,7 +38,7 @@ _STATUS: GuiLoggingStatus | None = None
 
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        return json.dumps(
+        return mask_secrets(json.dumps(
             {
                 "timestamp": datetime.now(UTC).isoformat(),
                 "level": record.levelname.lower(),
@@ -44,7 +46,7 @@ class _JsonFormatter(logging.Formatter):
                 "message": record.getMessage(),
             },
             ensure_ascii=False,
-        )
+        ))
 
 
 def load_logging_settings() -> GuiLoggingSettings:
