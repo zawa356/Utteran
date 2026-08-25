@@ -36,8 +36,8 @@ Vulkan、OpenVINO+Vulkanの実model推論を含む6/6件が合格した。破壊
 既定G系は現在未導入のfaster-whisperモデルを要求する環境不一致により合格扱いにできず、今回変更の
 回帰判定には用いていない。
 
-0.1.6配布版をclean buildし、推論core非同梱check、ProductVersion 0.1.6、Inno Setup compileに成功した。
-installer SHA-256は`c3a9cc77d23a2821618add3ff67183b94cd774912b80586c312bea5fea31eb05`。
+0.1.7配布版をclean buildし、推論core非同梱check、ProductVersion 0.1.7、Inno Setup compileに成功した。
+installer SHA-256は`4773edbbe85171d4bf65dc567c5ff563769c45817959c75e57ee0e439d6da24a`。
 配布onedir exeを実起動し4秒後も稼働、配布directoryの`logs/app.log`生成、bundle内CSS/HTMLへの
 overflow修正とraw警告同梱を確認後、検証用processだけ終了した。既存のインストール済みGUI processは
 操作していない。browser不在のためlight/dark・resizeの目視だけは未完了として残す。
