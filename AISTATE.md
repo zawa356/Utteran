@@ -1,5 +1,50 @@
 # AI 作業状態
 
+## Phase 5i モデル体系・VAD・共通処理キュー（2026-08-25）
+
+> 未実装バックエンド（openvino GenAI）のモデルがカタログに残り、
+> 利用者が使えないモデルを取得できる状態だった。
+> フェーズをまたいで方針が変わった際、カタログの棚卸しが漏れた。
+
+OpenVINO GenAI entryは非表示に残さず完全に除去した。実行registryと照合した結果、残るbackendは
+faster-whisper、whisper-cpp、pyannoteと補助VADだけで、他に「取得できるが使えない」entryはなかった。
+旧entryの取得物は利用者データを無断削除しないため保持し、容量回収が必要な場合だけmodel root配下の
+`openvino/large-v3-turbo`を手動削除する。Systranのtiny／base／small／mediumはHugging Faceの各model
+pageでCTranslate2変換、MIT license、必要fileの実在を確認して登録した。GGML一覧はwhisper.cpp公開artifact
+名と既存固定sizeからの動的生成を維持する。
+
+GPU可否は量子化名から推測せず、profile CLIのCTranslate2 CUDA、native Vulkan／OpenVINO、PyTorch
+CUDA／XPU検出を注入してbackend別に表示する。f16／q5／q8はサイズ・速度・精度の調整と説明し、
+Kotoba-Whisperは日本語特化、tiny～mediumは試用／低スペック用途として位置づけた。
+
+whisper.cpp `vad`の既定をtrueへ変更し、ウィザードはSilero VADを独立stageとして取得する。旧利用者の
+VAD modelがない場合は警告して当該実行だけVADなしで続行し、明示path不正だけは従来どおりerrorにする。
+faster-whisper `vad_filter`とwhisper.cpp `vad`はbackend別の独立設定で、既定変更によりASR config_hashが
+変わり既存jobのASR以降が再計算される。
+
+GUI process内の共通FIFO queueを採用し、文字起こし、wizard、model操作、IR生成を同時1件に直列化した。
+queueは待機／実行／完了／失敗／cancelを表示し個別cancelでき、失敗後も次へ進む。外部process途中状態を
+安全に復元できないため永続化せず、再起動後はcore resume／download再試行を使う。文字起こしoptionは
+投入時snapshotなので、実行中のform変更は次のqueue項目だけへ反映される旨を表示する。
+
+Hugging Face dry-runとfile progress callbackを用いてbytes、割合、速度、ETAをJSONLで通知する。実Silero
+VAD 885,098 bytesを一時model rootへ取得し、0→100%のbyte progressとverify成功を確認した。Windowsでは
+`SetCurrentProcessExplicitAppUserModelID("Utteran.Utteran")`が実機で成功し、pywebviewにも`.ico`を渡す。
+
+最終検証ではpytest 335件、ruff check、mypy、JavaScript構文検査が合格した。受入harnessの既定
+162件は初回147合格、CUDA非搭載によるskip 7、旧catalog期待値等による失敗8だった。期待値と任意の
+G13 enduranceを扱うaggregate再実行を修正し、失敗8件を再実行して全件合格、結果JSONLの最新状態は
+対象162件に失敗・欠落とも0となった。
+
+0.1.6配布版をclean buildし、PyInstallerのicon resource、ProductVersion 0.1.6、Inno Setup compileと
+installer SHA-256 `948c2bd68d35fbe253bc75e5caf146c433fef1173fb6e1ddd87dab93b75084fd`を確認した。
+別directoryへ新規installしたexeを実起動し、タイトルバーのutteran icon、title `utteran`、Alt+Tab対象の
+top-level window、大小のwindow icon handle、処理キューnavigation、画面内version 0.1.6をwindow単体capture
+で確認した。Start Menu shortcutは対象exeのicon resource index 0を参照し、通常install先へ0.1.6を再導入して
+shortcut targetも復元した。Windows taskbarのUI Automationにも`utteran GUI - 1 個の実行中ウィンドウ`という
+buttonが現れ、明示AppUserModelIDと大小のutteran window iconが使われており、Python既定iconへのfallbackは
+発生していない。
+
 ## Phase 5h 性能問題・モデル管理（2026-08-25）
 
 H-1は実機とコードの両方で原因を特定した。Intel profileの`devices --json`は

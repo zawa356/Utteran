@@ -122,8 +122,11 @@ GUIは結果の仮想スクロール、全文検索、話者／時間フィル�
 `merged.json`からexportだけを実行し、ASRや話者分離を再実行しません。
 
 「モデル管理」では推奨／全カタログ、導入状態、用途、概算／実サイズ、保存先を確認し、取得・削除・
-検証とOpenVINO encoder IRの生成・削除を行えます。取得やIR生成は確認後にだけ始まり、進捗表示中に
-キャンセルできます。IR生成では追加のPyTorch重み（最大約3GB）が必要です。native buildはSDK等の
+検証とOpenVINO encoder IRの生成・削除を行えます。取得中は取得量、割合、転送速度、残り時間を表示し、
+完了時に一覧を自動更新します。取得やIR生成は確認後にだけ始まり、進捗表示中にキャンセルできます。
+文字起こし、モデル取得、IR生成は共通キューへ入り、GPUメモリ競合を避けるため1件ずつ実行されます。
+キューはGUI終了時に破棄され、次回はCLIのレジューム／再取得を使用します。IR生成では追加のPyTorch重み
+（最大約3GB）が必要です。native buildはSDK等の
 前提があるため画面の案内に従ってCLIで実行します。
 
 入力file、入力folder、出力folderは選択dialogから指定でき、pathの手入力とdrag-and-dropも利用できます。
@@ -190,6 +193,14 @@ Intel profile相当は`--extra xpu --extra whisper-cpp --extra openvino`、Vulka
 
 ## Modelとtoken
 
+モデルのGPU可否はファイル名の`q5`等ではなく、バックエンドと検出済みデバイスで決まります。
+`faster-whisper`（CTranslate2）はCPU profileではCPU実行、CUDA profileではCUDAを利用できます。
+`whisper-cpp`（GGML）は同じモデルのf16／q5／q8すべてで、ビルド済みVulkan／OpenVINO構成を利用
+できます。量子化は一般にファイルを小さくし速度を上げる代わりに精度へ影響し得る調整であり、GPUを
+有効にするスイッチではありません。`tiny`／`base`／`small`は試用・低スペック環境、`medium`は
+large系より軽い精度重視、`large-v3-turbo`は速度と精度の既定バランスです。Kotoba-Whisperは
+日本語特化モデルです。
+
 ```console
 uv run utteran models list --available
 uv run utteran models download
@@ -211,6 +222,11 @@ $env:HF_TOKEN = "hf_xxxxxxxxxxxxxxxxxxxx"
 tokenを`config.toml`、command line、issue、logへ書かないでください。`.env`はGit除外され、runtimeの
 log／例外はtoken形式をmaskしますが、漏えい時は履歴修正より先にtokenを失効してください。
 GUIから保存したtokenはOS keyringだけに格納され、画面やAPIへ値を返しません。
+
+Silero VADは既定で有効です。ウィザードが軽量VADモデルを取得し、モデル管理からも取得・検証できます。
+旧環境でVADモデルが未取得の場合は突然エラーにせず、その実行だけ警告してVADなしで続行します。
+`[asr.whisper_cpp].vad = false`で明示的に無効化できます。既定変更により既存ジョブのASR設定hashが
+変わり、ASR以降が再計算されます。
 
 ## 文字起こし
 
