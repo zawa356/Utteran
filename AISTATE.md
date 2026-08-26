@@ -1,5 +1,38 @@
 # AI 作業状態
 
+## fix/phase5k-device-probe-timeoutのWIP統合（2026-08-26、未完了）
+
+> `fix/phase5k-device-probe-timeout`は`docs/utteran_Phase5k_指示書.md`が要求する
+> 「該当PC（NVIDIA GPUなし）での検証」が未実施のままmainへ統合された（利用者の指示による、
+> pushはしていない）。完了とはみなさないこと。
+
+`main`（origin由来、Phase 5j統合済み）と`chore/versioning-policy`をこの順にmainへmerge後、
+最後に本branchをmergeした。コンフリクトは`src/utteran/logging.py`のみで、Phase 5kが
+`JsonFormatter`へ`event`/`probe`/`probe_status`/`duration_seconds`という独自キーを追加していた
+ものをPhase 5jの`utteran_event`/`utteran_fields`機構（`structured_event()`）へ統一する形で解決した
+（指示書の「Phase 5jで整備したログ基盤を活用すること」に従った）。呼び出し側の
+`devices.py::_log_probe_outcome`も`structured_event("device_probe", probe=..., probe_status=...,
+duration_seconds=...)`へ書き換えた。
+
+さらに、mypy/ruffで発覚した実装ミスも修正した: `cli.py`の`devices_command`が旧`configure_logging`
+API（Phase 5j以前）をそのまま呼んでいたが、その関数はimportされておらず、かつPhase 5jの
+Typer callback（`main`）が`devices`を含む全subcommand実行前に`configure_runtime_logging`を
+既に呼んでいるため冗長だった。呼び出しごと削除し、未使用になった`default_probe_cache_path`の
+importも削除した。
+
+**既知の回帰（未修正、要対応）**: `tests/test_faster_whisper.py::test_auto_device_falls_back_to_cpu`
+がmerge後に失敗するようになった（merge前のmainでは合格を確認済み）。原因は
+`detect_ctranslate2()`がPhase 5kで`ctranslate2.get_cuda_device_count()`等の呼び出しを
+`run_isolated_probe()`によるsubprocess経由へ変更したため、testが行っていた
+`monkeypatch.setattr("ctranslate2.get_cuda_device_count", ...)`という同一プロセス内monkeypatchが
+子processへ届かなくなったこと。正しい修正には、subprocess分離後のprobe機構に対応した新しい
+test注入方法（`detect_devices`の`probes`引数のような依存性注入、または`run_isolated_probe`自体の
+monkeypatch）への設計が必要で、実機検証を伴うPhase 5k本体の完了作業に属するため今回は
+手を付けていない。他の`tests/test_devices.py`・`tests/test_hardware.py`はこのbranch内で
+更新済みで合格する。
+
+`README.md`・`変更履歴.md`・`要件定義.md`への指示書要求分の更新も未着手。
+
 ## 運用ルール（必読・恒久）
 
 > 変更を加えた作業単位ごとに、パッチバージョンを1つ上げ、`変更履歴.md`に記載する。
