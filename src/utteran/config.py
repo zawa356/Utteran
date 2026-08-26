@@ -32,6 +32,7 @@ log_level = "info"
 venv_dir = ""
 native_dir = ""
 default_profile = ""
+device_probe_timeout_seconds = 20.0
 
 [asr]
 backend = "auto"
@@ -104,6 +105,7 @@ class GeneralConfig(BaseModel):
     venv_dir: Path | None = None
     native_dir: Path | None = None
     default_profile: str | None = None
+    device_probe_timeout_seconds: float = Field(default=20.0, gt=0.0, le=300.0)
 
     @field_validator("job_dir", "venv_dir", "native_dir", mode="before")
     @classmethod

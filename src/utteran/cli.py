@@ -36,7 +36,12 @@ from utteran.config import (
     initialize_config,
     resolve_token_status,
 )
-from utteran.devices import DeviceReport, detect_devices
+from utteran.devices import (
+    DeviceReport,
+    ProbeProgress,
+    default_probe_cache_path,
+    detect_devices,
+)
 from utteran.diarization.registry import preflight_diarization_backend
 from utteran.errors import (
     CancelledError,
@@ -505,14 +510,32 @@ def _outcome_summary(outcome: PipelineOutcome) -> RuntimeSummary:
 def devices_command(
     json_output: Annotated[bool, typer.Option("--json", help="機械可読な JSON を出力")] = False,
     config_path: Annotated[Path | None, typer.Option("--config", help="config.toml のパス")] = None,
+    refresh: Annotated[
+        bool, typer.Option("--refresh", help="キャッシュを使わずデバイスを再検出")
+    ] = False,
+    probe_timeout: Annotated[
+        float | None,
+        typer.Option("--probe-timeout", min=0.1, max=300.0, help="各プローブの秒数"),
+    ] = None,
 ) -> None:
     """Display hardware, runtimes, dependencies, and actual auto choices."""
     try:
         config = Config.load(config_path=config_path)
+        configure_logging(
+            config.general.log_level,
+            default_probe_cache_path().with_name("device-probes.log"),
+        )
         report = detect_devices(
             config.ffmpeg.path,
             venv_dir=config.general.venv_dir,
             native_dir=config.general.native_dir,
+            refresh=refresh,
+            probe_timeout_seconds=(
+                probe_timeout
+                if probe_timeout is not None
+                else config.general.device_probe_timeout_seconds
+            ),
+            progress=_print_probe_progress,
         )
     except UtteranError as exc:
         _exit_expected(exc)
@@ -1504,6 +1527,26 @@ def _format_duration(seconds: float) -> str:
     return f"{int(hours):02d}:{int(minutes):02d}:{seconds_part:06.3f}"
 
 
+def _print_probe_progress(item: ProbeProgress) -> None:
+    labels = {
+        "started": "実行中",
+        "completed": "完了",
+        "timeout": "タイムアウト (判定不能、次へ進みます)",
+        "error": "判定エラー (次へ進みます)",
+        "cached": "キャッシュ済み",
+    }
+    typer.echo(
+        f"[probe {item.position}/{item.total}] {item.label}: {labels[item.state]}",
+        err=True,
+    )
+
+
+def _probe_display(available: bool, status: str) -> str:
+    if status != "completed":
+        return "unknown"
+    return "available" if available else "unavailable"
+
+
 def _print_device_report(report: DeviceReport) -> None:
     """Render a compact human-oriented device table."""
     table = Table("項目", "状態", "詳細")
@@ -1517,7 +1560,7 @@ def _print_device_report(report: DeviceReport) -> None:
     ct2 = report.ctranslate2
     table.add_row(
         "CTranslate2",
-        "available" if ct2.available else "unavailable",
+        _probe_display(ct2.available, ct2.cpu_status),
         f"version={ct2.version}, CPU={','.join(ct2.cpu_compute_types) or '-'}",
     )
     for device in ct2.cuda_devices:
@@ -1533,7 +1576,13 @@ def _print_device_report(report: DeviceReport) -> None:
     torch = report.pytorch
     table.add_row(
         "PyTorch CUDA",
-        "usable" if torch.cuda_available else "unavailable",
+        (
+            "unknown"
+            if torch.cuda_status != "completed"
+            else "usable"
+            if torch.cuda_available
+            else "unavailable"
+        ),
         f"version={torch.version}, devices={len(torch.cuda_devices)}",
     )
     for device in torch.cuda_devices:
@@ -1544,7 +1593,13 @@ def _print_device_report(report: DeviceReport) -> None:
         )
     table.add_row(
         "PyTorch XPU",
-        "usable" if torch.xpu_available else "unavailable",
+        (
+            "unknown"
+            if torch.xpu_status != "completed"
+            else "usable"
+            if torch.xpu_available
+            else "unavailable"
+        ),
         f"version={torch.version}, devices={len(torch.xpu_devices)}",
     )
     for device in torch.xpu_devices:
@@ -1556,12 +1611,12 @@ def _print_device_report(report: DeviceReport) -> None:
         )
     table.add_row(
         "OpenVINO",
-        "available" if report.openvino.available else "unavailable",
+        _probe_display(report.openvino.available, report.openvino.status),
         ", ".join(report.openvino.values) or report.openvino.error or "-",
     )
     table.add_row(
         "ONNX Runtime",
-        "available" if report.onnxruntime.available else "unavailable",
+        _probe_display(report.onnxruntime.available, report.onnxruntime.status),
         ", ".join(report.onnxruntime.values) or report.onnxruntime.error or "-",
     )
     table.add_row(
@@ -1577,12 +1632,12 @@ def _print_device_report(report: DeviceReport) -> None:
         )
     table.add_row(
         "Vulkan (build)",
-        "available" if report.vulkan.build_available else "unavailable",
+        _probe_display(report.vulkan.build_available, report.vulkan.status),
         report.vulkan.build_error or "glslc found",
     )
     table.add_row(
         "Vulkan (runtime)",
-        "available" if report.vulkan.runtime_available else "unavailable",
+        _probe_display(report.vulkan.runtime_available, report.vulkan.status),
         report.vulkan.runtime_device or report.vulkan.runtime_error or "-",
     )
     for name, runnable in report.native.variants.items():
@@ -1592,6 +1647,10 @@ def _print_device_report(report: DeviceReport) -> None:
             report.native.whisper_cpp_tag or "-",
         )
     console.print(table)
+    console.print(
+        "デバイスプローブ: "
+        + ("キャッシュを使用 (--refresh で再取得)" if report.probe_cache_hit else "再取得済み")
+    )
     console.print(
         f"プロファイル: 現在={report.profile.current or '不明'} / "
         + ", ".join(

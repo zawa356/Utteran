@@ -47,6 +47,10 @@ class JsonFormatter(RedactingFormatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        for key in ("event", "probe", "probe_status", "duration_seconds"):
+            value = getattr(record, key, None)
+            if value is not None:
+                payload[key] = value
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return mask_secrets(json.dumps(payload, ensure_ascii=False))
