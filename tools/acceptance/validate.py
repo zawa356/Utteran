@@ -6,7 +6,8 @@ import argparse
 import json
 import re
 import sys
-from collections import Counter
+from collections import defaultdict
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,8 @@ _VTT_TIME = re.compile(r"^\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}$
 _JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]")
 _COUNTED_CHARACTER = re.compile(r"[A-Za-z0-9\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]")
 _SPEAKER_PREFIX = re.compile(r"^[^:\r\n]{1,100}:\s+\S")
+MIN_OUTPUT_SEGMENTS_PER_MINUTE = 1.0
+MAX_LONGEST_OUTPUT_SEGMENT_RATIO = 0.25
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -205,7 +208,7 @@ def validate_intermediate(
             raise AssertionError("exclusive speaker turns are missing")
         previous_end = -1.0
         durations: list[float] = []
-        speaker_durations: Counter[str] = Counter()
+        speaker_durations: defaultdict[str, float] = defaultdict(float)
         for index, turn in enumerate(exclusive):
             start = float(turn["start"])
             end = float(turn["end"])
@@ -257,8 +260,25 @@ def validate_intermediate(
         segments = output["segments"]
         unknown_count = sum(segment.get("speaker") in {None, "UNKNOWN"} for segment in segments)
         unknown_ratio = unknown_count / len(segments) if segments else 0.0
+        known_speakers = {
+            str(segment.get("speaker"))
+            for segment in segments
+            if segment.get("speaker") not in {None, "UNKNOWN"}
+        }
         if require_quality and unknown_ratio >= 0.2:
             raise AssertionError(f"unknown speaker ratio was too high: {unknown_ratio:.3f}")
+        granularity = diarization_granularity_statistics(output)
+        if require_quality and len(known_speakers) >= 2:
+            if granularity["segments_per_minute"] < MIN_OUTPUT_SEGMENTS_PER_MINUTE:
+                raise AssertionError(
+                    "speaker segmentation was too coarse: "
+                    f"{granularity['segments_per_minute']:.3f} segments/minute"
+                )
+            if granularity["longest_segment_ratio"] > MAX_LONGEST_OUTPUT_SEGMENT_RATIO:
+                raise AssertionError(
+                    "speaker segmentation was too coarse: longest segment was "
+                    f"{granularity['longest_segment_ratio']:.3f} of the recording"
+                )
         speakers = [str(speaker) for speaker in output["speakers"]]
         if required_speaker_label is not None and required_speaker_label not in speakers:
             raise AssertionError(f"required speaker label is missing: {required_speaker_label}")
@@ -267,11 +287,31 @@ def validate_intermediate(
                 "output_segment_count": output_stats["segment_count"],
                 "output_speaker_count": output_stats["speaker_count"],
                 "unknown_speaker_ratio": round(unknown_ratio, 6),
+                **granularity,
                 "required_speaker_label_present": required_speaker_label is not None,
             }
         )
     print(json.dumps(stats, ensure_ascii=False, sort_keys=True))
     return stats
+
+
+def diarization_granularity_statistics(payload: dict[str, Any]) -> dict[str, float | int]:
+    """Return content-free output granularity metrics used by acceptance quality gates."""
+    segments = payload.get("segments") or []
+    duration = float(payload.get("input", {}).get("duration", 0.0))
+    longest = max(
+        (float(segment["end"]) - float(segment["start"]) for segment in segments),
+        default=0.0,
+    )
+    speaker_changes = sum(
+        left.get("speaker") != right.get("speaker") for left, right in pairwise(segments)
+    )
+    return {
+        "segments_per_minute": round(len(segments) / (duration / 60.0), 6) if duration > 0 else 0.0,
+        "speaker_change_count": speaker_changes,
+        "longest_segment_seconds": round(longest, 6),
+        "longest_segment_ratio": round(longest / duration, 6) if duration > 0 else 0.0,
+    }
 
 
 def validate_word_presence(path: Path, expect_words: bool) -> dict[str, Any]:

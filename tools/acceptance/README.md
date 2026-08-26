@@ -115,6 +115,17 @@ NVIDIA hardwareがない環境のCUDA専用観点は失敗にせず、`requires`
 
 文字起こし本文は`results.jsonl`同様に一切含めない。
 
+### 話者分離の粒度判定
+
+`validate.py intermediate --require-quality`は平均exclusive turn、UNKNOWN率、dominant話者率に加え、
+複数話者出力へ次を要求する。
+
+- 1.0 segment/分以上
+- 最長出力segmentが音声長の25%以下
+
+3分の正常実測25〜31件と、116.2分の修正前18件（最長52.66%）・修正後859件
+（7.39件/分、最長1.00%）から定めた。`G13-06`を含む`--require-quality`ケースへ適用される。
+
 ## Python API
 
 CLIから起動するだけでなく、`import`して直接呼び出せる。
