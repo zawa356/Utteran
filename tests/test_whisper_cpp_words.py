@@ -55,6 +55,44 @@ def test_invalid_times_are_clamped_to_segment() -> None:
     assert words[0].end == 2.0
 
 
+def test_out_of_segment_or_non_increasing_dtw_falls_back_to_token_offsets() -> None:
+    words = tokens_to_words(
+        [
+            token("\xe3\x81\x82", 10, 100_100, 100_240),
+            token("\xe3\x81\x84", 10, 100_240, 100_390),
+        ],
+        segment_start=100.0,
+        segment_end=100.5,
+    )
+
+    assert [(word.start, word.end) for word in words] == pytest.approx(
+        [(100.1, 100.24), (100.24, 100.39)]
+    )
+
+
+def test_segment_relative_offsets_are_shifted_to_the_recording_timeline() -> None:
+    words = tokens_to_words(
+        [token(" test", -1, 100, 390)],
+        segment_start=100.0,
+        segment_end=100.5,
+    )
+
+    assert (words[0].start, words[0].end) == pytest.approx((100.1, 100.39))
+
+
+def test_valid_offsets_take_priority_over_backward_dtw() -> None:
+    words = tokens_to_words(
+        [
+            token(" first", 20, 1000, 1500),
+            token(" second", 10, 1500, 2000),
+        ],
+        segment_start=0.0,
+        segment_end=3.0,
+    )
+
+    assert [(word.start, word.end) for word in words] == pytest.approx([(1.0, 1.5), (1.5, 2.0)])
+
+
 def test_probability_is_mean_of_constituent_byte_tokens() -> None:
     words = tokens_to_words(
         [token("\xe3", 10, 100, 110, 0.3), token("\x81\x82", 11, 110, 120, 0.9)],

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterable
+from itertools import pairwise
+from typing import Any
 
 from utteran.types import (
     AlignmentOptions,
@@ -22,6 +25,16 @@ def align_transcription(
     options: AlignmentOptions | None = None,
 ) -> list[Segment]:
     """Assign speakers, split changes, absorb tiny islands, merge, and renumber."""
+    segments, _statistics = align_transcription_with_statistics(transcription, diarization, options)
+    return segments
+
+
+def align_transcription_with_statistics(
+    transcription: TranscriptionResult,
+    diarization: DiarizationResult,
+    options: AlignmentOptions | None = None,
+) -> tuple[list[Segment], dict[str, Any]]:
+    """Align speakers and return content-free diagnostics for every reduction stage."""
     selected = options or AlignmentOptions()
     source_turns = (
         diarization.exclusive_turns
@@ -41,10 +54,50 @@ def align_transcription(
         selected.min_segment_duration,
         selected.min_segment_words,
     )
-    merged = _merge_adjacent_same_speaker(absorbed, selected.merge_gap)
+    merged_gaps: list[float] = []
+    merged = _merge_adjacent_same_speaker(absorbed, selected.merge_gap, merged_gaps)
+    statistics = {
+        "source_turns": "exclusive" if diarization.exclusive_turns is not None else "regular",
+        "asr_segment_count": len(transcription.segments),
+        "asr_segments_with_words": sum(bool(segment.words) for segment in transcription.segments),
+        "word_count": sum(len(segment.words) for segment in transcription.segments),
+        "word_speaker_change_count": _word_speaker_change_count(split_segments),
+        "split_segment_count": len(split_segments),
+        "absorbed_segment_count": len(absorbed),
+        "absorption_count": (len(split_segments) - len(absorbed)) // 2,
+        "merge_input_segment_count": len(absorbed),
+        "merged_segment_count": len(merged),
+        "merge_count": len(absorbed) - len(merged),
+        "merge_gap_seconds": _distribution(merged_gaps),
+        "longest_merged_segment_seconds": round(
+            max((segment.end - segment.start for segment in merged), default=0.0), 6
+        ),
+        "speaker_totals_seconds": _segment_speaker_totals(merged),
+    }
     if selected.renumber_speakers:
         _renumber_in_appearance_order(merged)
-    return merged
+    return merged, statistics
+
+
+def speaker_turn_statistics(turns: Iterable[SpeakerTurn]) -> dict[str, Any]:
+    """Summarize diarization turns without exposing recognized text."""
+    ordered = sorted(turns, key=lambda turn: (turn.start, turn.end, turn.speaker))
+    totals: defaultdict[str, float] = defaultdict(float)
+    for turn in ordered:
+        totals[turn.speaker] += max(0.0, turn.end - turn.start)
+    return {
+        "turn_count": len(ordered),
+        "speaker_count": len(totals),
+        "speaker_change_count": sum(
+            left.speaker != right.speaker for left, right in pairwise(ordered)
+        ),
+        "longest_turn_seconds": round(
+            max((turn.end - turn.start for turn in ordered), default=0.0), 6
+        ),
+        "speaker_totals_seconds": {
+            speaker: round(duration, 6) for speaker, duration in sorted(totals.items())
+        },
+    }
 
 
 def assign_word_speaker(
@@ -101,8 +154,10 @@ def _split_segment_by_speaker(
 
     return [
         Segment(
-            start=words[0].start,
-            end=words[-1].end,
+            start=min(word.start for word in words),
+            # DTW may give an earlier token a later end than a following token.
+            # Keep every word contained even when token ends are not monotonic.
+            end=max(word.end for word in words),
             text="".join(word.text for word in words),
             words=list(words),
             speaker=speaker,
@@ -121,7 +176,11 @@ def _absorb_short_speaker_islands(
     index = 1
     while index < len(result) - 1:
         current = result[index]
-        is_short = current.end - current.start < min_duration or len(current.words) < min_words
+        # Missing word metadata means the backend could not provide word timestamps;
+        # it does not mean that the segment contains zero spoken words.
+        is_short = current.end - current.start < min_duration or (
+            bool(current.words) and len(current.words) < min_words
+        )
         surrounding_speaker = result[index - 1].speaker
         if (
             is_short
@@ -136,7 +195,9 @@ def _absorb_short_speaker_islands(
     return result
 
 
-def _merge_adjacent_same_speaker(segments: list[Segment], max_gap: float) -> list[Segment]:
+def _merge_adjacent_same_speaker(
+    segments: list[Segment], max_gap: float, merged_gaps: list[float] | None = None
+) -> list[Segment]:
     """Merge consecutive same-speaker segments separated by at most max_gap."""
     merged: list[Segment] = []
     for segment in segments:
@@ -145,10 +206,42 @@ def _merge_adjacent_same_speaker(segments: list[Segment], max_gap: float) -> lis
             and merged[-1].speaker == segment.speaker
             and segment.start - merged[-1].end <= max_gap
         ):
+            if merged_gaps is not None:
+                merged_gaps.append(max(0.0, segment.start - merged[-1].end))
             merged[-1] = _combine_segments([merged[-1], segment], segment.speaker)
         else:
             merged.append(_copy_segment(segment))
     return merged
+
+
+def _word_speaker_change_count(segments: Iterable[Segment]) -> int:
+    speakers = [segment.speaker for segment in segments if segment.words]
+    return sum(left != right for left, right in pairwise(speakers))
+
+
+def _segment_speaker_totals(segments: Iterable[Segment]) -> dict[str, float]:
+    totals: defaultdict[str, float] = defaultdict(float)
+    for segment in segments:
+        totals[segment.speaker or UNKNOWN_SPEAKER] += max(0.0, segment.end - segment.start)
+    return {speaker: round(duration, 6) for speaker, duration in sorted(totals.items())}
+
+
+def _distribution(values: list[float]) -> dict[str, float | int | None]:
+    ordered = sorted(values)
+    if not ordered:
+        return {"count": 0, "min": None, "median": None, "p95": None, "max": None}
+
+    def percentile(ratio: float) -> float:
+        index = round((len(ordered) - 1) * ratio)
+        return round(ordered[index], 6)
+
+    return {
+        "count": len(ordered),
+        "min": round(ordered[0], 6),
+        "median": percentile(0.5),
+        "p95": percentile(0.95),
+        "max": round(ordered[-1], 6),
+    }
 
 
 def _renumber_in_appearance_order(segments: list[Segment]) -> None:

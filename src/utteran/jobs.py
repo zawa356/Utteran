@@ -24,6 +24,8 @@ INTERMEDIATE_SCHEMA_VERSION = 1
 PRESENTATION_SCHEMA_VERSION = 1
 FINGERPRINT_CHUNK_SIZE = 1024 * 1024
 FLOAT_PRECISION = 12
+ASR_POLICY_VERSION = 3
+ALIGNMENT_POLICY_VERSION = 4
 
 StageName: TypeAlias = Literal["audio", "asr", "diarization", "merge", "export"]
 StageStatus: TypeAlias = Literal["pending", "running", "done", "failed"]
@@ -778,7 +780,11 @@ def stage_config_hashes(config: Config, input_hash: str) -> dict[StageName, str]
         }
     )
     asr_hash = config_hash(
-        {"audio_config_hash": audio_hash, "asr": config.asr.model_dump(mode="json")}
+        {
+            "audio_config_hash": audio_hash,
+            "asr": config.asr.model_dump(mode="json"),
+            "policy_version": ASR_POLICY_VERSION,
+        }
     )
     diarization_hash = config_hash(
         {
@@ -791,6 +797,7 @@ def stage_config_hashes(config: Config, input_hash: str) -> dict[StageName, str]
             "asr_config_hash": asr_hash,
             "diarization_config_hash": diarization_hash,
             "alignment": config.alignment.model_dump(mode="json"),
+            "policy_version": ALIGNMENT_POLICY_VERSION,
         }
     )
     export_hash = config_hash(

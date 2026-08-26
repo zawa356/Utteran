@@ -8,6 +8,7 @@ from utteran.asr.whisper_cpp import (
     WhisperCppBackend,
     _convert_result,
     _stage_model,
+    _word_timestamp_compatible_settings,
     build_command,
     is_gpu_initialization_failure,
     parse_openvino_ir_status,
@@ -45,6 +46,17 @@ def test_build_command_enables_dtw_only_when_words_requested(tmp_path: Path) -> 
     assert "--dtw" not in without_words and "--no-flash-attn" not in without_words
     assert with_words[with_words.index("--max-context") + 1] == "0"
     assert "--entropy-thold" in with_words
+
+
+def test_word_timestamps_disable_internal_vad_to_preserve_original_timeline() -> None:
+    settings = WhisperCppConfig(vad=True)
+
+    with_words = _word_timestamp_compatible_settings(settings, ASROptions(word_timestamps=True))
+    without_words = _word_timestamp_compatible_settings(settings, ASROptions(word_timestamps=False))
+
+    assert with_words.vad is False
+    assert without_words.vad is True
+    assert settings.vad is True
 
 
 def test_debug_no_flash_attention_without_dtw(
