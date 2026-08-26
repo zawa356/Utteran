@@ -3072,7 +3072,7 @@
   {
     "id": "G13-06",
     "group": "G13",
-    "description": "Validate full-recording ASR and diarization intermediates statistically",
+    "description": "Validate full-recording ASR, diarization, and non-coarse output granularity statistically",
     "command": [
       "{python}",
       "{project}/tools/acceptance/validate.py",
