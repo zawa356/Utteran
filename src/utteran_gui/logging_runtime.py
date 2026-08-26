@@ -38,15 +38,29 @@ _STATUS: GuiLoggingStatus | None = None
 
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        return mask_secrets(json.dumps(
-            {
-                "timestamp": datetime.now(UTC).isoformat(),
-                "level": record.levelname.lower(),
-                "logger": record.name,
-                "message": record.getMessage(),
-            },
-            ensure_ascii=False,
-        ))
+        payload: dict[str, object] = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "level": record.levelname.lower(),
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        fields = getattr(record, "gui_fields", None)
+        if isinstance(fields, dict):
+            payload["fields"] = fields
+        return mask_secrets(json.dumps(payload, ensure_ascii=False))
+
+
+def log_stage(stage: str, *, level: int = logging.INFO, **fields: object) -> None:
+    """Record one GUI startup/request stage marker.
+
+    Every stage is emitted through the standard logging module, whose
+    handlers flush synchronously (`StreamHandler.emit` calls `self.flush()`
+    per record) - so a stage that never gets logged after this one means the
+    process stalled between the two calls, which is what Phase 5l's startup
+    freeze investigation needs to localize a hang without guessing.
+    """
+    safe_fields = {key: value for key, value in fields.items() if value is not None}
+    logging.getLogger("utteran_gui.stage").log(level, stage, extra={"gui_fields": safe_fields})
 
 
 def load_logging_settings() -> GuiLoggingSettings:
@@ -112,7 +126,13 @@ def configure_gui_logging(*, install_dir: Path) -> GuiLoggingStatus:
         encoding="utf-8",
     )
     handler.setFormatter(_JsonFormatter())
-    logging.getLogger().addHandler(handler)
+    root = logging.getLogger()
+    # Never set by this module before: the root logger's default level is
+    # WARNING, so every existing `.info(...)` call below (and every stage
+    # marker `log_stage()` emits) was being silently dropped before the
+    # instrumentation added in Phase 5l could show anything.
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
     _STATUS = GuiLoggingStatus(selected, fell_back, settings.raw_subprocess_logs)
     if fell_back:
         logging.getLogger(__name__).warning("ログ保存先をユーザーデータ領域へ退避しました。")
