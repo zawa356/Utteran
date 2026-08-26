@@ -25,8 +25,11 @@ def _prepare_cuda_loader() -> None:
 
 
 def _ctranslate2_cpu() -> dict[str, object]:
+    from utteran.devices import suppress_torch_import
+
     _prepare_cuda_loader()
-    import ctranslate2
+    with suppress_torch_import():
+        import ctranslate2
 
     return {
         "version": str(getattr(ctranslate2, "__version__", "unknown")),
@@ -35,8 +38,11 @@ def _ctranslate2_cpu() -> dict[str, object]:
 
 
 def _ctranslate2_cuda_count() -> dict[str, object]:
+    from utteran.devices import suppress_torch_import
+
     _prepare_cuda_loader()
-    import ctranslate2
+    with suppress_torch_import():
+        import ctranslate2
 
     return {
         "version": str(getattr(ctranslate2, "__version__", "unknown")),
@@ -45,8 +51,11 @@ def _ctranslate2_cuda_count() -> dict[str, object]:
 
 
 def _ctranslate2_cuda(index: int) -> dict[str, object]:
+    from utteran.devices import suppress_torch_import
+
     _prepare_cuda_loader()
-    import ctranslate2
+    with suppress_torch_import():
+        import ctranslate2
 
     return {
         "compute_types": sorted(ctranslate2.get_supported_compute_types("cuda", index))

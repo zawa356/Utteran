@@ -46,6 +46,9 @@ def test_load_uses_local_cache_only_for_model_alias(monkeypatch: pytest.MonkeyPa
             captured.update(kwargs)
 
     monkeypatch.setattr("faster_whisper.WhisperModel", FakeLoader)
+    # Must not depend on whether this machine already has "tiny" downloaded
+    # to its real, unmocked model cache - only on the alias resolution path.
+    monkeypatch.setattr("utteran.asr.faster_whisper.find_runtime_model", lambda *_a, **_kw: None)
     backend = FasterWhisperBackend()
 
     backend.load("tiny", "cpu", "auto")
@@ -53,6 +56,38 @@ def test_load_uses_local_cache_only_for_model_alias(monkeypatch: pytest.MonkeyPa
     assert captured["model_id"] == "tiny"
     assert captured["local_files_only"] is True
     assert captured["compute_type"] == "int8"
+
+
+def test_load_imports_ctranslate2_with_torch_import_suppressed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CTranslate2's model_spec unconditionally imports torch; on this project's
+    Intel profile that torch build's native DLL init can spend minutes of real
+    CPU time (see devices.py::suppress_torch_import). `load()` must shield its
+    `from faster_whisper import WhisperModel` with the same stand-in so CPU
+    inference never pays that cost."""
+    calls: list[str] = []
+
+    class FakeLoader:
+        def __init__(self, model_id: str, **_kwargs: object) -> None:
+            pass
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def fake_suppress_torch_import() -> Any:
+        calls.append("entered")
+        yield True
+        calls.append("exited")
+
+    monkeypatch.setattr("faster_whisper.WhisperModel", FakeLoader)
+    monkeypatch.setattr(
+        "utteran.asr.faster_whisper.suppress_torch_import", fake_suppress_torch_import
+    )
+
+    FasterWhisperBackend().load("tiny", "cpu", "auto")
+
+    assert calls == ["entered", "exited"]
 
 
 def test_model_load_failure_is_actionable(monkeypatch: pytest.MonkeyPatch) -> None:
