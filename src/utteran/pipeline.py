@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import cast
 
-from utteran.align import align_transcription
+from utteran.align import align_transcription_with_statistics, speaker_turn_statistics
 from utteran.asr.base import ASRBackend
 from utteran.asr.registry import create_asr_backend
 from utteran.audio import normalize_audio
@@ -496,7 +496,16 @@ def _merge_result(
     if diarization is None:
         segments = [_copy_segment(segment) for segment in transcription.segments]
     else:
-        segments = align_transcription(
+        structured_event(
+            "diarization_statistics",
+            regular=speaker_turn_statistics(diarization.turns),
+            exclusive=(
+                None
+                if diarization.exclusive_turns is None
+                else speaker_turn_statistics(diarization.exclusive_turns)
+            ),
+        )
+        segments, alignment_statistics = align_transcription_with_statistics(
             transcription,
             diarization,
             AlignmentOptions(
@@ -507,6 +516,7 @@ def _merge_result(
                 renumber_speakers=config.alignment.renumber_speakers,
             ),
         )
+        structured_event("alignment_statistics", **alignment_statistics)
     if progress is not None:
         progress(ProgressEvent("merge", 1.0, 1.0, "話者割当が完了しました"))
     return PipelineResult(
