@@ -1,5 +1,86 @@
 # AI 作業状態
 
+## 長時間話者分離の粗大化調査と修正（0.1.11、2026-08-26）
+
+`fix/long-audio-diarization`で、Intel Arc 140T実機上の116.2分会議音声が18segment、
+最長61.2分となる問題を、既存`asr.json`・`diarization.json`・`merged.json`から本文を出さず
+段階別に切り分けた。
+
+> 受入試験の話者分離判定が「細分化しすぎ」しか検出できず、
+> 「粗すぎる」を通過させていた。3分クリップでの検証は正常だったが、
+> 長時間音声での粒度が確認されていなかった。
+
+### Step 0: Arc実機の基礎確認
+
+- GPUは`Intel(R) Arc(TM) 140T GPU (32GB)`、driver 32.0.101.8626。
+- `devices --json --refresh`は12.85秒、7 probe全完了、timeout 0。XPU/OpenVINO利用可、
+  autoはASR whisper.cpp/Vulkan、話者分離pyannote/XPUを選択した。
+- 0.1.10配布GUIは起動8秒後も`Responding=True`。合成30秒のfaster-whisper/small/CPUは
+  exit 0、ASR 5.745秒、7segmentで完了した。
+
+### Step 1: 段階切り分け（修正前）
+
+報告対象は6972.13秒。pyannote通常版は2498区間・1330交代・最長35.066秒、exclusive版は
+2532区間・1370交代・最長35.066秒で、ここでは粗大化していなかった。通常版を使っても
+最終18件となり、exclusiveも原因ではなかった。
+
+whisper.cpp ASRは1858segmentのうち単語時刻あり1件、合計20語、単語話者交代0だった。
+分割1858→極短吸収34（912回）→同一話者結合18（16回）、最長3671.75秒となった。
+単語のないsegmentに`len(words) < 2`を無条件適用したため、実際には長いsegmentまで極短扱いし、
+前後同一話者への吸収を連鎖させたことが直接原因だった。吸収の単語条件を無効化した既存JSON
+再計算だけでも388件・最長199.57秒へ回復した。
+
+同じ実行ログではwhisper.cppが26,890語をzero lengthとして除外していた。実機ビルドの
+whisper.cpp v1.9.1ソースを確認すると、VAD有効時に`whisper_full_get_segment_t0/t1`は
+`vad_mapping_table`で元音声へ戻す一方、`whisper_full_get_token_data`の`t0/t1/t_dtw`は
+圧縮後timelineのままJSONへ書いていた。3分再現では678 token中、DTW非負614に対して
+segment絶対範囲内5、offset正区間597に対して絶対範囲内4だった。したがってpyannote、
+exclusive、0.5秒merge閾値ではなく、whisper.cpp VADのsegment/token timeline不一致と、
+単語欠落を増幅する吸収条件の複合不具合と確定した。
+
+### Step 2-4: 修正、ログ、受入基準
+
+- 単語時刻要求時はwhisper.cpp内蔵VADを実効無効化する。ASR単独で単語時刻不要なら既定VADを維持。
+- 有効なtoken offsetをDTWより優先し、一部DTWの局所逆行を回避する。分割segmentは所属語の
+  最小開始・最大終了を境界とし、全語包含を保証する。
+- 極短吸収の2語未満条件は`words`が実在する場合だけ適用する。0.3秒・0.5秒の設定値は維持。
+  3〜116分で結合後最長区間比が増加しなかったため、音声長別閾値や結合回数上限は追加しない。
+- `diarization_statistics`、`alignment_statistics`、`asr_word_timestamp_statistics`と
+  `tools/diarization_stats.py`を追加。本文・固有名詞・話者名は記録しない。
+- 受入`--require-quality`へ1.0 segment/分以上、最長segment比25%以下を追加。修正前実測は
+  0.155件/分・52.66%で両方不合格、修正後は7.392件/分・0.996%で両方合格。
+
+### Step 5: 実機検証
+
+同一音声先頭からの実測（whisper.cpp/openvino_vulkan + pyannote/XPU、話者数2）:
+
+| 長さ | 最終segment | 件/分 | 最長segment | 最長比 |
+|---:|---:|---:|---:|---:|
+| 3分 | 38 | 12.67 | 7.72秒 | 4.29% |
+| 10分 | 101 | 10.10 | 27.40秒 | 4.57% |
+| 30分 | 262 | 8.73 | 37.38秒 | 2.08% |
+| 60分 | 536 | 8.93 | 37.98秒 | 1.05% |
+| 116.2分 | 859 | 7.39 | 69.45秒 | 1.00% |
+
+116.2分最終段階はASR 1402/1402segmentに単語あり、25,022語、単語話者交代880、
+分割2084、吸収111回後1862、結合1003回後859。既存構造validatorと新quality gateはexit 0。
+3分CPU/XPU比較は両方38segment、180秒、文字数一致でequivalence exit 0（CPU 80.0秒、
+XPU 37.4秒）。3分はPhase 3別素材の25〜31件と同程度で、10〜116分も破綻点はなかった。
+
+ASR/merge policy versionをstage config hashへ含めたため既存ジョブは該当stage以降を再計算する。
+これは出力segment境界が変わる破壊的変更である。調査用clipは`output/_testdata/`のみでGit対象外、
+元入力は変更・削除・移動していない。
+
+### 品質ゲートと配布物
+
+- `uv run ruff check src tests tools`: pass。
+- `uv run mypy`: pass（58 source files）。
+- `uv run pytest -m "not requires_model"`: 363 passed、既知のStarlette deprecation warning 1件。
+- `uv lock --check`、`git diff --check`: pass。
+- `build.ps1`: pass。配布物は`dist/installer/utteran-setup-0.1.11.exe`、SHA-256は
+  `88a6c74536052f09ef027a8c863de3e2832a295b35885637ae8c37cfeb6f6c14`。
+  同時生成した0.1.11 GUIは起動8秒後も`Responding=True`を確認した。
+
 ## Phase 5m CPU推論の異常な遅延の調査と修正（2026-08-26）
 
 `docs/utteran_CPU推論遅延_指示書.md`相当の指示（会話内、文書化はされていない）に従い、
