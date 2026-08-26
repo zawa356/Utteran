@@ -3,22 +3,36 @@
 from __future__ import annotations
 
 import ctypes.util
+import hashlib
+import importlib.metadata
 import importlib.util
+import json
+import logging
 import os
 import platform
 import shutil
+import signal
 import subprocess
+import sys
 import sysconfig
-import warnings
+import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
+
+from platformdirs import user_cache_dir
 
 from utteran.audio import find_ffmpeg
 from utteran.errors import BackendUnavailableError, FfmpegNotFoundError
+from utteran.logging import structured_event
 
 _DLL_DIRECTORY_HANDLES: list[Any] = []
+DEFAULT_PROBE_TIMEOUT_SECONDS = 20.0
+_PROBE_CACHE_SCHEMA = 1
+_LOGGER = logging.getLogger(__name__)
+ProbeState = Literal["completed", "timeout", "error"]
 
 
 @dataclass(frozen=True)
@@ -53,6 +67,8 @@ class CTranslate2Report:
     cuda_device_count: int
     cuda_devices: tuple[AcceleratorDevice, ...]
     error: str | None = None
+    cpu_status: ProbeState = "completed"
+    cuda_status: ProbeState = "completed"
 
 
 @dataclass(frozen=True)
@@ -66,6 +82,8 @@ class TorchReport:
     error: str | None = None
     xpu_available: bool = False
     xpu_devices: tuple[AcceleratorDevice, ...] = ()
+    cuda_status: ProbeState = "completed"
+    xpu_status: ProbeState = "completed"
 
 
 @dataclass(frozen=True)
@@ -83,6 +101,7 @@ class OptionalRuntimeReport:
     available: bool
     values: tuple[str, ...]
     error: str | None = None
+    status: ProbeState = "completed"
 
 
 @dataclass(frozen=True)
@@ -138,6 +157,30 @@ class VulkanReport:
     runtime_available: bool
     runtime_device: str | None
     runtime_error: str | None
+    status: ProbeState = "completed"
+
+
+@dataclass(frozen=True)
+class ProbeOutcome:
+    """Observable result of one isolated native probe."""
+
+    name: str
+    label: str
+    status: ProbeState
+    duration_seconds: float
+    detail: str | None = None
+    cached: bool = False
+
+
+@dataclass(frozen=True)
+class ProbeProgress:
+    """Progress notification suitable for both terminal and GUI streams."""
+
+    name: str
+    label: str
+    position: int
+    total: int
+    state: Literal["started", "completed", "timeout", "error", "cached"]
 
 
 @dataclass(frozen=True)
@@ -166,6 +209,8 @@ class DeviceReport:
     profile: ProfileReport
     vulkan: VulkanReport
     native: NativeReport
+    probes: tuple[ProbeOutcome, ...] = ()
+    probe_cache_hit: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable report for future GUI consumers."""
@@ -187,6 +232,16 @@ class DeviceProbeSet:
     profile: Callable[[], ProfileReport]
     vulkan: Callable[[], VulkanReport]
     native: Callable[[], NativeReport]
+
+
+@dataclass(frozen=True)
+class _IsolatedReports:
+    ctranslate2: CTranslate2Report
+    torch: TorchReport
+    openvino: OptionalRuntimeReport
+    onnxruntime: OptionalRuntimeReport
+    vulkan: VulkanReport
+    outcomes: tuple[ProbeOutcome, ...]
 
 
 @dataclass(frozen=True)
@@ -226,22 +281,61 @@ def detect_devices(
     venv_dir: Path | None = None,
     native_dir: Path | None = None,
     probes: DeviceProbeSet | None = None,
+    refresh: bool = False,
+    probe_timeout_seconds: float = DEFAULT_PROBE_TIMEOUT_SECONDS,
+    cache_path: Path | None = None,
+    progress: Callable[[ProbeProgress], None] | None = None,
+    hardware_fingerprint: str | None = None,
 ) -> DeviceReport:
-    """Run independent probes and derive the current auto-mode decision."""
-    if probes is None:
-        register_cuda_dll_directories()
+    """Run isolated probes, cache them, and derive the current auto-mode decision."""
+    if probe_timeout_seconds <= 0:
+        raise ValueError("probe_timeout_seconds must be greater than zero")
     selected_probes = probes or system_probes(venv_dir=venv_dir, native_dir=native_dir)
     cpu = selected_probes.cpu()
-    raw_ctranslate2 = selected_probes.ctranslate2()
+    probe_outcomes: tuple[ProbeOutcome, ...] = ()
+    cache_hit = False
+    if probes is None:
+        selected_cache = cache_path or default_probe_cache_path()
+        fingerprint = hardware_fingerprint or device_probe_fingerprint()
+        isolated = None if refresh else _load_probe_cache(selected_cache, fingerprint)
+        if isolated is None:
+            isolated = _detect_isolated_runtimes(probe_timeout_seconds, progress)
+            _save_probe_cache(selected_cache, fingerprint, isolated)
+        else:
+            cache_hit = True
+            isolated = replace(
+                isolated,
+                outcomes=tuple(replace(item, cached=True) for item in isolated.outcomes),
+            )
+            if progress is not None:
+                total = len(isolated.outcomes)
+                for position, outcome in enumerate(isolated.outcomes, start=1):
+                    progress(
+                        ProbeProgress(
+                            outcome.name,
+                            outcome.label,
+                            position,
+                            total,
+                            "cached",
+                        )
+                    )
+        raw_ctranslate2 = isolated.ctranslate2
+        torch = isolated.torch
+        openvino = isolated.openvino
+        onnxruntime = isolated.onnxruntime
+        vulkan = isolated.vulkan
+        probe_outcomes = isolated.outcomes
+    else:
+        raw_ctranslate2 = selected_probes.ctranslate2()
+        torch = selected_probes.torch()
+        openvino = selected_probes.openvino()
+        onnxruntime = selected_probes.onnxruntime()
+        vulkan = selected_probes.vulkan()
     libraries = selected_probes.libraries()
     ctranslate2 = _apply_cuda_library_status(raw_ctranslate2, libraries)
-    torch = selected_probes.torch()
-    openvino = selected_probes.openvino()
-    onnxruntime = selected_probes.onnxruntime()
     ffmpeg = selected_probes.ffmpeg(ffmpeg_path)
     backends = selected_probes.backends()
     profile = selected_probes.profile()
-    vulkan = selected_probes.vulkan()
     native = selected_probes.native()
     auto_selection, warnings = _auto_selection(ctranslate2, torch, openvino, vulkan, native)
     if ctranslate2.cuda_device_count and not any(
@@ -265,7 +359,601 @@ def detect_devices(
         profile=profile,
         vulkan=vulkan,
         native=native,
+        probes=probe_outcomes,
+        probe_cache_hit=cache_hit,
     )
+
+
+@dataclass(frozen=True)
+class _ProbeRun:
+    outcome: ProbeOutcome
+    result: dict[str, Any] | None
+
+
+def default_probe_cache_path() -> Path:
+    """Return the profile-independent platform cache used by ``devices``."""
+    return Path(user_cache_dir("utteran")) / "device-probes-v1.json"
+
+
+def device_probe_fingerprint() -> str:
+    """Hash hardware, driver, interpreter, and runtime-package identities.
+
+    Only the SHA-256 digest is stored.  Device serials, user names, and the raw
+    environment are deliberately excluded from the cache.
+    """
+    packages: dict[str, str | None] = {}
+    for distribution in ("ctranslate2", "torch", "openvino", "onnxruntime"):
+        try:
+            packages[distribution] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            packages[distribution] = None
+    identity: dict[str, object] = {
+        "system": platform.system(),
+        "release": platform.release(),
+        "version": platform.version(),
+        "machine": platform.machine(),
+        "python": platform.python_version(),
+        "executable": str(Path(sys.executable).resolve()),
+        "packages": packages,
+        "drivers": _driver_identity(),
+    }
+    encoded = json.dumps(identity, ensure_ascii=True, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def run_isolated_probe(
+    name: str,
+    label: str,
+    timeout_seconds: float,
+    *,
+    argument: str | None = None,
+    command: list[str] | None = None,
+) -> _ProbeRun:
+    """Run one JSON probe in a killable process group.
+
+    ``command`` exists for deterministic timeout/process-tree acceptance tests;
+    production calls always use the private one-shot worker module.
+    """
+    selected_command = command or [sys.executable, "-m", "utteran._device_probe", name]
+    if argument is not None and command is None:
+        selected_command.append(argument)
+    kwargs: dict[str, object] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        )
+    else:
+        kwargs["start_new_session"] = True
+    started = time.monotonic()
+    try:
+        popen = cast(Callable[..., subprocess.Popen[str]], subprocess.Popen)
+        process = popen(selected_command, **kwargs)
+    except OSError as exc:
+        outcome = ProbeOutcome(name, label, "error", 0.0, _bounded_error(exc))
+        _log_probe_outcome(outcome)
+        return _ProbeRun(outcome, None)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        _kill_probe_process_tree(process)
+        try:
+            stdout, stderr = process.communicate(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate()
+        outcome = ProbeOutcome(
+            name,
+            label,
+            "timeout",
+            time.monotonic() - started,
+            f"{timeout_seconds:g}秒でタイムアウト (判定不能)",
+        )
+        _log_probe_outcome(outcome)
+        return _ProbeRun(outcome, None)
+    duration = time.monotonic() - started
+    if process.returncode != 0:
+        detail = _bounded_error(stderr or f"probe exited with {process.returncode}")
+        outcome = ProbeOutcome(name, label, "error", duration, detail)
+        _log_probe_outcome(outcome)
+        return _ProbeRun(outcome, None)
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        outcome = ProbeOutcome(name, label, "error", duration, _bounded_error(exc))
+        _log_probe_outcome(outcome)
+        return _ProbeRun(outcome, None)
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        detail = str(payload.get("error", "invalid probe response"))[:500]
+        outcome = ProbeOutcome(name, label, "error", duration, detail)
+        _log_probe_outcome(outcome)
+        return _ProbeRun(outcome, None)
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        outcome = ProbeOutcome(name, label, "error", duration, "invalid probe result")
+        _log_probe_outcome(outcome)
+        return _ProbeRun(outcome, None)
+    outcome = ProbeOutcome(name, label, "completed", duration)
+    _log_probe_outcome(outcome)
+    return _ProbeRun(outcome, cast(dict[str, Any], result))
+
+
+def _kill_probe_process_tree(process: subprocess.Popen[str]) -> None:
+    """Force-stop a timed-out probe and all descendants using Phase 2 semantics."""
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if process.poll() is None:
+            process.kill()
+        return
+    killpg = cast(Callable[[int, int], None], getattr(os, "killpg"))  # noqa: B009
+    try:
+        killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=2.0)
+    except subprocess.TimeoutExpired:
+        killpg(process.pid, cast(int, getattr(signal, "SIGKILL", signal.SIGTERM)))
+    except ProcessLookupError:
+        return
+
+
+def _log_probe_outcome(outcome: ProbeOutcome) -> None:
+    level = logging.WARNING if outcome.status in {"timeout", "error"} else logging.DEBUG
+    _LOGGER.log(level, "Device probe %s: %s", outcome.label, outcome.status)
+    structured_event(
+        "device_probe",
+        level=level,
+        probe=outcome.name,
+        probe_status=outcome.status,
+        duration_seconds=round(outcome.duration_seconds, 3),
+    )
+
+
+def _detect_isolated_runtimes(
+    timeout_seconds: float,
+    progress: Callable[[ProbeProgress], None] | None,
+) -> _IsolatedReports:
+    outcomes: list[ProbeOutcome] = []
+    position = 0
+    total = 7
+
+    def execute(name: str, label: str, *, argument: str | None = None) -> _ProbeRun:
+        nonlocal position
+        position += 1
+        if progress is not None:
+            progress(ProbeProgress(name, label, position, total, "started"))
+        run = run_isolated_probe(name, label, timeout_seconds, argument=argument)
+        outcomes.append(run.outcome)
+        if progress is not None:
+            progress(
+                ProbeProgress(name, label, position, total, cast(Any, run.outcome.status))
+            )
+        return run
+
+    def unavailable(name: str, label: str) -> _ProbeRun:
+        nonlocal position
+        position += 1
+        outcome = ProbeOutcome(name, label, "completed", 0.0, "未導入")
+        outcomes.append(outcome)
+        if progress is not None:
+            progress(ProbeProgress(name, label, position, total, "completed"))
+        return _ProbeRun(outcome, None)
+
+    ct2_installed = importlib.util.find_spec("ctranslate2") is not None
+    ct2_cpu = (
+        execute("ctranslate2_cpu", "CTranslate2 CPU")
+        if ct2_installed
+        else unavailable("ctranslate2_cpu", "CTranslate2 CPU")
+    )
+    ct2_count = (
+        execute("ctranslate2_cuda_count", "CTranslate2 CUDA device count")
+        if ct2_installed
+        else unavailable("ctranslate2_cuda_count", "CTranslate2 CUDA device count")
+    )
+    count = int(ct2_count.result.get("count", 0)) if ct2_count.result is not None else 0
+    metadata: dict[int, tuple[str, int | None]] = {}
+    cuda_runs: list[_ProbeRun] = []
+    if count:
+        total += count + 1
+        metadata_run = execute("nvidia_metadata", "NVIDIA driver metadata")
+        if metadata_run.result is not None:
+            metadata = _parse_nvidia_metadata(str(metadata_run.result.get("stdout", "")))
+        for index in range(count):
+            cuda_runs.append(
+                execute(
+                    "ctranslate2_cuda",
+                    f"CTranslate2 cuda:{index} compute types",
+                    argument=str(index),
+                )
+            )
+    ctranslate2 = _combine_ctranslate2(ct2_installed, ct2_cpu, ct2_count, cuda_runs, metadata)
+
+    torch_installed = importlib.util.find_spec("torch") is not None
+    torch_cuda = (
+        execute("torch_cuda", "PyTorch CUDA")
+        if torch_installed
+        else unavailable("torch_cuda", "PyTorch CUDA")
+    )
+    torch_xpu = (
+        execute("torch_xpu", "PyTorch XPU")
+        if torch_installed
+        else unavailable("torch_xpu", "PyTorch XPU")
+    )
+    torch = _combine_torch(torch_installed, torch_cuda, torch_xpu)
+
+    openvino_installed = importlib.util.find_spec("openvino") is not None
+    openvino_run = (
+        execute("openvino", "OpenVINO devices")
+        if openvino_installed
+        else unavailable("openvino", "OpenVINO devices")
+    )
+    openvino = _optional_report(openvino_installed, openvino_run)
+
+    onnx_installed = importlib.util.find_spec("onnxruntime") is not None
+    onnx_run = (
+        execute("onnxruntime", "ONNX Runtime providers")
+        if onnx_installed
+        else unavailable("onnxruntime", "ONNX Runtime providers")
+    )
+    onnxruntime = _optional_report(onnx_installed, onnx_run)
+
+    vulkan_run = execute("vulkan", "Vulkan build/runtime")
+    vulkan = _vulkan_report(vulkan_run)
+    return _IsolatedReports(
+        ctranslate2, torch, openvino, onnxruntime, vulkan, tuple(outcomes)
+    )
+
+
+def _combine_ctranslate2(
+    installed: bool,
+    cpu: _ProbeRun,
+    count_run: _ProbeRun,
+    cuda_runs: list[_ProbeRun],
+    metadata: dict[int, tuple[str, int | None]],
+) -> CTranslate2Report:
+    if not installed:
+        return CTranslate2Report(False, None, (), 0, (), "未導入")
+    version = None
+    if cpu.result is not None:
+        version = str(cpu.result.get("version", "unknown"))
+    elif count_run.result is not None:
+        version = str(count_run.result.get("version", "unknown"))
+    cpu_types = (
+        tuple(str(item) for item in cpu.result.get("compute_types", ()))
+        if cpu.result is not None
+        else ()
+    )
+    count = int(count_run.result.get("count", 0)) if count_run.result is not None else 0
+    devices: list[AcceleratorDevice] = []
+    for index, run in enumerate(cuda_runs):
+        name, memory = metadata.get(index, (f"NVIDIA CUDA {index}", None))
+        compute_types = (
+            tuple(str(item) for item in run.result.get("compute_types", ()))
+            if run.result is not None
+            else ()
+        )
+        devices.append(
+            AcceleratorDevice(
+                index,
+                name,
+                memory,
+                compute_types,
+                bool(compute_types) and run.outcome.status == "completed",
+                run.outcome.detail,
+            )
+        )
+    cuda_states = [count_run.outcome.status, *(item.outcome.status for item in cuda_runs)]
+    cuda_status: ProbeState = (
+        "timeout"
+        if "timeout" in cuda_states
+        else "error"
+        if "error" in cuda_states
+        else "completed"
+    )
+    details = [
+        item.outcome.detail
+        for item in (cpu, count_run, *cuda_runs)
+        if item.outcome.status != "completed" and item.outcome.detail
+    ]
+    return CTranslate2Report(
+        cpu.outcome.status == "completed" or count_run.outcome.status == "completed",
+        version,
+        cpu_types,
+        count,
+        tuple(devices),
+        "; ".join(details) or None,
+        cpu.outcome.status,
+        cuda_status,
+    )
+
+
+def _accelerators(result: dict[str, Any] | None) -> tuple[AcceleratorDevice, ...]:
+    if result is None:
+        return ()
+    devices: list[AcceleratorDevice] = []
+    raw_devices = result.get("devices", ())
+    if not isinstance(raw_devices, list):
+        return ()
+    for raw in raw_devices:
+        if not isinstance(raw, dict):
+            continue
+        devices.append(
+            AcceleratorDevice(
+                int(raw.get("index", len(devices))),
+                str(raw.get("name", "unknown")),
+                None if raw.get("memory_bytes") is None else int(raw["memory_bytes"]),
+                tuple(str(item) for item in raw.get("compute_types", ())),
+                bool(raw.get("usable", False)),
+                None if raw.get("error") is None else str(raw["error"]),
+            )
+        )
+    return tuple(devices)
+
+
+def _combine_torch(installed: bool, cuda: _ProbeRun, xpu: _ProbeRun) -> TorchReport:
+    if not installed:
+        return TorchReport(False, None, False, (), "未導入")
+    cuda_devices = _accelerators(cuda.result)
+    xpu_devices = _accelerators(xpu.result)
+    source = cuda.result or xpu.result or {}
+    details = [
+        run.outcome.detail
+        for run in (cuda, xpu)
+        if run.outcome.status != "completed" and run.outcome.detail
+    ]
+    return TorchReport(
+        True,
+        str(source.get("version", "unknown")),
+        any(item.usable for item in cuda_devices),
+        cuda_devices,
+        "; ".join(details) or None,
+        any(item.usable for item in xpu_devices),
+        xpu_devices,
+        cuda.outcome.status,
+        xpu.outcome.status,
+    )
+
+
+def _optional_report(installed: bool, run: _ProbeRun) -> OptionalRuntimeReport:
+    if not installed:
+        return OptionalRuntimeReport(False, (), "未導入")
+    values = (
+        tuple(str(item) for item in run.result.get("values", ()))
+        if run.result is not None
+        else ()
+    )
+    return OptionalRuntimeReport(
+        run.outcome.status == "completed",
+        values,
+        run.outcome.detail,
+        run.outcome.status,
+    )
+
+
+def _vulkan_report(run: _ProbeRun) -> VulkanReport:
+    if run.result is None:
+        detail = run.outcome.detail or "判定不能"
+        return VulkanReport(False, detail, False, None, detail, run.outcome.status)
+    return VulkanReport(
+        bool(run.result.get("build_available")),
+        None if run.result.get("build_error") is None else str(run.result["build_error"]),
+        bool(run.result.get("runtime_available")),
+        None if run.result.get("runtime_device") is None else str(run.result["runtime_device"]),
+        None if run.result.get("runtime_error") is None else str(run.result["runtime_error"]),
+        run.outcome.status,
+    )
+
+
+def _parse_nvidia_metadata(stdout: str) -> dict[int, tuple[str, int | None]]:
+    metadata: dict[int, tuple[str, int | None]] = {}
+    for line in stdout.splitlines():
+        fields = [item.strip() for item in line.split(",")]
+        if len(fields) < 3:
+            continue
+        try:
+            index = int(fields[0])
+            memory = int(fields[2]) * 1024 * 1024
+        except ValueError:
+            continue
+        metadata[index] = (fields[1], memory)
+    return metadata
+
+
+def _save_probe_cache(path: Path, fingerprint: str, reports: _IsolatedReports) -> None:
+    payload = {
+        "schema_version": _PROBE_CACHE_SCHEMA,
+        "fingerprint": fingerprint,
+        "reports": {
+            "ctranslate2": asdict(reports.ctranslate2),
+            "torch": asdict(reports.torch),
+            "openvino": asdict(reports.openvino),
+            "onnxruntime": asdict(reports.onnxruntime),
+            "vulkan": asdict(reports.vulkan),
+        },
+        "outcomes": [asdict(item) for item in reports.outcomes],
+    }
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"
+        )
+        temporary.replace(path)
+    except OSError as exc:
+        _LOGGER.warning("Could not save device probe cache: %s", _bounded_error(exc))
+        temporary.unlink(missing_ok=True)
+
+
+def _load_probe_cache(path: Path, fingerprint: str) -> _IsolatedReports | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") != _PROBE_CACHE_SCHEMA
+            or payload.get("fingerprint") != fingerprint
+        ):
+            return None
+        reports = payload["reports"]
+        outcomes = payload["outcomes"]
+        if not isinstance(reports, dict) or not isinstance(outcomes, list):
+            return None
+        return _IsolatedReports(
+            _cached_ctranslate2(cast(dict[str, Any], reports["ctranslate2"])),
+            _cached_torch(cast(dict[str, Any], reports["torch"])),
+            _cached_optional(cast(dict[str, Any], reports["openvino"])),
+            _cached_optional(cast(dict[str, Any], reports["onnxruntime"])),
+            _cached_vulkan(cast(dict[str, Any], reports["vulkan"])),
+            tuple(_cached_outcome(cast(dict[str, Any], item)) for item in outcomes),
+        )
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _probe_state(value: object) -> ProbeState:
+    if value not in {"completed", "timeout", "error"}:
+        raise ValueError(f"invalid probe state: {value}")
+    return cast(ProbeState, value)
+
+
+def _cached_accelerator(raw: dict[str, Any]) -> AcceleratorDevice:
+    return AcceleratorDevice(
+        int(raw["index"]),
+        str(raw["name"]),
+        None if raw.get("memory_bytes") is None else int(raw["memory_bytes"]),
+        tuple(str(item) for item in raw.get("compute_types", ())),
+        bool(raw.get("usable", False)),
+        None if raw.get("error") is None else str(raw["error"]),
+    )
+
+
+def _cached_ctranslate2(raw: dict[str, Any]) -> CTranslate2Report:
+    return CTranslate2Report(
+        bool(raw["available"]),
+        None if raw.get("version") is None else str(raw["version"]),
+        tuple(str(item) for item in raw.get("cpu_compute_types", ())),
+        int(raw.get("cuda_device_count", 0)),
+        tuple(_cached_accelerator(item) for item in raw.get("cuda_devices", ())),
+        None if raw.get("error") is None else str(raw["error"]),
+        _probe_state(raw.get("cpu_status", "completed")),
+        _probe_state(raw.get("cuda_status", "completed")),
+    )
+
+
+def _cached_torch(raw: dict[str, Any]) -> TorchReport:
+    return TorchReport(
+        bool(raw["available"]),
+        None if raw.get("version") is None else str(raw["version"]),
+        bool(raw.get("cuda_available", False)),
+        tuple(_cached_accelerator(item) for item in raw.get("cuda_devices", ())),
+        None if raw.get("error") is None else str(raw["error"]),
+        bool(raw.get("xpu_available", False)),
+        tuple(_cached_accelerator(item) for item in raw.get("xpu_devices", ())),
+        _probe_state(raw.get("cuda_status", "completed")),
+        _probe_state(raw.get("xpu_status", "completed")),
+    )
+
+
+def _cached_optional(raw: dict[str, Any]) -> OptionalRuntimeReport:
+    return OptionalRuntimeReport(
+        bool(raw["available"]),
+        tuple(str(item) for item in raw.get("values", ())),
+        None if raw.get("error") is None else str(raw["error"]),
+        _probe_state(raw.get("status", "completed")),
+    )
+
+
+def _cached_vulkan(raw: dict[str, Any]) -> VulkanReport:
+    return VulkanReport(
+        bool(raw["build_available"]),
+        None if raw.get("build_error") is None else str(raw["build_error"]),
+        bool(raw["runtime_available"]),
+        None if raw.get("runtime_device") is None else str(raw["runtime_device"]),
+        None if raw.get("runtime_error") is None else str(raw["runtime_error"]),
+        _probe_state(raw.get("status", "completed")),
+    )
+
+
+def _cached_outcome(raw: dict[str, Any]) -> ProbeOutcome:
+    return ProbeOutcome(
+        str(raw["name"]),
+        str(raw["label"]),
+        _probe_state(raw["status"]),
+        float(raw.get("duration_seconds", 0.0)),
+        None if raw.get("detail") is None else str(raw["detail"]),
+        bool(raw.get("cached", False)),
+    )
+
+
+def _driver_identity() -> list[str]:
+    """Return non-personal driver identity fields for cache invalidation."""
+    if sys.platform == "win32":
+        return _windows_driver_identity()
+    identities: list[str] = []
+    for device in sorted(Path("/sys/class/drm").glob("card*/device")):
+        fields: list[str] = []
+        for name in ("vendor", "device", "subsystem_vendor", "subsystem_device", "revision"):
+            try:
+                fields.append(f"{name}={device.joinpath(name).read_text().strip()}")
+            except OSError:
+                continue
+        with suppress(OSError):
+            fields.append(f"driver={device.joinpath('driver').resolve().name}")
+        if fields:
+            identities.append("|".join(fields))
+    return identities
+
+
+def _windows_driver_identity() -> list[str]:
+    try:
+        import winreg
+    except ImportError:
+        return []
+    identities: list[str] = []
+    root_path = r"SYSTEM\CurrentControlSet\Control\Video"
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, root_path) as root:
+            for adapter_index in range(winreg.QueryInfoKey(root)[0]):
+                adapter_name = winreg.EnumKey(root, adapter_index)
+                try:
+                    with winreg.OpenKey(root, adapter_name) as adapter:
+                        for child_index in range(winreg.QueryInfoKey(adapter)[0]):
+                            child_name = winreg.EnumKey(adapter, child_index)
+                            try:
+                                with winreg.OpenKey(adapter, child_name) as child:
+                                    values: list[str] = []
+                                    for field in (
+                                        "DriverVersion",
+                                        "DriverDate",
+                                        "MatchingDeviceId",
+                                        "ProviderName",
+                                    ):
+                                        try:
+                                            value, _kind = winreg.QueryValueEx(child, field)
+                                            values.append(f"{field}={value}")
+                                        except OSError:
+                                            continue
+                                    if values:
+                                        identities.append("|".join(values))
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+    except OSError:
+        return []
+    return sorted(set(identities))
 
 
 def select_faster_whisper_device(
@@ -348,122 +1036,46 @@ def detect_cpu() -> CPUReport:
     )
 
 
-def detect_ctranslate2() -> CTranslate2Report:
-    """Probe CTranslate2 devices by requesting their supported compute types."""
-    register_cuda_dll_directories()
-    if importlib.util.find_spec("ctranslate2") is None:
+def detect_ctranslate2(
+    timeout_seconds: float = DEFAULT_PROBE_TIMEOUT_SECONDS,
+) -> CTranslate2Report:
+    """Probe CTranslate2 only through killable child processes."""
+    installed = importlib.util.find_spec("ctranslate2") is not None
+    if not installed:
         return CTranslate2Report(False, None, (), 0, (), "未導入")
-    try:
-        import ctranslate2
-
-        cpu_types = tuple(sorted(ctranslate2.get_supported_compute_types("cpu")))
-        count = int(ctranslate2.get_cuda_device_count())
-        metadata = _nvidia_metadata()
-        cuda_devices: list[AcceleratorDevice] = []
-        for index in range(count):
-            name, memory = metadata.get(index, (f"NVIDIA CUDA {index}", None))
-            try:
-                compute_types = tuple(
-                    sorted(ctranslate2.get_supported_compute_types("cuda", index))
-                )
-                cuda_devices.append(
-                    AcceleratorDevice(
-                        index,
-                        name,
-                        memory,
-                        compute_types,
-                        bool(compute_types),
-                    )
-                )
-            except Exception as exc:
-                cuda_devices.append(
-                    AcceleratorDevice(index, name, memory, error=_bounded_error(exc))
-                )
-        return CTranslate2Report(
-            True,
-            str(getattr(ctranslate2, "__version__", "unknown")),
-            cpu_types,
-            count,
-            tuple(cuda_devices),
+    cpu = run_isolated_probe("ctranslate2_cpu", "CTranslate2 CPU", timeout_seconds)
+    count_run = run_isolated_probe(
+        "ctranslate2_cuda_count", "CTranslate2 CUDA device count", timeout_seconds
+    )
+    count = int(count_run.result.get("count", 0)) if count_run.result is not None else 0
+    metadata: dict[int, tuple[str, int | None]] = {}
+    cuda_runs: list[_ProbeRun] = []
+    if count:
+        metadata_run = run_isolated_probe(
+            "nvidia_metadata", "NVIDIA driver metadata", timeout_seconds
         )
-    except Exception as exc:
-        return CTranslate2Report(False, None, (), 0, (), _bounded_error(exc))
+        if metadata_run.result is not None:
+            metadata = _parse_nvidia_metadata(str(metadata_run.result.get("stdout", "")))
+        cuda_runs = [
+            run_isolated_probe(
+                "ctranslate2_cuda",
+                f"CTranslate2 cuda:{index} compute types",
+                timeout_seconds,
+                argument=str(index),
+            )
+            for index in range(count)
+        ]
+    return _combine_ctranslate2(installed, cpu, count_run, cuda_runs, metadata)
 
 
-def detect_torch() -> TorchReport:
-    """Probe PyTorch CUDA and XPU with a real kernel and synchronization."""
-    register_cuda_dll_directories()
-    if importlib.util.find_spec("torch") is None:
+def detect_torch(timeout_seconds: float = DEFAULT_PROBE_TIMEOUT_SECONDS) -> TorchReport:
+    """Probe PyTorch CUDA and XPU in separate killable child processes."""
+    installed = importlib.util.find_spec("torch") is not None
+    if not installed:
         return TorchReport(False, None, False, (), "未導入")
-    try:
-        import torch
-
-        devices: list[AcceleratorDevice] = []
-        if torch.cuda.is_available():
-            for index in range(torch.cuda.device_count()):
-                try:
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore", UserWarning)
-                        properties = torch.cuda.get_device_properties(index)
-                        probe = torch.ones(1, device=f"cuda:{index}")
-                        result = (probe + 1).cpu()
-                        torch.cuda.synchronize(index)
-                    if float(result.item()) != 2.0:
-                        raise RuntimeError("CUDA probe returned an unexpected result")
-                    del probe, result
-                    devices.append(
-                        AcceleratorDevice(
-                            index,
-                            str(properties.name),
-                            int(properties.total_memory),
-                            usable=True,
-                        )
-                    )
-                except Exception as exc:
-                    devices.append(
-                        AcceleratorDevice(
-                            index,
-                            f"CUDA {index}",
-                            None,
-                            error=_bounded_error(exc),
-                        )
-                    )
-        usable = any(device.usable for device in devices)
-        xpu_devices: list[AcceleratorDevice] = []
-        xpu = getattr(torch, "xpu", None)
-        if xpu is not None and xpu.is_available():
-            for index in range(xpu.device_count()):
-                try:
-                    properties = xpu.get_device_properties(index)
-                    probe = torch.ones(1, device=f"xpu:{index}")
-                    result = (probe + 1).cpu()
-                    xpu.synchronize(index)
-                    if float(result.item()) != 2.0:
-                        raise RuntimeError("XPU probe returned an unexpected result")
-                    del probe, result
-                    memory = getattr(properties, "total_memory", None)
-                    xpu_devices.append(
-                        AcceleratorDevice(
-                            index,
-                            str(getattr(properties, "name", xpu.get_device_name(index))),
-                            None if memory is None else int(memory),
-                            usable=True,
-                        )
-                    )
-                except Exception as exc:
-                    xpu_devices.append(
-                        AcceleratorDevice(index, f"XPU {index}", None, error=_bounded_error(exc))
-                    )
-        return TorchReport(
-            True,
-            str(getattr(torch, "__version__", "unknown")),
-            usable,
-            tuple(devices),
-            xpu_available=any(device.usable for device in xpu_devices),
-            xpu_devices=tuple(xpu_devices),
-        )
-    except Exception as exc:
-        return TorchReport(False, None, False, (), _bounded_error(exc))
+    cuda = run_isolated_probe("torch_cuda", "PyTorch CUDA", timeout_seconds)
+    xpu = run_isolated_probe("torch_xpu", "PyTorch XPU", timeout_seconds)
+    return _combine_torch(installed, cuda, xpu)
 
 
 def detect_cuda_libraries() -> LibraryReport:
@@ -477,31 +1089,29 @@ def detect_cuda_libraries() -> LibraryReport:
     )
 
 
-def detect_openvino() -> OptionalRuntimeReport:
-    """Report OpenVINO devices when the optional Phase 3 runtime is installed."""
-    if importlib.util.find_spec("openvino") is None:
+def detect_openvino(
+    timeout_seconds: float = DEFAULT_PROBE_TIMEOUT_SECONDS,
+) -> OptionalRuntimeReport:
+    """Report OpenVINO devices through a killable child process."""
+    installed = importlib.util.find_spec("openvino") is not None
+    if not installed:
         return OptionalRuntimeReport(False, (), "未導入")
-    try:
-        from openvino import Core
-
-        return OptionalRuntimeReport(True, tuple(str(item) for item in Core().available_devices))
-    except Exception as exc:
-        return OptionalRuntimeReport(False, (), _bounded_error(exc))
+    return _optional_report(
+        installed, run_isolated_probe("openvino", "OpenVINO devices", timeout_seconds)
+    )
 
 
-def detect_onnxruntime() -> OptionalRuntimeReport:
-    """Report ONNX Runtime execution providers without importing a backend."""
-    if importlib.util.find_spec("onnxruntime") is None:
+def detect_onnxruntime(
+    timeout_seconds: float = DEFAULT_PROBE_TIMEOUT_SECONDS,
+) -> OptionalRuntimeReport:
+    """Report ONNX Runtime providers through a killable child process."""
+    installed = importlib.util.find_spec("onnxruntime") is not None
+    if not installed:
         return OptionalRuntimeReport(False, (), "未導入")
-    try:
-        import onnxruntime
-
-        return OptionalRuntimeReport(
-            True,
-            tuple(str(item) for item in onnxruntime.get_available_providers()),
-        )
-    except Exception as exc:
-        return OptionalRuntimeReport(False, (), _bounded_error(exc))
+    return _optional_report(
+        installed,
+        run_isolated_probe("onnxruntime", "ONNX Runtime providers", timeout_seconds),
+    )
 
 
 def detect_ffmpeg(configured_path: Path | None = None) -> FfmpegReport:
@@ -556,19 +1166,9 @@ def detect_profile_report(venv_dir: Path | None = None) -> ProfileReport:
     )
 
 
-def detect_vulkan() -> VulkanReport:
-    """Report Vulkan build (glslc) and runtime (vulkaninfo) prerequisites separately."""
-    from utteran.native import probe_glslc, probe_vulkan_runtime
-
-    build = probe_glslc()
-    runtime, device = probe_vulkan_runtime()
-    return VulkanReport(
-        build_available=build.available,
-        build_error=None if build.available else build.detail,
-        runtime_available=runtime.available,
-        runtime_device=device,
-        runtime_error=None if runtime.available else runtime.detail,
-    )
+def detect_vulkan(timeout_seconds: float = DEFAULT_PROBE_TIMEOUT_SECONDS) -> VulkanReport:
+    """Report Vulkan prerequisites through a killable child process."""
+    return _vulkan_report(run_isolated_probe("vulkan", "Vulkan build/runtime", timeout_seconds))
 
 
 def detect_native_report(native_dir: Path | None = None) -> NativeReport:
@@ -597,6 +1197,16 @@ def _auto_selection(
 ) -> tuple[AutoSelection, list[str]]:
     """Apply the documented CUDA, Intel/Vulkan, then CPU ASR priority."""
     notes: list[str] = []
+    if ctranslate2.cuda_status != "completed":
+        notes.append("CTranslate2 CUDAの判定ができませんでした。CUDAを利用可能とは扱いません。")
+    if torch.cuda_status != "completed":
+        notes.append("PyTorch CUDAの判定ができませんでした。")
+    if torch.xpu_status != "completed":
+        notes.append("PyTorch XPUの判定ができませんでした。話者分離はCPU実行になります。")
+    if openvino.status != "completed":
+        notes.append("OpenVINOの判定ができませんでした。")
+    if vulkan.status != "completed":
+        notes.append("Vulkanの判定ができませんでした。")
     cuda_usable = any(device.usable for device in ctranslate2.cuda_devices)
     openvino_gpu = openvino.available and any(
         item.upper().startswith("GPU") for item in openvino.values
@@ -635,6 +1245,10 @@ def _auto_selection(
     else:
         diarization_device = "cpu"
         notes.append("CUDA/XPUを利用できないため話者分離にCPUを選択しました。")
+    if openvino_gpu and torch_xpu is None:
+        notes.append(
+            "ASRはIntel GPUで高速化できますが、話者分離はCPUで実行されます。"
+        )
     intel_accelerators = tuple(
         item for item in openvino.values if item.upper().startswith(("GPU", "NPU"))
     )
@@ -901,7 +1515,7 @@ def _windows_physical_cpu_count() -> int | None:
         return None
 
 
-def _bounded_error(error: Exception) -> str:
+def _bounded_error(error: Exception | str) -> str:
     """Return a short diagnostic without backend traceback data."""
     return str(error).replace("\r", " ").replace("\n", " ")[:500]
 

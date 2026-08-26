@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
 
+import utteran.devices as device_module
 from utteran.devices import (
     AcceleratorDevice,
     CPUReport,
@@ -21,10 +26,10 @@ from utteran.devices import (
     detect_native_report,
     detect_profile_report,
     detect_vulkan,
+    run_isolated_probe,
     select_faster_whisper_device,
 )
 from utteran.errors import BackendUnavailableError
-from utteran.native import PrerequisiteCheck as NativePrerequisiteCheck
 from utteran.profiles import venv_dir_name
 
 
@@ -161,12 +166,20 @@ def test_detect_profile_report_reflects_current_and_created_profiles(
 def test_detect_vulkan_reports_build_and_runtime_separately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    outcome = device_module.ProbeOutcome("vulkan", "Vulkan", "completed", 0.1)
     monkeypatch.setattr(
-        "utteran.native.probe_glslc", lambda: NativePrerequisiteCheck(False, "no glslc")
-    )
-    monkeypatch.setattr(
-        "utteran.native.probe_vulkan_runtime",
-        lambda *args, **kwargs: (NativePrerequisiteCheck(True, None), "Fake GPU"),
+        device_module,
+        "run_isolated_probe",
+        lambda *args, **kwargs: device_module._ProbeRun(
+            outcome,
+            {
+                "build_available": False,
+                "build_error": "no glslc",
+                "runtime_available": True,
+                "runtime_device": "Fake GPU",
+                "runtime_error": None,
+            },
+        ),
     )
 
     report = detect_vulkan()
@@ -175,6 +188,90 @@ def test_detect_vulkan_reports_build_and_runtime_separately(
     assert report.build_error == "no glslc"
     assert report.runtime_available is True
     assert report.runtime_device == "Fake GPU"
+
+
+def test_timed_out_probe_is_unknown_and_never_available() -> None:
+    timeout = device_module._ProbeRun(
+        device_module.ProbeOutcome(
+            "torch_xpu", "PyTorch XPU", "timeout", 0.1, "判定不能"
+        ),
+        None,
+    )
+    completed = device_module._ProbeRun(
+        device_module.ProbeOutcome("torch_cuda", "PyTorch CUDA", "completed", 0.1),
+        {"version": "test", "devices": []},
+    )
+
+    report = device_module._combine_torch(True, completed, timeout)
+
+    assert report.xpu_status == "timeout"
+    assert report.xpu_available is False
+    assert report.xpu_devices == ()
+
+
+def test_probe_cache_round_trip_and_hardware_invalidation(tmp_path: Path) -> None:
+    reports = device_module._IsolatedReports(
+        CTranslate2Report(True, "test", ("int8",), 0, ()),
+        TorchReport(True, "test", False, (), xpu_status="timeout"),
+        OptionalRuntimeReport(True, ("CPU", "GPU")),
+        OptionalRuntimeReport(True, ("CPUExecutionProvider",)),
+        VulkanReport(False, "missing", False, None, "missing"),
+        (
+            device_module.ProbeOutcome(
+                "torch_xpu", "PyTorch XPU", "timeout", 20.0, "判定不能"
+            ),
+        ),
+    )
+    path = tmp_path / "devices.json"
+
+    device_module._save_probe_cache(path, "hardware-a", reports)
+    loaded = device_module._load_probe_cache(path, "hardware-a")
+
+    assert loaded is not None
+    assert loaded.torch.xpu_status == "timeout"
+    assert loaded.outcomes[0].status == "timeout"
+    assert device_module._load_probe_cache(path, "hardware-b") is None
+
+
+def test_timeout_kills_probe_process_tree(tmp_path: Path) -> None:
+    child_pid = tmp_path / "child.pid"
+    script = (
+        "import pathlib,subprocess,sys,time; "
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+        f"pathlib.Path({str(child_pid)!r}).write_text(str(child.pid)); "
+        "time.sleep(60)"
+    )
+
+    run = run_isolated_probe(
+        "hang",
+        "hanging process tree",
+        0.5,
+        command=[sys.executable, "-c", script],
+    )
+
+    assert run.outcome.status == "timeout"
+    assert child_pid.is_file()
+    pid = int(child_pid.read_text())
+    deadline = time.monotonic() + 5.0
+    while _pid_is_alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not _pid_is_alive(pid)
+
+
+def _pid_is_alive(pid: int) -> bool:
+    if os.name == "nt":
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return f'"{pid}"' in result.stdout
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
 
 
 def test_detect_native_report_reflects_manifest_state(tmp_path: Path) -> None:
