@@ -6,11 +6,12 @@ import json
 import os
 import platform
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from utteran_gui.processes import build_creation_kwargs
+from utteran_gui.processes import build_creation_kwargs, kill_process_tree
 from utteran_gui.security import mask_secrets, sanitize_json
 
 PROFILE_NAMES = ("cpu", "cuda", "intel", "vulkan")
@@ -107,6 +108,49 @@ class CliAdapter:
         environment["PYTHONUTF8"] = "1"
         return environment
 
+    def _run(
+        self, profile: str, arguments: list[str], *, timeout: float
+    ) -> subprocess.CompletedProcess[str]:
+        """Run one profile CLI invocation, tree-killing it if it outlives `timeout`.
+
+        `subprocess.run(timeout=...)` only kills the *direct* child on
+        timeout - a profile CLI that itself spawned an isolated device probe
+        (`utteran.devices.run_isolated_probe`) would leave that grandchild
+        orphaned rather than cleaned up. Using `Popen` + `communicate` lets
+        us fall back to the same `taskkill /T /F` tree-kill every other
+        timeout-prone subprocess in this package already uses
+        (`hardware.py`'s `detect_runtime_capabilities`, `run_isolated_probe`
+        itself) instead of leaking a background process. A timeout is
+        reported as `CliError`, matching every other failure this method
+        already raises, rather than letting `subprocess.TimeoutExpired`
+        propagate uncaught past callers that only catch `CliError`.
+        """
+        info = self.profile_info(profile)
+        if not info.exists:
+            raise CliError(f"Profile is not available: {profile}")
+        popen = cast(Callable[..., subprocess.Popen[str]], subprocess.Popen)
+        process = popen(
+            [str(info.executable), *arguments],
+            cwd=self.repo_root,
+            env=self.environment(profile),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            **build_creation_kwargs(),
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            kill_process_tree(process)
+            stdout, stderr = process.communicate()
+            raise CliError(f"CLI timed out after {timeout:g}s: {' '.join(arguments)}") from None
+        return subprocess.CompletedProcess(
+            process.args, cast(int, process.returncode), stdout, stderr
+        )
+
     def run_json(
         self,
         profile: str,
@@ -114,21 +158,7 @@ class CliAdapter:
         *,
         timeout: float = 60.0,
     ) -> object:
-        info = self.profile_info(profile)
-        if not info.exists:
-            raise CliError(f"Profile is not available: {profile}")
-        completed = subprocess.run(
-            [str(info.executable), *arguments],
-            cwd=self.repo_root,
-            env=self.environment(profile),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            check=False,
-            **build_creation_kwargs(),
-        )
+        completed = self._run(profile, arguments, timeout=timeout)
         if completed.returncode != 0:
             detail = mask_secrets(completed.stderr.strip() or completed.stdout.strip())
             raise CliError(f"CLI exited {completed.returncode}: {detail[:1000]}")
@@ -139,21 +169,7 @@ class CliAdapter:
 
     def run_text(self, profile: str, arguments: list[str], *, timeout: float = 60.0) -> str:
         """Run a profile CLI command whose stable contract is plain text."""
-        info = self.profile_info(profile)
-        if not info.exists:
-            raise CliError(f"Profile is not available: {profile}")
-        completed = subprocess.run(
-            [str(info.executable), *arguments],
-            cwd=self.repo_root,
-            env=self.environment(profile),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            check=False,
-            **build_creation_kwargs(),
-        )
+        completed = self._run(profile, arguments, timeout=timeout)
         if completed.returncode != 0:
             detail = mask_secrets(completed.stderr.strip() or completed.stdout.strip())
             raise CliError(f"CLI exited {completed.returncode}: {detail[:1000]}")
