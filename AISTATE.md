@@ -1,5 +1,18 @@
 # AI 作業状態
 
+## 運用ルール（必読・恒久）
+
+> 変更を加えた作業単位ごとに、パッチバージョンを1つ上げ、`変更履歴.md`に記載する。
+> マイナーバージョンの繰り上げは利用者が判断するため、AIは独断で行わない。
+
+- パッチ番号は9で止めず10を超えて増え続ける（`v0.1.9`の次は`v0.1.10`）。
+- 揃えるべき箇所（`pyproject.toml`／`src/utteran/__init__.py`／`src/utteran_gui/__init__.py`／
+  `uv.lock`）と手順は`docs/リリース手順.md`「バージョン更新手順（作業単位ごと）」、
+  規約本体は`要件定義.md`24.1章を参照。
+- `packaging/gui.spec`と`packaging/installer.iss`のバージョンは`build.ps1`が
+  `pyproject.toml`から都度読み取って埋め込むため手動更新不要（既に一元化済み、
+  chore/versioning-policyで確認済み）。
+
 ## Phase 5j 明示指定・ログ基盤・レイアウト（2026-08-25）
 
 > `registry.py` が `allow_fallback=True` を無条件に渡し、
@@ -41,6 +54,47 @@ installer SHA-256は`4773edbbe85171d4bf65dc567c5ff563769c45817959c75e57ee0e439d6
 配布onedir exeを実起動し4秒後も稼働、配布directoryの`logs/app.log`生成、bundle内CSS/HTMLへの
 overflow修正とraw警告同梱を確認後、検証用processだけ終了した。既存のインストール済みGUI processは
 操作していない。browser不在のためlight/dark・resizeの目視だけは未完了として残す。
+
+## バージョニング規約の確立とv0.1.7ビルド（2026-08-25）
+
+> 変更を重ねてもバージョンが据え置きのまま配布物が作られており、
+> 「どの版で試したか」を追跡できなくなっていた。
+
+`chore/versioning-policy`ブランチで実施。現状確認（Step 1）: `pyproject.toml`／
+`src/utteran/__init__.py`／`src/utteran_gui/__init__.py`／`uv.lock`はすべて`0.1.6`で
+食い違いなし。一元管理確認（Step 2）: `build.ps1`は`pyproject.toml`から読み取った
+versionをexe（FileVersion/ProductVersion）とinstaller（AppVersion／出力ファイル名）の
+両方へ一度だけ伝播しており、Phase 5dの要件を満たす。`__init__.py`の`__version__`は
+手動同期のままとし（`tests/test_version.py`が一致を検証）、frozen exeへ
+`importlib.metadata`を埋め込むための`gui.spec`変更は本作業の範囲外と判断し行わなかった。
+変更履歴整理（Step 5）: `変更履歴.md`に未リリース節の滞留はなく、整理対象なし。
+`0.1.6`→`0.1.7`へパッチを上げ、規約を`要件定義.md`24.1章・`docs/リリース手順.md`
+「バージョン更新手順（作業単位ごと）」・本ファイル冒頭の運用ルールへ記載した。
+
+ビルド（Step 6）: 本機にInno Setup 6が未導入だったため`winget install --id
+JRSoftware.InnoSetup -e`で導入し、`.\build.ps1`を実行。`utteran-gui.exe`の
+FileVersion/ProductVersionと`dist\installer\utteran-setup-0.1.7.exe`のファイル名は
+いずれも`0.1.7`に一致。SHA-256:
+`953e74d0333e5cfb18de5b2669fde45e3667ef69785bafa579cd524ac20089ab`。
+
+品質ゲート: `ruff check src tests tools`・`mypy`は合格。`pytest -m "not requires_model"`は
+322 passed / 12 failed / 1 skipped。失敗12件は本機固有の環境要因で、versioning変更とは
+無関係と確認済み（stashして無変更tree で同一の失敗を再現）。内訳: (1)
+`test_ctrl_c_is_confined_to_the_child_console`はGit Bash実行時の既知の制約
+（本ファイル「既知の落とし穴」既述）、(2) 残り約10件は`C:\Users\yuta maezawa`自体が
+git repositoryであるため、pytestの一時出力先（そのユーザーのTemp配下）が
+`_ensure_git_ignored_output`のgit repository検出に誤って一致し、
+`ConfigurationError`となるもの。utteran本体の不具合ではなく、この開発機のホーム
+ディレクトリ構成に起因する。
+
+### 追記（2026-08-26）: main統合時に0.1.8へ再採番
+
+別PCで並行していたPhase 5j作業が独立に`0.1.6`→`0.1.7`へバージョンを上げて`origin/main`へ
+push済みだった（10コミット、`chore(release): bump version to 0.1.7`）。このため上記の
+`0.1.7`は`origin/main`の`0.1.7`と同一番号・異なる内容で衝突した。利用者の指示に基づき、
+`chore/versioning-policy`側を`0.1.8`へ繰り上げてから`main`へ統合した。上記ビルド記録
+（exe/installerのversionとSHA-256）は当時の`0.1.7`ビルドのものであり、統合後の`main`には
+含まれない。`0.1.8`としての再ビルドは別途必要。
 
 ## Phase 5i モデル体系・VAD・共通処理キュー（2026-08-25）
 
