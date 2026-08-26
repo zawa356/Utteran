@@ -611,9 +611,19 @@ function Invoke-ProfileSetup {
                     throw "utteran devices --json failed (exit $LASTEXITCODE)"
                 }
                 $DeviceData = $DeviceText | ConvertFrom-Json
+                $TimedOutProbes = @($DeviceData.probes | Where-Object { $_.status -eq "timeout" })
+                foreach ($TimedOutProbe in $TimedOutProbes) {
+                    Write-Warning (
+                        "Device probe timed out and is unknown: {0}. Continuing with safe fallback." -f `
+                            $TimedOutProbe.label
+                    )
+                }
                 if ($ProfileName -eq "cpu") {
                     $ProfileVerificationSucceeded = (
-                        $DeviceData.backends.'faster-whisper' -and $DeviceData.backends.pyannote
+                        $DeviceData.backends.'faster-whisper' -and `
+                        $DeviceData.backends.pyannote -and `
+                        $DeviceData.ctranslate2.available -and `
+                        $DeviceData.ctranslate2.cpu_status -eq "completed"
                     )
                 }
                 elseif ($ProfileName -eq "cuda") {
@@ -631,11 +641,17 @@ function Invoke-ProfileSetup {
                     }
                 }
                 elseif ($ProfileName -eq "intel") {
-                    $OpenVinoOk = [bool]$DeviceData.openvino.available
+                    $OpenVinoOk = (
+                        [bool]$DeviceData.openvino.available -and `
+                        $DeviceData.openvino.status -eq "completed"
+                    )
                     # devices --json already imports torch and performs the XPU
                     # availability/device probe. Reusing it avoids a second costly
                     # Python process and repeated DLL/device initialization.
-                    $XpuOk = [bool]$DeviceData.pytorch.xpu_available
+                    $XpuOk = (
+                        [bool]$DeviceData.pytorch.xpu_available -and `
+                        $DeviceData.pytorch.xpu_status -eq "completed"
+                    )
                     $ProfileVerificationSucceeded = $OpenVinoOk
                     if (-not $OpenVinoOk) {
                         Write-Warning "Intel profile: OpenVINO could not initialize."
@@ -643,8 +659,11 @@ function Invoke-ProfileSetup {
                     if ($XpuOk) {
                         Write-Host "torch XPU: 利用可能" -ForegroundColor Green
                     }
+                    elseif ($DeviceData.pytorch.xpu_status -ne "completed") {
+                        Write-Host "torch XPU: 判定不能（話者分離はCPU実行）" -ForegroundColor Yellow
+                    }
                     else {
-                        Write-Host "torch XPU: 未検出"
+                        Write-Host "torch XPU: 利用不可（話者分離はCPU実行）"
                     }
                 }
                 else {
