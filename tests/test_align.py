@@ -78,6 +78,17 @@ def test_segment_splits_using_regular_turns_when_exclusive_is_none() -> None:
     assert [segment.speaker for segment in result] == ["SPEAKER_00", "SPEAKER_01"]
 
 
+def test_split_segment_contains_non_monotonic_word_end_times() -> None:
+    words = [Word(0.1, 1.2, "A"), Word(0.0, 1.0, "B")]
+    result = align_transcription(
+        transcription(Segment(0.0, 1.2, "AB", words)),
+        diarization([SpeakerTurn(0.0, 2.0, "SPEAKER")]),
+        AlignmentOptions(min_segment_duration=0.0, min_segment_words=0),
+    )
+
+    assert (result[0].start, result[0].end) == (0.0, 1.2)
+
+
 def test_extremely_short_speaker_island_is_absorbed() -> None:
     words = [
         Word(0.0, 0.4, "A"),
@@ -98,6 +109,30 @@ def test_extremely_short_speaker_island_is_absorbed() -> None:
     assert len(result) == 1
     assert result[0].speaker == "SPEAKER_00"
     assert result[0].text == "AxB"
+
+
+def test_missing_word_timestamps_do_not_make_a_long_segment_a_short_island() -> None:
+    result = align_transcription(
+        transcription(
+            Segment(0.0, 2.0, "A"),
+            Segment(2.0, 12.0, "B"),
+            Segment(12.0, 14.0, "C"),
+        ),
+        diarization(
+            [
+                SpeakerTurn(0.0, 2.0, "MAIN"),
+                SpeakerTurn(2.0, 12.0, "ISLAND"),
+                SpeakerTurn(12.0, 14.0, "MAIN"),
+            ]
+        ),
+    )
+
+    assert len(result) == 3
+    assert [segment.speaker for segment in result] == [
+        "SPEAKER_00",
+        "SPEAKER_01",
+        "SPEAKER_00",
+    ]
 
 
 def test_same_speaker_segments_merge_within_gap_and_renumber_by_appearance() -> None:

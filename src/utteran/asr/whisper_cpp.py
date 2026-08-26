@@ -146,8 +146,20 @@ class WhisperCppBackend(ASRBackend):
             temporary_path = Path(temporary)
             output_prefix = temporary_path / "result"
             staged_model = _stage_model(self._model_path, temporary_path / "model")
-            run_settings = self.settings
-            if self.settings.vad:
+            run_settings = _word_timestamp_compatible_settings(self.settings, options)
+            if self.settings.vad and not run_settings.vad:
+                logging.getLogger(__name__).warning(
+                    "whisper.cpp v1.9.1はVAD後のtoken時刻を元音声へ復元しないため、"
+                    "単語時刻が必要な話者分離実行では内蔵VADを無効化します。"
+                )
+                structured_event(
+                    "asr_vad_policy",
+                    backend=self.name,
+                    configured=True,
+                    effective=False,
+                    reason="word_timestamps_require_original_timeline",
+                )
+            if run_settings.vad:
                 resolved_vad = _resolve_vad_model(self.settings)
                 if resolved_vad is None:
                     logging.getLogger(__name__).warning(
@@ -204,8 +216,7 @@ class WhisperCppBackend(ASRBackend):
             output_path = output_prefix.with_suffix(".json")
             if not output_path.is_file():
                 raise BackendUnavailableError(
-                    "whisper-cliがJSONを生成しませんでした: "
-                    + summarize_subprocess_error(stderr)
+                    "whisper-cliがJSONを生成しませんでした: " + summarize_subprocess_error(stderr)
                 )
             raw_output = output_path.read_bytes()
             try:
@@ -249,6 +260,15 @@ class WhisperCppBackend(ASRBackend):
                 self._fallback_attempted = True
                 return name
         return None
+
+
+def _word_timestamp_compatible_settings(
+    settings: WhisperCppConfig, options: ASROptions
+) -> WhisperCppConfig:
+    """Disable VAD when v1.9.1 token timestamps must remain on the original timeline."""
+    if settings.vad and options.word_timestamps:
+        return settings.model_copy(update={"vad": False})
+    return settings
 
 
 def build_command(
@@ -514,6 +534,7 @@ def _convert_result(
     discarded_repetitions = 0
     previous_text = ""
     consecutive_repetitions = 0
+    timestamp_statistics = _token_timestamp_statistics(data)
     for raw in data.get("transcription", []):
         offsets = raw.get("offsets", {})
         start = float(offsets.get("from", 0)) / 1000.0
@@ -554,6 +575,13 @@ def _convert_result(
         )
         for segment in segments:
             segment.words = []
+    structured_event(
+        "asr_word_timestamp_statistics",
+        requested=requested_words,
+        retained_word_count=sum(len(segment.words) for segment in segments),
+        discarded_zero_word_count=discarded_words,
+        **timestamp_statistics,
+    )
     result = data.get("result", {})
     duration = max((segment.end for segment in segments), default=0.0)
     return TranscriptionResult(
@@ -564,6 +592,51 @@ def _convert_result(
         entry.model_id,
         device,
     )
+
+
+def _token_timestamp_statistics(data: dict[str, Any]) -> dict[str, int]:
+    """Count timestamp coordinate patterns without retaining or logging token text."""
+    statistics = {
+        "raw_segment_count": 0,
+        "token_count": 0,
+        "dtw_nonnegative_count": 0,
+        "dtw_absolute_count": 0,
+        "dtw_relative_count": 0,
+        "offset_count": 0,
+        "offset_positive_count": 0,
+        "offset_absolute_count": 0,
+        "offset_relative_count": 0,
+    }
+    for raw in data.get("transcription", []):
+        offsets = raw.get("offsets", {})
+        segment_start = float(offsets.get("from", 0.0)) / 1000.0
+        segment_end = float(offsets.get("to", 0.0)) / 1000.0
+        segment_duration = max(0.0, segment_end - segment_start)
+        statistics["raw_segment_count"] += 1
+        for token in raw.get("tokens", []):
+            statistics["token_count"] += 1
+            try:
+                dtw = int(token.get("t_dtw", -1))
+            except (TypeError, ValueError):
+                dtw = -1
+            if dtw >= 0:
+                dtw_seconds = dtw * 0.01
+                statistics["dtw_nonnegative_count"] += 1
+                statistics["dtw_absolute_count"] += int(segment_start <= dtw_seconds <= segment_end)
+                statistics["dtw_relative_count"] += int(0.0 <= dtw_seconds <= segment_duration)
+            token_offsets = token.get("offsets")
+            if not isinstance(token_offsets, dict):
+                continue
+            try:
+                start = float(token_offsets["from"]) / 1000.0
+                end = float(token_offsets["to"]) / 1000.0
+            except (KeyError, TypeError, ValueError):
+                continue
+            statistics["offset_count"] += 1
+            statistics["offset_positive_count"] += int(end > start)
+            statistics["offset_absolute_count"] += int(segment_start <= start < end <= segment_end)
+            statistics["offset_relative_count"] += int(0.0 <= start < end <= segment_duration)
+    return statistics
 
 
 def _choose_variant(backends: dict[str, Any]) -> str:
