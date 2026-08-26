@@ -8,6 +8,7 @@ from utteran_gui.hardware import (
     GpuReport,
     HardwareProbeSet,
     MemoryReport,
+    RuntimeCapabilities,
     detect_hardware,
     recommend_profile,
 )
@@ -21,7 +22,7 @@ def _gpu(vendor: str, error: str | None = None) -> GpuReport:
 def test_nvidia_gpu_recommends_cuda_with_both_backends_accelerated() -> None:
     recommendation = recommend_profile(_gpu("nvidia"))
     assert recommendation.recommended == "cuda"
-    assert recommendation.detection_confident is True
+    assert recommendation.detection_confident is False
     cuda = next(item for item in recommendation.alternatives if item.profile == "cuda")
     assert cuda.asr_accelerated is True
     assert cuda.diarization_accelerated is True
@@ -34,6 +35,33 @@ def test_intel_gpu_recommends_intel_with_diarization_on_xpu() -> None:
     intel = next(item for item in recommendation.alternatives if item.profile == "intel")
     assert intel.asr_accelerated is True
     assert intel.diarization_accelerated is True
+
+
+def test_intel_openvino_available_xpu_unavailable_is_explained() -> None:
+    runtime = RuntimeCapabilities("intel", False, False, True, False, False)
+
+    recommendation = recommend_profile(_gpu("intel"), runtime)
+
+    assert recommendation.recommended == "intel"
+    intel = next(item for item in recommendation.alternatives if item.profile == "intel")
+    assert intel.asr_accelerated is True
+    assert intel.diarization_accelerated is False
+    assert any(
+        "ASRはGPU" in reason and "話者分離はCPU" in reason
+        for reason in recommendation.reasons
+    )
+
+
+def test_intel_xpu_timeout_is_reported_as_unknown_not_unavailable() -> None:
+    runtime = RuntimeCapabilities("intel", False, False, True, None, False)
+
+    recommendation = recommend_profile(_gpu("intel"), runtime)
+
+    assert recommendation.detection_confident is False
+    assert any(
+        "PyTorch XPU" in reason and "判定" in reason and "できません" in reason
+        for reason in recommendation.reasons
+    )
 
 
 def test_amd_gpu_recommends_vulkan_with_diarization_on_cpu_only() -> None:
