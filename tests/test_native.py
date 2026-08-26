@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -128,18 +129,31 @@ def test_probe_vulkan_runtime_parses_device_name(monkeypatch: pytest.MonkeyPatch
     assert device == "Fake GPU"
 
 
-def test_probe_openvino_gpu_unavailable_without_the_package() -> None:
-    # The dev test environment does not install the optional `openvino` extra.
+def test_probe_openvino_gpu_unavailable_without_the_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `sys.modules[name] = None` is the standard way to force both
+    # `importlib.util.find_spec(name)` and `import name` to behave as if the
+    # package were absent, regardless of whether the venv running this test
+    # actually has the optional `openvino` extra installed (it does in the
+    # Intel-profile venv used to verify Phase 5k/5l on real hardware).
+    monkeypatch.setitem(sys.modules, "openvino", None)
     check, device = probe_openvino_gpu()
     assert check.available is False
     assert device is None
 
 
-def test_resolve_openvino_cmake_dir_none_without_the_package() -> None:
+def test_resolve_openvino_cmake_dir_none_without_the_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "openvino", None)
     assert resolve_openvino_cmake_dir() is None
 
 
-def test_resolve_openvino_runtime_dirs_empty_without_the_package() -> None:
+def test_resolve_openvino_runtime_dirs_empty_without_the_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "openvino", None)
     assert resolve_openvino_runtime_dirs() == ()
 
 

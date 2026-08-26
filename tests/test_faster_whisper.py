@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+import utteran.devices as device_module
 from utteran.asr.faster_whisper import FasterWhisperBackend
 from utteran.devices import LibraryReport
 from utteran.errors import ModelNotFoundError
@@ -77,15 +78,36 @@ def test_auto_device_falls_back_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
                 raise ValueError("float16 is unavailable")
 
     monkeypatch.setattr("faster_whisper.WhisperModel", CudaFailingLoader)
-    monkeypatch.setattr("ctranslate2.get_cuda_device_count", lambda: 1)
     monkeypatch.setattr(
         "utteran.devices.detect_cuda_libraries",
         lambda: LibraryReport("cudnn", "cublas"),
     )
-    monkeypatch.setattr(
-        "ctranslate2.get_supported_compute_types",
-        lambda device, _index=0: {"float16"} if device == "cuda" else {"int8"},
-    )
+
+    # Since Phase 5k, `detect_ctranslate2()` no longer calls CTranslate2
+    # in-process - each probe runs in a fresh subprocess via
+    # `run_isolated_probe()`, so monkeypatching the `ctranslate2` module
+    # directly (the old approach) no longer reaches it. Fake the isolated
+    # probe boundary itself instead, matching tests/test_devices.py.
+    def fake_run_isolated_probe(
+        name: str,
+        label: str,
+        _timeout_seconds: float,
+        *,
+        argument: str | None = None,
+        command: list[str] | None = None,
+    ) -> device_module._ProbeRun:
+        outcome = device_module.ProbeOutcome(name, label, "completed", 0.01)
+        if name == "ctranslate2_cpu":
+            return device_module._ProbeRun(outcome, {"version": "test", "compute_types": ["int8"]})
+        if name == "ctranslate2_cuda_count":
+            return device_module._ProbeRun(outcome, {"version": "test", "count": 1})
+        if name == "nvidia_metadata":
+            return device_module._ProbeRun(outcome, {"stdout": ""})
+        if name == "ctranslate2_cuda":
+            return device_module._ProbeRun(outcome, {"compute_types": ["float16"]})
+        raise AssertionError(f"unexpected probe in this test: {name}")
+
+    monkeypatch.setattr(device_module, "run_isolated_probe", fake_run_isolated_probe)
     backend = FasterWhisperBackend()
 
     backend.load("tiny", "auto", "auto")
