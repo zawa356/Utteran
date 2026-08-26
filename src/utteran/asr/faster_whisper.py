@@ -5,11 +5,16 @@ from __future__ import annotations
 import gc
 import importlib.util
 import logging
+import time
 from pathlib import Path
 from typing import Any, ClassVar
 
 from utteran.asr.base import ASRBackend
-from utteran.devices import register_cuda_dll_directories, select_faster_whisper_device
+from utteran.devices import (
+    register_cuda_dll_directories,
+    select_faster_whisper_device,
+    suppress_torch_import,
+)
 from utteran.errors import (
     BackendUnavailableError,
     CancelledError,
@@ -53,7 +58,8 @@ class FasterWhisperBackend(ASRBackend):
             return []
         try:
             register_cuda_dll_directories()
-            import ctranslate2
+            with suppress_torch_import():
+                import ctranslate2
 
             for index in range(ctranslate2.get_cuda_device_count()):
                 devices.append(
@@ -70,7 +76,16 @@ class FasterWhisperBackend(ASRBackend):
                 "faster-whisper が導入されていません。`uv sync` を実行してください。"
             )
         register_cuda_dll_directories()
-        from faster_whisper import WhisperModel
+        import_started = time.perf_counter()
+        with suppress_torch_import() as suppressed_torch:
+            from faster_whisper import WhisperModel
+        import_duration = time.perf_counter() - import_started
+        structured_event(
+            "asr_ctranslate2_import_completed",
+            backend=self.name,
+            duration_seconds=round(import_duration, 3),
+            torch_import_suppressed=suppressed_torch,
+        )
 
         selection = select_faster_whisper_device(device, compute_type)
         runtime_model = find_runtime_model(self.name, model_id)
@@ -78,14 +93,19 @@ class FasterWhisperBackend(ASRBackend):
         selected_device = selection.device
         device_index = selection.device_index
         selected_compute_type = selection.compute_type
+        cpu_threads = 0
+        num_workers = 1
         if selection.note:
             logging.getLogger(__name__).info(selection.note)
+        load_started = time.perf_counter()
         try:
             self._model = WhisperModel(
                 model_source,
                 device=selected_device,
                 device_index=device_index,
                 compute_type=selected_compute_type,
+                cpu_threads=cpu_threads,
+                num_workers=num_workers,
                 local_files_only=not Path(model_source).exists(),
             )
         except Exception as exc:
@@ -103,12 +123,15 @@ class FasterWhisperBackend(ASRBackend):
                         device=selected_device,
                         device_index=device_index,
                         compute_type=selected_compute_type,
+                        cpu_threads=cpu_threads,
+                        num_workers=num_workers,
                         local_files_only=not Path(model_source).exists(),
                     )
                 except Exception as fallback_error:
                     _raise_load_error(model_id, selected_device, fallback_error)
             else:
                 _raise_load_error(model_id, selected_device, exc)
+        load_duration = time.perf_counter() - load_started
         self._model_id = model_id
         self._device = f"cuda:{device_index}" if selected_device == "cuda" else selected_device
         structured_event(
@@ -117,6 +140,9 @@ class FasterWhisperBackend(ASRBackend):
             model=model_id,
             device=self._device,
             compute_type=selected_compute_type,
+            cpu_threads=cpu_threads,
+            num_workers=num_workers,
+            load_duration_seconds=round(load_duration, 3),
             fallback_allowed=device == "auto",
         )
 
@@ -135,6 +161,7 @@ class FasterWhisperBackend(ASRBackend):
         if progress is not None:
             progress(ProgressEvent("asr", 0.0, None, "文字起こしを開始します"))
 
+        transcribe_started = time.perf_counter()
         try:
             backend_segments, info = self._model.transcribe(
                 str(audio_path),
@@ -184,6 +211,19 @@ class FasterWhisperBackend(ASRBackend):
         except Exception as exc:
             _raise_inference_error(exc)
 
+        transcribe_duration = time.perf_counter() - transcribe_started
+        structured_event(
+            "asr_transcribe_completed",
+            backend=self.name,
+            device=self._device,
+            audio_duration_seconds=round(duration, 3),
+            transcribe_duration_seconds=round(transcribe_duration, 3),
+            realtime_factor=(
+                round(duration / transcribe_duration, 3) if transcribe_duration else None
+            ),
+            segment_count=len(segments),
+            vad_filter=options.vad_filter,
+        )
         if progress is not None:
             progress(ProgressEvent("asr", duration, duration, "文字起こしが完了しました"))
         return TranscriptionResult(

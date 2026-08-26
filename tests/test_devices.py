@@ -28,6 +28,7 @@ from utteran.devices import (
     detect_vulkan,
     run_isolated_probe,
     select_faster_whisper_device,
+    suppress_torch_import,
 )
 from utteran.errors import BackendUnavailableError
 from utteran.profiles import venv_dir_name
@@ -207,6 +208,34 @@ def test_timed_out_probe_is_unknown_and_never_available() -> None:
     assert report.xpu_status == "timeout"
     assert report.xpu_available is False
     assert report.xpu_devices == ()
+
+
+def test_suppress_torch_import_installs_and_removes_a_stand_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delitem(sys.modules, "torch", raising=False)
+
+    with suppress_torch_import() as installed:
+        assert installed is True
+        assert "torch" in sys.modules
+        import torch
+
+        assert torch.__name__ == "torch"
+
+    assert "torch" not in sys.modules
+
+
+def test_suppress_torch_import_leaves_a_real_import_untouched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_module = type(sys)("torch")
+    monkeypatch.setitem(sys.modules, "torch", real_module)
+
+    with suppress_torch_import() as installed:
+        assert installed is False
+        assert sys.modules["torch"] is real_module
+
+    assert sys.modules["torch"] is real_module
 
 
 def test_probe_cache_round_trip_and_hardware_invalidation(tmp_path: Path) -> None:
