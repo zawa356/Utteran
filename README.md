@@ -358,8 +358,8 @@ NVIDIA GPUを持たない環境でCTranslate2/PyTorchのCUDA検出がネイテ�
 「利用可能」ではなく「判定不能」として扱われ、誤って高速な構成が選ばれることは
 ありません。
 
-- NVIDIA GPUがない環境では、**初回（未キャッシュ）の検出に1〜2分程度かかる**
-  ことがあります（該当プローブが毎回タイムアウトするため）。GUIはこの間、
+- NVIDIA GPUがない環境では、PyTorch CUDA/XPUプローブがタイムアウトするため
+  **初回（未キャッシュ）の検出に数十秒程度かかる**ことがあります。GUIはこの間、
   起動処理やジョブキューをブロックしません。
 - 結果はハードウェア・ドライバ・パッケージ構成をキーにキャッシュされ、
   2回目以降は数秒で完了します。`utteran devices --refresh`で明示的に
@@ -368,6 +368,22 @@ NVIDIA GPUを持たない環境でCTranslate2/PyTorchのCUDA検出がネイテ�
   `config.toml`の`[general] device_probe_timeout_seconds`で変更できます。
 
 詳細な設計（分離・タイムアウト・キャッシュの根拠）は[要件定義](要件定義.md)4.5章を
+参照してください。
+
+### faster-whisper CPU推論とPyTorchの関係について（Phase 5m）
+
+CTranslate2（faster-whisperの実行基盤）は、実際には使わないモデル変換ヘルパーの
+ためだけに`import ctranslate2`時点で無条件に`torch`をインポートします。この
+プロジェクトのIntel profileが導入するPyTorch（XPUビルド）は800 MiB超の
+ネイティブDLL（`torch_xpu.dll`）を含み、特定のIntel iGPU/ドライバ構成では
+このDLLの初期化だけで実CPU時間を大量に消費し、完了しないことがあります
+（実測: 1000秒超のCPU時間を消費しても完了せず）。**これはCUDA/XPUデバイスを
+明示的に問い合わせているわけではなく、`ctranslate2`をインポートするだけで
+発生します。** faster-whisperのCPU/CUDA推論はCTranslate2のネイティブ実行に
+torchを必要としないため、`utteran.devices.suppress_torch_import()`で
+`ctranslate2`インポート中だけ軽量な代替モジュールに置き換え、直後に元へ戻す
+ことでこの問題を回避しています（話者分離が後続で本物のtorchを必要とする場合は
+通常どおり実importされます）。詳細は[要件定義](要件定義.md)4.5.4章を
 参照してください。
 
 ## ログ

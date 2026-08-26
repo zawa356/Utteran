@@ -16,10 +16,11 @@ import subprocess
 import sys
 import sysconfig
 import time
-from collections.abc import Callable
-from contextlib import suppress
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Literal, cast
 
 from platformdirs import user_cache_dir
@@ -1433,6 +1434,33 @@ def _find_shared_library(names: tuple[str, ...], globs: tuple[str, ...]) -> str 
             if match is not None:
                 return str(match)
     return None
+
+
+@contextmanager
+def suppress_torch_import() -> Iterator[bool]:
+    """Shadow ``torch`` in ``sys.modules`` while CTranslate2 is imported.
+
+    ``ctranslate2.specs.model_spec`` does an unconditional, module-level
+    ``try: import torch`` purely to support its (unused by utteran) PyTorch
+    checkpoint conversion helpers. On this project's Intel profile, the real
+    ``torch`` package ships an 800+ MiB ``torch_xpu.dll`` whose native
+    initialization (``torch/__init__.py::_load_dll_libraries``) can spend
+    many minutes of real CPU time on machines with this Intel iGPU/driver
+    combination (measured: 1000+ CPU-seconds without finishing) -- this is
+    the actual cause of the "faster-whisper CPU inference never finishes"
+    symptom, not an explicit CUDA/XPU device query. Runtime inference never
+    touches ``model_spec``'s torch-only conversion paths, so a lightweight
+    stand-in is safe here and is removed immediately afterward so a later,
+    genuine ``import torch`` (e.g. for diarization) is unaffected.
+    """
+    already_imported = "torch" in sys.modules
+    if not already_imported:
+        sys.modules["torch"] = ModuleType("torch")
+    try:
+        yield not already_imported
+    finally:
+        if not already_imported:
+            sys.modules.pop("torch", None)
 
 
 def register_cuda_dll_directories() -> tuple[Path, ...]:
