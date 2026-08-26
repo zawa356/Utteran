@@ -116,12 +116,16 @@ def _piece(
     segment_start: float,
     segment_end: float,
 ) -> _Piece:
-    start = _token_time(tokens[0], "from", segment_start)
+    start = _token_time_in_segment(tokens[0], "from", segment_start, segment_end)
     end = (
-        _token_time(next_token, "from", segment_end)
+        _token_time_in_segment(next_token, "from", segment_start, segment_end)
         if next_token is not None
-        else _offset_time(tokens[-1], "to", segment_end)
+        else _offset_time_in_segment(tokens[-1], "to", segment_start, segment_end)
     )
+    if end <= start:
+        end = _offset_time_in_segment(tokens[-1], "to", segment_start, segment_end)
+    if end <= start and next_token is not None:
+        end = _offset_time_in_segment(next_token, "from", segment_start, segment_end)
     start = min(max(start, segment_start), segment_end)
     end = min(max(end, start), segment_end)
     probabilities = [float(token["p"]) for token in tokens if token.get("p") is not None]
@@ -129,12 +133,51 @@ def _piece(
     return _Piece(text, start, end, probability)
 
 
-def _token_time(token: Mapping[str, Any], edge: str, fallback: float) -> float:
+def _token_time_in_segment(
+    token: Mapping[str, Any], edge: str, segment_start: float, segment_end: float
+) -> float:
+    offset = _resolved_offset(token, edge, segment_start, segment_end)
+    if offset is not None:
+        return offset
     dtw = _dtw(token)
     if dtw >= 0:
         # whisper_token_data::t_dtw uses the same 10 ms tick as t0/t1.
-        return dtw * DTW_SECONDS_PER_TICK
-    return _offset_time(token, edge, fallback)
+        value = dtw * DTW_SECONDS_PER_TICK
+        if segment_start <= value <= segment_end:
+            return value
+    return _offset_time_in_segment(token, edge, segment_start, segment_end)
+
+
+def _offset_time_in_segment(
+    token: Mapping[str, Any], edge: str, segment_start: float, segment_end: float
+) -> float:
+    resolved = _resolved_offset(token, edge, segment_start, segment_end)
+    if resolved is not None:
+        return resolved
+    value = _offset_time(token, edge, segment_start if edge == "from" else segment_end)
+    return value
+
+
+def _resolved_offset(
+    token: Mapping[str, Any], edge: str, segment_start: float, segment_end: float
+) -> float | None:
+    offsets = token.get("offsets")
+    if not isinstance(offsets, Mapping) or offsets.get(edge) is None:
+        return None
+    try:
+        value = float(offsets[edge]) / 1000.0
+    except (TypeError, ValueError):
+        return None
+    return _absolute_or_relative(value, segment_start, segment_end)
+
+
+def _absolute_or_relative(value: float, segment_start: float, segment_end: float) -> float | None:
+    if segment_start <= value <= segment_end:
+        return value
+    duration = segment_end - segment_start
+    if 0.0 <= value <= duration:
+        return segment_start + value
+    return None
 
 
 def _offset_time(token: Mapping[str, Any], edge: str, fallback: float) -> float:
