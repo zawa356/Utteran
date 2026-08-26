@@ -1,5 +1,213 @@
 # AI 作業状態
 
+## Phase 5m CPU推論の異常な遅延の調査と修正（2026-08-26）
+
+`docs/utteran_CPU推論遅延_指示書.md`相当の指示（会話内、文書化はされていない）に従い、
+`fix/cpu-inference-slowdown`で実施した。Phase 5lの検証中に発見された「本機の
+faster-whisper CPU推論（smallモデル）が、無音3秒のwavでも5分以上完了しない」
+不具合を、推測ではなく実測で切り分けて原因を特定し、修正した。実施環境は
+Phase 5k/5l検証対象と同一の本機（Core i7-1165G7 / Iris Xe / NVIDIA なし）。
+
+### Step 1: 切り分け（実測）
+
+まず`python -X importtime -c "import ctranslate2"`を実行したところ、**モジュール
+インポート単体が60秒超で完了しなかった**。`faulthandler.dump_traceback_later()`で
+12秒後のスタックを採取すると、一貫して`torch/__init__.py:275 _load_dll_libraries`を
+指した。`torch/lib/`を調査すると`torch_xpu.dll`が840,676,352 bytes（約802 MiB）
+あり、`_load_dll_libraries()`がこれを`kernel32.LoadLibraryW`で読み込む処理が
+原因と判明した。`import faster_whisper`単体も同様に60秒超では完了せず、
+実際にバックグラウンドで走らせたまま他の調査を続けたところ、**約20分後に
+`Get-Process`でCPU時間1042.92秒（17分超）に達してもまだ完了していなかった**
+（メモリは約116 MiBで横ばい、`Responding`状態だが実計算中で、AISTATEの
+「CPU時間が増加し続ける」という既存記録と一致）。この時点でkillした。
+
+`sys.modules["torch"]`へダミーモジュールを事前登録してから`import ctranslate2`を
+実行すると、0.32秒で完了し`get_supported_compute_types("cpu")`も正常に動作した
+（登録解除後に本物の`import torch`をすると、想定どおり再び60秒超かかった）。
+これにより、**faster-whisper CPU推論の異常な遅延は、VADのハルシネーション
+（1-A）でもVAD自体（1-B）でもCUDA探索（Phase 5kが特定した
+`ctranslate2.get_cuda_device_count()`のハング）でもなく、CTranslate2
+4.8.1の`ctranslate2.specs.model_spec`がモジュールレベルで無条件に実行する
+`try: import torch`（実際には使わないモデル変換ヘルパーのため）が、
+本機のPyTorch XPUビルド（`torch_xpu.dll`のネイティブDLLロード）を
+巻き込んで極端に遅くなることが根本原因**と実測で確定した（Step 2の仮説表で
+言えばCに最も近いが、CUDAデバイスへの明示的な問い合わせではなく単なる
+`import`が引き金である点が異なる）。
+
+1-C（モデルサイズ）: tiny・smallいずれでも同じ箇所で同じ遅延が発生することを
+コード解析で確認した（`WhisperModel`のコンストラクタに到達する前、
+`import`の時点で止まるため模型サイズに依存しない）。large-v3-turboの
+追加ダウンロードを試みたが、この時点の回線速度が実測2.4 KB/s
+（ETA表示が669,114秒）と極端に遅く、待つのは非現実的と判断し中止した
+（未実施として記録。ただし原因がモデル非依存であることはコードレベルで
+確認済みのため、結論には影響しない）。
+
+1-D（whisper.cpp / native build）: `utteran native status --json`を
+実行し、`vswhere.exe`がVisual Studio 17 2022のC++ツールセットを検出できず
+CMake構成が失敗することを再確認した（Phase 5l既知の限界と同じ）。
+本セッションでも未導入のため**未実施**。
+
+1-E（Intel Arc 140T機との比較）: 本セッションからその実機へアクセスできず
+**未実施**。
+
+### Step 2: 修正
+
+`utteran.devices.suppress_torch_import()`（新設、contextmanager）を実装した。
+`sys.modules`に`torch`が未登録の場合だけ軽量な代替`ModuleType`を一時登録し、
+`import ctranslate2`完了後に直ちに取り除く。適用箇所は次の2つ。
+
+- `src/utteran/asr/faster_whisper.py`の`FasterWhisperBackend.available_devices()`と
+  `load()`（実推論経路。ここが無制限にハングしていた本丸）。
+- `src/utteran/_device_probe.py`の`_ctranslate2_cpu()`・`_ctranslate2_cuda_count()`・
+  `_ctranslate2_cuda()`（Phase 5kの隔離プローブ内。CPU専用の問い合わせでも
+  巻き込みimportで20秒タイムアウトしていたため、副次的に高速化する）。
+
+`torch_cuda`・`torch_xpu`プローブ（`_device_probe.py::_torch()`）は実際に
+PyTorch CUDA/XPUを検証する必要があるため対象外とし、Phase 5kの20秒
+タイムアウト＋killに委ねた（本機では引き続き毎回タイムアウトする。これは
+本修正のスコープ外と判断した）。
+
+あわせて、ASR読み込み・推論の各段階を構造化イベントとして記録するよう
+`faster_whisper.py`を拡張した。`asr_ctranslate2_import_completed`
+（インポート所要時間、torch差し替えの有無）、`asr_backend_resolved`
+（`cpu_threads`・`num_workers`・`load_duration_seconds`を追加）、
+`asr_transcribe_completed`（新設、推論所要時間・実時間比・segment数・
+vad_filter）。D（スレッド数）・E（compute_type）はこのログ拡張と実測で
+確認した結果、問題なしと判断した（CPU自動選択は`int8`、`cpu_threads=0`
+（CTranslate2既定の自動選択）で、いずれも不合理な値ではなかった）。
+
+### Step 3: 検証（実機、本機、2026-08-26）
+
+`git stash`で修正前のコードへ一時的に戻し、報告された条件そのもの
+（`utteran transcribe`、faster-whisper・CPU・small・無音3秒・VAD既定）を
+実際のCLI経由で実行したところ、**300秒（5分）のタイムアウトまでASR
+ステージから一切進まなかった**（audioステージは0.6秒で完了、asrステージ
+開始後は無応答）。修正を復元して同一条件を再実行すると、**ASRステージ
+合計6.48秒**（`asr_ctranslate2_import_completed`のimport 0.4秒＋
+`asr_backend_resolved`のモデル読み込み4.36秒＋`asr_transcribe_completed`の
+推論0.69秒）で完了し、VADが無音3秒全体を正しく除去してsegment数0を
+返した（ハルシネーションなし）。
+
+同じ修正済みコードで、無音30秒（3.68秒、VADが全区間を除去）、純音3秒・
+合成音声3秒（いずれもVADが非音声と判定しsegment数0、0.5〜0.7秒）、
+VAD無効化（`UTTERAN_ASR__VAD_FILTER=false`、無音3秒で2.21秒、フル推論しても
+ハルシネーションなくsegment数0）、tinyモデル（0.35秒load＋0.35秒推論）を
+それぞれ計測し、いずれも数秒以内に完了した。
+
+実際に発話を含む音声での回帰確認として、Windows標準のSAPI
+（`System.Speech.Synthesis.SpeechSynthesizer`）で13.73秒の英語合成音声を
+生成し（内容は本ファイルに記録しない）、同じsmallモデルで文字起こしした。
+VADが音声区間を正しく保持し（除去0秒）、2 segmentを3.62秒（実時間比3.79倍）で
+生成し、`.srt`/`.json`/`.md`出力も正常に生成された。これにより、
+`suppress_torch_import()`が推論経路の動作（本物の文字起こし結果）へ
+悪影響を与えていないことを確認した。実際の会議音声（数分）は本セッションで
+用意できなかったため未実施（合成音声13.73秒での確認をもって代替した）。
+
+### 統合受入試験ハーネス（実機、既定162件）
+
+本セッション開始時点で`output/_testdata/`が空（フィクスチャ未配置）で、既定modelの
+`faster-whisper:large-v3-turbo`も未取得だったため、初回実行はpass=39/fail=84/skip=39
+だった。`results.jsonl`を精査したところ、84件の失敗は**すべて**`FileNotFoundError`
+（テスト音声不在）または後続段階の連鎖失敗で、torch/ctranslate2に言及するものは
+0件だった。
+
+SAPI合成音声とffmpegで`clip_30s.mp4`・`clip_03m.{wav,m4a,mp4}`・`broken.mp4`・
+`empty.mp4`・`notmedia.txt`・batch/nested複製という最小限のフィクスチャを作成し
+（複数話者を要する`clip_03m_multi.mp4`・10分クリップ`clip_10m.mp4`・whisper.cpp用
+GGMLモデルは、内容の正しさを装えないため作成しなかった）、2回目を実行した。
+実行中に`large-v3-turbo`・`kotoba-whisper-v2.0`が(harnessの別ケースが誘発した取得により)
+完了し、pass=47/fail=76/skip=39となった。`clip_03m.mp4`欠落を補って3回目を実行した
+結果、**pass=80/fail=47/skip=35（3485秒）**まで改善した。
+
+残り47件の失敗を`results.jsonl`の`stderr`から全件確認し、原因を次の4種類に分類した
+（推測ではなく実際のエラーメッセージから分類。**いずれもtorch/ctranslate2への言及は
+0件**）。
+
+1. whisper.cpp native buildおよびGGML専用モデル（`large-v3-turbo-q5_0`等）不在
+   （P0-1・P2-1・P3-2・P5-6・P8-4等）。本機はVisual Studio C++ Build Tools未導入の
+   ため引き続き未実施（1-D、Phase 5lから状態変わらず）。
+2. `clip_10m.mp4`・`clip_03m_multi.mp4`（複数話者判定を要する）フィクスチャ不在
+   （G9-09・P9-2・P10-A等）。内容の正しさを装えないため意図的に作成しなかった。
+3. 話者分離のメモリガード（要件定義13.4章、Phase 4b実装）が`判定=impossible`を返す
+   （G3系・G4-01等）。これは既存の安全機能が、本セッション中に`build.ps1`や複数の
+   harness実行を並行させたことで実際に空きRAMが逼迫していた状態（実測2.44 GiB）を
+   正しく検知して起動前に拒否したもので、コードの不具合ではない。
+4. `validate.py`のJSONアサーション（`native.variants.cpu`等）がnative build前提の
+   期待値を要求（P3-2）。1と同根。
+
+G1-01相当（30秒mp4・CPU・no-diarization）を`--asr-model small`明示で直接実行し、
+exit 0、5形式すべて出力、ASR 8.228秒（実時間比3.6倍）を個別に確認した。これにより、
+既定modelを`large-v3-turbo`に固定した`config.acceptance.toml`とは独立に、本修正が
+対象とする経路（faster-whisper CPU推論）が実際に正しく動作することを確認している。
+
+**受入試験ハーネスは既定162件のうち完全合格ではない（80 pass / 47 fail / 35 skip）。**
+禁止事項「実施できない検証を推測で埋めない」に従い、上記の通り原因を全件記録した。
+未達成の47件はいずれも(a)本機のnative build未導入、(b)複数話者・長時間フィクスチャの
+不在、(c)本セッションの一時的な空きRAM逼迫のいずれかに起因し、今回の修正
+（`suppress_torch_import()`）に起因する失敗は1件も確認されなかった。
+
+副次効果として、`utteran devices --json --refresh`の所要時間が
+Phase 5k/5l実測の約90〜100秒から**約49秒**へ改善した。プローブ内訳は
+`ctranslate2_cpu`0.44秒・`ctranslate2_cuda_count`0.47秒（いずれも従来20秒
+タイムアウトしていた）、`torch_cuda`・`torch_xpu`は対象外のため引き続き
+20秒ずつタイムアウト（残り約40秒の内訳）。
+
+### 未実施・既知の限界
+
+- large-v3-turboモデルでの直接計測（1-C、無音3秒での時間測定）は、当初の
+  回線速度実測が2.4 KB/s（ETA 669,114秒）と極端に遅かったため見送った。
+  tiny/smallの実測とコード解析（`import`時点で止まるためモデルサイズに
+  依存しない）から結論への影響はないと判断した。なお、この後受入試験
+  ハーネス実行中（別ケースの取得誘発）に回線が回復し`large-v3-turbo`・
+  `kotoba-whisper-v2.0`とも完全取得済みとなった（後述の受入試験節参照）。
+- whisper.cpp/native build経路との比較（1-D）は、本機にVisual Studio C++
+  Build Toolsが未導入のため未実施（Phase 5lから状態変わらず）。
+- Intel Arc 140T機での回帰確認（1-E）は本セッションからアクセスできず未実施。
+  今回の修正はハードウェア機種に依存しない一般的な問題（CTranslate2 4.8.1が
+  torchを巻き込みimportする点、Intel XPUビルドのPyTorchが大きなネイティブ
+  DLLを持つ点）に対するものであり、Arc機でも同種の遅延が起きていれば
+  同じ理屈で解消するはずだが、実機未確認である。
+- 実際の会議音声（数分）での確認は用意できず、13.73秒の合成音声（SAPI）で
+  代替した。
+- `torch_cuda`・`torch_xpu`プローブ自体の20秒タイムアウトは今回のスコープ外
+  として変更していない。本機ではこの2プローブが引き続きタイムアウトするため、
+  話者分離のXPU自動選択は判定不能のまま（`devices --json`の`auto_selection`が
+  示すとおりCPUへフォールバックする、Phase 5k以来の既知動作）。
+- 受入試験ハーネス用に`output/_testdata/`（git対象外）へ最小限の合成音声
+  フィクスチャを新規作成した: `clip_30s.mp4`・`clip_03m.{wav,m4a,mp4}`・
+  `broken.mp4`・`empty.mp4`・`notmedia.txt`・`batch/`配下の複製。いずれも
+  Windows SAPI（`System.Speech`）による単一話者の合成音声で、内容は
+  記録していない。複数話者判定を要する`clip_03m_multi.mp4`と
+  長時間の`clip_10m.mp4`は、内容の正しさを装えないため意図的に作成せず
+  未実施のままとした（次回セッションでこれらを用意すればP9/P10/G9-09等の
+  検証が進められる）。
+
+### 破壊的変更への配慮
+
+VADの既定値やASR設定は変更していないため、既存ジョブの`config_hash`は
+変化せず、再計算は発生しない。`suppress_torch_import()`は`sys.modules`を
+一時的にしか変更せず（`import ctranslate2`完了後に直ちに元へ戻す）、
+既存のvenv・モデル・設定・ジョブへの影響はない。
+
+### バージョニングとビルド
+
+`要件定義.md`24.1章・`docs/リリース手順.md`の手順に従い0.1.9→0.1.10へ
+パッチを上げた（`pyproject.toml`・`src/utteran/__init__.py`・
+`src/utteran_gui/__init__.py`・`uv lock`）。`tests/test_version.py`で
+一致を確認済み。
+
+`.\build.ps1`を実行し、PyInstaller onedir→推論core非同梱check→Inno Setup
+compileまで成功した。ビルドスクリプト自身の`Get-FileHash`呼び出しだけが
+`CommandNotFoundException`で失敗した（`Start-Process`経由の非対話
+PowerShellセッション固有の事象と見られ、原因の深追いはスコープ外と判断）。
+インストーラー本体は正常生成されていたため、SHA-256は同じ`Get-FileHash`
+コマンドレットを対話的に実行して算出し、`build.ps1`と同じ書式
+（小文字16進 + 半角スペース2つ + ファイル名）で`.sha256`サイドカーを
+手動作成した。
+
+`dist\installer\utteran-setup-0.1.10.exe`
+SHA-256: `30bd0f3ac6e7f3c8d7c370e19757f1e33f06cdb8405eb0ead42db997abffc1f3`
+
 ## Phase 5l 起動フリーズの解消とPhase 5kの完了（2026-08-26）
 
 `docs/utteran_Phase5l_指示書.md`に従い、`fix/phase5l-startup-freeze`で実施した。
