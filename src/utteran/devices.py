@@ -414,6 +414,19 @@ def run_isolated_probe(
     ``command`` exists for deterministic timeout/process-tree acceptance tests;
     production calls always use the private one-shot worker module.
     """
+    if command is None and getattr(sys, "frozen", False):
+        # `sys.executable` inside a PyInstaller-frozen process is the frozen
+        # executable itself, not a plain interpreter - `-m module` would
+        # relaunch the whole packaged app instead of the tiny probe worker.
+        # This module is never bundled into the frozen GUI today (excluded
+        # by packaging/gui.spec's inference-core guard - see AISTATE.md
+        # Phase 5l), so this should be unreachable, but fail loudly instead
+        # of silently spawning copies of the host application if that ever
+        # changes.
+        raise RuntimeError(
+            "run_isolated_probe cannot use sys.executable inside a frozen build; "
+            "pass an explicit command= for a real interpreter."
+        )
     selected_command = command or [sys.executable, "-m", "utteran._device_probe", name]
     if argument is not None and command is None:
         selected_command.append(argument)

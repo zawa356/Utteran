@@ -72,11 +72,27 @@ def test_profile_cli_run_uses_no_window(tmp_path: Path, monkeypatch: Any) -> Non
     _create_profile(tmp_path)
     captured: dict[str, Any] = {}
 
-    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        captured.update(kwargs)
-        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+    class FakeProcess:
+        returncode = 0
 
-    monkeypatch.setattr("utteran_gui.cli.subprocess.run", fake_run)
+        def __init__(self, command: list[str], **kwargs: Any) -> None:
+            self.args = command
+            captured.update(kwargs)
+
+        def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+            return "{}", ""
+
+        # `cli.py` casts through `subprocess.Popen[str]` for typing, which
+        # evaluates the subscript at runtime; replacing `subprocess.Popen`
+        # module-wide means that subscript now targets this fake class.
+        @classmethod
+        def __class_getitem__(cls, _item: object) -> type[FakeProcess]:
+            return cls
+
+    # CliAdapter runs the profile CLI through Popen + communicate (not
+    # subprocess.run) so a timeout can tree-kill any isolated device-probe
+    # grandchild instead of leaking it - see AISTATE.md Phase 5l.
+    monkeypatch.setattr("utteran_gui.cli.subprocess.Popen", FakeProcess)
 
     assert CliAdapter(tmp_path).run_json("cpu", ["devices", "--json"]) == {}
     assert captured["creationflags"] == NO_WINDOW

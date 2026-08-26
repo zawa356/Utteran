@@ -1716,8 +1716,19 @@
     $("app-version").textContent = `v${version.version}`;
     state.settings = await api("/api/settings");
     applySettings();
-    await loadEnvironment(state.settings.default_profile);
     $("server-dot").title = "127.0.0.1";
+    // Device detection runs an uncached probe pass through the active
+    // profile's CLI, which can legitimately take well over a minute (up to
+    // ~95s measured on a machine without an NVIDIA GPU - see
+    // environment.py's `_DEVICES_PROBE_TIMEOUT_SECONDS`). It must not block
+    // the rest of startup (wizard resume check, job queue) the way it did
+    // before Phase 5l - the window would sit on "detecting..." with no
+    // further progress. `loadEnvironment` already reports its own error
+    // state through `#environment-alert`, so let it run in the background.
+    loadEnvironment(state.settings.default_profile).catch((error) => {
+      $("environment-alert").textContent = error.message;
+      $("environment-alert").classList.remove("hidden");
+    });
     const wizardStatus = await api("/api/wizard/status");
     await loadQueue();
     setInterval(() => loadQueue().catch(() => {}), 1000);
