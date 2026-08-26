@@ -262,6 +262,26 @@ uv run utteran transcribe meeting.wav --asr-backend whisper-cpp \
   --asr-device openvino_vulkan --diarization-device xpu:0
 ```
 
+### 長時間音声の話者分離
+
+whisper.cpp v1.9.1は内蔵VADを使うと、segment時刻だけを元音声のtimelineへ戻し、tokenの
+DTW/offset時刻はVADで圧縮したtimelineのままJSONへ出力します。話者分離では単語時刻が必要なため、
+utteranは`word_timestamps = "auto"`で話者分離が有効な実行、および`"always"`の実行では
+whisper.cpp内蔵VADをその実行だけ無効化します。設定上の`vad = true`はASR単独実行では従来どおり
+有効です。この安全策により長時間ASRは遅くなる場合がありますが、話者交代を正しく保持します。
+
+話者割当後の極短segment吸収は、0.3秒未満、または「単語時刻が実在し、かつ2語未満」の場合だけ
+適用します。単語時刻が欠けたsegmentを0語とみなして長さに関係なく吸収することはありません。
+同一話者segmentの結合閾値は0.5秒のままで、結合回数・gap分布・各段階のsegment数は
+`diarization_statistics`と`alignment_statistics`イベントへ本文なしで記録します。既存ジョブは
+ASR/merge policy hashの更新により該当stage以降を自動再計算します。
+
+調査用には、ジョブディレクトリの中間JSONから本文を出さず統計だけを表示できます。
+
+```console
+uv run python tools/diarization_stats.py <job_dir>
+```
+
 ### 話者分離のメモリ管理
 
 pyannoteのメモリは固定的な基礎量が大きく、音声を短くしても基礎量は減りません。Phase 3dの
