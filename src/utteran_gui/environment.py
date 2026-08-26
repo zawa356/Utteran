@@ -2,10 +2,37 @@
 
 from __future__ import annotations
 
+import subprocess
+import time
 from typing import Any, cast
 
 from utteran_gui.cli import CliAdapter, CliError, as_json_dict
+from utteran_gui.logging_runtime import log_stage
 from utteran_gui.security import mask_secrets
+
+# `utteran devices --json` runs up to 7 isolated native probes sequentially
+# (CTranslate2 CPU/CUDA, PyTorch CUDA/XPU, OpenVINO, ONNX Runtime, Vulkan),
+# each with its own 20-second timeout (`DEFAULT_PROBE_TIMEOUT_SECONDS` in
+# `utteran.devices`) - a worst case of ~140s of pure timeouts plus per-probe
+# process/kill overhead. Measured directly on this project's own Phase 5k/5l
+# reference machine (Core i7-1165G7 / Iris Xe / no NVIDIA GPU) with an
+# uncached probe cache: 94.7s, with 4 of 7 probes timing out. `run_json`'s
+# generic 60s default is comfortably below that, which is what let an
+# uncached first launch appear to freeze - see AISTATE.md Phase 5l. A cached
+# run completes in ~5s (measured on the same machine), so this long ceiling
+# only matters on the very first launch or after a hardware/driver change.
+_DEVICES_PROBE_TIMEOUT_SECONDS = 200.0
+
+# `CliError` only covers a non-zero exit or unparsable JSON. A profile CLI
+# call can also fail at the subprocess layer itself (killed by its own
+# timeout, or the OS refusing to spawn it) - `subprocess.run(timeout=...)`
+# raises `subprocess.TimeoutExpired`/`OSError` directly, not `CliError`.
+# Before Phase 5l, an uncaught timeout here propagated out of `/api/environment`
+# as an unhandled exception; app.js's `boot()` awaits this call before doing
+# anything else (loading the queue, checking first-run wizard state), so the
+# rejection aborted the rest of startup and the window was left showing
+# "detecting..." with no further recovery - see AISTATE.md Phase 5l.
+_CLI_FAILURES = (CliError, subprocess.SubprocessError, OSError)
 
 
 class EnvironmentService:
@@ -15,6 +42,8 @@ class EnvironmentService:
         self.cli = cli
 
     def snapshot(self, requested_profile: str | None = None) -> dict[str, object]:
+        log_stage("environment_snapshot_start", requested_profile=requested_profile)
+        started = time.monotonic()
         local_profiles = self.cli.profiles()
         errors: list[str] = []
         profile_rows = [
@@ -40,7 +69,7 @@ class EnvironmentService:
                     if item is not None:
                         row["exists"] = bool(row["exists"] and item.get("exists") is True)
                         row["updated_at"] = item.get("updated_at")
-            except CliError as exc:
+            except _CLI_FAILURES as exc:
                 errors.append(mask_secrets(str(exc)))
         existing = [str(row["name"]) for row in profile_rows if row["exists"] is True]
         active = requested_profile if requested_profile in existing else None
@@ -56,13 +85,35 @@ class EnvironmentService:
             "errors": errors,
         }
         if active is None:
+            log_stage(
+                "environment_snapshot_done",
+                requested_profile=requested_profile,
+                active_profile=None,
+                duration_seconds=round(time.monotonic() - started, 3),
+            )
             return response
         devices: dict[str, Any] = {}
         models: list[dict[str, Any]] = []
         native: dict[str, Any] = {}
         try:
-            devices = as_json_dict(self.cli.run_json(active, ["devices", "--json"]))
-        except CliError as exc:
+            devices_started = time.monotonic()
+            devices = as_json_dict(
+                self.cli.run_json(
+                    active, ["devices", "--json"], timeout=_DEVICES_PROBE_TIMEOUT_SECONDS
+                )
+            )
+            log_stage(
+                "environment_devices_probe_done",
+                profile=active,
+                duration_seconds=round(time.monotonic() - devices_started, 3),
+            )
+        except _CLI_FAILURES as exc:
+            log_stage(
+                "environment_devices_probe_failed",
+                profile=active,
+                duration_seconds=round(time.monotonic() - devices_started, 3),
+                error=str(exc)[:500],
+            )
             errors.append(mask_secrets(str(exc)))
         try:
             raw_models = self.cli.run_json(
@@ -72,11 +123,11 @@ class EnvironmentService:
                 models = [
                     cast(dict[str, Any], item) for item in raw_models if isinstance(item, dict)
                 ]
-        except CliError as exc:
+        except _CLI_FAILURES as exc:
             errors.append(mask_secrets(str(exc)))
         try:
             native = as_json_dict(self.cli.run_json(active, ["native", "status", "--json"]))
-        except CliError as exc:
+        except _CLI_FAILURES as exc:
             errors.append(mask_secrets(str(exc)))
         models = annotate_model_capabilities(models, devices, native)
         response.update(
@@ -89,6 +140,13 @@ class EnvironmentService:
                 "openvino_models": _read_openvino_models(self.cli, active, errors),
                 "errors": errors,
             }
+        )
+        log_stage(
+            "environment_snapshot_done",
+            requested_profile=requested_profile,
+            active_profile=active,
+            duration_seconds=round(time.monotonic() - started, 3),
+            error_count=len(errors),
         )
         return response
 
@@ -305,7 +363,7 @@ def _empty_options() -> dict[str, object]:
 def _read_model_path(cli: CliAdapter, profile: str, errors: list[str]) -> str | None:
     try:
         return str(cli.run_text(profile, ["models", "path"]).strip())
-    except CliError as exc:
+    except _CLI_FAILURES as exc:
         errors.append(mask_secrets(str(exc)))
         return None
 
@@ -314,7 +372,7 @@ def _read_openvino_models(cli: CliAdapter, profile: str, errors: list[str]) -> l
     try:
         value = cli.run_json(profile, ["models", "list-openvino", "--json"])
         return _list_of_dicts(value)
-    except CliError as exc:
+    except _CLI_FAILURES as exc:
         errors.append(mask_secrets(str(exc)))
         return []
 
