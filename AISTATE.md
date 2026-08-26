@@ -105,6 +105,26 @@ Phase 5kが意図したプロセス分離の範囲内で安全に動作してお
   初回起動時に並行実行されうる点は、Phase 5kのプロセス分離設計の範囲内で安全に
   動作することを実機で確認したが、重複呼び出し自体の解消（結果の共有・排他制御等）は
   今回のスコープ外として変更していない。
+- **本機（Intel profile）で`utteran transcribe`（faster-whisper・CPU・`small`モデル）を
+  実際に実行し、無音3秒のwavが5分以上かかっても終わらないことを発見した。** ワーカー
+  process（`python.exe`）のCPU時間は継続して増加しており（実測52秒→300秒→380秒超）
+  OSレベルのデッドロックではなく実計算を続けているが、メモリ使用量（約151MB）は
+  ほぼ変化しないままだった。440Hzの純音（無音でない）でも同様の症状を確認した。
+  **これはPhase 5lで変更したコード（`select_faster_whisper_device`・`run_isolated_probe`・
+  GUI側の起動処理）の範囲外であり、`transcribe`/`asr`ステージ自体（`pipeline.py`・
+  `faster_whisper.py::transcribe`・ctranslate2本体）の別の問題である可能性が高い。**
+  時間の制約により深追いせず、`native build`（後述の理由でVisual Studio C++ Build Tools
+  未導入のため実行不可）を含め、この機での「文字起こしが実際に実行できる」という
+  Phase 5k本来の検証項目は**未達成のまま**である。次回このPCで作業する際は、
+  この現象の再現・原因調査（`beam_size`・`condition_on_previous_text`・
+  無音/非音声入力時の挙動、ctranslate2 CPU実行のスレッド設定等）を優先すべきである。
+- **whisper.cpp OpenVINOバックエンドのnative buildは本機で実行できなかった。**
+  `vswhere.exe -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64`が
+  何も返さず、Visual Studio 2022 Community自体は導入済みだが「C++によるデスクトップ開発」
+  ワークロード（MSVCコンパイラツールセット）が未導入と確認した。大容量の追加導入が
+  必要なため今回は見送った。このため「OpenVINO経路での文字起こし」検証はできず、
+  上記のfaster-whisper CPU経路でも別の問題（後述）に阻まれ、Phase 5k完了条件の
+  「該当PCで文字起こしが実行できる」は本セッションでは満たせなかった。
 
 ## fix/phase5k-device-probe-timeoutのWIP統合（2026-08-26、未完了・Phase 5lで解消）
 
