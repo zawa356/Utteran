@@ -1,6 +1,132 @@
 # AI 作業状態
 
-## fix/phase5k-device-probe-timeoutのWIP統合（2026-08-26、未完了）
+## Phase 5l 起動フリーズの解消とPhase 5kの完了（2026-08-26）
+
+`docs/utteran_Phase5l_指示書.md`に従い、`fix/phase5l-startup-freeze`で実施した。
+本機はWMI照会で`Intel(R) Iris(R) Xe Graphics`と確認でき、Phase 5k指示書が検証対象と
+した「Core i7-1165G7 / Iris Xe / NVIDIA なし」の該当PCそのものだった。
+
+### Step 0-1: 原因の特定（推測でなく実測）
+
+まずGUI起動シーケンスへ段階ログを追加した（`utteran_gui.logging_runtime.log_stage`、
+`app.py`・`environment.py`から呼ぶ）。実装時に、GUIログのroot loggerへ一度も
+`setLevel`が呼ばれておらず、既定のWARNINGにより既存の`.info()`呼び出しが起動時から
+ずっと無音で破棄されていたことが判明した（`configure_gui_logging`にINFOを設定して解決）。
+
+段階ログを仕込んだ上で、`.venvs`未構築の状態から`setup.ps1 -Profile intel -Yes`を
+実際に実行し、続けてキャッシュを削除した状態で`gui.ps1`を実行して実測した。
+
+- `utteran devices --json`（キャッシュなし）は**94.7秒**（`setup.ps1`経由）
+  および**105.7秒**（GUI経由、後述の理由で2重実行）かかった。7プローブ中
+  CTranslate2 CPU/CUDA・PyTorch CUDA/XPUの4件がそれぞれ20秒タイムアウトした。
+  キャッシュ命中時は5.5秒だった。
+- `src/utteran_gui/cli.py::CliAdapter.run_json`は`devices --json`呼び出しに
+  既定60秒のタイムアウトを使っており、上記の実測値を下回っていた。しかも
+  `subprocess.run(timeout=...)`は直接の子（`utteran.exe`）だけをkillし、
+  さらに孫プロセス（分離プローブ）を残したまま`subprocess.TimeoutExpired`を
+  無捕捉で外へ伝播させる実装だった。
+- `src/utteran_gui/environment.py::EnvironmentService.snapshot()`は`CliError`だけを
+  捕捉しており、上記の`TimeoutExpired`を捕捉できず、`/api/environment`から
+  未処理例外として伝播していた。
+- `src/utteran_gui/web/app.js`の`boot()`は`await loadEnvironment(...)`の完了を
+  待ってからジョブキュー確認・ウィザード再開判定へ進む実装だった。このため
+  `/api/environment`が例外で失敗すると、`boot()`全体がそこで中断し、キュー確認も
+  ウィザード再開判定も一切実行されなくなり、ウィンドウは表示されたまま
+  「detecting...」表示から復帰しなくなっていた。
+
+再現実験では、ウィザードの初回起動判定（`/api/wizard/hardware`、`hardware.py`の
+別経路）も同時に`devices --json`を呼び出しており、2つの`devices --json`が並行実行
+されて各プローブが2回ずつタイムアウトしていた（合計105.7秒）。この並行呼び出し自体は
+Phase 5kが意図したプロセス分離の範囲内で安全に動作しており、今回の修正対象とは
+別問題として記録に留め、変更はしていない。
+
+### Step 2: 修正内容
+
+- `CliAdapter.run_json`/`run_text`を`subprocess.run`から`Popen`+`communicate`+
+  `processes.kill_process_tree`（Windowsは`taskkill /T /F`）へ変更した。タイムアウト時は
+  プロセスツリーごと確実に終了させ、`CliError`として返す（既存の他の失敗と同じ形）。
+- `environment.py`の`devices --json`呼び出しにだけ、プローブ合計の理論上の最悪値
+  （7プローブ×20秒＋kill/再試行オーバーヘッド）を上回る200秒の専用タイムアウトを設定した。
+  `EnvironmentService.snapshot()`の全てのCLI呼び出しを`CliError`だけでなく
+  `subprocess.SubprocessError`・`OSError`も含めて捕捉するよう広げ、失敗時も例外を
+  外へ伝播させず`errors`配列へ記録して安全側の応答を返すようにした。
+- `app.js`の`boot()`で`loadEnvironment(...)`を`await`せず非同期実行に変更し、
+  ジョブキュー確認・ウィザード再開判定をデバイス検出の完了を待たずに進めるようにした。
+  デバイス検出の結果は従来通り`#environment-alert`へ非同期に反映される。
+- `run_isolated_probe`（`utteran/devices.py`）に、PyInstallerでfrozenされたプロセス内から
+  `command=`省略で呼ばれた場合に即座に例外を出す防御を追加した。`sys.executable`が
+  frozen exe自身を指すため`-m`起動がGUIアプリ全体を再起動してしまう可能性があるが、
+  `packaging/gui.spec`が`utteran`パッケージ自体をGUIビルドから除外しているため現状は
+  到達しない。将来の変更でこの前提が崩れた場合に無言でアプリの多重起動を招かないための
+  防御的な変更であり、今回の不具合の直接の原因ではない。
+
+### Step 2 検証（実機、Core i7-1165G7 / Iris Xe / NVIDIA なし、本機）
+
+デバイスプローブキャッシュを削除し、`logs/`を空にした状態で`gui.ps1`を起動し、
+段階ログで追跡した。`environment_snapshot_start`から`environment_snapshot_done`まで
+105.734秒かかり、その間`uvicorn_server_started`・`webview_window_created`は
+起動直後（1秒未満）に完了済みで、ウィンドウ生成後の105秒間、GUIプロセスは
+`Get-Process`で`Responding: True`のまま維持された。デバイス検出は`error_count: 0`で
+正常終了した。修正前のコード（`run_json`の60秒固定タイムアウト、`boot()`の
+`await`）であれば、この実測シナリオは`subprocess.TimeoutExpired`が無捕捉のまま
+`/api/environment`から伝播し、`boot()`のジョブキュー確認・ウィザード判定が
+実行されない状態になっていたはずである。
+
+### Step 3: Phase 5kの残作業
+
+- `tests/test_faster_whisper.py::test_auto_device_falls_back_to_cpu`を、
+  `utteran.devices.run_isolated_probe`をmonkeypatchする形（`tests/test_devices.py`と
+  同じ手法）へ書き直した。従来の`ctranslate2`モジュール直接monkeypatchは、
+  Phase 5kでプローブが別プロセス化されたため届かなくなっていた。
+- `tests/test_native.py`のOpenVINO関連3件（`test_probe_openvino_gpu_unavailable_without_the_package`
+  等）を、`monkeypatch.setitem(sys.modules, "openvino", None)`で`openvino`パッケージの
+  不在を明示的に模擬する形へ書き直した。従来はdev環境に`openvino`が入っていないことに
+  暗黙に依存しており、`openvino`導入済みのIntel profile venvでは失敗していた
+  （本機のIntel profile venvで実際に確認）。
+- `tests/test_gui_processes.py::test_profile_cli_run_uses_no_window`を、
+  `CliAdapter`の実装変更（`subprocess.run`→`Popen`）に合わせて`subprocess.Popen`を
+  monkeypatchする形へ更新した。
+- `README.md`・`要件定義.md`にPhase 5k由来のプローブ分離・タイムアウト・キャッシュの
+  仕様と、Phase 5l由来のGUI側タイムアウト・非同期化を追記した（Phase 5kで未着手のまま
+  main統合されていた文書更新義務を含む）。
+
+### 未実施・既知の限界
+
+- **Intel Arc 140T機（当初の不具合報告機）そのものでの検証は未実施。** 本セッションから
+  その実機へアクセスできないため。今回の実機検証はPhase 5k指示書が検証対象とした
+  「Core i7-1165G7 / Iris Xe / NVIDIA なし」機（本機）でのみ行った。修正内容は
+  ハードウェア機種に依存しない一般的なタイムアウト整合性の問題であり、Arc機でも
+  同じ理屈で発生・解消するはずだが、実機未確認のまま完了と報告しないという指示書の
+  禁止事項に反しないよう、この限界を明記する。
+- CTranslate2/PyTorchが対象環境でなぜ関数によらず一律にタイムアウトするのか
+  （K-3相当の根本原因調査）は特定していない。回避策が見つからなくてもタイムアウトに
+  よる復帰は機能するため、指示書の「タイムアウトの実装は省略しない」は満たしている。
+- `/api/environment`と`/api/wizard/hardware`が独立に`devices --json`を呼び出し、
+  初回起動時に並行実行されうる点は、Phase 5kのプロセス分離設計の範囲内で安全に
+  動作することを実機で確認したが、重複呼び出し自体の解消（結果の共有・排他制御等）は
+  今回のスコープ外として変更していない。
+- **本機（Intel profile）で`utteran transcribe`（faster-whisper・CPU・`small`モデル）を
+  実際に実行し、無音3秒のwavが5分以上かかっても終わらないことを発見した。** ワーカー
+  process（`python.exe`）のCPU時間は継続して増加しており（実測52秒→300秒→380秒超）
+  OSレベルのデッドロックではなく実計算を続けているが、メモリ使用量（約151MB）は
+  ほぼ変化しないままだった。440Hzの純音（無音でない）でも同様の症状を確認した。
+  **これはPhase 5lで変更したコード（`select_faster_whisper_device`・`run_isolated_probe`・
+  GUI側の起動処理）の範囲外であり、`transcribe`/`asr`ステージ自体（`pipeline.py`・
+  `faster_whisper.py::transcribe`・ctranslate2本体）の別の問題である可能性が高い。**
+  時間の制約により深追いせず、`native build`（後述の理由でVisual Studio C++ Build Tools
+  未導入のため実行不可）を含め、この機での「文字起こしが実際に実行できる」という
+  Phase 5k本来の検証項目は**未達成のまま**である。次回このPCで作業する際は、
+  この現象の再現・原因調査（`beam_size`・`condition_on_previous_text`・
+  無音/非音声入力時の挙動、ctranslate2 CPU実行のスレッド設定等）を優先すべきである。
+- **whisper.cpp OpenVINOバックエンドのnative buildは本機で実行できなかった。**
+  `vswhere.exe -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64`が
+  何も返さず、Visual Studio 2022 Community自体は導入済みだが「C++によるデスクトップ開発」
+  ワークロード（MSVCコンパイラツールセット）が未導入と確認した。大容量の追加導入が
+  必要なため今回は見送った。このため「OpenVINO経路での文字起こし」検証はできず、
+  上記のfaster-whisper CPU経路でも別の問題（後述）に阻まれ、Phase 5k完了条件の
+  「該当PCで文字起こしが実行できる」は本セッションでは満たせなかった。
+
+## fix/phase5k-device-probe-timeoutのWIP統合（2026-08-26、未完了・Phase 5lで解消）
 
 > `fix/phase5k-device-probe-timeout`は`docs/utteran_Phase5k_指示書.md`が要求する
 > 「該当PC（NVIDIA GPUなし）での検証」が未実施のままmainへ統合された（利用者の指示による、
