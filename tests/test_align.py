@@ -160,6 +160,29 @@ def test_viterbi_preserves_short_acknowledgement_separated_by_silence() -> None:
     ]
 
 
+def test_viterbi_penalizes_unknown_transitions_like_known_speaker_transitions() -> None:
+    words = [Word(0.0, 0.4, "A"), Word(0.4, 0.5, "x"), Word(0.5, 0.9, "B")]
+    result = align_transcription(
+        transcription(Segment(0.0, 0.9, "AxB", words)),
+        diarization([SpeakerTurn(0.0, 0.4, "MAIN"), SpeakerTurn(0.5, 0.9, "MAIN")]),
+    )
+
+    assert len(result) == 1
+    assert result[0].speaker == "SPEAKER_00"
+
+
+def test_short_unknown_is_absorbed_by_longer_known_neighbour() -> None:
+    words = [Word(0.0, 1.0, "long"), Word(1.0, 1.2, "x"), Word(1.2, 1.5, "short")]
+    result = align_transcription(
+        transcription(Segment(0.0, 1.5, "longxshort", words)),
+        diarization([SpeakerTurn(0.0, 1.0, "LEFT"), SpeakerTurn(1.2, 1.5, "RIGHT")]),
+        AlignmentOptions(speaker_switch_penalty=0.0),
+    )
+
+    assert [segment.speaker for segment in result] == ["SPEAKER_00", "SPEAKER_01"]
+    assert result[0].text == "longx"
+
+
 def test_viterbi_preserves_dense_changes_supported_by_clear_turns() -> None:
     words = [
         Word(0.1, 0.7, "A"),
@@ -197,10 +220,11 @@ def test_viterbi_bridges_only_a_short_gap_between_the_same_speaker() -> None:
     different_speakers = align_transcription(
         transcription(Segment(0.0, 2.0, "AgapB", words)),
         diarization([SpeakerTurn(0.0, 1.0, "FIRST"), SpeakerTurn(1.2, 2.0, "SECOND")]),
+        AlignmentOptions(min_unknown_duration=0.0, min_unknown_characters=0),
     )
 
     assert [segment.speaker for segment in same_speaker] == ["SPEAKER_00"]
-    assert UNKNOWN_SPEAKER in {segment.speaker for segment in different_speakers}
+    assert [segment.speaker for segment in different_speakers] == ["SPEAKER_00", "SPEAKER_01"]
 
 
 def test_missing_word_timestamps_do_not_make_a_long_segment_a_short_island() -> None:

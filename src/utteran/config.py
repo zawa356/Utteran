@@ -97,6 +97,11 @@ silence_switch_threshold = 0.3
 min_clear_turn_duration = 0.5
 max_same_speaker_bridge_gap = 0.3
 unknown_emission_score = 0.35
+min_unknown_duration = 1.0
+min_unknown_characters = 2
+max_unsupported_fragment_duration = 0.5
+max_unsupported_fragment_characters = 3
+min_fragment_speaker_overlap = 0.05
 merge_gap = 0.5
 renumber_speakers = true
 """
@@ -248,6 +253,11 @@ class AlignmentConfig(BaseModel):
     min_clear_turn_duration: float = Field(default=0.5, ge=0.0)
     max_same_speaker_bridge_gap: float = Field(default=0.3, ge=0.0)
     unknown_emission_score: float = Field(default=0.35, ge=0.0)
+    min_unknown_duration: float = Field(default=1.0, ge=0.0)
+    min_unknown_characters: int = Field(default=2, ge=0)
+    max_unsupported_fragment_duration: float = Field(default=0.5, ge=0.0)
+    max_unsupported_fragment_characters: int = Field(default=3, ge=0)
+    min_fragment_speaker_overlap: float = Field(default=0.05, ge=0.0)
     merge_gap: float = Field(default=0.5, ge=0.0)
     renumber_speakers: bool = True
 

@@ -167,6 +167,11 @@ class AlignmentOptions:
     min_clear_turn_duration: float = 0.5
     max_same_speaker_bridge_gap: float = 0.3
     unknown_emission_score: float = 0.35
+    min_unknown_duration: float = 1.0
+    min_unknown_characters: int = 2
+    max_unsupported_fragment_duration: float = 0.5
+    max_unsupported_fragment_characters: int = 3
+    min_fragment_speaker_overlap: float = 0.05
     merge_gap: float = 0.5
     renumber_speakers: bool = True
 

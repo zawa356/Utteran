@@ -517,6 +517,15 @@ def _merge_result(
                 min_clear_turn_duration=config.alignment.min_clear_turn_duration,
                 max_same_speaker_bridge_gap=config.alignment.max_same_speaker_bridge_gap,
                 unknown_emission_score=config.alignment.unknown_emission_score,
+                min_unknown_duration=config.alignment.min_unknown_duration,
+                min_unknown_characters=config.alignment.min_unknown_characters,
+                max_unsupported_fragment_duration=(
+                    config.alignment.max_unsupported_fragment_duration
+                ),
+                max_unsupported_fragment_characters=(
+                    config.alignment.max_unsupported_fragment_characters
+                ),
+                min_fragment_speaker_overlap=config.alignment.min_fragment_speaker_overlap,
                 merge_gap=config.alignment.merge_gap,
                 renumber_speakers=config.alignment.renumber_speakers,
             ),
