@@ -1,6 +1,39 @@
 (() => {
   "use strict";
 
+  const pendingFrontendErrors = [];
+
+  function flushFrontendErrors() {
+    const reporter = window.pywebview?.api?.report_frontend_error;
+    if (!reporter) return;
+    pendingFrontendErrors.splice(0).forEach((payload) => {
+      Promise.resolve(reporter(payload)).catch(() => {});
+    });
+  }
+
+  function queueFrontendError(payload) {
+    if (pendingFrontendErrors.length >= 20) pendingFrontendErrors.shift();
+    pendingFrontendErrors.push(payload);
+    flushFrontendErrors();
+  }
+
+  window.addEventListener("error", (event) => {
+    queueFrontendError({
+      kind: "error",
+      message: event.message || String(event.error || "Unknown frontend error"),
+      source: event.filename || "",
+      line: event.lineno || 0,
+      column: event.colno || 0,
+    });
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    queueFrontendError({
+      kind: "unhandledrejection",
+      message: event.reason?.message || String(event.reason || "Unknown rejected promise"),
+    });
+  });
+  window.addEventListener("pywebviewready", flushFrontendErrors);
+
   const $ = (id) => document.getElementById(id);
   const stages = ["audio", "asr", "diarization", "merge", "export"];
   const outputFormats = ["srt", "vtt", "json", "txt", "md"];
@@ -1700,12 +1733,6 @@
     });
     $("transcript-viewport").addEventListener("scroll", renderVirtualRows, { passive: true });
     $("regenerate-form").addEventListener("submit", regenerate);
-    document.addEventListener("dragover", (event) => event.preventDefault());
-    document.addEventListener("drop", (event) => {
-      event.preventDefault();
-      const file = event.dataTransfer.files[0];
-      if (file) $("input-path").value = file.path || file.name;
-    });
     bindWizard();
   }
 

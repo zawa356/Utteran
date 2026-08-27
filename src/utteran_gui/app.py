@@ -10,6 +10,7 @@ import socket
 import sys
 import threading
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -22,18 +23,27 @@ WINDOWS_APP_USER_MODEL_ID = "Utteran.Utteran"
 
 
 class NativeDialogApi:
-    """pywebview dialog bridge; returned paths are deliberately not persisted."""
+    """Small pywebview bridge with no publicly traversable native objects."""
 
     def __init__(self) -> None:
-        self.window: Any = None
+        # pywebview recursively walks every public attribute of a js_api
+        # object. Its Window reaches native .NET objects, whose mutually
+        # referential properties never terminate. pywebview deliberately
+        # excludes underscore-prefixed attributes from that traversal.
+        self._window: Any = None
+
+    def _attach_window(self, window: Any) -> None:
+        """Attach the native window without exposing it to JavaScript."""
+
+        self._window = window
 
     def choose_path(self, kind: str) -> str | None:
-        if self.window is None:
+        if self._window is None:
             return None
         import webview
 
         if kind == "input_file":
-            result = self.window.create_file_dialog(
+            result = self._window.create_file_dialog(
                 webview.OPEN_DIALOG,
                 allow_multiple=False,
                 file_types=(
@@ -42,10 +52,23 @@ class NativeDialogApi:
                 ),
             )
         elif kind in {"input_folder", "output_folder"}:
-            result = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+            result = self._window.create_file_dialog(webview.FOLDER_DIALOG)
         else:
             raise ValueError(f"Unknown dialog kind: {kind}")
         return str(result[0]) if result else None
+
+    def report_frontend_error(self, payload: object) -> None:
+        """Record a bounded browser exception without letting logging affect the UI."""
+
+        if not isinstance(payload, dict):
+            return
+        allowed = ("kind", "message", "source", "line", "column")
+        fields = {key: str(payload[key])[:2000] for key in allowed if key in payload}
+        # Diagnostics must never prevent the page or UI thread from progressing.
+        with suppress(Exception):
+            logging.getLogger("utteran_gui.frontend").warning(
+                "frontend_error", extra={"gui_fields": fields}
+            )
 
 
 def project_root() -> Path:
@@ -133,7 +156,7 @@ def main() -> None:
     window = webview.create_window(
         "utteran", url=url, width=1180, height=820, min_size=(900, 660), js_api=native_api
     )
-    native_api.window = window
+    native_api._attach_window(window)
     log_stage("webview_window_created", elapsed_seconds=round(time.monotonic() - started, 3))
     try:
         icon_path = project_root() / "icon" / "utteran.ico"
