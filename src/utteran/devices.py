@@ -925,6 +925,8 @@ def _driver_identity() -> list[str]:
 
 
 def _windows_driver_identity() -> list[str]:
+    if sys.platform != "win32":
+        return []
     try:
         import winreg
     except ImportError:
