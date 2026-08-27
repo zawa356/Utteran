@@ -236,6 +236,31 @@ def test_convert_result_discards_zero_length_segments_and_words() -> None:
     assert result.segments[0].words == []
 
 
+def test_convert_result_discards_segment_with_abnormally_long_word() -> None:
+    entry = get_model("whisper-cpp:base")
+    data = {
+        "result": {"language": "ja"},
+        "transcription": [
+            {
+                "offsets": {"from": 899_820, "to": 965_960},
+                "text": "synthetic invalid timing",
+                "tokens": [
+                    {
+                        "text": " token",
+                        "t_dtw": 65_582,
+                        "offsets": {"from": 899_820, "to": 965_960},
+                        "p": 0.9,
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = _convert_result(data, entry, "cpu", True, max_word_duration_seconds=3.0)
+
+    assert result.segments == []
+
+
 def test_convert_result_limits_identical_consecutive_segments_to_ten() -> None:
     entry = get_model("whisper-cpp:base")
     transcription = [
