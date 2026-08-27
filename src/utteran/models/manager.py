@@ -134,9 +134,7 @@ class ModelManager:
         _check_cancel(cancel)
         installed, _managed = self.find_installed(entry)
         if installed is not None:
-            structured_event(
-                "model_acquisition", model=entry.key, status="already_installed"
-            )
+            structured_event("model_acquisition", model=entry.key, status="already_installed")
             if progress is not None:
                 progress(
                     ProgressEvent(
@@ -162,9 +160,7 @@ class ModelManager:
                 )
             )
         try:
-            progress_total = _download_hub_entry(
-                entry, destination, token, progress, cancel
-            )
+            progress_total = _download_hub_entry(entry, destination, token, progress, cancel)
             downloaded = destination
         except Exception as exc:
             _raise_download_error(entry, exc)

@@ -195,9 +195,7 @@ def _cleanup(
     count, size = _trim(raw_files, raw_max_bytes)
     deleted += count
     deleted_bytes += size
-    regular = [
-        path for path in root.rglob("*") if path.is_file() and raw_root not in path.parents
-    ]
+    regular = [path for path in root.rglob("*") if path.is_file() and raw_root not in path.parents]
     count, size = _trim(regular, max_bytes)
     return deleted + count, deleted_bytes + size
 

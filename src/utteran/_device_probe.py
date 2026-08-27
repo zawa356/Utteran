@@ -57,9 +57,7 @@ def _ctranslate2_cuda(index: int) -> dict[str, object]:
     with suppress_torch_import():
         import ctranslate2
 
-    return {
-        "compute_types": sorted(ctranslate2.get_supported_compute_types("cuda", index))
-    }
+    return {"compute_types": sorted(ctranslate2.get_supported_compute_types("cuda", index))}
 
 
 def _torch(kind: str) -> dict[str, object]:
@@ -175,9 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     if not selected:
         return 2
     try:
-        result: dict[str, Any] = _dispatch(
-            selected[0], selected[1] if len(selected) > 1 else None
-        )
+        result: dict[str, Any] = _dispatch(selected[0], selected[1] if len(selected) > 1 else None)
         payload: dict[str, Any] = {"ok": True, "result": result}
     except BaseException as exc:
         payload = {"ok": False, "error": _error(exc)}

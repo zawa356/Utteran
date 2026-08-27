@@ -231,9 +231,7 @@ def recommend_profile(
     )
 
 
-def _recommend_from_runtime(
-    gpu: GpuReport, runtime: RuntimeCapabilities
-) -> ProfileRecommendation:
+def _recommend_from_runtime(gpu: GpuReport, runtime: RuntimeCapabilities) -> ProfileRecommendation:
     """Describe ASR and diarization independently; ``None`` always means unknown."""
     if runtime.ctranslate2_cuda is True or runtime.torch_cuda is True:
         both = runtime.ctranslate2_cuda is True and runtime.torch_cuda is True
@@ -319,17 +317,13 @@ def _has_unknown(runtime: RuntimeCapabilities) -> bool:
     )
 
 
-def _alternative(
-    profile: str, runtime: RuntimeCapabilities | None = None
-) -> AlternativeProfile:
+def _alternative(profile: str, runtime: RuntimeCapabilities | None = None) -> AlternativeProfile:
     if profile not in PROFILE_NAMES:
         raise ValueError(f"Unknown profile: {profile}")
     if profile == "cuda":
         return AlternativeProfile(
             profile="cuda",
-            asr_accelerated=(
-                True if runtime is None else runtime.ctranslate2_cuda is True
-            ),
+            asr_accelerated=(True if runtime is None else runtime.ctranslate2_cuda is True),
             diarization_accelerated=(True if runtime is None else runtime.torch_cuda is True),
             approx_disk_bytes=_APPROX_DISK_BYTES["cuda"],
         )
@@ -429,22 +423,14 @@ def detect_runtime_capabilities(repo_root: Path) -> RuntimeCapabilities:
                 for item in ct2.get("cuda_devices", [])
             ),
         ),
-        torch_cuda=_known_capability(
-            torch.get("cuda_status"), bool(torch.get("cuda_available"))
-        ),
+        torch_cuda=_known_capability(torch.get("cuda_status"), bool(torch.get("cuda_available"))),
         openvino_gpu=_known_capability(
             openvino.get("status"),
             bool(openvino.get("available"))
-            and any(
-                str(item).upper().startswith("GPU") for item in openvino.get("values", [])
-            ),
+            and any(str(item).upper().startswith("GPU") for item in openvino.get("values", [])),
         ),
-        torch_xpu=_known_capability(
-            torch.get("xpu_status"), bool(torch.get("xpu_available"))
-        ),
-        vulkan=_known_capability(
-            vulkan.get("status"), bool(vulkan.get("runtime_available"))
-        ),
+        torch_xpu=_known_capability(torch.get("xpu_status"), bool(torch.get("xpu_available"))),
+        vulkan=_known_capability(vulkan.get("status"), bool(vulkan.get("runtime_available"))),
     )
 
 

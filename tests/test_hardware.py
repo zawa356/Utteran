@@ -47,8 +47,7 @@ def test_intel_openvino_available_xpu_unavailable_is_explained() -> None:
     assert intel.asr_accelerated is True
     assert intel.diarization_accelerated is False
     assert any(
-        "ASRはGPU" in reason and "話者分離はCPU" in reason
-        for reason in recommendation.reasons
+        "ASRはGPU" in reason and "話者分離はCPU" in reason for reason in recommendation.reasons
     )
 
 
