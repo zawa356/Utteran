@@ -21,7 +21,7 @@ _EMISSION_SCALE_SECONDS = 0.3
 _CLEAR_OVERLAP_MARGIN = 0.15
 _SILENCE_PENALTY_SCALE = 0.15
 _CLEAR_BOUNDARY_PENALTY_SCALE = 0.2
-_UNKNOWN_TRANSITION_SCALE = 0.5
+_UNKNOWN_TRANSITION_SCALE = 1.0
 
 
 def align_transcription(
@@ -71,6 +71,8 @@ def align_transcription_with_statistics(
                 )
             )
 
+    unknown_absorption_count = _absorb_short_unknown_segments(split_segments, selected)
+    fragment_absorption_count = _absorb_unsupported_fragments(split_segments, turns, selected)
     merged_gaps: list[float] = []
     merged = _merge_adjacent_same_speaker(split_segments, selected.merge_gap, merged_gaps)
     statistics = {
@@ -81,6 +83,8 @@ def align_transcription_with_statistics(
         "word_count": sum(len(segment.words) for segment in transcription.segments),
         "word_speaker_change_count": _word_speaker_change_count(split_segments),
         "split_segment_count": len(split_segments),
+        "unknown_absorption_count": unknown_absorption_count,
+        "unsupported_fragment_absorption_count": fragment_absorption_count,
         # Compatibility fields: duration/word-count island absorption was removed because
         # it deleted legitimate short acknowledgements after sequence optimization.
         "absorbed_segment_count": len(split_segments),
@@ -355,6 +359,89 @@ def _merge_adjacent_same_speaker(
         else:
             merged.append(_copy_segment(segment))
     return merged
+
+
+def _absorb_short_unknown_segments(segments: list[Segment], options: AlignmentOptions) -> int:
+    """Relabel acoustically unusable UNKNOWN islands to the longer known neighbour."""
+    absorbed = 0
+    for index, segment in enumerate(segments):
+        if segment.speaker != UNKNOWN_SPEAKER:
+            continue
+        duration = max(0.0, segment.end - segment.start)
+        if (
+            duration >= options.min_unknown_duration
+            and len(segment.text.strip()) >= options.min_unknown_characters
+        ):
+            continue
+        neighbours = [
+            candidate
+            for candidate in (
+                segments[index - 1] if index > 0 else None,
+                segments[index + 1] if index + 1 < len(segments) else None,
+            )
+            if candidate is not None and candidate.speaker not in {None, UNKNOWN_SPEAKER}
+        ]
+        if not neighbours:
+            continue
+        selected = max(
+            neighbours,
+            key=lambda candidate: (
+                candidate.end - candidate.start,
+                candidate is segments[index - 1],
+            ),
+        )
+        segment.speaker = selected.speaker
+        absorbed += 1
+    return absorbed
+
+
+def _absorb_unsupported_fragments(
+    segments: list[Segment], turns: list[SpeakerTurn], options: AlignmentOptions
+) -> int:
+    """Absorb tiny boundary fragments only when their assigned speaker has no support."""
+    absorbed = 0
+    index = 0
+    while index < len(segments):
+        segment = segments[index]
+        duration = max(0.0, segment.end - segment.start)
+        character_count = len(segment.text.strip())
+        speaker_overlap = sum(
+            _overlap(segment.start, segment.end, turn.start, turn.end)
+            for turn in turns
+            if turn.speaker == segment.speaker
+        )
+        if (
+            segment.speaker in {None, UNKNOWN_SPEAKER}
+            or duration >= options.max_unsupported_fragment_duration
+            or character_count > options.max_unsupported_fragment_characters
+            or speaker_overlap >= options.min_fragment_speaker_overlap
+        ):
+            index += 1
+            continue
+        neighbours = [
+            candidate_index
+            for candidate_index in (index - 1, index + 1)
+            if 0 <= candidate_index < len(segments)
+            and segments[candidate_index].speaker not in {None, UNKNOWN_SPEAKER}
+        ]
+        if not neighbours:
+            index += 1
+            continue
+        selected_index = max(
+            neighbours,
+            key=lambda candidate_index: (
+                segments[candidate_index].end - segments[candidate_index].start,
+                candidate_index < index,
+            ),
+        )
+        neighbour = segments[selected_index]
+        ordered = [neighbour, segment] if selected_index < index else [segment, neighbour]
+        segments[selected_index] = _combine_segments(ordered, neighbour.speaker)
+        segments.pop(index)
+        absorbed += 1
+        if selected_index < index:
+            index = max(0, selected_index)
+    return absorbed
 
 
 def _word_speaker_change_count(segments: Iterable[Segment]) -> int:
