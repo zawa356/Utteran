@@ -30,6 +30,7 @@ from utteran.types import (
     ProgressEvent,
     Segment,
     TranscriptionResult,
+    Word,
 )
 
 _PROGRESS = re.compile(r"progress\s*=\s*(\d{1,3})%")
@@ -499,6 +500,20 @@ def _link_or_copy(source: Path, destination: Path) -> None:
         shutil.copy2(source, destination)
 
 
+def _has_invalid_word_timing(
+    words: list[Word], segment_start: float, segment_end: float, max_word_duration_seconds: float
+) -> bool:
+    """Detect corrupt DTW/token timing: one word too long, or all words collapsed into a
+    narrow sub-range that leaves most of the segment's declared span with no word at all."""
+    if any(word.end - word.start > max_word_duration_seconds for word in words):
+        return True
+    word_start = min(word.start for word in words)
+    word_end = max(word.end for word in words)
+    uncovered_head = word_start - segment_start
+    uncovered_tail = segment_end - word_end
+    return uncovered_head > max_word_duration_seconds or uncovered_tail > max_word_duration_seconds
+
+
 def _convert_result(
     data: dict[str, Any],
     entry: ModelEntry,
@@ -512,8 +527,10 @@ def _convert_result(
     dtw_found = False
     discarded_segments = 0
     discarded_words = 0
-    discarded_long_words = 0
-    discarded_long_word_segments = 0
+    invalid_word_timing_words = 0
+    invalid_word_timing_segments = 0
+    invalid_word_timing_seconds = 0.0
+    invalid_word_timing_intervals: list[dict[str, float]] = []
     discarded_repetitions = 0
     previous_text = ""
     consecutive_repetitions = 0
@@ -530,12 +547,21 @@ def _convert_result(
         converted_words = (
             tokens_to_words(tokens, segment_start=start, segment_end=end) if requested_words else []
         )
-        if requested_words and any(
-            word.end - word.start > max_word_duration_seconds for word in converted_words
+        if (
+            requested_words
+            and converted_words
+            and _has_invalid_word_timing(converted_words, start, end, max_word_duration_seconds)
         ):
-            discarded_long_words += len(converted_words)
-            discarded_long_word_segments += 1
-            continue
+            # The segment offsets and recognized text are still usable even when DTW/token
+            # timing is corrupt (either a single word spans too long, or every word has
+            # collapsed into a narrow sub-range that leaves most of the segment's declared
+            # span uncovered).  Keep the transcript and fall back to segment-level speaker
+            # assignment instead of silently deleting potentially valid speech.
+            invalid_word_timing_words += len(converted_words)
+            invalid_word_timing_segments += 1
+            invalid_word_timing_seconds += end - start
+            invalid_word_timing_intervals.append({"start": round(start, 3), "end": round(end, 3)})
+            converted_words = []
         words = [word for word in converted_words if word.end > word.start]
         discarded_words += len(converted_words) - len(words)
         text = str(raw.get("text", ""))
@@ -552,19 +578,21 @@ def _convert_result(
     if (
         discarded_segments
         or discarded_words
-        or discarded_long_words
-        or discarded_long_word_segments
+        or invalid_word_timing_words
+        or invalid_word_timing_segments
         or discarded_repetitions
     ):
         logging.getLogger(__name__).warning(
             "whisper.cppの無効出力を除外しました: zero_segments=%d, zero_words=%d, "
-            "long_words=%d, long_word_segments=%d (max_word_duration=%.3fs), "
+            "invalid_word_timing_words=%d, segment_fallbacks=%d/%.3fs "
+            "(max_word_duration=%.3fs; 本文は保持), "
             "repeated_segments=%d "
             "(repetition_limit=%d; 正当な反復も除外される可能性があります)",
             discarded_segments,
             discarded_words,
-            discarded_long_words,
-            discarded_long_word_segments,
+            invalid_word_timing_words,
+            invalid_word_timing_segments,
+            invalid_word_timing_seconds,
             max_word_duration_seconds,
             discarded_repetitions,
             repetition_limit,
@@ -580,8 +608,13 @@ def _convert_result(
         requested=requested_words,
         retained_word_count=sum(len(segment.words) for segment in segments),
         discarded_zero_word_count=discarded_words,
-        discarded_long_word_count=discarded_long_words,
-        discarded_long_word_segment_count=discarded_long_word_segments,
+        invalid_word_timing_word_count=invalid_word_timing_words,
+        segment_timing_fallback_count=invalid_word_timing_segments,
+        segment_timing_fallback_seconds=round(invalid_word_timing_seconds, 3),
+        segment_timing_fallback_ratio=round(
+            invalid_word_timing_segments / max(1, len(data.get("transcription", []))), 6
+        ),
+        segment_timing_fallback_intervals=invalid_word_timing_intervals,
         **timestamp_statistics,
     )
     result = data.get("result", {})

@@ -38,4 +38,7 @@ def test_statistics_tool_returns_counts_without_transcript_text(tmp_path: Path) 
 
     assert result["exclusive_diarization"]["speaker_change_count"] == 1
     assert result["selected_alignment"]["split_segment_count"] == 1
+    assert result["asr_intervals"]["covered_seconds"] == 10.0
+    assert result["merged_intervals"]["long_gap_count"] == 0
+    assert result["merged_intervals"]["unknown_segment_count"] == 0
     assert "sensitive transcript" not in json.dumps(result)
