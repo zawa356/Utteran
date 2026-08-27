@@ -1,5 +1,48 @@
 # AI 作業状態
 
+## Phase bugfix-b CI format gate復旧（0.1.13、2026-08-27）
+
+### 原因と修正
+
+Phase bugfix-a終了時に、正式なCI gateである`ruff format --check src tests tools`が既存差分として
+未解消のまま残り、mainのLinux CIが赤くなっていた。lock済みRuff 0.16.1で再現した対象は次の13 file。
+
+- `src/utteran/_device_probe.py`
+- `src/utteran/devices.py`
+- `src/utteran/logging.py`
+- `src/utteran/models/manager.py`
+- `src/utteran_gui/hardware.py`
+- `src/utteran_gui/logging_runtime.py`
+- `src/utteran_gui/operation_queue.py`
+- `tests/test_asr_registry.py`
+- `tests/test_config.py`
+- `tests/test_devices.py`
+- `tests/test_gui.py`
+- `tests/test_hardware.py`
+- `tests/test_operation_queue.py`
+
+上記fileだけへformatterを適用した。修正前後のPython ASTを位置情報なしで比較し、13 fileすべて同一で、
+runtime semantics、条件分岐、定数値、公開API、test期待値には変更がないことを確認した。
+
+`要件定義.md` 23章とREADMEはformat checkを正式なCI／開発品質gateとして既に定義していたため、
+変更していない。一方、`docs/リリース手順.md`の日常確認項目にはformat checkとlock checkが欠け、
+作業完了条件がCI契約と不一致だったため、必須コマンドを揃えた。今後CI必須gateの失敗を残す場合は
+「完了」とせず、明示的な未完了事項として扱う。
+
+### 最終検証
+
+- `uv sync --extra dev --extra gui --locked`、`uv lock --check`: pass。lock差分はproject versionだけ。
+- `ruff check src tests tools`: pass。`ruff format --check src tests tools`: 107 files pass。
+- `mypy`: 58 source files pass。
+- `pytest -m "not requires_model"`: 365 passed、既知のStarlette deprecation warning 1件。
+- PowerShell BOM check: 追跡5 file pass。
+- public history worktree scan: blocking finding 0でpass。全到達可能履歴のredacted JSON監査もexit 0。
+- Windows PowerShell 5.1で全追跡`.ps1`のParser API検査と、`setup.ps1 -List`、
+  `start.ps1`終了選択、`run.ps1 -Profile cpu --help`を含むheadless startup: pass。
+- `git diff --check`: pass。実model、GPU、長時間音声、installer buildは変更範囲外のため未実施。
+- remote GitHub Actionsはpushしていないため未確認。push後に`linux-quality`と`windows-tests`の
+  両方がsuccessになることを確認する必要がある。
+
 ## Phase bugfix-a ウィザード起動フリーズ（0.1.12、2026-08-27）
 
 ### Step 1: 引き金の特定（修正前）
