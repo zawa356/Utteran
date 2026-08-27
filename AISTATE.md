@@ -1,6 +1,6 @@
 # AI 作業状態
 
-## Phase bugfix-c 話者分離境界精度（作業中、2026-08-27）
+## Phase bugfix-c 話者分離境界精度（0.1.14、2026-08-27）
 
 指定どおり`fix/phase-bugfix-c-diarization-accuracy`を作成し、アルゴリズム調整より先にP2の
 正解付き評価基盤へ着手した。
