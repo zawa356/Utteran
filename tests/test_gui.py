@@ -177,7 +177,7 @@ def test_packaging_and_gui_use_the_supplied_icon() -> None:
     assert 'class="brand-logo" src="/logo"' in index
 
 
-def test_native_dialog_returns_one_selected_path_without_persisting(monkeypatch: Any) -> None:
+def test_native_dialog_returns_one_selected_path_without_persisting() -> None:
     import webview
 
     calls: list[tuple[object, dict[str, object]]] = []
@@ -188,24 +188,24 @@ def test_native_dialog_returns_one_selected_path_without_persisting(monkeypatch:
             calls.append((kind, kwargs))
             return ("C:/Media/meeting.wav", "C:/Media/ignored.wav")
 
-    monkeypatch.setattr(webview, "OPEN_DIALOG", "open", raising=False)
     api = NativeDialogApi()
     api._attach_window(Window())
 
     assert api.choose_path("input_file") == "C:/Media/meeting.wav"
+    assert calls[0][0] == webview.FileDialog.OPEN
     assert calls[0][1]["allow_multiple"] is False
+    assert api.choose_path("input_folder") == "C:/Media/meeting.wav"
+    assert calls[1][0] == webview.FileDialog.FOLDER
 
 
 def test_native_dialog_bridge_never_exposes_native_window_to_pywebview() -> None:
     api = NativeDialogApi()
     api._attach_window(object())
 
-    public_members = [
-        name
-        for name in dir(api)
-        if not name.startswith("_")
-    ]
+    public_members = [name for name in dir(api) if not name.startswith("_")]
     assert public_members == ["choose_path", "report_frontend_error"]
+    assert api.report_frontend_error({"kind": "error", "message": "test"}) is True
+    assert api.report_frontend_error(None) is False
 
 
 def test_gui_assets_disable_nonfunctional_drop_and_forward_frontend_errors() -> None:
