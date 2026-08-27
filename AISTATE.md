@@ -4,8 +4,8 @@
 
 ### Step 1: 引き金の特定（修正前）
 
-利用者設定を`output/bugfix-a/baseline/`へ隔離し、既存venv・モデル・設定・ジョブを変更せず
-`gui.ps1`を初回起動条件で実行した。セットアップウィザードが自動表示されるページ読み込み時に、
+stdout／stderrを`output/bugfix-a/baseline/`へ隔離し、設定fileが存在しない初回条件で
+`gui.ps1`を実行した。セットアップウィザードが自動表示されるページ読み込み時に、
 実体の`python.exe`は`Responding=False`となった。隔離stderrには`window.native` 20件、
 `maximum recursion depth exceeded` 15件、`--- Logging error ---` 10件、UI thread違反5件が
 記録され、報告された症状を再現した。
@@ -26,6 +26,27 @@ pywebview JavaScript bridge生成だった。`NativeDialogApi`を`js_api`とし�
 > フロントエンドの例外が Python 側のログに記録されず、
 > 配布版での調査が極めて困難だった。
 > Phase 5j のログ基盤は Python 側のみを対象としていた。
+
+### Step 2: 修正と判断
+
+- `NativeDialogApi.window`を`_window`へ変更した。pywebviewが先頭`_`のmemberを除外する契約を使い、
+  JavaScript公開memberを`choose_path`と`report_frontend_error`の2 methodだけに限定した。
+  file／folder dialogは従来どおりPython側で`create_file_dialog`を呼び、選択pathを保存しない。
+- drag-and-dropは案B（廃止して選択dialogへ一本化）を選んだ。標準Web File APIは絶対pathを
+  保証せず、`file.name`だけをpath欄へ入れると成功したように見えてffmpegで失敗するためである。
+  `file.path`、drop handler、日英の案内文を削除した。
+- JavaScriptの`error`／`unhandledrejection`を最大20件queueし、各fieldを2000文字へ制限して
+  Python構造化logへ転送する機能を追加した。log側の例外は握り、診断がUIを止めないようにした。
+  再帰log大量出力の根本経路を除いたうえで、件数・サイズ制限も設けた。
+- 回帰testはbridgeの公開member集合を固定し、publicなnative objectが追加されないことを守る。
+  あわせて`file.path`／`dataTransfer.files`とdrop案内がないこと、frontend error転送を検査する。
+
+修正版を同じ初回条件で`gui.ps1`から起動すると、15秒後も実体`python.exe`は`Responding=True`、
+stderrは0 byteで、Intel GPU構成／CPU構成を選べるウィザードが正常描画された。構成選択→話者分離
+選択→model選択→確認→実行画面まで操作し、その間も応答を維持した。検証中、Windowsの
+`platformdirs`が環境変数でなくKnown Folder APIを使用するためuser settingsを新規作成したが、
+事前には存在しなかったことを作成時刻で確認し、process tree停止後に当該fileだけを削除して元の
+「設定なし」状態へ戻した。既存venv・model・jobは削除・移動していない。
 
 ## 長時間話者分離の粗大化調査と修正（0.1.11、2026-08-26）
 
