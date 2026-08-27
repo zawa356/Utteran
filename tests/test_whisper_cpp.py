@@ -8,7 +8,6 @@ from utteran.asr.whisper_cpp import (
     WhisperCppBackend,
     _convert_result,
     _stage_model,
-    _word_timestamp_compatible_settings,
     build_command,
     is_gpu_initialization_failure,
     parse_openvino_ir_status,
@@ -48,15 +47,24 @@ def test_build_command_enables_dtw_only_when_words_requested(tmp_path: Path) -> 
     assert "--entropy-thold" in with_words
 
 
-def test_word_timestamps_disable_internal_vad_to_preserve_original_timeline() -> None:
-    settings = WhisperCppConfig(vad=True)
+def test_vad_and_word_timestamps_are_enabled_together(tmp_path: Path) -> None:
+    vad_model = tmp_path / "vad.bin"
+    vad_model.write_bytes(b"vad")
+    command = build_command(
+        Path("whisper-cli"),
+        Path("model.bin"),
+        Path("audio.wav"),
+        Path("out"),
+        get_model("whisper-cpp:large-v3-turbo-q5_0"),
+        WhisperCppConfig(vad=True, vad_model=vad_model),
+        "vulkan",
+        ASROptions(word_timestamps=True),
+    )
 
-    with_words = _word_timestamp_compatible_settings(settings, ASROptions(word_timestamps=True))
-    without_words = _word_timestamp_compatible_settings(settings, ASROptions(word_timestamps=False))
-
-    assert with_words.vad is False
-    assert without_words.vad is True
-    assert settings.vad is True
+    assert "--vad" in command
+    assert "--vad-model" in command
+    assert "--dtw" in command
+    assert "--no-flash-attn" in command
 
 
 def test_debug_no_flash_attention_without_dtw(

@@ -93,6 +93,19 @@ def test_valid_offsets_take_priority_over_backward_dtw() -> None:
     assert [(word.start, word.end) for word in words] == pytest.approx([(1.0, 1.5), (1.5, 2.0)])
 
 
+def test_vad_mapped_offsets_override_compressed_dtw_timeline() -> None:
+    words = tokens_to_words(
+        [
+            token(" after", 24, 6130, 6570),
+            token(" silence", 68, 6570, 7310),
+        ],
+        segment_start=6.08,
+        segment_end=10.76,
+    )
+
+    assert [(word.start, word.end) for word in words] == pytest.approx([(6.13, 6.57), (6.57, 7.31)])
+
+
 def test_probability_is_mean_of_constituent_byte_tokens() -> None:
     words = tokens_to_words(
         [token("\xe3", 10, 100, 110, 0.3), token("\x81\x82", 11, 110, 120, 0.9)],
