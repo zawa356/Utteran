@@ -8,7 +8,44 @@ from pathlib import Path
 from typing import Any
 
 from utteran.align import align_transcription_with_statistics, speaker_turn_statistics
-from utteran.types import AlignmentOptions, DiarizationResult, TranscriptionResult
+from utteran.types import AlignmentOptions, DiarizationResult, Segment, TranscriptionResult
+
+
+def _interval_statistics(
+    segments: list[Segment], audio_seconds: float, *, long_gap_seconds: float = 10.0
+) -> dict[str, Any]:
+    intervals: list[list[float]] = []
+    for segment in sorted(segments, key=lambda item: (item.start, item.end)):
+        if not intervals or segment.start > intervals[-1][1]:
+            intervals.append([segment.start, segment.end])
+        else:
+            intervals[-1][1] = max(intervals[-1][1], segment.end)
+    gaps: list[float] = []
+    cursor = 0.0
+    for start, end in intervals:
+        if start > cursor:
+            gaps.append(start - cursor)
+        cursor = max(cursor, end)
+    if audio_seconds > cursor:
+        gaps.append(audio_seconds - cursor)
+    long_gaps = [gap for gap in gaps if gap >= long_gap_seconds]
+    unknown = [segment for segment in segments if segment.speaker == "UNKNOWN"]
+    return {
+        "segment_count": len(segments),
+        "covered_seconds": round(sum(end - start for start, end in intervals), 6),
+        "coverage_ratio": round(
+            sum(end - start for start, end in intervals) / max(audio_seconds, 1e-9), 6
+        ),
+        "long_gap_count": len(long_gaps),
+        "long_gap_seconds": round(sum(long_gaps), 6),
+        "shorter_than_0_5_seconds_count": sum(
+            segment.end - segment.start < 0.5 for segment in segments
+        ),
+        "unknown_segment_count": len(unknown),
+        "unknown_seconds": round(
+            sum(max(0.0, segment.end - segment.start) for segment in unknown), 6
+        ),
+    }
 
 
 def _read_result(path: Path) -> dict[str, Any]:
@@ -36,11 +73,12 @@ def collect_statistics(job_dir: Path) -> dict[str, Any]:
     _regular_segments, regular_alignment = align_transcription_with_statistics(
         transcription, regular_result, options
     )
-    _selected_segments, selected_alignment = align_transcription_with_statistics(
+    selected_segments, selected_alignment = align_transcription_with_statistics(
         transcription, diarization, options
     )
     return {
         "audio_seconds": round(transcription.duration, 6),
+        "asr_intervals": _interval_statistics(transcription.segments, transcription.duration),
         "regular_diarization": speaker_turn_statistics(diarization.turns),
         "exclusive_diarization": (
             None
@@ -49,6 +87,7 @@ def collect_statistics(job_dir: Path) -> dict[str, Any]:
         ),
         "regular_alignment": regular_alignment,
         "selected_alignment": selected_alignment,
+        "merged_intervals": _interval_statistics(selected_segments, transcription.duration),
     }
 
 
