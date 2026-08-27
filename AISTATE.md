@@ -48,6 +48,11 @@
   語中境界3→0、短い話者島3→1、短い相槌保持率100%。境界誤差mean 0.040秒、max 0.075秒。
 - 3分系列は13 segment、4.33 segment/分、最長50.04秒。74.24分系列は357 segment、
   4.809 segment/分、最長103.43秒（全体2.32%）、UNKNOWN 0秒で長さ依存の粗大化はなかった。
+- `ruff check src tests tools`、`ruff format --check src tests tools`、mypy 59 source、
+  `uv lock --check`、`git diff --check`はpass。モデル不要testは381 passed（既知warning 1件）、
+  `Q1-DIARIZATION-REFERENCE`は1 passed、0 failed、0 skipped。
+- `build.ps1`で`dist/installer/utteran-setup-0.1.15.exe`を生成した。19,820,819 bytes、SHA-256は
+  `1e811a2f81c388b609fe0dd308d8bb0e70a2d3a3d5d4f6b8cc048d0416b5d834`。成果物はcommitしない。
 
 ## Phase bugfix-c 話者分離境界精度（0.1.14、2026-08-27）
 
