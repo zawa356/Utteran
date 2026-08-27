@@ -35,10 +35,17 @@ runtime semantics、条件分岐、定数値、公開API、test期待値には�
   なった。呼び出し側だけにあったWindows分岐を関数本体にも追加し、非Windowsでは空listを返す
   契約を明示した。`mypy --platform linux`でCI failureをローカル再現後に修正し、Windows既定解析と
   Linux指定解析の両方がpassすることを確認した。
+- 続くLinux pytestで、Windows subprocessを模擬するtest helperが共有`os.name`を`nt`へ変更し、
+  `pathlib.Path`まで`WindowsPath`を選んで失敗する既存test不具合が判明した。`processes`と`api`の
+  module参照だけを隔離したWindows OS stubへ差し替え、process起動分岐の模擬を他moduleへ漏らさない
+  よう修正した。
 - `uv sync --extra dev --extra gui --locked`、`uv lock --check`: pass。lock差分はproject versionだけ。
 - `ruff check src tests tools`: pass。`ruff format --check src tests tools`: 107 files pass。
 - `mypy`: 58 source files pass。
 - `pytest -m "not requires_model"`: 365 passed、既知のStarlette deprecation warning 1件。
+- WSL Ubuntuの隔離venv（Python 3.12.3、lock済み依存）でも同testを実行し、Linux固有の6件skipを
+  除いて359 passed、既知warning 1件。添付CIログで失敗した`test_gui_processes.py`は6 passed、
+  Windows固有1 skipped。
 - PowerShell BOM check: 追跡5 file pass。
 - public history worktree scan: blocking finding 0でpass。全到達可能履歴のredacted JSON監査もexit 0。
 - Windows PowerShell 5.1で全追跡`.ps1`のParser API検査と、`setup.ps1 -List`、

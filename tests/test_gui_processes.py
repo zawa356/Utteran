@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,7 +19,9 @@ NEW_PROCESS_GROUP = 0x00000200
 
 
 def _simulate_windows(monkeypatch: Any) -> None:
-    monkeypatch.setattr(processes.os, "name", "nt")
+    windows_os = SimpleNamespace(name="nt")
+    monkeypatch.setattr(processes, "os", windows_os)
+    monkeypatch.setattr(api, "os", windows_os)
     monkeypatch.setattr(processes.subprocess, "CREATE_NO_WINDOW", NO_WINDOW, raising=False)
     monkeypatch.setattr(
         processes.subprocess,
@@ -133,7 +136,7 @@ def test_open_folder_uses_no_window(tmp_path: Path, monkeypatch: Any) -> None:
 
 
 def test_non_windows_creation_kwargs_are_empty(monkeypatch: Any) -> None:
-    monkeypatch.setattr(processes.os, "name", "posix")
+    monkeypatch.setattr(processes, "os", SimpleNamespace(name="posix"))
 
     assert processes.build_creation_kwargs() == {}
     assert processes.build_creation_kwargs(new_process_group=True) == {}
