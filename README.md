@@ -11,7 +11,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 ## 主な機能
 
 - faster-whisper: CPU / NVIDIA CUDA
-- whisper.cpp v1.9.1: CPU / OpenVINO / Vulkan / OpenVINO+Vulkan
+- whisper.cpp v1.9.2 + token JSON timeline patch: CPU / OpenVINO / Vulkan / OpenVINO+Vulkan
 - pyannote.audio 4.x話者分離: CPU / NVIDIA CUDA / Intel XPU
 - 単一ファイル／folder batch、段階別resume、5形式出力
 - profile別venv、model／job／native build管理、device診断
@@ -266,11 +266,12 @@ uv run utteran transcribe meeting.wav --asr-backend whisper-cpp \
 
 ### 長時間音声の話者分離
 
-whisper.cpp v1.9.1は内蔵VADを使うと、segment時刻だけを元音声のtimelineへ戻し、tokenの
-DTW/offset時刻はVADで圧縮したtimelineのままJSONへ出力します。話者分離では単語時刻が必要なため、
-utteranは`word_timestamps = "auto"`で話者分離が有効な実行、および`"always"`の実行では
-whisper.cpp内蔵VADをその実行だけ無効化します。設定上の`vad = true`はASR単独実行では従来どおり
-有効です。この安全策により長時間ASRは遅くなる場合がありますが、話者交代を正しく保持します。
+whisper.cpp v1.9.2は、VAD圧縮後のtoken時刻を元音声timelineへ戻すgetterを提供します。ただし公式の
+`whisper-cli -ojf`はraw token dataをJSONへ出力するため、utteranはfull JSONのoffsetだけを新getter
+由来にする小さなsource patchをbuild時に適用し、patch levelをnative manifestへ記録します。
+`t_dtw`は圧縮timelineのままなので、Python側はsegment内の有効なoffsetを優先します。これにより
+`word_timestamps = "auto"`で話者分離が有効な実行、および`"always"`の実行でも内蔵VADを無効化
+せず、無音除去と元timeline上の単語時刻を併用します。v1.9.1の既存native buildは再buildが必要です。
 
 話者割当後の極短segment吸収は、0.3秒未満、または「単語時刻が実在し、かつ2語未満」の場合だけ
 適用します。単語時刻が欠けたsegmentを0語とみなして長さに関係なく吸収することはありません。

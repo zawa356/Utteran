@@ -146,19 +146,7 @@ class WhisperCppBackend(ASRBackend):
             temporary_path = Path(temporary)
             output_prefix = temporary_path / "result"
             staged_model = _stage_model(self._model_path, temporary_path / "model")
-            run_settings = _word_timestamp_compatible_settings(self.settings, options)
-            if self.settings.vad and not run_settings.vad:
-                logging.getLogger(__name__).warning(
-                    "whisper.cpp v1.9.1はVAD後のtoken時刻を元音声へ復元しないため、"
-                    "単語時刻が必要な話者分離実行では内蔵VADを無効化します。"
-                )
-                structured_event(
-                    "asr_vad_policy",
-                    backend=self.name,
-                    configured=True,
-                    effective=False,
-                    reason="word_timestamps_require_original_timeline",
-                )
+            run_settings = self.settings
             if run_settings.vad:
                 resolved_vad = _resolve_vad_model(self.settings)
                 if resolved_vad is None:
@@ -262,15 +250,6 @@ class WhisperCppBackend(ASRBackend):
         return None
 
 
-def _word_timestamp_compatible_settings(
-    settings: WhisperCppConfig, options: ASROptions
-) -> WhisperCppConfig:
-    """Disable VAD when v1.9.1 token timestamps must remain on the original timeline."""
-    if settings.vad and options.word_timestamps:
-        return settings.model_copy(update={"vad": False})
-    return settings
-
-
 def build_command(
     executable: Path,
     model: Path,
@@ -281,7 +260,7 @@ def build_command(
     variant: str,
     options: ASROptions,
 ) -> list[str]:
-    """Build only arguments verified against whisper.cpp v1.9.1 cli.cpp."""
+    """Build only arguments verified against patched whisper.cpp v1.9.2 cli.cpp."""
     command = [
         str(executable),
         "-m",
@@ -368,7 +347,7 @@ def parse_progress(line: str) -> int | None:
 
 
 def is_gpu_initialization_failure(detail: str) -> bool:
-    """Recognize bounded v1.9.1/OpenVINO/Vulkan initialization diagnostics."""
+    """Recognize bounded v1.9.2/OpenVINO/Vulkan initialization diagnostics."""
     folded = detail.casefold()
     return any(
         marker in folded

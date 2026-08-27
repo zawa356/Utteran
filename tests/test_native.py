@@ -9,6 +9,9 @@ from pathlib import Path
 import pytest
 
 from utteran.native import (
+    WHISPER_CPP_COMMIT,
+    WHISPER_CPP_PATCH_LEVEL,
+    WHISPER_CPP_TAG,
     NativeBuilder,
     NativeBuildError,
     PrerequisiteCheck,
@@ -165,6 +168,16 @@ def test_resolve_runtime_library_dirs_is_empty_for_cpu_and_vulkan() -> None:
 def _make_builder(tmp_path: Path, runner: FakeRunner) -> NativeBuilder:
     builder = NativeBuilder(tmp_path, runner=runner)  # type: ignore[arg-type]
     (builder.source_dir / ".git").mkdir(parents=True)
+    cli_dir = builder.source_dir / "examples" / "cli"
+    cli_dir.mkdir(parents=True)
+    (cli_dir / "cli.cpp").write_text(
+        """                            auto tok = whisper_full_get_token_data(ctx, i, j);
+                            merged_token m{ whisper_token_to_str(ctx, tok.id), tok, tok.t1 };
+                                auto tok_next = whisper_full_get_token_data(ctx, i, j);
+                                m.text += whisper_token_to_str(ctx, tok_next.id);
+""",
+        encoding="utf-8",
+    )
     return builder
 
 
@@ -173,7 +186,7 @@ def test_build_all_cpu_only_writes_a_manifest_without_baked_library_paths(
 ) -> None:
     def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
         if "rev-parse" in command:
-            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+            return _ok(WHISPER_CPP_COMMIT)
         if "--build" in command:
             build_dir = Path(command[command.index("--build") + 1])
             _touch_fake_cli(build_dir)
@@ -186,7 +199,11 @@ def test_build_all_cpu_only_writes_a_manifest_without_baked_library_paths(
     manifest = builder.build_all(variants=("cpu",))
 
     assert manifest["schema_version"] == 1
-    assert manifest["whisper_cpp"]["commit"] == "f049fff95a089aa9969deb009cdd4892b3e74916"
+    assert manifest["whisper_cpp"] == {
+        "tag": WHISPER_CPP_TAG,
+        "commit": WHISPER_CPP_COMMIT,
+        "patch_level": WHISPER_CPP_PATCH_LEVEL,
+    }
     assert "cpu" in manifest["backends"]
     assert manifest["backends"]["cpu"]["cmake_flags"] == [
         "-DWHISPER_OPENVINO=OFF",
@@ -194,6 +211,9 @@ def test_build_all_cpu_only_writes_a_manifest_without_baked_library_paths(
     ]
     # No absolute OpenVINO/library directory is ever recorded in the manifest.
     assert "runtime_library_dirs" not in manifest["backends"]["cpu"]
+    patched_cli = (builder.source_dir / "examples" / "cli" / "cli.cpp").read_text(encoding="utf-8")
+    assert patched_cli.count("whisper_full_get_token_t0(ctx, i, j)") == 2
+    assert patched_cli.count("whisper_full_get_token_t1(ctx, i, j)") == 2
     # Unrequested variants are neither built nor reported as failed.
     assert "openvino" not in manifest["errors"]
     assert "vulkan" not in manifest["errors"]
@@ -204,7 +224,7 @@ def test_openvino_manifest_replaces_profile_specific_cmake_path(
 ) -> None:
     def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
         if "rev-parse" in command:
-            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+            return _ok(WHISPER_CPP_COMMIT)
         if "--build" in command:
             _touch_fake_cli(Path(command[command.index("--build") + 1]))
         return _ok()
@@ -233,7 +253,7 @@ def test_openvino_manifest_replaces_profile_specific_cmake_path(
 def test_partial_force_build_preserves_unrequested_manifest_entries(tmp_path: Path) -> None:
     def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
         if "rev-parse" in command:
-            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+            return _ok(WHISPER_CPP_COMMIT)
         if "--build" in command:
             _touch_fake_cli(Path(command[command.index("--build") + 1]))
         return _ok()
@@ -246,8 +266,9 @@ def test_partial_force_build_preserves_unrequested_manifest_entries(tmp_path: Pa
                 "schema_version": 1,
                 "platform": builder.platform,
                 "whisper_cpp": {
-                    "tag": "v1.9.1",
-                    "commit": "f049fff95a089aa9969deb009cdd4892b3e74916",
+                    "tag": WHISPER_CPP_TAG,
+                    "commit": WHISPER_CPP_COMMIT,
+                    "patch_level": WHISPER_CPP_PATCH_LEVEL,
                 },
                 "backends": {
                     "vulkan": {
@@ -273,7 +294,7 @@ def test_build_all_records_prerequisite_failures_for_requested_gpu_variants(
 ) -> None:
     def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
         if "rev-parse" in command:
-            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+            return _ok(WHISPER_CPP_COMMIT)
         if "--build" in command:
             build_dir = Path(command[command.index("--build") + 1])
             _touch_fake_cli(build_dir)
@@ -310,7 +331,7 @@ def test_build_variant_reuses_identical_prior_build_without_reinvoking_cmake(
     def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
         calls.append(command)
         if "rev-parse" in command:
-            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+            return _ok(WHISPER_CPP_COMMIT)
         if "--build" in command:
             build_dir = Path(command[command.index("--build") + 1])
             _touch_fake_cli(build_dir)
@@ -334,7 +355,7 @@ def test_build_variant_force_rebuilds_even_when_unchanged(tmp_path: Path) -> Non
     def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
         nonlocal build_invocations
         if "rev-parse" in command:
-            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+            return _ok(WHISPER_CPP_COMMIT)
         if "--build" in command:
             build_invocations += 1
             build_dir = Path(command[command.index("--build") + 1])
@@ -353,7 +374,7 @@ def test_build_variant_force_rebuilds_even_when_unchanged(tmp_path: Path) -> Non
 def test_build_variant_raises_native_build_error_on_configure_failure(tmp_path: Path) -> None:
     def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
         if "rev-parse" in command:
-            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+            return _ok(WHISPER_CPP_COMMIT)
         if "-S" in command:
             return _fail("cmake configure exploded")
         return _ok()
@@ -381,7 +402,7 @@ def test_ensure_source_raises_when_git_missing(
 def test_status_reports_runnable_backends_from_the_manifest(tmp_path: Path) -> None:
     def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
         if "rev-parse" in command:
-            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+            return _ok(WHISPER_CPP_COMMIT)
         if "--build" in command:
             build_dir = Path(command[command.index("--build") + 1])
             _touch_fake_cli(build_dir)
@@ -400,7 +421,7 @@ def test_status_reports_runnable_backends_from_the_manifest(tmp_path: Path) -> N
 def test_clean_removes_one_variant_without_touching_others(tmp_path: Path) -> None:
     def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
         if "rev-parse" in command:
-            return _ok("f049fff95a089aa9969deb009cdd4892b3e74916")
+            return _ok(WHISPER_CPP_COMMIT)
         if "--build" in command:
             build_dir = Path(command[command.index("--build") + 1])
             _touch_fake_cli(build_dir)

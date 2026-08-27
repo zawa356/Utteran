@@ -1,4 +1,4 @@
-"""whisper.cpp v1.9.1 converter with OpenVINO 2025+ compatibility fixes."""
+"""whisper.cpp v1.9.2 converter with OpenVINO 2025+ compatibility fixes."""
 # mypy: ignore-errors
 
 import argparse
