@@ -35,9 +35,10 @@ def test_vad_default_change_changes_asr_config_hash() -> None:
     default = Config()
     legacy = Config.model_validate({"asr": {"whisper_cpp": {"vad": False}}})
 
-    assert stage_config_hashes(default, "input-hash")["asr"] != stage_config_hashes(
-        legacy, "input-hash"
-    )["asr"]
+    assert (
+        stage_config_hashes(default, "input-hash")["asr"]
+        != stage_config_hashes(legacy, "input-hash")["asr"]
+    )
 
 
 def test_qualified_asr_model_uses_same_canonical_id_and_hash() -> None:

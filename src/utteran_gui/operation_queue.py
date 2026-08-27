@@ -109,9 +109,7 @@ class OperationQueue:
         )
 
     def _snapshot(self, item: QueueItem) -> dict[str, object]:
-        waiting = [
-            item_id for item_id in self._order if self._items[item_id].status == "waiting"
-        ]
+        waiting = [item_id for item_id in self._order if self._items[item_id].status == "waiting"]
         return {
             "id": item.id,
             "kind": item.kind,

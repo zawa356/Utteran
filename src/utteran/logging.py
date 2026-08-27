@@ -300,9 +300,7 @@ def clean_logs(
     deleted_files += count
     deleted_bytes += size
     remaining = [
-        path
-        for path in log_dir.rglob("*")
-        if path.is_file() and raw_root not in path.parents
+        path for path in log_dir.rglob("*") if path.is_file() and raw_root not in path.parents
     ]
     count, size = _trim_to_size(remaining, max_bytes)
     deleted_files += count

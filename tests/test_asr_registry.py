@@ -17,9 +17,7 @@ def test_registry_preserves_variant_fallback_policy(
     monkeypatch: pytest.MonkeyPatch, variant: str, fallback_allowed: bool
 ) -> None:
     report = SimpleNamespace(
-        auto_selection=SimpleNamespace(
-            asr_backend="whisper-cpp", asr_device="openvino_vulkan"
-        )
+        auto_selection=SimpleNamespace(asr_backend="whisper-cpp", asr_device="openvino_vulkan")
     )
     monkeypatch.setattr("utteran.devices.detect_devices", lambda *args, **kwargs: report)
     config = Config.model_validate({"asr": {"whisper_cpp": {"variant": variant}}})

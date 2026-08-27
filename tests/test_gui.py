@@ -301,7 +301,7 @@ def test_workspace_grids_and_logging_controls_cannot_force_horizontal_overflow()
     assert ".token-actions input { width: min(220px, 100%); min-width: 0; }" in styles
     assert 'class="view viewer-view"' not in index
     assert 'id="raw-log-warning"' in index and 'id="open-logs"' in index
-    assert 'state.settings.raw_subprocess_logs' in script
+    assert "state.settings.raw_subprocess_logs" in script
 
 
 def test_wizard_assets_wire_up_first_run_flow_and_stay_theme_i18n_aware() -> None:
@@ -540,9 +540,7 @@ def test_model_gpu_capability_uses_injected_detection_not_quantization() -> None
         {"backend": "whisper-cpp", "model_id": "base-q5_0", "quantization": "q5_0"},
     ]
 
-    annotated = annotate_model_capabilities(
-        models, devices, {"runnable": {"vulkan": True}}
-    )
+    annotated = annotate_model_capabilities(models, devices, {"runnable": {"vulkan": True}})
 
     assert annotated[0]["gpu_execution"] is False
     assert annotated[1]["gpu_execution"] is True

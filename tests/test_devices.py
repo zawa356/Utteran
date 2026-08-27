@@ -193,9 +193,7 @@ def test_detect_vulkan_reports_build_and_runtime_separately(
 
 def test_timed_out_probe_is_unknown_and_never_available() -> None:
     timeout = device_module._ProbeRun(
-        device_module.ProbeOutcome(
-            "torch_xpu", "PyTorch XPU", "timeout", 0.1, "判定不能"
-        ),
+        device_module.ProbeOutcome("torch_xpu", "PyTorch XPU", "timeout", 0.1, "判定不能"),
         None,
     )
     completed = device_module._ProbeRun(
@@ -245,11 +243,7 @@ def test_probe_cache_round_trip_and_hardware_invalidation(tmp_path: Path) -> Non
         OptionalRuntimeReport(True, ("CPU", "GPU")),
         OptionalRuntimeReport(True, ("CPUExecutionProvider",)),
         VulkanReport(False, "missing", False, None, "missing"),
-        (
-            device_module.ProbeOutcome(
-                "torch_xpu", "PyTorch XPU", "timeout", 20.0, "判定不能"
-            ),
-        ),
+        (device_module.ProbeOutcome("torch_xpu", "PyTorch XPU", "timeout", 20.0, "判定不能"),),
     )
     path = tmp_path / "devices.json"
 
