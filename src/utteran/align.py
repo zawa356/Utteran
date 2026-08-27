@@ -351,6 +351,10 @@ def _merge_adjacent_same_speaker(
         if (
             merged
             and merged[-1].speaker == segment.speaker
+            # A segment without words is a deliberate timing fallback.  Its ASR offsets
+            # are the only trustworthy boundary, so do not erase that boundary by merging.
+            and merged[-1].words
+            and segment.words
             and segment.start - merged[-1].end <= max_gap
         ):
             if merged_gaps is not None:
