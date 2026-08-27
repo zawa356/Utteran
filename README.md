@@ -230,6 +230,10 @@ Silero VADは既定で有効です。ウィザードが軽量VADモデルを取�
 `[asr.whisper_cpp].vad = false`で明示的に無効化できます。既定変更により既存ジョブのASR設定hashが
 変わり、ASR以降が再計算されます。
 
+whisper.cppが単一tokenへ数十秒のsegment全体を割り当てる異常出力は、話者境界を大きく壊すため
+segment単位で除外します。上限は`[asr.whisper_cpp].max_word_duration_seconds = 3.0`で変更でき、
+除外したsegment数とword数は本文なしの警告・構造化eventへ記録します。
+
 ## 文字起こし
 
 ```console

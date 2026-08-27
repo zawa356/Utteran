@@ -45,6 +45,10 @@
   ままだったが採用されず、offsetが元timelineに正しく復元された。本文は記録していない。
 - モデル不要回帰は、build commandでVAD+DTW併用、patchのgetter適用数、6秒台のmapped offsetが
   0秒台のcompressed DTWより優先されることを固定する。P0-1は成立した。
+- 24.8分実会議音声では、1 tokenが66.14秒のsegment全体を占有するwhisper.cpp異常出力を確認した。
+  変換後wordが既定3秒を超えるsegmentを丸ごと除外する安全弁を追加し、再推論では24 segment／
+  変換後338 word相当を除外した。残存253 segment／4,999 wordの最長は2.92秒、3秒超過と所属
+  segment外はともに0。本文は保存・報告していない。ASR policy versionは5とした。
 
 ### P0-2／P1 話者系列最適化とUNKNOWN
 
@@ -60,8 +64,11 @@
   語中境界3→0、0.5秒未満の話者島3→1。残った1件は正解の短い相槌で、保持率100%。境界誤差は
   mean 0.040秒、max 0.075秒を維持した。penalty 0.35では語中境界2回が残り、0.50〜1.10では
   上記結果が安定したため既定0.75を選んだ。
-- alignment policy versionを5へ更新した。P0-2とP1-1/P1-2のmodel-free実装は完了。実会議音声と
-  長時間回帰は未実施で、bugfix-c全体は未完了。
+- alignment policy versionを5へ更新した。3分clipは41 segment、1分当たり13.67 segment、最長
+  区間比16.65%、UNKNOWN 0.34%。24.8分実会議中間結果は188 segment、1分当たり7.59 segment、
+  最長区間比7.16%、UNKNOWN 15.47%。同じ実会議由来中間結果を3回連結した74.3分回帰でも
+  1分当たり7.59 segment、最長区間比2.39%、UNKNOWN 15.47%で、長さ依存の粗大化はなかった。
+  ただし74.3分は実音声そのものの再推論ではなく、実会議由来中間結果の系列回帰である。
 
 ## Phase bugfix-b CI format gate復旧（0.1.13、2026-08-27）
 

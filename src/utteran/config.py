@@ -65,6 +65,7 @@ no_speech_threshold = 0.6
 temperature = 0.0
 temperature_increment = 0.2
 repetition_limit = 10
+max_word_duration_seconds = 3.0
 
 [diarization]
 enabled = true
@@ -151,6 +152,7 @@ class WhisperCppConfig(BaseModel):
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     temperature_increment: float = Field(default=0.2, ge=0.0, le=1.0)
     repetition_limit: int = Field(default=10, ge=0)
+    max_word_duration_seconds: float = Field(default=3.0, gt=0.0)
 
     @field_validator("vad_model", mode="before")
     @classmethod
