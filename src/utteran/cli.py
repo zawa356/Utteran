@@ -42,6 +42,11 @@ from utteran.devices import (
     detect_devices,
 )
 from utteran.diarization.registry import preflight_diarization_backend
+from utteran.diarization_quality import (
+    DiarizationGroundTruth,
+    evaluate_diarization,
+    segments_from_dict,
+)
 from utteran.errors import (
     CancelledError,
     ConfigurationError,
@@ -310,6 +315,87 @@ def benchmark(
         applied_duration = longest.audio_duration_seconds
         apply_variant(config_path or default_config_path(), fastest.variant, applied_duration)
         console.print(f"設定へ適用しました: {fastest.variant} ({applied_duration:.3f}秒の測定)")
+
+
+@app.command("eval")
+def eval_command(
+    reference: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, help="正解タイムラインJSON"),
+    ],
+    hypothesis: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, help="utteran出力または評価用JSON"),
+    ],
+    output: Annotated[Path | None, typer.Option("--output", help="指標JSONの保存先")] = None,
+    max_der: Annotated[
+        float | None, typer.Option("--max-der", min=0.0, help="DER上限 (超過時exit 1)")
+    ] = None,
+    max_mid_word_boundaries: Annotated[
+        int | None,
+        typer.Option("--max-mid-word-boundaries", min=0, help="語中話者境界数の上限"),
+    ] = None,
+    max_short_turns: Annotated[
+        int | None, typer.Option("--max-short-turns", min=0, help="0.5秒未満の話者島数の上限")
+    ] = None,
+    max_unknown_ratio: Annotated[
+        float | None,
+        typer.Option("--max-unknown-ratio", min=0.0, max=1.0, help="UNKNOWN時間率の上限"),
+    ] = None,
+    min_acknowledgement_retention: Annotated[
+        float | None,
+        typer.Option(
+            "--min-acknowledgement-retention",
+            min=0.0,
+            max=1.0,
+            help="短い相槌保持率の下限",
+        ),
+    ] = None,
+) -> None:
+    """Measure diarization quality against timestamped synthetic or confidential ground truth."""
+    try:
+        ground_truth = DiarizationGroundTruth.load(reference)
+        payload = json.loads(hypothesis.read_text(encoding="utf-8-sig"))
+        if not isinstance(payload, dict):
+            raise ValueError("hypothesis JSON must be an object")
+        metrics = evaluate_diarization(ground_truth, segments_from_dict(payload))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        error_console.print(f"評価入力エラー: {mask_secrets(str(exc))}")
+        raise typer.Exit(2) from None
+
+    rendered = json.dumps(metrics, ensure_ascii=False, indent=2, sort_keys=True)
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered + "\n", encoding="utf-8")
+    typer.echo(rendered)
+
+    violations: list[str] = []
+    if max_der is not None and metrics["diarization_error_rate"] > max_der:
+        violations.append(f"DER {metrics['diarization_error_rate']:.6f} > {max_der:.6f}")
+    if (
+        max_mid_word_boundaries is not None
+        and metrics["mid_word_speaker_boundary_count"] > max_mid_word_boundaries
+    ):
+        violations.append(
+            f"語中話者境界 {metrics['mid_word_speaker_boundary_count']} > {max_mid_word_boundaries}"
+        )
+    if max_short_turns is not None and metrics["short_speaker_turn_count"] > max_short_turns:
+        violations.append(f"短い話者島 {metrics['short_speaker_turn_count']} > {max_short_turns}")
+    if max_unknown_ratio is not None and metrics["unknown_ratio"] > max_unknown_ratio:
+        violations.append(f"UNKNOWN率 {metrics['unknown_ratio']:.6f} > {max_unknown_ratio:.6f}")
+    if (
+        min_acknowledgement_retention is not None
+        and metrics["acknowledgement_retained_ratio"] < min_acknowledgement_retention
+    ):
+        violations.append(
+            "相槌保持率 "
+            f"{metrics['acknowledgement_retained_ratio']:.6f} < "
+            f"{min_acknowledgement_retention:.6f}"
+        )
+    if violations:
+        for violation in violations:
+            error_console.print(f"品質基準違反: {violation}")
+        raise typer.Exit(1)
 
 
 class RichProgressReporter:

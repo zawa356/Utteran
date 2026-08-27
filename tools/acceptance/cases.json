@@ -5800,5 +5800,34 @@
     "destructive": false,
     "estimated_seconds": 15,
     "environment": {}
+  },
+  {
+    "id": "Q1-DIARIZATION-REFERENCE",
+    "group": "Q1",
+    "description": "Measure DER, boundary integrity, UNKNOWN duration, and acknowledgement retention on synthetic ground truth",
+    "command": [
+      "{utteran}",
+      "eval",
+      "{project}/tests/fixtures/diarization_quality/meeting_ground_truth.json",
+      "{project}/tests/fixtures/diarization_quality/meeting_expected_hypothesis.json",
+      "--output",
+      "{acceptance}/q1/diarization-quality.json",
+      "--max-der",
+      "0",
+      "--max-mid-word-boundaries",
+      "0",
+      "--max-unknown-ratio",
+      "0.2",
+      "--min-acknowledgement-retention",
+      "1"
+    ],
+    "expected_exit_codes": [
+      0
+    ],
+    "timeout_seconds": 30,
+    "requires": {},
+    "destructive": false,
+    "estimated_seconds": 1,
+    "environment": {}
   }
 ]

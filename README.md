@@ -450,6 +450,19 @@ uv lock --check
 CIはLinux/Windowsのモデル不要testと静的検査を行います。native build、実model、GPU、長時間、性能は
 CI対象外です。release品質は[統合受入試験ハーネス](tools/acceptance/README.md)で確認します。
 
+正解時刻付きの話者分離結果は、モデル不要の評価コマンドで比較できます。話者番号は一致して
+いなくても時間重なりが最大になる対応へ自動的に揃え、DER、話者境界誤差、語中の話者境界、
+0.5秒未満／1語だけの話者島、UNKNOWN時間率、短い相槌の保持率を本文なしで出力します。
+
+```powershell
+utteran eval reference.json hypothesis.json --output metrics.json `
+  --max-der 0.2 --max-mid-word-boundaries 0 --max-unknown-ratio 0.2
+```
+
+再現可能な3話者合成fixtureと正解timelineは
+`tests/fixtures/diarization_quality/`にあり、`Q1-DIARIZATION-REFERENCE`がモデル不要の
+受入ケースとして品質指標を検査します。
+
 公開履歴の再監査:
 
 ```console
