@@ -91,6 +91,11 @@ path = ""
 max_nearest_distance = 2.0
 min_segment_duration = 0.3
 min_segment_words = 2
+speaker_switch_penalty = 0.75
+silence_switch_threshold = 0.3
+min_clear_turn_duration = 0.5
+max_same_speaker_bridge_gap = 0.3
+unknown_emission_score = 0.35
 merge_gap = 0.5
 renumber_speakers = true
 """
@@ -236,6 +241,11 @@ class AlignmentConfig(BaseModel):
     max_nearest_distance: float = Field(default=2.0, ge=0.0)
     min_segment_duration: float = Field(default=0.3, ge=0.0)
     min_segment_words: int = Field(default=2, ge=0)
+    speaker_switch_penalty: float = Field(default=0.75, ge=0.0)
+    silence_switch_threshold: float = Field(default=0.3, ge=0.0)
+    min_clear_turn_duration: float = Field(default=0.5, ge=0.0)
+    max_same_speaker_bridge_gap: float = Field(default=0.3, ge=0.0)
+    unknown_emission_score: float = Field(default=0.35, ge=0.0)
     merge_gap: float = Field(default=0.5, ge=0.0)
     renumber_speakers: bool = True
 

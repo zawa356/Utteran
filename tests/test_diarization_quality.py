@@ -6,13 +6,21 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from utteran.align import align_transcription, assign_word_speaker
 from utteran.cli import app
 from utteran.diarization_quality import (
     DiarizationGroundTruth,
     evaluate_diarization,
     segments_from_dict,
 )
-from utteran.types import Segment
+from utteran.types import (
+    AlignmentOptions,
+    DiarizationResult,
+    Segment,
+    SpeakerTurn,
+    TranscriptionResult,
+    Word,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "diarization_quality"
 runner = CliRunner()
@@ -111,3 +119,39 @@ def test_eval_cli_rejects_the_naive_boundary_sequence() -> None:
 
     assert result.exit_code == 1
     assert "mid_word_speaker_boundary_count" in result.stdout
+
+
+def test_viterbi_improves_fixture_without_deleting_short_acknowledgement() -> None:
+    payload = json.loads((FIXTURES / "meeting_ground_truth.json").read_text(encoding="utf-8"))
+    reference = DiarizationGroundTruth.from_dict(payload)
+    words = [
+        Word(float(word["start"]), float(word["end"]), str(word["text"]))
+        for word in payload["asr_words"]
+    ]
+    observed = [SpeakerTurn(**turn) for turn in payload["observed_turns"]]
+    transcription = TranscriptionResult(
+        [Segment(words[0].start, words[-1].end, "".join(word.text for word in words), words)],
+        "ja",
+        reference.duration,
+        "synthetic",
+        "synthetic",
+        "cpu",
+    )
+    diarization = DiarizationResult(observed, None, 3, "synthetic", "synthetic", "cpu")
+    legacy = [
+        Segment(word.start, word.end, "", [word], assign_word_speaker(word, observed))
+        for word in words
+    ]
+    optimized = align_transcription(
+        transcription,
+        diarization,
+        AlignmentOptions(renumber_speakers=False),
+    )
+
+    legacy_metrics = evaluate_diarization(reference, legacy)
+    optimized_metrics = evaluate_diarization(reference, optimized)
+
+    assert optimized_metrics["diarization_error_rate"] < legacy_metrics["diarization_error_rate"]
+    assert legacy_metrics["mid_word_speaker_boundary_count"] >= 2
+    assert optimized_metrics["mid_word_speaker_boundary_count"] == 0
+    assert optimized_metrics["acknowledgement_retained_ratio"] == 1.0

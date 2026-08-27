@@ -5,7 +5,8 @@
 project test data covered by the repository license; no external recording or voice model is
 used.
 
-`meeting_ground_truth.json` provides the exact exclusive speaker and word timeline. It includes
+`meeting_ground_truth.json` provides the exact exclusive speaker and linguistic-word timeline,
+the CJK-character-level ASR words, and deliberately noisy observed diarization turns. It includes
 a deliberately long linguistic-word interval, a short acknowledgement, dense speaker changes,
 a long monologue, trailing silence, and three speakers. `meeting_naive_hypothesis.json` models
 the reported failure: three boundaries occur inside one word and a trailing silent interval is

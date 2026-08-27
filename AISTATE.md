@@ -44,8 +44,24 @@
   全wordが所属segment内、最長word 1.63秒だった。raw `t_dtw`の最小は0.24秒で圧縮timelineの
   ままだったが採用されず、offsetが元timelineに正しく復元された。本文は記録していない。
 - モデル不要回帰は、build commandでVAD+DTW併用、patchのgetter適用数、6秒台のmapped offsetが
-  0秒台のcompressed DTWより優先されることを固定する。P0-1は成立。P0-2以降は未着手で、
-  bugfix-c全体は未完了。
+  0秒台のcompressed DTWより優先されることを固定する。P0-1は成立した。
+
+### P0-2／P1 話者系列最適化とUNKNOWN
+
+- 全ASR単語列を対象に、話者区間との重なり秒数をemission、話者切替をpenaltyとするViterbiを
+  実装した。0.3秒以上の無音、前後とも0.5秒以上の話者区間と明確な重なり差に支えられた境界では
+  penaltyを弱める。短い連続発話の揺らぎでは0.75を維持する。
+- 従来の0.3秒／2単語未満の`A→B→A`吸収は廃止した。系列最適化と二重に効き、無音で独立した
+  正解の短い相槌まで消すためである。CJKの文字数は判定に使わない。旧設定はconfig互換のため
+  読み込むが、割当には使わない。
+- 最近傍2秒fallbackを廃止し、重なりなしは原則UNKNOWNとした。単語の両側が同じ話者で両gapが
+  0.3秒以内の場合だけbridge emissionを与える（A+B方針）。異なる話者間のgapはUNKNOWNを保持する。
+- 合成fixtureの独立割当→ViterbiはDER 0.197880→0.091873、speaker confusion 0.40→0秒、
+  語中境界3→0、0.5秒未満の話者島3→1。残った1件は正解の短い相槌で、保持率100%。境界誤差は
+  mean 0.040秒、max 0.075秒を維持した。penalty 0.35では語中境界2回が残り、0.50〜1.10では
+  上記結果が安定したため既定0.75を選んだ。
+- alignment policy versionを5へ更新した。P0-2とP1-1/P1-2のmodel-free実装は完了。実会議音声と
+  長時間回帰は未実施で、bugfix-c全体は未完了。
 
 ## Phase bugfix-b CI format gate復旧（0.1.13、2026-08-27）
 
