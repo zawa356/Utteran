@@ -25,7 +25,27 @@
   0.45秒、false alarm 1.50秒、語中境界3回、0.5秒未満の話者島3件、1語だけの話者島2件だった。
   期待仮説はDER 0、語中境界0回、UNKNOWN 0%、短い相槌保持率100%だった。
 - 統合受入へモデル不要の`Q1-DIARIZATION-REFERENCE`を追加した。ここまでの単体／CLI／harness
-  testは21件pass、追加sourceのmypyはpass。P0-1以降は未着手であり、bugfix-cは未完了。
+  testは21件pass、追加sourceのmypyはpass。
+
+### P0-1 VADと単語時刻
+
+- 公式tag `v1.9.2`はcommit `306c88f4d1286aec1bf96e544632897886af5501`（2026-08-04）。
+  source確認では`whisper_full_get_token_t0/t1()`がVAD圧縮timelineから元音声timelineへの
+  segment-aware mappingを実装し、token durationを正に保つ。一方`include/whisper.h`はraw
+  `whisper_full_get_token_data().t0/t1`が圧縮timelineのままと明記し、`examples/cli/cli.cpp`の
+  full JSONもraw dataを使っていた。したがってversion更新だけでは成立しないと判断した。
+- v1.9.2固定sourceのfull JSON token取得2箇所だけへgetterを適用するpatchをnative builderへ追加。
+  適用位置が一致しなければfailし、`patch_level=utteran-token-json-original-timeline-v1`がないmanifestは
+  無効とする。`t_dtw`自体は圧縮timelineのため、Python側の有効offset優先規則を維持した。
+- Intel profileで2026-08-27にCPU/OpenVINO/Vulkan/OpenVINO+Vulkanをbuildし、4構成成功、error 0、
+  全実行ファイルの`--help`がexit 0だった。v1.9.1 buildはmanifest不一致により再buildされた。
+- 6.000秒無音 + 8.536秒SAPI合成発話 + 5秒無音（合計19.536秒）をVulkan、VAD、DTW併用で
+  実推論した。2 segment／15 word、segment開始6.08秒、word開始6.13秒、word終端最大13.81秒、
+  全wordが所属segment内、最長word 1.63秒だった。raw `t_dtw`の最小は0.24秒で圧縮timelineの
+  ままだったが採用されず、offsetが元timelineに正しく復元された。本文は記録していない。
+- モデル不要回帰は、build commandでVAD+DTW併用、patchのgetter適用数、6秒台のmapped offsetが
+  0秒台のcompressed DTWより優先されることを固定する。P0-1は成立。P0-2以降は未着手で、
+  bugfix-c全体は未完了。
 
 ## Phase bugfix-b CI format gate復旧（0.1.13、2026-08-27）
 

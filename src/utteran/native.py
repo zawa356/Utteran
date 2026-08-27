@@ -21,7 +21,7 @@ these choices):
   PowerShell/cmd session: this generator locates the MSVC toolchain itself
   (via the same mechanism as `vswhere`), unlike Ninja, which requires the
   compiler environment (`vcvars64.bat`) to already be sourced in the calling
-  process. Verified against this whisper.cpp checkout (v1.9.1) for the
+  process. Verified against this whisper.cpp checkout (v1.9.2) for the
   `cpu` configuration.
 """
 
@@ -56,9 +56,35 @@ def _portable_cmake_flags(flags: Sequence[str]) -> tuple[str, ...]:
     )
 
 
-WHISPER_CPP_TAG = "v1.9.1"
-WHISPER_CPP_COMMIT = "f049fff95a089aa9969deb009cdd4892b3e74916"
+WHISPER_CPP_TAG = "v1.9.2"
+WHISPER_CPP_COMMIT = "306c88f4d1286aec1bf96e544632897886af5501"
+WHISPER_CPP_PATCH_LEVEL = "utteran-token-json-original-timeline-v1"
 WHISPER_CPP_REPOSITORY = "https://github.com/ggml-org/whisper.cpp.git"
+
+_TOKEN_JSON_CURRENT_OLD = (
+    "                            auto tok = whisper_full_get_token_data(ctx, i, j);\n"
+    "                            merged_token m{ whisper_token_to_str(ctx, tok.id), "
+    "tok, tok.t1 };"
+)
+_TOKEN_JSON_CURRENT_NEW = (
+    "                            auto tok = whisper_full_get_token_data(ctx, i, j);\n"
+    "                            tok.t0 = whisper_full_get_token_t0(ctx, i, j);\n"
+    "                            tok.t1 = whisper_full_get_token_t1(ctx, i, j);\n"
+    "                            merged_token m{ whisper_token_to_str(ctx, tok.id), "
+    "tok, tok.t1 };"
+)
+_TOKEN_JSON_NEXT_OLD = (
+    "                                auto tok_next = whisper_full_get_token_data("
+    "ctx, i, j);\n"
+    "                                m.text += whisper_token_to_str(ctx, tok_next.id);"
+)
+_TOKEN_JSON_NEXT_NEW = (
+    "                                auto tok_next = whisper_full_get_token_data("
+    "ctx, i, j);\n"
+    "                                tok_next.t0 = whisper_full_get_token_t0(ctx, i, j);\n"
+    "                                tok_next.t1 = whisper_full_get_token_t1(ctx, i, j);\n"
+    "                                m.text += whisper_token_to_str(ctx, tok_next.id);"
+)
 
 #: Public backend name -> short on-disk build-directory slug. Kept short
 #: because ggml's Vulkan shader-gen sub-build nests very deep
@@ -253,6 +279,28 @@ def resolve_runtime_library_dirs(name: str) -> tuple[Path, ...]:
     return ()
 
 
+def _patch_whisper_cpp_token_json(source_dir: Path) -> None:
+    """Make v1.9.2 full JSON use its original-timeline VAD token getters."""
+    cli_path = source_dir / "examples" / "cli" / "cli.cpp"
+    try:
+        source = cli_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise NativeBuildError(f"whisper.cpp CLI sourceを読めません: {exc}") from exc
+    if _TOKEN_JSON_CURRENT_NEW in source and _TOKEN_JSON_NEXT_NEW in source:
+        return
+    if source.count(_TOKEN_JSON_CURRENT_OLD) != 1 or source.count(_TOKEN_JSON_NEXT_OLD) != 1:
+        raise NativeBuildError(
+            "whisper.cpp token JSON patchの適用位置が期待したv1.9.2 sourceと一致しません。"
+        )
+    patched = source.replace(_TOKEN_JSON_CURRENT_OLD, _TOKEN_JSON_CURRENT_NEW).replace(
+        _TOKEN_JSON_NEXT_OLD, _TOKEN_JSON_NEXT_NEW
+    )
+    try:
+        cli_path.write_text(patched, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        raise NativeBuildError(f"whisper.cpp token JSON patchを書き込めません: {exc}") from exc
+
+
 class NativeBuilder:
     """Fetch whisper.cpp once and build the requested variants beside it."""
 
@@ -280,7 +328,11 @@ class NativeBuilder:
         if not isinstance(data, dict):
             return {}
         whisper_cpp = data.get("whisper_cpp")
-        if not isinstance(whisper_cpp, dict) or whisper_cpp.get("commit") != WHISPER_CPP_COMMIT:
+        if (
+            not isinstance(whisper_cpp, dict)
+            or whisper_cpp.get("commit") != WHISPER_CPP_COMMIT
+            or whisper_cpp.get("patch_level") != WHISPER_CPP_PATCH_LEVEL
+        ):
             return {}
         return data
 
@@ -419,7 +471,11 @@ class NativeBuilder:
         manifest: dict[str, Any] = {
             "schema_version": MANIFEST_SCHEMA_VERSION,
             "platform": self.platform,
-            "whisper_cpp": {"tag": WHISPER_CPP_TAG, "commit": WHISPER_CPP_COMMIT},
+            "whisper_cpp": {
+                "tag": WHISPER_CPP_TAG,
+                "commit": WHISPER_CPP_COMMIT,
+                "patch_level": WHISPER_CPP_PATCH_LEVEL,
+            },
             "built_at": _now(),
             "backends": preserved_backends,
             "errors": preserved_errors,
@@ -478,6 +534,7 @@ class NativeBuilder:
         if (self.source_dir / ".git").is_dir():
             result = self.runner.run([git, "-C", str(self.source_dir), "rev-parse", "HEAD"])
             if result.returncode == 0 and result.stdout.strip() == WHISPER_CPP_COMMIT and not force:
+                _patch_whisper_cpp_token_json(self.source_dir)
                 return
             fetch = self.runner.run(
                 [
@@ -520,6 +577,7 @@ class NativeBuilder:
         verify = self.runner.run([git, "-C", str(self.source_dir), "rev-parse", "HEAD"])
         if verify.returncode != 0 or verify.stdout.strip() != WHISPER_CPP_COMMIT:
             raise NativeBuildError("取得したwhisper.cppのコミットが期待値と一致しません。")
+        _patch_whisper_cpp_token_json(self.source_dir)
 
     def _build_variant(
         self,
