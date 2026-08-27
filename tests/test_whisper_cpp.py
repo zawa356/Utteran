@@ -236,7 +236,7 @@ def test_convert_result_discards_zero_length_segments_and_words() -> None:
     assert result.segments[0].words == []
 
 
-def test_convert_result_discards_segment_with_abnormally_long_word() -> None:
+def test_convert_result_keeps_segment_but_discards_abnormally_long_word_timing() -> None:
     entry = get_model("whisper-cpp:base")
     data = {
         "result": {"language": "ja"},
@@ -258,7 +258,38 @@ def test_convert_result_discards_segment_with_abnormally_long_word() -> None:
 
     result = _convert_result(data, entry, "cpu", True, max_word_duration_seconds=3.0)
 
-    assert result.segments == []
+    assert len(result.segments) == 1
+    assert (result.segments[0].start, result.segments[0].end) == (899.82, 965.96)
+    assert result.segments[0].text == "synthetic invalid timing"
+    assert result.segments[0].words == []
+
+
+def test_convert_result_keeps_segment_but_discards_word_timing_collapsed_to_one_edge() -> None:
+    entry = get_model("whisper-cpp:base")
+    data = {
+        "result": {"language": "ja"},
+        "transcription": [
+            {
+                "offsets": {"from": 989_080, "to": 1_006_470},
+                "text": "synthetic collapsed timing",
+                "tokens": [
+                    {
+                        "text": " ok",
+                        "t_dtw": 100_450,
+                        "offsets": {"from": 1_004_490, "to": 1_004_570},
+                        "p": 0.9,
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = _convert_result(data, entry, "cpu", True, max_word_duration_seconds=3.0)
+
+    assert len(result.segments) == 1
+    assert (result.segments[0].start, result.segments[0].end) == (989.08, 1006.47)
+    assert result.segments[0].text == "synthetic collapsed timing"
+    assert result.segments[0].words == []
 
 
 def test_convert_result_limits_identical_consecutive_segments_to_ten() -> None:
