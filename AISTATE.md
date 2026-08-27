@@ -1,5 +1,54 @@
 # AI 作業状態
 
+## Phase bugfix-d 発話欠落と話者境界（0.1.15、2026-08-27）
+
+### D-1 発話欠落の切り分けと修正
+
+> bugfix-cで「異常に長い単語を含むASR区間の除外」を実装したが、本文ごと捨てた時間を記録して
+> いなかった。データを捨てる処理は、何をどれだけ捨てたかを必ず記録すること。本修正では本文を
+> 捨てず、壊れた単語時刻だけを破棄するsegment-level fallbackへ変更した。
+
+- 0.1.14実会議ジョブ（1,484.8秒）は、mergeの10秒以上未割当が18件・463.42秒、ASR段階でも
+  16件・378.51秒だった。16区間のmean volumeは-39.8〜-19.9 dBFS、maxは-9.5〜-2.6 dBFSで、
+  一律の無音ではなかった。28 ASR segmentを異常word 1件のため本文ごと除外したことが主因だった。
+- segment本文とoffsetを保持し、3秒超wordまたはsegment片端へ潰れたword群だけを破棄するfallbackへ
+  変更した。最終実測では33/288 segment、488 word相当、segment span合計508.96秒をfallbackし、
+  各区間、件数、秒数、率11.4583%を本文なしeventへ記録した。5%以上はwarningとする。
+- 最終再計算はASR／mergeとも10秒以上gap 0件、merge coverage 1,451.92秒（97.79%）だった。
+  中間再計算で残った12.59秒の音量はmean -29.0、max -4.8 dBFSだが、話者分離speechは0.356秒、
+  VAD有効ASRも0.35秒だけを出力した。VAD無効では全体12.58秒へ異常時刻が割り当てられたため、
+  音響エネルギーはあるが継続発話ではない区間と判断した。本文は保存・報告していない。
+
+### D-2〜D-4 UNKNOWNと短い境界fragment
+
+> bugfix-cのViterbiはUNKNOWNを状態に含めていたが、UNKNOWNを含む遷移だけpenaltyを0.5倍していた。
+> このため発話途中の短いUNKNOWNが通常話者より入りやすかった。
+
+- UNKNOWN遷移を通常話者と同じpenaltyにすると、既存中間結果は15件・5.04秒から2件・0.90秒へ
+  減少した。残りが0.89秒と0.01秒だったため、実測境界を越える`min_unknown_duration=1.0`、
+  1文字fragmentを対象にする`min_unknown_characters=2`を既定とし、長い隣接話者へ吸収した。
+- 0.5秒未満・3文字以下かつ割当話者との重なり0.05秒未満のunsupported fragmentだけを追加吸収する。
+  実会議ではUNKNOWN 0件、0.5秒未満segment 2件。音響支持のある短発話は保持した。
+- 合成正解fixtureはDER 0.091873、speaker confusion 0秒、語中境界0、短い相槌保持100%を維持した。
+  D-2後に語中分断の主要proxyである極短segmentが13件から3件へ減ったため、言語依存の一律吸収や
+  句末文字列ルールは追加しなかった。
+
+### D-5 調査判断
+
+- 105.26秒segmentは25 ASR segmentと同一labelの24 diarization turnが0.5秒以内で連鎖結合したもの。
+  当該範囲でdiarizationが返す話者は1名だけなので、話者境界分割を追加しても混在2話者は復元できない。
+  平滑化を強めた結果ではなく上流diarizationの同一label判定であり、短い相槌を壊す一律の結合上限は
+  設けず、D-5の実装は見送った。
+- 異常word時刻fallbackで単語を持たないsegmentはASR offsetが唯一の信頼できる境界なので、隣接する
+  同一話者segmentと結合しない。ASR／alignment policy versionは7とした。
+
+### 回帰測定
+
+- 合成fixtureは独立割当→最終実装でDER 0.197880→0.091873、speaker confusion 0.40→0秒、
+  語中境界3→0、短い話者島3→1、短い相槌保持率100%。境界誤差mean 0.040秒、max 0.075秒。
+- 3分系列は13 segment、4.33 segment/分、最長50.04秒。74.24分系列は357 segment、
+  4.809 segment/分、最長103.43秒（全体2.32%）、UNKNOWN 0秒で長さ依存の粗大化はなかった。
+
 ## Phase bugfix-c 話者分離境界精度（0.1.14、2026-08-27）
 
 指定どおり`fix/phase-bugfix-c-diarization-accuracy`を作成し、アルゴリズム調整より先にP2の
