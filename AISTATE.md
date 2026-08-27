@@ -1,5 +1,32 @@
 # AI 作業状態
 
+## Phase bugfix-c 話者分離境界精度（作業中、2026-08-27）
+
+指定どおり`fix/phase-bugfix-c-diarization-accuracy`を作成し、アルゴリズム調整より先にP2の
+正解付き評価基盤へ着手した。
+
+> Phase 5i で VAD を既定有効化したが、話者分離を使う場合は
+> 単語タイムスタンプが必要になり、VAD が自動的に無効化される構造だった。
+> Phase 3d で測定した VAD の効果は、実際の利用場面では得られていなかった。
+
+> 受入試験の話者分離基準は「壊れていない」ことしか測れず、
+> 「正しい人に正しい発言が付いた」かを検証できていなかった。
+
+### P2 評価基盤（最初の作業単位）
+
+- `utteran eval`と再利用可能なPython APIを追加した。話者labelは時間重なりが最大になる1対1対応へ
+  揃え、DER（miss／false alarm／speaker confusion）、正解境界から最寄り推定境界までの誤差、
+  語中境界数、0.5秒未満／1語だけの話者島、UNKNOWN時間率、短い相槌保持率を算出する。
+  結果に本文は含めない。
+- 外部録音やvoice modelを使わない決定的生成の18秒・16kHz mono WAVと正解JSONを
+  `tests/fixtures/diarization_quality/`へ追加した。3話者、語中境界、短い相槌、密な交代、
+  長い単独発話、末尾無音を1 fixtureに含む。生成scriptとWAVはrepository licenseの対象とする。
+- 報告症状を模した修正前仮説の実測は、正解発話14.15秒に対しDER 0.137809、speaker confusion
+  0.45秒、false alarm 1.50秒、語中境界3回、0.5秒未満の話者島3件、1語だけの話者島2件だった。
+  期待仮説はDER 0、語中境界0回、UNKNOWN 0%、短い相槌保持率100%だった。
+- 統合受入へモデル不要の`Q1-DIARIZATION-REFERENCE`を追加した。ここまでの単体／CLI／harness
+  testは21件pass、追加sourceのmypyはpass。P0-1以降は未着手であり、bugfix-cは未完了。
+
 ## Phase bugfix-b CI format gate復旧（0.1.13、2026-08-27）
 
 ### 原因と修正

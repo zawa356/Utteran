@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "fixture_id": "synthetic-three-speaker-boundaries-v1",
+  "duration": 18.0,
+  "license": "Generated for Utteran; covered by the repository license",
+  "patterns": [
+    "speaker_boundary_inside_one_linguistic_word",
+    "short_acknowledgement",
+    "dense_speaker_changes",
+    "long_single_speaker_turn",
+    "trailing_silence",
+    "three_speakers"
+  ],
+  "turns": [
+    {"start": 0.5, "end": 4.0, "speaker": "REF_A"},
+    {"start": 4.25, "end": 4.7, "speaker": "REF_B"},
+    {"start": 5.0, "end": 7.6, "speaker": "REF_A"},
+    {"start": 7.6, "end": 8.4, "speaker": "REF_B"},
+    {"start": 8.4, "end": 9.3, "speaker": "REF_C"},
+    {"start": 9.6, "end": 15.5, "speaker": "REF_A"}
+  ],
+  "words": [
+    {"start": 0.6, "end": 1.1, "speaker": "REF_A"},
+    {"start": 1.2, "end": 1.7, "speaker": "REF_A"},
+    {"start": 1.8, "end": 2.3, "speaker": "REF_A"},
+    {"start": 2.4, "end": 3.2, "speaker": "REF_A", "pattern": "one_linguistic_word"},
+    {"start": 3.25, "end": 3.8, "speaker": "REF_A"},
+    {"start": 4.3, "end": 4.65, "speaker": "REF_B", "is_acknowledgement": true},
+    {"start": 5.1, "end": 5.7, "speaker": "REF_A"},
+    {"start": 5.8, "end": 6.4, "speaker": "REF_A"},
+    {"start": 6.5, "end": 7.4, "speaker": "REF_A"},
+    {"start": 7.65, "end": 8.3, "speaker": "REF_B"},
+    {"start": 8.45, "end": 8.8, "speaker": "REF_C"},
+    {"start": 8.85, "end": 9.2, "speaker": "REF_C"},
+    {"start": 9.7, "end": 10.5, "speaker": "REF_A"},
+    {"start": 10.6, "end": 11.4, "speaker": "REF_A"},
+    {"start": 11.5, "end": 12.3, "speaker": "REF_A"},
+    {"start": 12.4, "end": 13.2, "speaker": "REF_A"},
+    {"start": 13.3, "end": 14.1, "speaker": "REF_A"},
+    {"start": 14.2, "end": 15.3, "speaker": "REF_A"}
+  ]
+}
