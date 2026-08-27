@@ -273,11 +273,23 @@ whisper.cpp v1.9.2は、VAD圧縮後のtoken時刻を元音声timelineへ戻すg
 `word_timestamps = "auto"`で話者分離が有効な実行、および`"always"`の実行でも内蔵VADを無効化
 せず、無音除去と元timeline上の単語時刻を併用します。v1.9.1の既存native buildは再buildが必要です。
 
-話者割当後の極短segment吸収は、0.3秒未満、または「単語時刻が実在し、かつ2語未満」の場合だけ
-適用します。単語時刻が欠けたsegmentを0語とみなして長さに関係なく吸収することはありません。
+話者割当は、単語ごとの瞬間判定ではなく、話者区間との重なりと切替penaltyを使うViterbi系列
+最適化です。連続発話中の短い揺らぎは抑え、十分な無音、長い話者区間、明確な重なりに裏付けられた
+切替は通します。従来の文字数／短時間による`A→B→A`吸収は、短い相槌まで消すため廃止しました。
+重なりのない単語は原則`UNKNOWN`で、両側が同一話者の短いgapだけを橋渡しします。
 同一話者segmentの結合閾値は0.5秒のままで、結合回数・gap分布・各段階のsegment数は
 `diarization_statistics`と`alignment_statistics`イベントへ本文なしで記録します。既存ジョブは
 ASR/merge policy hashの更新により該当stage以降を自動再計算します。
+
+```toml
+[alignment]
+speaker_switch_penalty = 0.75
+silence_switch_threshold = 0.3
+min_clear_turn_duration = 0.5
+max_same_speaker_bridge_gap = 0.3
+unknown_emission_score = 0.35
+merge_gap = 0.5
+```
 
 調査用には、ジョブディレクトリの中間JSONから本文を出さず統計だけを表示できます。
 

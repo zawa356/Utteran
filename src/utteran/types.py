@@ -157,9 +157,16 @@ class DiarizationOptions:
 class AlignmentOptions:
     """Thresholds controlling transcript/speaker reconciliation."""
 
+    # Retained as accepted compatibility settings; Viterbi supersedes nearest-distance
+    # assignment and word-count island absorption.
     max_nearest_distance: float = 2.0
     min_segment_duration: float = 0.3
     min_segment_words: int = 2
+    speaker_switch_penalty: float = 0.75
+    silence_switch_threshold: float = 0.3
+    min_clear_turn_duration: float = 0.5
+    max_same_speaker_bridge_gap: float = 0.3
+    unknown_emission_score: float = 0.35
     merge_gap: float = 0.5
     renumber_speakers: bool = True
 
