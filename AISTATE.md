@@ -38,6 +38,9 @@ pywebview JavaScript bridge生成だった。`NativeDialogApi`を`js_api`とし�
 - JavaScriptの`error`／`unhandledrejection`を最大20件queueし、各fieldを2000文字へ制限して
   Python構造化logへ転送する機能を追加した。log側の例外は握り、診断がUIを止めないようにした。
   再帰log大量出力の根本経路を除いたうえで、件数・サイズ制限も設けた。
+- 診断APIが`None`を返すとpywebview 6.2.1側で`JSON.parse(undefined)`となることを転送log自身で
+  発見したため、JSON化可能な`bool`を必ず返すよう修正した。native dialog定数もdeprecatedな
+  `OPEN_DIALOG`／`FOLDER_DIALOG`から`FileDialog.OPEN`／`FOLDER`へ更新した。
 - 回帰testはbridgeの公開member集合を固定し、publicなnative objectが追加されないことを守る。
   あわせて`file.path`／`dataTransfer.files`とdrop案内がないこと、frontend error転送を検査する。
 
@@ -47,6 +50,31 @@ stderrは0 byteで、Intel GPU構成／CPU構成を選べるウィザードが�
 `platformdirs`が環境変数でなくKnown Folder APIを使用するためuser settingsを新規作成したが、
 事前には存在しなかったことを作成時刻で確認し、process tree停止後に当該fileだけを削除して元の
 「設定なし」状態へ戻した。既存venv・model・jobは削除・移動していない。
+
+### Step 3: 最終検証
+
+- source版`gui.ps1`: ウィザードのwelcome、Intel構成、話者分離なし、GGML model、確認、実行、完了を
+  実画面で通過した。`venv,vad_model,asr_model,smoke`がすべて完了し、smoke testで合成音声の
+  文字起こしが成功した。完了画面から文字起こしworkspaceへ移動できた。
+- source版のfile選択buttonからPythonのnative OPEN dialogが呼ばれ、cancel後も
+  `Responding=True`、stderr 0 byteだった。folder dialogは同じ`choose_path` methodの
+  `FileDialog.FOLDER`分岐を自動testで確認した。
+- source版2回目起動はworkspaceを直接表示し、ウィザードを再表示しなかった。
+- `build.ps1`で0.1.12をbuild後、`dist/utteran-gui/utteran-gui.exe`でも同じウィザードを完走した。
+  4 stage完了後も`Responding=True`、stderr 0 byte、`window.native`、recursion、UI thread違反、
+  `--- Logging error ---`はいずれも0件だった。配布GUIの2回目起動もworkspaceを直接表示した。
+- 検証用に新規作成されたuser `settings.json`は、source／配布GUIの確認後にfile単体を削除し、
+  作業開始時の「設定なし」へ戻した。既存venv・model・jobは保持した。
+- `uv run pytest -m "not requires_model"`: 365 passed、既知のStarlette deprecation warning 1件。
+- `uv run ruff check src tests tools`: pass。`uv run mypy`: pass（58 source files）。
+  JavaScript構文検査、`uv lock --check`、`git diff --check`: pass。
+- `ruff format --check src tests tools`は今回未変更の既存12 fileと、既存箇所を含む`test_gui.py`を
+  現在のformatterなら再整形するとして不合格だった。完了条件ではないため無関係な一括整形はしない。
+- Intel Arc 140Tの本機で実施した。別のCore i7機には本sessionからアクセスできず未実施。
+
+配布物は`dist/installer/utteran-setup-0.1.12.exe`、SHA-256は
+`a83e13cef0e7fa6997d706165d7d971b3dc581a7fc10fb7660f6f278561190a0`。
+build成果物はGitへ追加しない。
 
 ## 長時間話者分離の粗大化調査と修正（0.1.11、2026-08-26）
 
