@@ -1,5 +1,32 @@
 # AI 作業状態
 
+## Phase bugfix-a ウィザード起動フリーズ（0.1.12、2026-08-27）
+
+### Step 1: 引き金の特定（修正前）
+
+利用者設定を`output/bugfix-a/baseline/`へ隔離し、既存venv・モデル・設定・ジョブを変更せず
+`gui.ps1`を初回起動条件で実行した。セットアップウィザードが自動表示されるページ読み込み時に、
+実体の`python.exe`は`Responding=False`となった。隔離stderrには`window.native` 20件、
+`maximum recursion depth exceeded` 15件、`--- Logging error ---` 10件、UI thread違反5件が
+記録され、報告された症状を再現した。
+
+引き金はウィザード内のボタン、ファイル選択、drag-and-dropではなく、初回ページ読み込み時の
+pywebview JavaScript bridge生成だった。`NativeDialogApi`を`js_api`として渡した後、公開属性
+`NativeDialogApi.window`へpywebviewのWindowを代入していた。pywebview 6.2.1の
+`webview.util.inject_pywebview().get_functions()`は、`js_api`の公開属性を`dir()`と`getattr()`で
+再帰列挙する。このため`window.native`以下の.NET相互参照へ到達したことを、実装と上記実ログの
+両方で確認した。JavaScriptに`window.native`という記述はなくても、Python bridgeの公開属性が
+到達経路になっていた。
+
+> pywebview の `window.native` 以下を JavaScript から辿ると、
+> .NET のプロパティ相互参照により再帰走査が無限に続き、
+> UI スレッドが応答しなくなる。内部オブジェクトへ直接アクセスせず、
+> Python 側で明示的に公開した API を経由すること。
+
+> フロントエンドの例外が Python 側のログに記録されず、
+> 配布版での調査が極めて困難だった。
+> Phase 5j のログ基盤は Python 側のみを対象としていた。
+
 ## 長時間話者分離の粗大化調査と修正（0.1.11、2026-08-26）
 
 `fix/long-audio-diarization`で、Intel Arc 140T実機上の116.2分会議音声が18segment、
