@@ -221,6 +221,7 @@ class WhisperCppBackend(ASRBackend):
             self._device,
             options.word_timestamps,
             repetition_limit=self.settings.repetition_limit,
+            max_word_duration_seconds=self.settings.max_word_duration_seconds,
         )
 
     def unload(self) -> None:
@@ -505,11 +506,14 @@ def _convert_result(
     requested_words: bool,
     *,
     repetition_limit: int = 10,
+    max_word_duration_seconds: float = 3.0,
 ) -> TranscriptionResult:
     segments: list[Segment] = []
     dtw_found = False
     discarded_segments = 0
     discarded_words = 0
+    discarded_long_words = 0
+    discarded_long_word_segments = 0
     discarded_repetitions = 0
     previous_text = ""
     consecutive_repetitions = 0
@@ -526,6 +530,12 @@ def _convert_result(
         converted_words = (
             tokens_to_words(tokens, segment_start=start, segment_end=end) if requested_words else []
         )
+        if requested_words and any(
+            word.end - word.start > max_word_duration_seconds for word in converted_words
+        ):
+            discarded_long_words += len(converted_words)
+            discarded_long_word_segments += 1
+            continue
         words = [word for word in converted_words if word.end > word.start]
         discarded_words += len(converted_words) - len(words)
         text = str(raw.get("text", ""))
@@ -539,12 +549,23 @@ def _convert_result(
             discarded_repetitions += 1
             continue
         segments.append(Segment(start, end, text, words))
-    if discarded_segments or discarded_words or discarded_repetitions:
+    if (
+        discarded_segments
+        or discarded_words
+        or discarded_long_words
+        or discarded_long_word_segments
+        or discarded_repetitions
+    ):
         logging.getLogger(__name__).warning(
             "whisper.cppの無効出力を除外しました: zero_segments=%d, zero_words=%d, "
-            "repeated_segments=%d (repetition_limit=%d; 正当な反復も除外される可能性があります)",
+            "long_words=%d, long_word_segments=%d (max_word_duration=%.3fs), "
+            "repeated_segments=%d "
+            "(repetition_limit=%d; 正当な反復も除外される可能性があります)",
             discarded_segments,
             discarded_words,
+            discarded_long_words,
+            discarded_long_word_segments,
+            max_word_duration_seconds,
             discarded_repetitions,
             repetition_limit,
         )
@@ -559,6 +580,8 @@ def _convert_result(
         requested=requested_words,
         retained_word_count=sum(len(segment.words) for segment in segments),
         discarded_zero_word_count=discarded_words,
+        discarded_long_word_count=discarded_long_words,
+        discarded_long_word_segment_count=discarded_long_word_segments,
         **timestamp_statistics,
     )
     result = data.get("result", {})
