@@ -575,6 +575,7 @@ def _convert_result(
             discarded_repetitions += 1
             continue
         segments.append(Segment(start, end, text, words))
+    fallback_ratio = invalid_word_timing_segments / max(1, len(data.get("transcription", [])))
     if (
         discarded_segments
         or discarded_words
@@ -582,8 +583,10 @@ def _convert_result(
         or invalid_word_timing_segments
         or discarded_repetitions
     ):
-        logging.getLogger(__name__).warning(
-            "whisper.cppの無効出力を除外しました: zero_segments=%d, zero_words=%d, "
+        log_level = logging.WARNING if fallback_ratio >= 0.05 else logging.INFO
+        logging.getLogger(__name__).log(
+            log_level,
+            "whisper.cppの無効出力を補正しました: zero_segments=%d, zero_words=%d, "
             "invalid_word_timing_words=%d, segment_fallbacks=%d/%.3fs "
             "(max_word_duration=%.3fs; 本文は保持), "
             "repeated_segments=%d "
@@ -611,9 +614,8 @@ def _convert_result(
         invalid_word_timing_word_count=invalid_word_timing_words,
         segment_timing_fallback_count=invalid_word_timing_segments,
         segment_timing_fallback_seconds=round(invalid_word_timing_seconds, 3),
-        segment_timing_fallback_ratio=round(
-            invalid_word_timing_segments / max(1, len(data.get("transcription", []))), 6
-        ),
+        segment_timing_fallback_ratio=round(fallback_ratio, 6),
+        high_fallback_ratio=fallback_ratio >= 0.05,
         segment_timing_fallback_intervals=invalid_word_timing_intervals,
         **timestamp_statistics,
     )
