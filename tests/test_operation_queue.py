@@ -64,7 +64,7 @@ def test_waiting_queue_item_can_be_cancelled_individually() -> None:
         "waiting",
         kind="model_download",
         label="waiting",
-        runner=lambda: (ran.set() or "completed"),
+        runner=lambda: ran.set() or "completed",
         canceller=cancelled.set,
     )
     _wait_for(lambda: queue.snapshot("active")["status"] == "running")

@@ -552,9 +552,7 @@ def _detect_isolated_runtimes(
         run = run_isolated_probe(name, label, timeout_seconds, argument=argument)
         outcomes.append(run.outcome)
         if progress is not None:
-            progress(
-                ProbeProgress(name, label, position, total, cast(Any, run.outcome.status))
-            )
+            progress(ProbeProgress(name, label, position, total, cast(Any, run.outcome.status)))
         return run
 
     def unavailable(name: str, label: str) -> _ProbeRun:
@@ -626,9 +624,7 @@ def _detect_isolated_runtimes(
 
     vulkan_run = execute("vulkan", "Vulkan build/runtime")
     vulkan = _vulkan_report(vulkan_run)
-    return _IsolatedReports(
-        ctranslate2, torch, openvino, onnxruntime, vulkan, tuple(outcomes)
-    )
+    return _IsolatedReports(ctranslate2, torch, openvino, onnxruntime, vulkan, tuple(outcomes))
 
 
 def _combine_ctranslate2(
@@ -745,9 +741,7 @@ def _optional_report(installed: bool, run: _ProbeRun) -> OptionalRuntimeReport:
     if not installed:
         return OptionalRuntimeReport(False, (), "未導入")
     values = (
-        tuple(str(item) for item in run.result.get("values", ()))
-        if run.result is not None
-        else ()
+        tuple(str(item) for item in run.result.get("values", ())) if run.result is not None else ()
     )
     return OptionalRuntimeReport(
         run.outcome.status == "completed",
@@ -1260,9 +1254,7 @@ def _auto_selection(
         diarization_device = "cpu"
         notes.append("CUDA/XPUを利用できないため話者分離にCPUを選択しました。")
     if openvino_gpu and torch_xpu is None:
-        notes.append(
-            "ASRはIntel GPUで高速化できますが、話者分離はCPUで実行されます。"
-        )
+        notes.append("ASRはIntel GPUで高速化できますが、話者分離はCPUで実行されます。")
     intel_accelerators = tuple(
         item for item in openvino.values if item.upper().startswith(("GPU", "NPU"))
     )
