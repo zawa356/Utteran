@@ -25,6 +25,11 @@ def test_whisper_cpp_defaults() -> None:
     assert config.asr.whisper_cpp.vad is True
     assert config.asr.whisper_cpp.repetition_limit == 10
     assert config.asr.whisper_cpp.max_word_duration_seconds == 3.0
+    assert config.alignment.min_unknown_duration == 1.0
+    assert config.alignment.min_unknown_characters == 2
+    assert config.alignment.max_unsupported_fragment_duration == 0.5
+    assert config.alignment.max_unsupported_fragment_characters == 3
+    assert config.alignment.min_fragment_speaker_overlap == 0.05
     assert config.general.log_dir is None
     assert config.general.raw_subprocess_logs is False
     assert config.general.log_retention_days == 30
