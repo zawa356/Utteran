@@ -70,6 +70,17 @@
   1分当たり7.59 segment、最長区間比2.39%、UNKNOWN 15.47%で、長さ依存の粗大化はなかった。
   ただし74.3分は実音声そのものの再推論ではなく、実会議由来中間結果の系列回帰である。
 
+### 最終検証
+
+- `ruff format --check src tests tools`、`ruff check src tests tools`、mypy 57 source、`uv lock --check`、
+  `git diff --check`はpass。モデル不要testは377 passed（既知のStarlette warning 1件）。
+- `Q1-DIARIZATION-REFERENCE`は1 passed、0 failed、0 skipped。whisper.cpp v1.9.2+patchのnative
+  CPU／OpenVINO／Vulkan／OpenVINO+Vulkanは4構成ともbuild済みで、各`--help`がexit 0。
+- versionを0.1.14へ更新し、`build.ps1`で`dist/installer/utteran-setup-0.1.14.exe`を生成した。
+  生成物は19,819,925 bytes、SHA-256は
+  `df046a123bbfc925c672828c8749adcce33976ccd5493c239c91dd23123a06b9`。
+- 実録音、文字起こし本文、配布build成果物はcommitしていない。remoteへのpushも行っていない。
+
 ## Phase bugfix-b CI format gate復旧（0.1.13、2026-08-27）
 
 ### 原因と修正
