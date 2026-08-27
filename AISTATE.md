@@ -31,6 +31,10 @@ runtime semantics、条件分岐、定数値、公開API、test期待値には�
 
 ### 最終検証
 
+- push後のLinux CIで、`_windows_driver_identity()`内の`winreg`属性9件がmypyの`attr-defined`に
+  なった。呼び出し側だけにあったWindows分岐を関数本体にも追加し、非Windowsでは空listを返す
+  契約を明示した。`mypy --platform linux`でCI failureをローカル再現後に修正し、Windows既定解析と
+  Linux指定解析の両方がpassすることを確認した。
 - `uv sync --extra dev --extra gui --locked`、`uv lock --check`: pass。lock差分はproject versionだけ。
 - `ruff check src tests tools`: pass。`ruff format --check src tests tools`: 107 files pass。
 - `mypy`: 58 source files pass。
