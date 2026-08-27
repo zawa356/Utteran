@@ -230,9 +230,13 @@ Silero VADは既定で有効です。ウィザードが軽量VADモデルを取�
 `[asr.whisper_cpp].vad = false`で明示的に無効化できます。既定変更により既存ジョブのASR設定hashが
 変わり、ASR以降が再計算されます。
 
-whisper.cppが単一tokenへ数十秒のsegment全体を割り当てる異常出力は、話者境界を大きく壊すため
-segment単位で除外します。上限は`[asr.whisper_cpp].max_word_duration_seconds = 3.0`で変更でき、
-除外したsegment数とword数は本文なしの警告・構造化eventへ記録します。
+whisper.cppのDTW/token時刻が壊れている場合（単一tokenへ数十秒のsegment全体を割り当てる、または
+単語群がsegmentの一部分だけへ潰れて残りが無語のまま消える）、その単語時刻だけを破棄し、
+segmentの本文とoffsetは保持したまま話者分離へsegment単位でfallbackします。以前バージョンは
+該当segmentを本文ごと除外していましたが、実会議録音で正常な発話まで巻き込んで消えることを
+実測で確認したため、本文を残す方式へ変更しました。判定の閾値は
+`[asr.whisper_cpp].max_word_duration_seconds = 3.0`で変更でき、fallbackしたsegment数・word数・
+秒数は本文なしの警告・構造化eventへ記録します。
 
 ## 文字起こし
 
@@ -281,9 +285,23 @@ whisper.cpp v1.9.2は、VAD圧縮後のtoken時刻を元音声timelineへ戻すg
 最適化です。連続発話中の短い揺らぎは抑え、十分な無音、長い話者区間、明確な重なりに裏付けられた
 切替は通します。従来の文字数／短時間による`A→B→A`吸収は、短い相槌まで消すため廃止しました。
 重なりのない単語は原則`UNKNOWN`で、両側が同一話者の短いgapだけを橋渡しします。
+
+`UNKNOWN`はViterbiの状態として通常の話者と同じ切替penaltyを受けます（`A→UNKNOWN→A`のような
+短い出入りも、話者切替と同様に十分な無音や重なりの裏付けがなければ抑制されます）。それでも
+残る`UNKNOWN`のうち、継続長が`min_unknown_duration`未満または文字数が`min_unknown_characters`
+未満のものだけを、より長い側の既知話者へ吸収します。実会議録音（約24分45秒）では、通常話者と
+同じpenaltyへの是正とこの吸収により、発話途中のUNKNOWNは15件から0件になりました。
+
+境界の両端が既知話者だが割り当てられた話者がその区間でほとんど重ならない極小fragment
+（`max_unsupported_fragment_duration`秒未満かつ`max_unsupported_fragment_characters`文字以下、
+かつ話者区間との重なりが`min_fragment_speaker_overlap`秒未満）も、より長い隣接segmentへ吸収し
+ます。無音で区切られた正当な短い相槌（重なりに裏付けられた話者）は対象外です。
+
 同一話者segmentの結合閾値は0.5秒のままで、結合回数・gap分布・各段階のsegment数は
 `diarization_statistics`と`alignment_statistics`イベントへ本文なしで記録します。既存ジョブは
 ASR/merge policy hashの更新により該当stage以降を自動再計算します。
+異常word時刻からsegment単位へfallbackした区間はASR offsetを残すため、前後の同一話者とは
+結合しません。
 
 ```toml
 [alignment]
@@ -292,6 +310,11 @@ silence_switch_threshold = 0.3
 min_clear_turn_duration = 0.5
 max_same_speaker_bridge_gap = 0.3
 unknown_emission_score = 0.35
+min_unknown_duration = 1.0
+min_unknown_characters = 2
+max_unsupported_fragment_duration = 0.5
+max_unsupported_fragment_characters = 3
+min_fragment_speaker_overlap = 0.05
 merge_gap = 0.5
 ```
 
