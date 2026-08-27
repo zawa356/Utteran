@@ -44,7 +44,7 @@ class NativeDialogApi:
 
         if kind == "input_file":
             result = self._window.create_file_dialog(
-                webview.OPEN_DIALOG,
+                webview.FileDialog.OPEN,
                 allow_multiple=False,
                 file_types=(
                     "Media files (*.wav;*.mp3;*.m4a;*.flac;*.ogg;*.mp4;*.mkv;*.mov;*.webm)",
@@ -52,16 +52,16 @@ class NativeDialogApi:
                 ),
             )
         elif kind in {"input_folder", "output_folder"}:
-            result = self._window.create_file_dialog(webview.FOLDER_DIALOG)
+            result = self._window.create_file_dialog(webview.FileDialog.FOLDER)
         else:
             raise ValueError(f"Unknown dialog kind: {kind}")
         return str(result[0]) if result else None
 
-    def report_frontend_error(self, payload: object) -> None:
+    def report_frontend_error(self, payload: object) -> bool:
         """Record a bounded browser exception without letting logging affect the UI."""
 
         if not isinstance(payload, dict):
-            return
+            return False
         allowed = ("kind", "message", "source", "line", "column")
         fields = {key: str(payload[key])[:2000] for key in allowed if key in payload}
         # Diagnostics must never prevent the page or UI thread from progressing.
@@ -69,6 +69,10 @@ class NativeDialogApi:
             logging.getLogger("utteran_gui.frontend").warning(
                 "frontend_error", extra={"gui_fields": fields}
             )
+        # pywebview 6.2.1 must receive a JSON-serializable value. Returning
+        # None makes its bridge evaluate JSON.parse(undefined), which itself
+        # raises another frontend error.
+        return True
 
 
 def project_root() -> Path:
