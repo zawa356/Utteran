@@ -190,10 +190,36 @@ def test_native_dialog_returns_one_selected_path_without_persisting(monkeypatch:
 
     monkeypatch.setattr(webview, "OPEN_DIALOG", "open", raising=False)
     api = NativeDialogApi()
-    api.window = Window()
+    api._attach_window(Window())
 
     assert api.choose_path("input_file") == "C:/Media/meeting.wav"
     assert calls[0][1]["allow_multiple"] is False
+
+
+def test_native_dialog_bridge_never_exposes_native_window_to_pywebview() -> None:
+    api = NativeDialogApi()
+    api._attach_window(object())
+
+    public_members = [
+        name
+        for name in dir(api)
+        if not name.startswith("_")
+    ]
+    assert public_members == ["choose_path", "report_frontend_error"]
+
+
+def test_gui_assets_disable_nonfunctional_drop_and_forward_frontend_errors() -> None:
+    web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
+    script = (web / "app.js").read_text(encoding="utf-8")
+    index = (web / "index.html").read_text(encoding="utf-8")
+
+    assert "file.path" not in script
+    assert "dataTransfer.files" not in script
+    assert "window.native" not in script
+    assert "dropHint" not in index
+    assert 'window.addEventListener("error"' in script
+    assert 'window.addEventListener("unhandledrejection"' in script
+    assert "report_frontend_error" in script
 
 
 def test_cli_and_gui_use_the_same_keyring_service_and_username() -> None:

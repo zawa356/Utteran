@@ -129,7 +129,9 @@ GUIは結果の仮想スクロール、全文検索、話者／時間フィル�
 （最大約3GB）が必要です。native buildはSDK等の
 前提があるため画面の案内に従ってCLIで実行します。
 
-入力file、入力folder、出力folderは選択dialogから指定でき、pathの手入力とdrag-and-dropも利用できます。
+入力file、入力folder、出力folderは選択dialogから指定でき、pathの手入力も利用できます。
+WebViewの標準drag-and-dropではWindowsの絶対pathを安全に取得できないため、drag-and-dropには
+対応しません。ファイル名だけが入力されたように見えて実行時に失敗する状態を避けています。
 単一の入力rootを選ぶ仕様で、folder内の複数fileは「サブフォルダも処理」とglob指定でbatch処理します。
 選択したpathは履歴として保存しません。
 
