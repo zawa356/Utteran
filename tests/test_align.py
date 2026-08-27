@@ -264,3 +264,16 @@ def test_same_speaker_segments_merge_within_gap_and_renumber_by_appearance() -> 
     assert len(result) == 1
     assert result[0].text == "AB"
     assert result[0].speaker == "SPEAKER_00"
+
+
+def test_segment_timing_fallback_does_not_merge_across_asr_boundary() -> None:
+    result = align_transcription(
+        transcription(
+            Segment(0.0, 5.0, "fallback", []),
+            Segment(5.0, 6.0, "timed", [Word(5.0, 6.0, "timed")]),
+        ),
+        diarization([SpeakerTurn(0.0, 6.0, "MAIN")]),
+    )
+
+    assert [segment.text for segment in result] == ["fallback", "timed"]
+    assert [segment.speaker for segment in result] == ["SPEAKER_00", "SPEAKER_00"]
