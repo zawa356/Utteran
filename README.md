@@ -293,10 +293,16 @@ whisper.cpp v1.9.2は、VAD圧縮後のtoken時刻を元音声timelineへ戻すg
 SudachiPyの文字位置へ最大4文字だけ補正します。分割単位Aが既定です。英語など日本語以外は
 Sudachiを通しません。依存がない環境でも処理を止めず、警告して従来の境界を使います。
 
-単語時刻を失ったsegmentは話者推定の根拠が弱いため、JSONの`speaker_confidence`を`low`にします。
-話者名と本文は保持し、字幕・テキスト表示は従来どおりです。時刻はpyannoteの検出発話区間の包絡へ
-縮め、検出区間がない場合だけ4文字/秒＋1秒（最小1秒）で上限を設けます。JSONへのfield追加は
-後方互換なので`schema_version`は1を維持し、既存GUIは未知fieldを無視して閲覧できます。
+3秒を超える異常な単語時刻が混ざったsegmentは、異常な単語だけを除き、正常な単語時刻と本文を
+保持します。正常な単語が一つもない場合だけsegment単位へ退避します。単語群がsegmentの片端へ
+偏っているだけなら、単語群の観測済み包絡へsegment時刻を直し、単語は捨てません。DTWが全て
+`-1`でも、有効なtoken offsetは低信頼として保持します。按分などによる時刻の生成は行いません。
+
+JSONの`speaker_confidence`は、単語時刻が完全なら`high`、単語時刻が一部欠ける、DTWなしのoffset
+だけを使う、または単語時刻が全くない場合は`low`です。`low`のsegmentは本文の位置を推測して
+話者分割せず、前後とも結合しません。単語時刻が全くない場合の時刻はpyannote検出発話の包絡へ
+縮め、検出区間がない場合だけ4文字/秒＋1秒（最小1秒）で上限を設けます。話者名と本文は保持し、
+字幕・テキスト表示は従来どおりです。field追加は後方互換なので`schema_version`は1を維持します。
 
 `UNKNOWN`はViterbiの状態として通常の話者と同じ切替penaltyを受けます（`A→UNKNOWN→A`のような
 短い出入りも、話者切替と同様に十分な無音や重なりの裏付けがなければ抑制されます）。それでも
@@ -331,7 +337,7 @@ merge_gap = 0.5
 boundary_snap_enabled = true
 boundary_snap_unit = "A"                # A | B
 boundary_snap_max_characters = 4
-boundary_snap_max_gap = 0.02
+boundary_snap_max_gap = 0.1
 fallback_characters_per_second = 4.0
 fallback_duration_padding = 1.0
 fallback_min_duration = 1.0
