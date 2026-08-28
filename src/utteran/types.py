@@ -181,7 +181,7 @@ class AlignmentOptions:
     boundary_snap_enabled: bool = True
     boundary_snap_unit: Literal["A", "B"] = "A"
     boundary_snap_max_characters: int = 4
-    boundary_snap_max_gap: float = 0.02
+    boundary_snap_max_gap: float = 0.1
     fallback_characters_per_second: float = 4.0
     fallback_duration_padding: float = 1.0
     fallback_min_duration: float = 1.0

@@ -61,6 +61,32 @@ def japanese_morpheme_boundaries(text: str, unit: Literal["A", "B"] = "A") -> se
     return boundaries
 
 
+def japanese_phrase_boundaries(text: str) -> set[int] | None:
+    """Return conservative phrase-like offsets derived from Sudachi POS information."""
+    loaded = _load_sudachi()
+    if loaded is None:
+        return None
+    instance, mode_a, _mode_b = loaded
+    morphemes = list(instance.tokenize(text, mode_a))
+    boundaries = {0, len(text)}
+    offset = 0
+    for index, morpheme in enumerate(morphemes[:-1]):
+        offset += len(str(morpheme.surface()))
+        current = tuple(str(value) for value in morpheme.part_of_speech())
+        following = tuple(str(value) for value in morphemes[index + 1].part_of_speech())
+        current_major = current[0] if current else ""
+        following_major = following[0] if following else ""
+        if current_major in {"副詞", "連体詞"} and following_major not in {
+            "助詞",
+            "助動詞",
+            "接尾辞",
+        }:
+            boundaries.add(offset)
+    if sum(len(str(morpheme.surface())) for morpheme in morphemes) != len(text):
+        return None
+    return boundaries
+
+
 def _is_attached_morpheme(morpheme: Any) -> bool:
     """Return whether a morpheme should not begin a speaker segment."""
     part_of_speech = tuple(str(value) for value in morpheme.part_of_speech())
