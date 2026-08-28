@@ -24,8 +24,8 @@ INTERMEDIATE_SCHEMA_VERSION = 1
 PRESENTATION_SCHEMA_VERSION = 1
 FINGERPRINT_CHUNK_SIZE = 1024 * 1024
 FLOAT_PRECISION = 12
-ASR_POLICY_VERSION = 7
-ALIGNMENT_POLICY_VERSION = 8
+ASR_POLICY_VERSION = 8
+ALIGNMENT_POLICY_VERSION = 9
 
 StageName: TypeAlias = Literal["audio", "asr", "diarization", "merge", "export"]
 StageStatus: TypeAlias = Literal["pending", "running", "done", "failed"]
