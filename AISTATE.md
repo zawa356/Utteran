@@ -57,7 +57,12 @@
 - 合成正解fixtureはDER 0.091873、speaker confusion 0秒、語中境界0、短い相槌保持100%、境界誤差
   mean 0.040秒／max 0.075秒を維持した。日本語補正単体、英語bypass、Sudachiなし継続、fallback
   時刻とJSON低信頼fieldの回帰testを追加した。
-- 最終静的検査、モデル不要test、build、installerサイズ・SHA-256は本節末尾へ追記する。
+- `ruff check`、`ruff format --check`（112 files）、mypy（60 source）、`uv lock --check`、
+  `git diff --check`、PowerShell BOM検査はpass。モデル不要testは387 passed（既知warning 1件）、
+  合成品質受入2件もpass。
+- `build.ps1`で`dist/installer/utteran-setup-0.1.16.exe`を生成した。19,833,496 bytes、0.1.15比
+  +12,677 bytes（Sudachi辞書はGUI配布物へ非同梱）、SHA-256は
+  `a44c18aafdbc4eb053812aaeef019af8e74a487f8e31b501bd63ba115ba0bb91`。成果物はcommitしない。
 
 ## Phase bugfix-d 発話欠落と話者境界（0.1.15、2026-08-27）
 
