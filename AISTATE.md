@@ -43,6 +43,10 @@
   要する「問題箇所17件」の再採点は自動化できず、利用者評価待ち。
 - モデル不要393 passed（既知warning 1件）。合成fixtureは語中境界0、短い相槌保持100%。
   ASR policy 8、alignment policy 9。whisper.cpp v1.9.2 pinは変更なし。
+- 先頭3分は13 segment、4.333件/分、最長49.91秒。実会議中間結果を3回連結した74.24分系列は
+  339 segment、4.566件/分、最長103.43秒（全体2.322%）で長さ依存の粗大化はなかった。
+- `build.ps1`で`dist/installer/utteran-setup-0.1.17.exe`を生成した。19,826,749 bytes、
+  SHA-256は`41fdb0ead648eee86561d1eca4c9cb982929c0f61fea7526c2727b852f8c496d`。
 
 ## Phase bugfix-e 言語境界と時刻信頼性（0.1.16、2026-08-28）
 
