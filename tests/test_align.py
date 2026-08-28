@@ -85,6 +85,34 @@ def test_segment_splits_using_regular_turns_when_exclusive_is_none() -> None:
     assert [segment.speaker for segment in result] == ["SPEAKER_00", "SPEAKER_01"]
 
 
+def test_identical_timestamp_group_is_never_split_between_speakers(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    words = [
+        Word(0.0, 0.4, "前"),
+        Word(0.4, 0.8, "同"),
+        Word(0.4, 0.8, "時"),
+        Word(0.8, 1.2, "後"),
+    ]
+    monkeypatch.setattr(
+        "utteran.align._assign_word_speaker_sequence",
+        lambda _words, _turns, _options: ["LEFT", "LEFT", "RIGHT", "RIGHT"],
+    )
+
+    result, statistics = align_transcription_with_statistics(
+        transcription(Segment(0.0, 1.2, "前同時後", words)),
+        diarization([]),
+        AlignmentOptions(
+            boundary_snap_enabled=False,
+            max_unsupported_fragment_duration=0.0,
+        ),
+    )
+
+    assert [segment.text for segment in result] == ["前同時", "後"]
+    assert result[0].end <= result[1].start
+    assert statistics["boundary_snapping"]["protected_identical_timestamp_group_count"] == 1
+
+
 def test_split_segment_contains_non_monotonic_word_end_times() -> None:
     words = [Word(0.1, 1.2, "A"), Word(0.0, 1.0, "B")]
     result = align_transcription(
@@ -366,3 +394,59 @@ def test_missing_word_timing_prefers_detected_speech_envelope() -> None:
     assert result[0].speaker_confidence == "low"
     assert statistics["fallback_timing"]["speech_envelope_count"] == 1
     assert statistics["fallback_timing"]["detected_speech_coverage"] == 1.0
+
+
+def test_partial_word_timing_preserves_full_text_without_inventing_a_split() -> None:
+    segment = Segment(
+        0.0,
+        2.0,
+        "full transcript",
+        [Word(0.0, 0.8, "full"), Word(1.2, 2.0, "script")],
+        speaker_confidence="low",
+    )
+    result = align_transcription(
+        transcription(segment),
+        diarization([SpeakerTurn(0.0, 1.0, "A"), SpeakerTurn(1.0, 2.0, "B")]),
+        AlignmentOptions(speaker_switch_penalty=0.0),
+    )
+
+    assert len(result) == 1
+    assert result[0].text == "full transcript"
+    assert result[0].speaker_confidence == "low"
+
+
+def test_supported_short_response_is_recovered_from_a_long_segment_tail() -> None:
+    words = [Word(0.0, 1.0, "長"), Word(1.0, 2.0, "文"), Word(2.0, 2.5, "応答")]
+    result, statistics = align_transcription_with_statistics(
+        transcription(Segment(0.0, 2.5, "長文応答", words)),
+        diarization([SpeakerTurn(0.0, 2.0, "MAIN"), SpeakerTurn(2.0, 2.5, "RESPONSE")]),
+        AlignmentOptions(
+            speaker_switch_penalty=10.0,
+            boundary_snap_enabled=False,
+            max_unsupported_fragment_duration=0.0,
+        ),
+    )
+
+    assert [segment.text for segment in result] == ["長文", "応答"]
+    assert statistics["boundary_snapping"]["trailing_response_recovery_count"] == 1
+
+
+def test_sandwiched_fragment_is_absorbed_only_when_outer_speaker_has_support(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    words = [Word(0.0, 1.0, "A"), Word(1.0, 1.5, "x"), Word(1.5, 2.5, "B")]
+    monkeypatch.setattr(
+        "utteran.align._assign_word_speaker_sequence",
+        lambda _words, _turns, _options: ["OUTER", "FRAGMENT", "OUTER"],
+    )
+    result, statistics = align_transcription_with_statistics(
+        transcription(Segment(0.0, 2.5, "AxB", words)),
+        diarization([SpeakerTurn(0.0, 2.5, "OUTER")]),
+        AlignmentOptions(
+            boundary_snap_enabled=False,
+            max_unsupported_fragment_duration=0.0,
+        ),
+    )
+
+    assert len(result) == 1
+    assert statistics["sandwiched_fragment_reassessment_count"] == 1

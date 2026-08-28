@@ -107,7 +107,7 @@ renumber_speakers = true
 boundary_snap_enabled = true
 boundary_snap_unit = "A"
 boundary_snap_max_characters = 4
-boundary_snap_max_gap = 0.02
+boundary_snap_max_gap = 0.1
 fallback_characters_per_second = 4.0
 fallback_duration_padding = 1.0
 fallback_min_duration = 1.0
@@ -270,7 +270,7 @@ class AlignmentConfig(BaseModel):
     boundary_snap_enabled: bool = True
     boundary_snap_unit: Literal["A", "B"] = "A"
     boundary_snap_max_characters: int = Field(default=4, ge=0)
-    boundary_snap_max_gap: float = Field(default=0.02, ge=0.0)
+    boundary_snap_max_gap: float = Field(default=0.1, ge=0.0)
     fallback_characters_per_second: float = Field(default=4.0, gt=0.0)
     fallback_duration_padding: float = Field(default=1.0, ge=0.0)
     fallback_min_duration: float = Field(default=1.0, gt=0.0)
