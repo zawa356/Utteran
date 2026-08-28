@@ -60,6 +60,9 @@
 - `ruff check`、`ruff format --check`（112 files）、mypy（60 source）、`uv lock --check`、
   `git diff --check`、PowerShell BOM検査はpass。モデル不要testは387 passed（既知warning 1件）、
   合成品質受入2件もpass。
+- 同じ実会議中間結果の先頭3分は14 segment、4.667件/分、最長51.97秒、UNKNOWN 0。3回連結した
+  74.24分系列は348 segment、4.688件/分、最長103.43秒（全体2.322%）、UNKNOWN 0で、長さ依存の
+  粗大化はなかった。
 - `build.ps1`で`dist/installer/utteran-setup-0.1.16.exe`を生成した。19,833,496 bytes、0.1.15比
   +12,677 bytes（Sudachi辞書はGUI配布物へ非同梱）、SHA-256は
   `a44c18aafdbc4eb053812aaeef019af8e74a487f8e31b501bd63ba115ba0bb91`。成果物はcommitしない。
