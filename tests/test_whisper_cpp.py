@@ -183,7 +183,7 @@ def test_vad_model_is_staged_through_ascii_safe_temporary_path(tmp_path: Path) -
     assert all(ord(char) < 128 for char in str(staged.relative_to(tmp_path)))
 
 
-def test_convert_result_discards_words_when_dtw_was_silently_disabled() -> None:
+def test_convert_result_keeps_offset_words_as_low_confidence_when_dtw_is_disabled() -> None:
     entry = get_model("whisper-cpp:base")
     data = {
         "result": {"language": "ja"},
@@ -200,7 +200,8 @@ def test_convert_result_discards_words_when_dtw_was_silently_disabled() -> None:
 
     result = _convert_result(data, entry, "cpu", True)
 
-    assert result.segments[0].words == []
+    assert len(result.segments[0].words) == 1
+    assert result.segments[0].speaker_confidence == "low"
     assert result.language == "ja"
 
 
@@ -287,9 +288,38 @@ def test_convert_result_keeps_segment_but_discards_word_timing_collapsed_to_one_
     result = _convert_result(data, entry, "cpu", True, max_word_duration_seconds=3.0)
 
     assert len(result.segments) == 1
-    assert (result.segments[0].start, result.segments[0].end) == (989.08, 1006.47)
+    assert (result.segments[0].start, result.segments[0].end) == (1004.49, 1004.57)
     assert result.segments[0].text == "synthetic collapsed timing"
-    assert result.segments[0].words == []
+    assert len(result.segments[0].words) == 1
+
+
+def test_convert_result_discards_only_long_words_and_marks_partial_timing_low() -> None:
+    entry = get_model("whisper-cpp:base")
+    data = {
+        "result": {"language": "ja"},
+        "transcription": [
+            {
+                "offsets": {"from": 0, "to": 10_000},
+                "text": " bad good",
+                "tokens": [
+                    {"text": " bad", "t_dtw": 1, "offsets": {"from": 0, "to": 9000}, "p": 0.5},
+                    {
+                        "text": " good",
+                        "t_dtw": 900,
+                        "offsets": {"from": 9000, "to": 10_000},
+                        "p": 0.9,
+                    },
+                ],
+            }
+        ],
+    }
+
+    result = _convert_result(data, entry, "cpu", True, max_word_duration_seconds=3.0)
+
+    assert [word.text for word in result.segments[0].words] == ["good"]
+    assert (result.segments[0].start, result.segments[0].end) == (9.0, 10.0)
+    assert result.segments[0].text == " bad good"
+    assert result.segments[0].speaker_confidence == "low"
 
 
 def test_convert_result_limits_identical_consecutive_segments_to_ten() -> None:

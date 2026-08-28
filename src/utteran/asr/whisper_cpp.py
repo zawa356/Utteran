@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from utteran.asr.base import ASRBackend
 from utteran.asr.whisper_cpp_words import has_dtw_timestamps, tokens_to_words
@@ -514,6 +514,29 @@ def _has_invalid_word_timing(
     return uncovered_head > max_word_duration_seconds or uncovered_tail > max_word_duration_seconds
 
 
+def _invalid_word_timing_diagnostic(
+    words: list[Word], segment_start: float, segment_end: float, max_word_duration_seconds: float
+) -> dict[str, Any]:
+    """Describe timing rejection without recording recognized text or token identities."""
+    durations = [max(0.0, word.end - word.start) for word in words]
+    word_start = min(word.start for word in words)
+    word_end = max(word.end for word in words)
+    uncovered_head = max(0.0, word_start - segment_start)
+    uncovered_tail = max(0.0, segment_end - word_end)
+    return {
+        "start": round(segment_start, 3),
+        "end": round(segment_end, 3),
+        "word_count": len(words),
+        "long_word_count": sum(duration > max_word_duration_seconds for duration in durations),
+        "max_word_duration_seconds": round(max(durations, default=0.0), 3),
+        "uncovered_head_seconds": round(uncovered_head, 3),
+        "uncovered_tail_seconds": round(uncovered_tail, 3),
+        "long_word": any(duration > max_word_duration_seconds for duration in durations),
+        "collapsed_head": uncovered_head > max_word_duration_seconds,
+        "collapsed_tail": uncovered_tail > max_word_duration_seconds,
+    }
+
+
 def _convert_result(
     data: dict[str, Any],
     entry: ModelEntry,
@@ -531,6 +554,12 @@ def _convert_result(
     invalid_word_timing_segments = 0
     invalid_word_timing_seconds = 0.0
     invalid_word_timing_intervals: list[dict[str, float]] = []
+    invalid_word_timing_diagnostics: list[dict[str, Any]] = []
+    recovered_partial_timing_segments = 0
+    corrected_segment_envelopes = 0
+    discarded_abnormal_words = 0
+    complete_timing_fallback_segments = 0
+    complete_timing_fallback_seconds = 0.0
     discarded_repetitions = 0
     previous_text = ""
     consecutive_repetitions = 0
@@ -547,6 +576,7 @@ def _convert_result(
         converted_words = (
             tokens_to_words(tokens, segment_start=start, segment_end=end) if requested_words else []
         )
+        speaker_confidence: Literal["high", "low"] = "high"
         if (
             requested_words
             and converted_words
@@ -561,7 +591,30 @@ def _convert_result(
             invalid_word_timing_segments += 1
             invalid_word_timing_seconds += end - start
             invalid_word_timing_intervals.append({"start": round(start, 3), "end": round(end, 3)})
-            converted_words = []
+            invalid_word_timing_diagnostics.append(
+                _invalid_word_timing_diagnostic(
+                    converted_words, start, end, max_word_duration_seconds
+                )
+            )
+            valid_words = [
+                word
+                for word in converted_words
+                if word.end - word.start <= max_word_duration_seconds
+            ]
+            discarded_abnormal_words += len(converted_words) - len(valid_words)
+            if valid_words:
+                # Keep observed timings instead of throwing away an otherwise useful
+                # segment. The full text remains, so partial recovery is explicitly low
+                # confidence and alignment will not invent boundaries for the untimed text.
+                speaker_confidence = "low" if len(valid_words) < len(converted_words) else "high"
+                recovered_partial_timing_segments += int(len(valid_words) < len(converted_words))
+                corrected_segment_envelopes += 1
+                start = min(word.start for word in valid_words)
+                end = max(word.end for word in valid_words)
+            else:
+                complete_timing_fallback_segments += 1
+                complete_timing_fallback_seconds += end - start
+            converted_words = valid_words
         words = [word for word in converted_words if word.end > word.start]
         discarded_words += len(converted_words) - len(words)
         text = str(raw.get("text", ""))
@@ -574,7 +627,7 @@ def _convert_result(
         if repetition_limit and normalized_text and consecutive_repetitions > repetition_limit:
             discarded_repetitions += 1
             continue
-        segments.append(Segment(start, end, text, words))
+        segments.append(Segment(start, end, text, words, speaker_confidence=speaker_confidence))
     fallback_ratio = invalid_word_timing_segments / max(1, len(data.get("transcription", [])))
     if (
         discarded_segments
@@ -587,7 +640,8 @@ def _convert_result(
         logging.getLogger(__name__).log(
             log_level,
             "whisper.cppの無効出力を補正しました: zero_segments=%d, zero_words=%d, "
-            "invalid_word_timing_words=%d, segment_fallbacks=%d/%.3fs "
+            "invalid_word_timing_words=%d, affected_segments=%d/%.3fs, "
+            "complete_segment_fallbacks=%d/%.3fs "
             "(max_word_duration=%.3fs; 本文は保持), "
             "repeated_segments=%d "
             "(repetition_limit=%d; 正当な反復も除外される可能性があります)",
@@ -596,27 +650,37 @@ def _convert_result(
             invalid_word_timing_words,
             invalid_word_timing_segments,
             invalid_word_timing_seconds,
+            complete_timing_fallback_segments,
+            complete_timing_fallback_seconds,
             max_word_duration_seconds,
             discarded_repetitions,
             repetition_limit,
         )
     if requested_words and not dtw_found:
         logging.getLogger(__name__).warning(
-            "DTWが有効にならずt_dtwが全て-1のため、単語時刻を破棄してsegment単位へ退避します。"
+            "DTWが有効にならずt_dtwが全て-1のため、token offset由来の単語時刻を"
+            "低信頼として保持します。"
         )
         for segment in segments:
-            segment.words = []
+            if segment.words:
+                segment.speaker_confidence = "low"
     structured_event(
         "asr_word_timestamp_statistics",
         requested=requested_words,
         retained_word_count=sum(len(segment.words) for segment in segments),
         discarded_zero_word_count=discarded_words,
         invalid_word_timing_word_count=invalid_word_timing_words,
-        segment_timing_fallback_count=invalid_word_timing_segments,
-        segment_timing_fallback_seconds=round(invalid_word_timing_seconds, 3),
+        discarded_abnormal_word_count=discarded_abnormal_words,
+        recovered_partial_timing_segment_count=recovered_partial_timing_segments,
+        corrected_segment_envelope_count=corrected_segment_envelopes,
+        invalid_word_timing_affected_segment_count=invalid_word_timing_segments,
+        invalid_word_timing_affected_seconds=round(invalid_word_timing_seconds, 3),
+        segment_timing_fallback_count=complete_timing_fallback_segments,
+        segment_timing_fallback_seconds=round(complete_timing_fallback_seconds, 3),
         segment_timing_fallback_ratio=round(fallback_ratio, 6),
         high_fallback_ratio=fallback_ratio >= 0.05,
         segment_timing_fallback_intervals=invalid_word_timing_intervals,
+        segment_timing_fallback_diagnostics=invalid_word_timing_diagnostics,
         **timestamp_statistics,
     )
     result = data.get("result", {})
