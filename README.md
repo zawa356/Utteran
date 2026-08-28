@@ -194,7 +194,7 @@ Intel profile相当は`--extra xpu --extra whisper-cpp --extra openvino --extra 
 profile相当は`--extra cpu --extra whisper-cpp --extra japanese`です。`cpu`/`cuda`/`xpu` extrasは
 同時指定できません。既存の推論profileは0.1.16更新後に同じ`setup.ps1 -Profile <name>`を再実行して
 Sudachi依存を同期してください。追加容量は実測約210.7 MiBで、GUI専用venv／installerには辞書を
-含めません。
+含めません。0.1.16 installerは19,833,496 bytes（約18.9 MiB、0.1.15比+12,677 bytes）です。
 
 ## Modelとtoken
 
