@@ -165,10 +165,10 @@ GPUで動くかどうか**は、`intel`と`vulkan`の間で処理時間に最も
 
 | Profile | 対象ハードウェア | 文字起こしの高速化 | 話者分離のGPU実行 | 主な依存 |
 |---|---|---|---|---|
-| `cuda` | NVIDIA GPU | ○（CUDA） | ○（CUDA） | CUDA 12.6 PyTorch、faster-whisper、pyannote |
-| `intel` | Intel GPU（Arc／内蔵GPU） | ○（OpenVINO／Vulkan） | ○（XPU） | XPU PyTorch、OpenVINO、whisper.cpp |
-| `vulkan` | AMD等のGPU、またはNVIDIA/Intel以外 | ○（Vulkan） | ×（CPUで実行） | CPU PyTorch、Vulkan whisper.cpp |
-| `cpu` | GPUなし | ×（CPUで実行） | ×（CPUで実行） | CPU PyTorch、faster-whisper、pyannote |
+| `cuda` | NVIDIA GPU | ○（CUDA） | ○（CUDA） | CUDA 12.6 PyTorch、faster-whisper、pyannote、Sudachi |
+| `intel` | Intel GPU（Arc／内蔵GPU） | ○（OpenVINO／Vulkan） | ○（XPU） | XPU PyTorch、OpenVINO、whisper.cpp、Sudachi |
+| `vulkan` | AMD等のGPU、またはNVIDIA/Intel以外 | ○（Vulkan） | ×（CPUで実行） | CPU PyTorch、Vulkan whisper.cpp、Sudachi |
+| `cpu` | GPUなし | ×（CPUで実行） | ×（CPUで実行） | CPU PyTorch、faster-whisper、pyannote、Sudachi |
 | `gui` | （GUI専用、推論しない） | — | — | FastAPI、Uvicorn、pywebview（推論依存なし） |
 
 Intel製CPUでも専用GPU（Arc等）を積んでいない場合は`intel`ではなく`cpu`を選んでください。
@@ -190,8 +190,11 @@ uv run utteran devices
 uv run utteran transcribe audio.wav --no-diarization
 ```
 
-Intel profile相当は`--extra xpu --extra whisper-cpp --extra openvino`、Vulkan profile相当は
-`--extra cpu --extra whisper-cpp`です。`cpu`/`cuda`/`xpu` extrasは同時指定できません。
+Intel profile相当は`--extra xpu --extra whisper-cpp --extra openvino --extra japanese`、Vulkan
+profile相当は`--extra cpu --extra whisper-cpp --extra japanese`です。`cpu`/`cuda`/`xpu` extrasは
+同時指定できません。既存の推論profileは0.1.16更新後に同じ`setup.ps1 -Profile <name>`を再実行して
+Sudachi依存を同期してください。追加容量は実測約210.7 MiBで、GUI専用venv／installerには辞書を
+含めません。
 
 ## Modelとtoken
 
@@ -286,6 +289,15 @@ whisper.cpp v1.9.2は、VAD圧縮後のtoken時刻を元音声timelineへ戻すg
 切替は通します。従来の文字数／短時間による`A→B→A`吸収は、短い相槌まで消すため廃止しました。
 重なりのない単語は原則`UNKNOWN`で、両側が同一話者の短いgapだけを橋渡しします。
 
+日本語（`--language ja`、または`auto`の検出結果が`ja`）では、無音0.02秒以下の話者境界を
+SudachiPyの文字位置へ最大4文字だけ補正します。分割単位Aが既定です。英語など日本語以外は
+Sudachiを通しません。依存がない環境でも処理を止めず、警告して従来の境界を使います。
+
+単語時刻を失ったsegmentは話者推定の根拠が弱いため、JSONの`speaker_confidence`を`low`にします。
+話者名と本文は保持し、字幕・テキスト表示は従来どおりです。時刻はpyannoteの検出発話区間の包絡へ
+縮め、検出区間がない場合だけ4文字/秒＋1秒（最小1秒）で上限を設けます。JSONへのfield追加は
+後方互換なので`schema_version`は1を維持し、既存GUIは未知fieldを無視して閲覧できます。
+
 `UNKNOWN`はViterbiの状態として通常の話者と同じ切替penaltyを受けます（`A→UNKNOWN→A`のような
 短い出入りも、話者切替と同様に十分な無音や重なりの裏付けがなければ抑制されます）。それでも
 残る`UNKNOWN`のうち、継続長が`min_unknown_duration`未満または文字数が`min_unknown_characters`
@@ -316,6 +328,13 @@ max_unsupported_fragment_duration = 0.5
 max_unsupported_fragment_characters = 3
 min_fragment_speaker_overlap = 0.05
 merge_gap = 0.5
+boundary_snap_enabled = true
+boundary_snap_unit = "A"                # A | B
+boundary_snap_max_characters = 4
+boundary_snap_max_gap = 0.02
+fallback_characters_per_second = 4.0
+fallback_duration_padding = 1.0
+fallback_min_duration = 1.0
 ```
 
 調査用には、ジョブディレクトリの中間JSONから本文を出さず統計だけを表示できます。
