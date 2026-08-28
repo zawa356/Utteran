@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from utteran.align import UNKNOWN_SPEAKER, align_transcription, assign_word_speaker
+from pytest import MonkeyPatch
+
+from utteran.align import (
+    UNKNOWN_SPEAKER,
+    align_transcription,
+    align_transcription_with_statistics,
+    assign_word_speaker,
+)
 from utteran.types import (
     AlignmentOptions,
     DiarizationResult,
@@ -277,3 +284,85 @@ def test_segment_timing_fallback_does_not_merge_across_asr_boundary() -> None:
 
     assert [segment.text for segment in result] == ["fallback", "timed"]
     assert [segment.speaker for segment in result] == ["SPEAKER_00", "SPEAKER_00"]
+
+
+def test_japanese_boundary_snaps_by_character_position_and_updates_time() -> None:
+    text = "ありがとうございました"
+    words = [
+        Word(index * 0.1, (index + 1) * 0.1, character) for index, character in enumerate(text)
+    ]
+    result, statistics = align_transcription_with_statistics(
+        transcription(Segment(0.0, 1.1, text, words)),
+        diarization([SpeakerTurn(0.0, 0.1, "NOISE"), SpeakerTurn(0.1, 1.1, "RESPONSE")]),
+        AlignmentOptions(
+            speaker_switch_penalty=0.0,
+            max_unsupported_fragment_duration=0.0,
+        ),
+    )
+
+    assert [(segment.start, segment.end, segment.text) for segment in result] == [(0.0, 1.1, text)]
+    assert statistics["boundary_snapping"]["snapped_boundary_count"] == 1
+    assert statistics["boundary_snapping"]["moved_character_count"] == 1
+    assert statistics["boundary_snapping"]["moved_time_seconds"]["max"] == 0.1
+
+
+def test_non_japanese_language_bypasses_boundary_analyzer(monkeypatch: MonkeyPatch) -> None:
+    def fail_if_called(text: str, unit: str) -> set[int]:
+        raise AssertionError((text, unit))
+
+    monkeypatch.setattr("utteran.align.japanese_morpheme_boundaries", fail_if_called)
+    source = TranscriptionResult(
+        [Segment(0.0, 1.0, "hello", [Word(0.0, 0.2, "h"), Word(0.2, 1.0, "ello")])],
+        "en",
+        1.0,
+        "fake",
+        "fake",
+        "cpu",
+    )
+
+    _result, statistics = align_transcription_with_statistics(
+        source,
+        diarization([SpeakerTurn(0.0, 0.2, "A"), SpeakerTurn(0.2, 1.0, "B")]),
+        AlignmentOptions(speaker_switch_penalty=0.0),
+    )
+
+    assert statistics["boundary_snapping"]["enabled"] is False
+
+
+def test_missing_boundary_analyzer_keeps_previous_assignment(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr("utteran.align.japanese_morpheme_boundaries", lambda _text, _unit: None)
+    words = [Word(0.0, 0.2, "了"), Word(0.2, 1.0, "解")]
+
+    result, statistics = align_transcription_with_statistics(
+        transcription(Segment(0.0, 1.0, "了解", words)),
+        diarization([SpeakerTurn(0.0, 0.2, "A"), SpeakerTurn(0.2, 1.0, "B")]),
+        AlignmentOptions(speaker_switch_penalty=0.0),
+    )
+
+    assert [segment.text for segment in result] == ["了", "解"]
+    assert statistics["boundary_snapping"]["analyzer_available"] is False
+
+
+def test_missing_word_timing_is_capped_and_marked_low_confidence() -> None:
+    result, statistics = align_transcription_with_statistics(
+        transcription(Segment(10.0, 76.16, "十文字の発話です。", [])),
+        diarization([]),
+    )
+
+    assert result[0].end < 14.0
+    assert result[0].speaker_confidence == "low"
+    assert statistics["fallback_timing"]["trimmed_segment_count"] == 1
+    assert statistics["fallback_timing"]["trimmed_seconds"] > 60.0
+    assert statistics["fallback_timing"]["character_cap_count"] == 1
+
+
+def test_missing_word_timing_prefers_detected_speech_envelope() -> None:
+    result, statistics = align_transcription_with_statistics(
+        transcription(Segment(10.0, 76.16, "短い発話", [])),
+        diarization([SpeakerTurn(20.0, 24.0, "MAIN"), SpeakerTurn(26.0, 30.0, "MAIN")]),
+    )
+
+    assert (result[0].start, result[0].end) == (20.0, 30.0)
+    assert result[0].speaker_confidence == "low"
+    assert statistics["fallback_timing"]["speech_envelope_count"] == 1
+    assert statistics["fallback_timing"]["detected_speech_coverage"] == 1.0

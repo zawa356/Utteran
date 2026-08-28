@@ -30,6 +30,9 @@ def test_whisper_cpp_defaults() -> None:
     assert config.alignment.max_unsupported_fragment_duration == 0.5
     assert config.alignment.max_unsupported_fragment_characters == 3
     assert config.alignment.min_fragment_speaker_overlap == 0.05
+    assert config.alignment.boundary_snap_unit == "A"
+    assert config.alignment.boundary_snap_max_characters == 4
+    assert config.alignment.fallback_characters_per_second == 4.0
     assert config.general.log_dir is None
     assert config.general.raw_subprocess_logs is False
     assert config.general.log_retention_days == 30

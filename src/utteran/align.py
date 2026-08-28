@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 from itertools import pairwise
-from typing import Any
+from typing import Any, Literal, cast
 
+from utteran.japanese_boundaries import japanese_morpheme_boundaries
 from utteran.types import (
     AlignmentOptions,
     DiarizationResult,
@@ -52,25 +53,55 @@ def align_transcription_with_statistics(
     assigned_speakers = _assign_word_speaker_sequence(all_words, turns, selected)
     assignment_index = 0
     split_segments: list[Segment] = []
+    snap_statistics = _empty_snap_statistics(transcription.language, selected.boundary_snap_unit)
+    fallback_original_seconds = 0.0
+    fallback_retained_seconds = 0.0
+    fallback_trimmed_seconds = 0.0
+    fallback_trimmed_count = 0
+    fallback_speech_envelope_count = 0
+    fallback_character_cap_count = 0
     for segment in transcription.segments:
         if segment.words:
             segment_speakers = assigned_speakers[
                 assignment_index : assignment_index + len(segment.words)
             ]
             assignment_index += len(segment.words)
+            _snap_segment_speaker_boundaries(
+                segment,
+                segment_speakers,
+                transcription.language,
+                selected,
+                snap_statistics,
+            )
             split_segments.extend(_split_segment_by_speaker(segment, segment_speakers))
         else:
             representative = Word(segment.start, segment.end, segment.text)
+            speaker = assign_word_speaker(representative, turns)
+            retained_start, retained_end, timing_method = _fallback_segment_bounds(
+                segment, turns, selected
+            )
+            original_duration = max(0.0, segment.end - segment.start)
+            retained_duration = max(0.0, retained_end - retained_start)
+            trimmed = max(0.0, original_duration - retained_duration)
+            fallback_original_seconds += original_duration
+            fallback_retained_seconds += retained_duration
+            fallback_trimmed_seconds += trimmed
+            fallback_trimmed_count += int(trimmed > 0.0)
+            fallback_speech_envelope_count += int(timing_method == "speech_envelope")
+            fallback_character_cap_count += int(timing_method == "character_cap")
             split_segments.append(
                 Segment(
-                    start=segment.start,
-                    end=segment.end,
+                    start=retained_start,
+                    end=retained_end,
                     text=segment.text,
                     words=[],
-                    speaker=assign_word_speaker(representative, turns),
+                    speaker=speaker,
+                    speaker_confidence="low",
                 )
             )
 
+    moved_time_values = cast(list[float], snap_statistics.pop("_moved_times", []))
+    snap_statistics["moved_time_seconds"] = _distribution(moved_time_values)
     unknown_absorption_count = _absorb_short_unknown_segments(split_segments, selected)
     fragment_absorption_count = _absorb_unsupported_fragments(split_segments, turns, selected)
     merged_gaps: list[float] = []
@@ -97,10 +128,186 @@ def align_transcription_with_statistics(
             max((segment.end - segment.start for segment in merged), default=0.0), 6
         ),
         "speaker_totals_seconds": _segment_speaker_totals(merged),
+        "boundary_snapping": snap_statistics,
+        "fallback_timing": {
+            "segment_count": sum(not segment.words for segment in transcription.segments),
+            "trimmed_segment_count": fallback_trimmed_count,
+            "original_seconds": round(fallback_original_seconds, 6),
+            "retained_seconds": round(fallback_retained_seconds, 6),
+            "trimmed_seconds": round(fallback_trimmed_seconds, 6),
+            "characters_per_second": selected.fallback_characters_per_second,
+            "padding_seconds": selected.fallback_duration_padding,
+            "minimum_seconds": selected.fallback_min_duration,
+            "speech_envelope_count": fallback_speech_envelope_count,
+            "character_cap_count": fallback_character_cap_count,
+            "detected_speech_coverage": _detected_speech_coverage(merged, turns),
+        },
     }
     if selected.renumber_speakers:
         _renumber_in_appearance_order(merged)
     return merged, statistics
+
+
+def _empty_snap_statistics(language: str, unit: str) -> dict[str, Any]:
+    return {
+        "language": language,
+        "enabled": False,
+        "analyzer_available": None,
+        "unit": unit,
+        "candidate_boundary_count": 0,
+        "snapped_boundary_count": 0,
+        "moved_character_count": 0,
+        "moved_time_seconds": _distribution([]),
+        "unit_comparison": {
+            "A": {"eligible": 0, "distance_characters": 0},
+            "B": {"eligible": 0, "distance_characters": 0},
+        },
+    }
+
+
+def _snap_segment_speaker_boundaries(
+    segment: Segment,
+    speakers: list[str],
+    language: str,
+    options: AlignmentOptions,
+    statistics: dict[str, Any],
+) -> None:
+    """Move Japanese speaker changes to nearby Sudachi character boundaries."""
+    if not options.boundary_snap_enabled or not language.lower().startswith("ja"):
+        return
+    offsets = [0]
+    for word in segment.words:
+        offsets.append(offsets[-1] + len(word.text))
+    text = "".join(word.text for word in segment.words)
+    if not _contains_japanese_script(text):
+        return
+    statistics["enabled"] = True
+    units: tuple[Literal["A", "B"], ...] = ("A", "B")
+    boundaries_by_unit = {unit: japanese_morpheme_boundaries(text, unit) for unit in units}
+    selected_boundaries = boundaries_by_unit[options.boundary_snap_unit]
+    statistics["analyzer_available"] = selected_boundaries is not None
+    if selected_boundaries is None:
+        return
+    index_by_offset = {offset: index for index, offset in enumerate(offsets)}
+    moved_times = cast(list[float], statistics.setdefault("_moved_times", []))
+    original_changes = [
+        index for index in range(1, len(speakers)) if speakers[index - 1] != speakers[index]
+    ]
+    for index in original_changes:
+        if speakers[index - 1] == speakers[index]:
+            continue
+        gap = max(0.0, segment.words[index].start - segment.words[index - 1].end)
+        if gap > options.boundary_snap_max_gap:
+            continue
+        statistics["candidate_boundary_count"] += 1
+        current_offset = offsets[index]
+        candidates_by_unit: dict[str, int | None] = {}
+        for unit in units:
+            boundaries = boundaries_by_unit[unit]
+            target = _nearest_boundary_offset(
+                current_offset,
+                boundaries,
+                index_by_offset,
+                options.boundary_snap_max_characters,
+            )
+            candidates_by_unit[unit] = target
+            if target is not None and target != current_offset:
+                comparison = cast(dict[str, dict[str, int]], statistics["unit_comparison"])
+                comparison[unit]["eligible"] += 1
+                comparison[unit]["distance_characters"] += abs(target - current_offset)
+        target_offset = candidates_by_unit[options.boundary_snap_unit]
+        if target_offset is None or target_offset == current_offset:
+            continue
+        target_index = index_by_offset[target_offset]
+        left_speaker, right_speaker = speakers[index - 1], speakers[index]
+        if target_index < index:
+            speakers[target_index:index] = [right_speaker] * (index - target_index)
+        else:
+            speakers[index:target_index] = [left_speaker] * (target_index - index)
+        old_time = _word_boundary_time(segment.words, index)
+        new_time = _word_boundary_time(segment.words, target_index)
+        moved_times.append(abs(new_time - old_time))
+        statistics["snapped_boundary_count"] += 1
+        statistics["moved_character_count"] += abs(target_offset - current_offset)
+
+
+def _nearest_boundary_offset(
+    current: int,
+    boundaries: set[int] | None,
+    index_by_offset: dict[int, int],
+    max_distance: int,
+) -> int | None:
+    if boundaries is None:
+        return None
+    candidates = [
+        boundary
+        for boundary in boundaries
+        if boundary in index_by_offset and abs(boundary - current) <= max_distance
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda boundary: (abs(boundary - current), boundary))
+
+
+def _word_boundary_time(words: list[Word], index: int) -> float:
+    if index <= 0:
+        return words[0].start
+    if index >= len(words):
+        return words[-1].end
+    return (words[index - 1].end + words[index].start) / 2.0
+
+
+def _fallback_segment_bounds(
+    segment: Segment, turns: list[SpeakerTurn], options: AlignmentOptions
+) -> tuple[float, float, str]:
+    overlaps = [
+        turn for turn in turns if _overlap(segment.start, segment.end, turn.start, turn.end) > 0.0
+    ]
+    if overlaps:
+        return (
+            max(segment.start, min(turn.start for turn in overlaps)),
+            min(segment.end, max(turn.end for turn in overlaps)),
+            "speech_envelope",
+        )
+    character_count = len(
+        "".join(character for character in segment.text if not character.isspace())
+    )
+    estimated = character_count / options.fallback_characters_per_second
+    allowed = max(options.fallback_min_duration, estimated + options.fallback_duration_padding)
+    return segment.start, min(segment.end, segment.start + allowed), "character_cap"
+
+
+def _detected_speech_coverage(segments: list[Segment], turns: list[SpeakerTurn]) -> float:
+    speech_intervals = _union_intervals((turn.start, turn.end) for turn in turns)
+    segment_intervals = _union_intervals((segment.start, segment.end) for segment in segments)
+    speech_seconds = sum(end - start for start, end in speech_intervals)
+    if speech_seconds == 0.0:
+        return 1.0
+    covered = sum(
+        _overlap(segment_start, segment_end, speech_start, speech_end)
+        for segment_start, segment_end in segment_intervals
+        for speech_start, speech_end in speech_intervals
+    )
+    return round(covered / speech_seconds, 6)
+
+
+def _union_intervals(intervals: Iterable[tuple[float, float]]) -> list[tuple[float, float]]:
+    merged: list[tuple[float, float]] = []
+    for start, end in sorted(intervals):
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _contains_japanese_script(text: str) -> bool:
+    return any(
+        0x3040 <= ord(character) <= 0x30FF or 0x3400 <= ord(character) <= 0x9FFF
+        for character in text
+    )
 
 
 def speaker_turn_statistics(turns: Iterable[SpeakerTurn]) -> dict[str, Any]:
@@ -498,6 +705,9 @@ def _combine_segments(segments: list[Segment], speaker: str | None) -> Segment:
         text="".join(segment.text for segment in segments),
         words=[word for segment in segments for word in segment.words],
         speaker=speaker,
+        speaker_confidence=(
+            "low" if any(segment.speaker_confidence == "low" for segment in segments) else "high"
+        ),
     )
 
 
@@ -509,6 +719,7 @@ def _copy_segment(segment: Segment) -> Segment:
         text=segment.text,
         words=list(segment.words),
         speaker=segment.speaker,
+        speaker_confidence=segment.speaker_confidence,
     )
 
 

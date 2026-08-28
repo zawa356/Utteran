@@ -104,6 +104,13 @@ max_unsupported_fragment_characters = 3
 min_fragment_speaker_overlap = 0.05
 merge_gap = 0.5
 renumber_speakers = true
+boundary_snap_enabled = true
+boundary_snap_unit = "A"
+boundary_snap_max_characters = 4
+boundary_snap_max_gap = 0.02
+fallback_characters_per_second = 4.0
+fallback_duration_padding = 1.0
+fallback_min_duration = 1.0
 """
 
 
@@ -260,6 +267,13 @@ class AlignmentConfig(BaseModel):
     min_fragment_speaker_overlap: float = Field(default=0.05, ge=0.0)
     merge_gap: float = Field(default=0.5, ge=0.0)
     renumber_speakers: bool = True
+    boundary_snap_enabled: bool = True
+    boundary_snap_unit: Literal["A", "B"] = "A"
+    boundary_snap_max_characters: int = Field(default=4, ge=0)
+    boundary_snap_max_gap: float = Field(default=0.02, ge=0.0)
+    fallback_characters_per_second: float = Field(default=4.0, gt=0.0)
+    fallback_duration_padding: float = Field(default=1.0, ge=0.0)
+    fallback_min_duration: float = Field(default=1.0, gt=0.0)
 
 
 class Config(BaseSettings):
