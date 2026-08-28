@@ -30,6 +30,7 @@ class Segment:
     text: str
     words: list[Word] = field(default_factory=list)
     speaker: str | None = None
+    speaker_confidence: Literal["high", "low"] = "high"
 
 
 @dataclass
@@ -67,6 +68,9 @@ class TranscriptionResult:
                     for word in segment.get("words", [])
                 ],
                 speaker=(None if segment.get("speaker") is None else str(segment["speaker"])),
+                speaker_confidence=(
+                    "low" if segment.get("speaker_confidence") == "low" else "high"
+                ),
             )
             for segment in data["segments"]
         ]
@@ -174,6 +178,13 @@ class AlignmentOptions:
     min_fragment_speaker_overlap: float = 0.05
     merge_gap: float = 0.5
     renumber_speakers: bool = True
+    boundary_snap_enabled: bool = True
+    boundary_snap_unit: Literal["A", "B"] = "A"
+    boundary_snap_max_characters: int = 4
+    boundary_snap_max_gap: float = 0.02
+    fallback_characters_per_second: float = 4.0
+    fallback_duration_padding: float = 1.0
+    fallback_min_duration: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -290,4 +301,5 @@ def _segment_from_dict(data: dict[str, Any]) -> Segment:
             for word in data.get("words", [])
         ],
         speaker=None if data.get("speaker") is None else str(data["speaker"]),
+        speaker_confidence="low" if data.get("speaker_confidence") == "low" else "high",
     )

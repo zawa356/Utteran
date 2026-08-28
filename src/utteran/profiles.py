@@ -21,10 +21,10 @@ from utteran.errors import ConfigurationError
 
 #: extras synced for each profile, matching 要件定義.md 15章.
 PROFILE_EXTRAS: dict[str, tuple[str, ...]] = {
-    "cpu": ("cpu",),
-    "cuda": ("cuda",),
-    "intel": ("xpu", "whisper-cpp", "openvino"),
-    "vulkan": ("cpu", "whisper-cpp"),
+    "cpu": ("cpu", "japanese"),
+    "cuda": ("cuda", "japanese"),
+    "intel": ("xpu", "whisper-cpp", "openvino", "japanese"),
+    "vulkan": ("cpu", "whisper-cpp", "japanese"),
 }
 PROFILE_NAMES: tuple[str, ...] = tuple(PROFILE_EXTRAS)
 

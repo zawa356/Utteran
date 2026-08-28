@@ -52,10 +52,10 @@ $UvAssetName = "uv-x86_64-pc-windows-msvc.zip"
 # in sync manually since this script has no Python runtime available before
 # the first `uv sync` completes.
 $ProfileExtras = @{
-    "cpu"    = @("cpu")
-    "cuda"   = @("cuda")
-    "intel"  = @("xpu", "whisper-cpp", "openvino")
-    "vulkan" = @("cpu", "whisper-cpp")
+    "cpu"    = @("cpu", "japanese")
+    "cuda"   = @("cuda", "japanese")
+    "intel"  = @("xpu", "whisper-cpp", "openvino", "japanese")
+    "vulkan" = @("cpu", "whisper-cpp", "japanese")
     "gui"    = @("gui")
 }
 $AllProfiles = @("cpu", "cuda", "intel", "vulkan", "gui")

@@ -528,6 +528,13 @@ def _merge_result(
                 min_fragment_speaker_overlap=config.alignment.min_fragment_speaker_overlap,
                 merge_gap=config.alignment.merge_gap,
                 renumber_speakers=config.alignment.renumber_speakers,
+                boundary_snap_enabled=config.alignment.boundary_snap_enabled,
+                boundary_snap_unit=config.alignment.boundary_snap_unit,
+                boundary_snap_max_characters=config.alignment.boundary_snap_max_characters,
+                boundary_snap_max_gap=config.alignment.boundary_snap_max_gap,
+                fallback_characters_per_second=(config.alignment.fallback_characters_per_second),
+                fallback_duration_padding=config.alignment.fallback_duration_padding,
+                fallback_min_duration=config.alignment.fallback_min_duration,
             ),
         )
         structured_event("alignment_statistics", **alignment_statistics)
