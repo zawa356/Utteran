@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from itertools import pairwise
 from typing import Any, Literal, cast
 
-from utteran.japanese_boundaries import japanese_morpheme_boundaries
+from utteran.japanese_boundaries import japanese_morpheme_boundaries, japanese_phrase_boundaries
 from utteran.types import (
     AlignmentOptions,
     DiarizationResult,
@@ -66,6 +66,25 @@ def align_transcription_with_statistics(
                 assignment_index : assignment_index + len(segment.words)
             ]
             assignment_index += len(segment.words)
+            if segment.speaker_confidence == "low":
+                # Some words had corrupt timings removed upstream. Preserve the complete
+                # transcript as one low-confidence segment; splitting it would require
+                # fabricating a position for the untimed text.
+                speaker = _dominant_observed_speaker(segment.words, segment_speakers)
+                split_segments.append(
+                    Segment(
+                        start=segment.start,
+                        end=segment.end,
+                        text=segment.text,
+                        words=list(segment.words),
+                        speaker=speaker,
+                        speaker_confidence="low",
+                    )
+                )
+                continue
+            _recover_supported_trailing_response(
+                segment.words, segment_speakers, turns, snap_statistics
+            )
             _snap_segment_speaker_boundaries(
                 segment,
                 segment_speakers,
@@ -73,6 +92,7 @@ def align_transcription_with_statistics(
                 selected,
                 snap_statistics,
             )
+            _protect_identical_timestamp_groups(segment.words, segment_speakers, snap_statistics)
             split_segments.extend(_split_segment_by_speaker(segment, segment_speakers))
         else:
             representative = Word(segment.start, segment.end, segment.text)
@@ -104,6 +124,7 @@ def align_transcription_with_statistics(
     snap_statistics["moved_time_seconds"] = _distribution(moved_time_values)
     unknown_absorption_count = _absorb_short_unknown_segments(split_segments, selected)
     fragment_absorption_count = _absorb_unsupported_fragments(split_segments, turns, selected)
+    sandwiched_reassessment_count = _reassess_sandwiched_fragments(split_segments, turns)
     merged_gaps: list[float] = []
     merged = _merge_adjacent_same_speaker(split_segments, selected.merge_gap, merged_gaps)
     statistics = {
@@ -116,6 +137,7 @@ def align_transcription_with_statistics(
         "split_segment_count": len(split_segments),
         "unknown_absorption_count": unknown_absorption_count,
         "unsupported_fragment_absorption_count": fragment_absorption_count,
+        "sandwiched_fragment_reassessment_count": sandwiched_reassessment_count,
         # Compatibility fields: duration/word-count island absorption was removed because
         # it deleted legitimate short acknowledgements after sequence optimization.
         "absorbed_segment_count": len(split_segments),
@@ -156,6 +178,9 @@ def _empty_snap_statistics(language: str, unit: str) -> dict[str, Any]:
         "unit": unit,
         "candidate_boundary_count": 0,
         "snapped_boundary_count": 0,
+        "protected_identical_timestamp_group_count": 0,
+        "trailing_response_recovery_count": 0,
+        "phrase_preferred_snap_count": 0,
         "moved_character_count": 0,
         "moved_time_seconds": _distribution([]),
         "unit_comparison": {
@@ -163,6 +188,32 @@ def _empty_snap_statistics(language: str, unit: str) -> dict[str, Any]:
             "B": {"eligible": 0, "distance_characters": 0},
         },
     }
+
+
+def _protect_identical_timestamp_groups(
+    words: list[Word], speakers: list[str], statistics: dict[str, Any]
+) -> None:
+    """Keep tokens sharing one observed interval on the same side of a boundary."""
+    index = 0
+    while index < len(words):
+        end = index + 1
+        while end < len(words) and (words[end].start, words[end].end) == (
+            words[index].start,
+            words[index].end,
+        ):
+            end += 1
+        group_speakers = speakers[index:end]
+        if end - index > 1 and len(set(group_speakers)) > 1:
+            counts = {speaker: group_speakers.count(speaker) for speaker in set(group_speakers)}
+            # A tie stays on the group's leading side. The interval contains no observed
+            # timestamp at which a more precise transition could be justified.
+            selected = max(
+                counts,
+                key=lambda speaker: (counts[speaker], speaker == speakers[index]),
+            )
+            speakers[index:end] = [selected] * (end - index)
+            statistics["protected_identical_timestamp_group_count"] += 1
+        index = end
 
 
 def _snap_segment_speaker_boundaries(
@@ -188,6 +239,7 @@ def _snap_segment_speaker_boundaries(
     statistics["analyzer_available"] = selected_boundaries is not None
     if selected_boundaries is None:
         return
+    phrase_boundaries = japanese_phrase_boundaries(text)
     index_by_offset = {offset: index for index, offset in enumerate(offsets)}
     moved_times = cast(list[float], statistics.setdefault("_moved_times", []))
     original_changes = [
@@ -197,7 +249,7 @@ def _snap_segment_speaker_boundaries(
         if speakers[index - 1] == speakers[index]:
             continue
         gap = max(0.0, segment.words[index].start - segment.words[index - 1].end)
-        if gap > options.boundary_snap_max_gap:
+        if gap >= options.boundary_snap_max_gap:
             continue
         statistics["candidate_boundary_count"] += 1
         current_offset = offsets[index]
@@ -216,6 +268,15 @@ def _snap_segment_speaker_boundaries(
                 comparison[unit]["eligible"] += 1
                 comparison[unit]["distance_characters"] += abs(target - current_offset)
         target_offset = candidates_by_unit[options.boundary_snap_unit]
+        phrase_target = _nearest_boundary_offset(
+            current_offset,
+            phrase_boundaries,
+            index_by_offset,
+            options.boundary_snap_max_characters,
+        )
+        if phrase_target is not None and phrase_target != current_offset:
+            target_offset = phrase_target
+            statistics["phrase_preferred_snap_count"] += 1
         if target_offset is None or target_offset == current_offset:
             continue
         target_index = index_by_offset[target_offset]
@@ -255,6 +316,48 @@ def _word_boundary_time(words: list[Word], index: int) -> float:
     if index >= len(words):
         return words[-1].end
     return (words[index - 1].end + words[index].start) / 2.0
+
+
+def _recover_supported_trailing_response(
+    words: list[Word], speakers: list[str], turns: list[SpeakerTurn], statistics: dict[str, Any]
+) -> None:
+    """Recover a short, acoustically supported response at a long segment's tail."""
+    if len(words) < 2 or words[-1].end - words[0].start < 2.0:
+        return
+    current = speakers[-1]
+    candidates = [
+        turn
+        for turn in turns
+        if turn.speaker != current
+        and 0.2 <= turn.end - turn.start <= 1.5
+        and _overlap(words[-1].start, words[-1].end, turn.start, turn.end) > 0.0
+        and turn.start - words[0].start >= 2.0
+    ]
+    if not candidates:
+        return
+    turn = max(
+        candidates,
+        key=lambda item: (
+            _overlap(words[-1].start, words[-1].end, item.start, item.end),
+            item.start,
+        ),
+    )
+    suffix = len(words)
+    while suffix > 0:
+        word = words[suffix - 1]
+        candidate_overlap = _overlap(word.start, word.end, turn.start, turn.end)
+        current_overlap = sum(
+            _overlap(word.start, word.end, item.start, item.end)
+            for item in turns
+            if item.speaker == current
+        )
+        if candidate_overlap <= current_overlap + _CLEAR_OVERLAP_MARGIN:
+            break
+        suffix -= 1
+    if suffix == len(words) or suffix == 0:
+        return
+    speakers[suffix:] = [turn.speaker] * (len(words) - suffix)
+    statistics["trailing_response_recovery_count"] += 1
 
 
 def _fallback_segment_bounds(
@@ -549,6 +652,13 @@ def _split_segment_by_speaker(
     ]
 
 
+def _dominant_observed_speaker(words: list[Word], speakers: list[str]) -> str:
+    support: defaultdict[str, float] = defaultdict(float)
+    for word, speaker in zip(words, speakers, strict=True):
+        support[speaker] += max(0.0, word.end - word.start)
+    return max(support, key=lambda speaker: (support[speaker], speaker))
+
+
 def _merge_adjacent_same_speaker(
     segments: list[Segment], max_gap: float, merged_gaps: list[float] | None = None
 ) -> list[Segment]:
@@ -562,6 +672,8 @@ def _merge_adjacent_same_speaker(
             # are the only trustworthy boundary, so do not erase that boundary by merging.
             and merged[-1].words
             and segment.words
+            and merged[-1].speaker_confidence == "high"
+            and segment.speaker_confidence == "high"
             and segment.start - merged[-1].end <= max_gap
         ):
             if merged_gaps is not None:
@@ -653,6 +765,36 @@ def _absorb_unsupported_fragments(
         if selected_index < index:
             index = max(0, selected_index)
     return absorbed
+
+
+def _reassess_sandwiched_fragments(segments: list[Segment], turns: list[SpeakerTurn]) -> int:
+    """Relabel A/B/A fragments only when acoustic overlap favors A over B."""
+    reassessed = 0
+    for index in range(1, len(segments) - 1):
+        left, fragment, right = segments[index - 1 : index + 2]
+        if (
+            left.speaker != right.speaker
+            or fragment.speaker in {None, UNKNOWN_SPEAKER, left.speaker}
+            or fragment.end - fragment.start > 2.0
+            or fragment.start - left.end >= 0.01
+            or right.start - fragment.end >= 0.01
+        ):
+            continue
+        outer_overlap = sum(
+            _overlap(fragment.start, fragment.end, turn.start, turn.end)
+            for turn in turns
+            if turn.speaker == left.speaker
+        )
+        fragment_overlap = sum(
+            _overlap(fragment.start, fragment.end, turn.start, turn.end)
+            for turn in turns
+            if turn.speaker == fragment.speaker
+        )
+        duration = max(0.0, fragment.end - fragment.start)
+        if outer_overlap >= fragment_overlap + 0.15 and fragment_overlap < duration * 0.25:
+            fragment.speaker = left.speaker
+            reassessed += 1
+    return reassessed
 
 
 def _word_speaker_change_count(segments: Iterable[Segment]) -> int:
