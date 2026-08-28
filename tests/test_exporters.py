@@ -69,6 +69,19 @@ def test_json_schema_contains_words_and_processing_metadata(tmp_path: Path) -> N
     assert payload["processing"]["asr"]["backend"] == "faster-whisper"
     assert payload["speakers"] == ["SPEAKER_00"]
     assert payload["segments"][0]["words"][0]["probability"] == 0.9
+    assert payload["segments"][0]["speaker_confidence"] == "high"
+
+
+def test_json_marks_wordless_speaker_assignment_as_low_confidence(tmp_path: Path) -> None:
+    result = sample_result(tmp_path)
+    result.segments[0].words = []
+    result.segments[0].speaker_confidence = "low"
+
+    payload = json.loads(JSONExporter().render(result, ExportOptions()))
+
+    assert payload["schema_version"] == 1
+    assert payload["segments"][0]["speaker"] == "SPEAKER_00"
+    assert payload["segments"][0]["speaker_confidence"] == "low"
 
 
 def test_text_and_markdown_apply_output_only_speaker_labels(tmp_path: Path) -> None:

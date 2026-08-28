@@ -22,6 +22,7 @@ class JSONExporter(Exporter):
                 "start": segment.start,
                 "end": segment.end,
                 "speaker": display_speaker(segment.speaker, options),
+                "speaker_confidence": segment.speaker_confidence,
                 "text": segment.text,
                 "words": [
                     {
