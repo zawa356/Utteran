@@ -313,10 +313,6 @@ def target_availability(
 ) -> TargetAvailability:
     manager = manager or ModelManager()
     entry = _entry(target.model, target.backend)
-    if manager.find_installed(entry)[0] is None:
-        return TargetAvailability(
-            target, "preparation", "モデルが未取得です", f"utteran models download {entry.key}"
-        )
     if report.backends.get(target.backend) is not True:
         return TargetAvailability(target, "preparation", "バックエンドが未導入です", "setup.ps1")
     if target.backend == "faster-whisper":
@@ -331,6 +327,13 @@ def target_availability(
             for item in report.ctranslate2.cuda_devices
         ):
             return TargetAvailability(target, "hidden", "利用可能なCUDA GPUがありません")
+        if manager.find_installed(entry)[0] is None:
+            return TargetAvailability(
+                target,
+                "preparation",
+                "モデルが未取得です",
+                f"utteran models download {entry.key}",
+            )
         return TargetAvailability(target, "runnable", "CTranslate2で実行できます")
     if target.device in {"vulkan", "openvino_vulkan"}:
         if report.vulkan.status in {"timeout", "error"}:
@@ -344,6 +347,10 @@ def target_availability(
             return TargetAvailability(
                 target, "preparation", "OpenVINOが未導入です", "setup.ps1 -Profile intel"
             )
+    if manager.find_installed(entry)[0] is None:
+        return TargetAvailability(
+            target, "preparation", "モデルが未取得です", f"utteran models download {entry.key}"
+        )
     if not report.native.variants.get(target.device, False):
         return TargetAvailability(
             target,
@@ -620,6 +627,19 @@ def load_run(path: Path) -> dict[str, object]:
     if not isinstance(value, dict) or not isinstance(value.get("measurements"), list):
         raise ValueError("ベンチマーク結果JSONの形式が不正です")
     return value
+
+
+def latest_run(
+    directory: Path, exclude: Path | None = None
+) -> tuple[Path, dict[str, object]] | None:
+    for path in sorted(directory.glob("benchmark-*.json"), reverse=True):
+        if exclude is not None and path.resolve() == exclude.resolve():
+            continue
+        try:
+            return path, load_run(path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return None
 
 
 def version_changed(previous: Mapping[str, object]) -> bool:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import wave
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -26,9 +28,11 @@ from utteran.benchmark import (
     resolve_target,
     save_run,
     speed_score,
+    target_availability,
     wav_duration,
 )
 from utteran.config import Config
+from utteran.devices import DeviceReport
 
 
 def test_aggregate_uses_medians_and_peak() -> None:
@@ -61,6 +65,18 @@ def test_target_registry_rejects_invalid_combinations() -> None:
     assert target.baseline is True
     with pytest.raises(ValueError, match="無効な組み合わせ"):
         resolve_target("faster-whisper", "vulkan", "large-v3-turbo")
+
+
+def test_cuda_without_hardware_is_hidden_even_when_model_is_missing() -> None:
+    target = resolve_target("faster-whisper", "cuda", "large-v3-turbo")
+    report = SimpleNamespace(
+        backends={"faster-whisper": True},
+        ctranslate2=SimpleNamespace(
+            cpu_status="completed", cuda_status="completed", cuda_devices=()
+        ),
+    )
+    availability = target_availability(target, cast(DeviceReport, report))
+    assert availability.state == "hidden"
 
 
 def test_apply_variant_preserves_unrelated_config(tmp_path: Path) -> None:
