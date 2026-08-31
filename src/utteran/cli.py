@@ -8,7 +8,10 @@ import logging
 import os
 import sys
 import threading
+import time
 from collections.abc import Callable, Mapping
+from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Never, TypedDict, TypeVar, cast
 
@@ -20,12 +23,27 @@ from rich.table import Table
 from utteran.audio import find_ffmpeg
 from utteran.batch import BatchSummary, discover_inputs, run_batch
 from utteran.benchmark import (
+    BENCHMARK_MODES,
+    SCORE_DISCLAIMER,
     BenchmarkMeasurement,
-    apply_variant,
+    BenchmarkModeName,
+    apply_target,
     benchmark_warning,
+    collect_environment,
+    default_result_dir,
+    detect_benchmark_environment,
+    discover_targets,
+    markdown_report,
+    mode_durations,
+    new_run_payload,
     parse_durations,
+    parse_target,
     prepared_audio_lengths,
+    recommend,
+    resolve_legacy_variants,
     run_benchmark,
+    save_run,
+    target_availability,
     wav_duration,
 )
 from utteran.config import (
@@ -236,15 +254,26 @@ def benchmark(
     variants: Annotated[
         str, typer.Option(help="構成名のカンマ区切り")
     ] = "cpu,openvino,vulkan,openvino_vulkan,faster-whisper",
+    targets: Annotated[
+        str | None,
+        typer.Option(help="backend/device/modelのカンマ区切り (model省略可、--variantsより優先)"),
+    ] = None,
+    mode: Annotated[str | None, typer.Option(help="quick|standard|detailed")] = None,
     word_timestamps: Annotated[str, typer.Option(help="auto|always|never")] = "auto",
-    repeat: Annotated[int, typer.Option(min=1)] = 3,
-    warmup: Annotated[int, typer.Option(min=0)] = 1,
+    repeat: Annotated[int | None, typer.Option(min=1)] = None,
+    warmup: Annotated[int | None, typer.Option(min=0)] = None,
     durations: Annotated[
         str,
         typer.Option(help="測定する秒数のカンマ区切り。fullは入力全体 (例: 180,900,full)"),
-    ] = "full",
+    ] = "",
+    reference_text: Annotated[
+        Path | None, typer.Option("--reference-text", help="CER用の正解テキスト")
+    ] = None,
     json_path: Annotated[Path | None, typer.Option("--json", help="JSON出力先")] = None,
-    apply: Annotated[bool, typer.Option("--apply", help="最速whisper.cpp構成を設定へ保存")] = False,
+    markdown_path: Annotated[
+        Path | None, typer.Option("--markdown", help="共有用Markdown出力先")
+    ] = None,
+    apply: Annotated[bool, typer.Option("--apply", help="推奨構成を設定へ保存")] = False,
     config_path: Annotated[Path | None, typer.Option("--config")] = None,
 ) -> None:
     """Measure ASR variants without creating pipeline jobs or retaining recognized text."""
@@ -252,12 +281,71 @@ def benchmark(
         raise typer.BadParameter(
             "auto|always|neverを指定してください", param_hint="--word-timestamps"
         )
-    selected = tuple(item.strip() for item in variants.split(",") if item.strip())
     config = Config.load(config_path=config_path)
+    if mode is not None and mode not in BENCHMARK_MODES:
+        raise typer.BadParameter("quick|standard|detailedを指定してください", param_hint="--mode")
+    mode_name: BenchmarkModeName = "quick" if mode is None else mode
+    selected_mode = BENCHMARK_MODES[mode_name]
+    selected_repeat = repeat if repeat is not None else (selected_mode.repeat if mode else 3)
+    selected_warmup = warmup if warmup is not None else (selected_mode.warmup if mode else 1)
     console.print("他の高負荷処理を停止してください。結果に文字起こし内容は保存しません。")
+    if mode:
+        console.print(
+            f"{selected_mode.label}モード: 所要時間の目安 {selected_mode.estimated_minutes} "
+            f"(warmup {selected_warmup} / repeat {selected_repeat})"
+        )
     try:
         source_duration = wav_duration(audio)
-        requested_durations = parse_durations(durations, source_duration)
+        requested_durations = (
+            parse_durations(durations, source_duration)
+            if durations
+            else mode_durations(selected_mode, source_duration)
+            if mode
+            else (source_duration,)
+        )
+        report = detect_benchmark_environment(config)
+        if targets:
+            requested_targets = tuple(
+                parse_target(item.strip(), config) for item in targets.split(",") if item.strip()
+            )
+            availability = tuple(target_availability(item, report) for item in requested_targets)
+        elif mode:
+            availability = discover_targets(
+                config, report, multiple_models=selected_mode.multiple_models
+            )
+            requested_targets = tuple(
+                item.target for item in availability if item.state == "runnable"
+            )
+        else:
+            requested_targets = resolve_legacy_variants(
+                config, tuple(item.strip() for item in variants.split(",") if item.strip())
+            )
+            availability = tuple(target_availability(item, report) for item in requested_targets)
+        runnable = tuple(item.target for item in availability if item.state == "runnable")
+        for item in availability:
+            if item.state == "preparation":
+                console.print(
+                    f"[yellow]準備すれば可能: {item.target.target_id} — {item.reason}; "
+                    f"{item.preparation or ''}[/yellow]"
+                )
+            elif item.state == "unknown":
+                console.print(f"[yellow]判定不能: {item.target.target_id} — {item.reason}[/yellow]")
+        reference_path = reference_text
+        if reference_path is None and audio.with_suffix(".txt").is_file():
+            reference_path = audio.with_suffix(".txt")
+        reference = reference_path.read_text(encoding="utf-8") if reference_path else None
+        if mode and selected_mode.accuracy and reference is None:
+            console.print("[yellow]正解テキストがないため精度測定を省略します。[/yellow]")
+        result_dir = default_result_dir(config)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        result_file = result_dir / f"benchmark-{stamp}.json"
+        payload = new_run_payload(
+            mode_name,
+            source_duration,
+            collect_environment(report),
+            availability,
+        )
+        save_run(result_file, payload)
         measurements: list[BenchmarkMeasurement] = []
         with prepared_audio_lengths(audio, requested_durations) as prepared:
             for measured_duration, measured_audio in prepared:
@@ -267,54 +355,88 @@ def benchmark(
                 results = run_benchmark(
                     config,
                     measured_audio,
-                    selected,
+                    targets=runnable,
                     word_timestamps=word_timestamps == "always",
-                    repeat=repeat,
-                    warmup=warmup,
+                    repeat=selected_repeat,
+                    warmup=selected_warmup,
+                    reference_text=reference,
                 )
-                measurements.append(
-                    BenchmarkMeasurement(measured_duration, warning, tuple(results))
-                )
+                measurement = BenchmarkMeasurement(measured_duration, warning, tuple(results))
+                measurements.append(measurement)
+                cast(list[object], payload["measurements"]).append(measurement.as_dict())
+                payload["updated_at"] = datetime.now(UTC).isoformat()
+                save_run(result_file, payload)
+    except KeyboardInterrupt:
+        payload["status"] = "interrupted"
+        payload["updated_at"] = datetime.now(UTC).isoformat()
+        save_run(result_file, payload)
+        console.print(f"[yellow]中断しました。完了分を保存しました: {result_file}[/yellow]")
+        raise typer.Exit(130) from None
     except (OSError, ValueError, UtteranError) as exc:
         error_console.print(f"エラー: {mask_secrets(str(exc))}")
         raise typer.Exit(3) from None
     if not any(measurement.results for measurement in measurements):
         error_console.print("エラー: 指定した構成に利用可能なバックエンド/モデルがありません。")
         raise typer.Exit(3)
-    table = Table("音声長", "構成", "中央値", "load中央値", "実時間比", "peak RAM")
+    table = Table("音声長", "構成", "モデル/量子化", "中央値", "速度スコア", "1時間換算", "精度")
     for measurement in measurements:
         for result in measurement.results:
-            peak = (
-                "取得不可"
-                if result.peak_ram_bytes is None
-                else f"{result.peak_ram_bytes / 1024**3:.2f} GiB"
-            )
+            target = result.target
             table.add_row(
                 f"{measurement.audio_duration_seconds:.3f}s",
-                result.variant,
+                f"{target.backend} / {target.device}" if target else result.variant,
+                f"{target.model} / {target.quantization or '-'}" if target else "-",
                 f"{result.median_total_seconds:.3f}s",
-                f"{result.median_load_seconds:.3f}s",
-                f"{result.realtime_factor:.3f}x",
-                peak,
+                str(result.speed_score) + (" (参考値)" if target and not target.baseline else ""),
+                f"約{result.hour_minutes}分",
+                (
+                    f"{result.accuracy_score} (CER {result.character_error_rate * 100:.1f}%)"
+                    if result.accuracy_score is not None and result.character_error_rate is not None
+                    else "未測定"
+                ),
             )
     console.print(table)
-    payload = {
-        "schema_version": 2,
-        "source_audio_duration_seconds": source_duration,
-        "measurements": [measurement.as_dict() for measurement in measurements],
-    }
+    console.print(SCORE_DISCLAIMER)
+    recommendation = recommend(measurements)
+    payload["status"] = "completed"
+    payload["updated_at"] = datetime.now(UTC).isoformat()
+    if recommendation and recommendation.target:
+        longest = max(measurements, key=lambda item: item.audio_duration_seconds)
+        payload["recommendation"] = {
+            "target": asdict(recommendation.target),
+            "audio_duration_seconds": longest.audio_duration_seconds,
+            "model": recommendation.target.model,
+            "measured_at": payload["updated_at"],
+        }
+        console.print(f"推奨構成: {recommendation.target.target_id}")
+        auto = report.auto_selection
+        if (
+            recommendation.target.backend != auto.asr_backend
+            or recommendation.target.device != auto.asr_device
+        ):
+            console.print(
+                f"[yellow]現在のauto ({auto.asr_backend}/{auto.asr_device}) と"
+                "測定結果が異なります。[/yellow]"
+            )
+    save_run(result_file, payload)
+    console.print(f"結果を保存しました: {result_file}")
     if json_path is not None:
         json_path.parent.mkdir(parents=True, exist_ok=True)
         json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    if markdown_path is not None:
+        markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        markdown_path.write_text(markdown_report(payload), encoding="utf-8")
     if apply:
+        if recommendation is None or recommendation.target is None:
+            raise typer.BadParameter("--applyできる推奨構成がありません")
         longest = max(measurements, key=lambda item: item.audio_duration_seconds)
-        candidates = [item for item in longest.results if item.variant != "faster-whisper"]
-        if not candidates:
-            raise typer.BadParameter("--applyにはwhisper.cpp構成が必要です")
-        fastest = min(candidates, key=lambda item: item.median_total_seconds)
-        applied_duration = longest.audio_duration_seconds
-        apply_variant(config_path or default_config_path(), fastest.variant, applied_duration)
-        console.print(f"設定へ適用しました: {fastest.variant} ({applied_duration:.3f}秒の測定)")
+        apply_target(
+            config_path or default_config_path(),
+            recommendation.target,
+            longest.audio_duration_seconds,
+            str(payload["updated_at"]),
+        )
+        console.print(f"設定へ適用しました: {recommendation.target.target_id}")
 
 
 @app.command("eval")
