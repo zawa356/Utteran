@@ -1,5 +1,31 @@
 # AI 作業状態
 
+## Phase 6a バックエンド横断benchmark（0.1.18、2026-08-31）
+
+- `feature/phase6a-benchmark-matrix`で、benchmarkをbackend/device/model/quantizationのregistryへ
+  再構成した。既存`--variants`は互換alias、追加backendはregistry 1箇所とfactoryの追加で扱える。
+  OpenVINO GenAIとauto順序変更はPhase 6b/6cへ残した。
+- Phase 5kのcache付き`detect_devices()`を再利用し、runnable/preparation/hidden/unknownを分離した。
+  本機はCUDA 0台なのでCUDAを非表示、faster-whisper large-v3-turbo未取得はCPUだけを準備可能と表示。
+  whisper.cpp 4構成、OpenVINO IR、Arc 140T Vulkanは実行可能と判定・実行が一致した。
+- 速度スコア=RTF×100、基準large-v3-turbo、CER精度=`max(0,1-CER)×100`、1時間換算、条件、免責を
+  table/schema v3/Markdownへ実装。結果はlogs/benchmarksへatomic逐次保存し、中断時も完了構成を残す。
+  認識本文、入力path、job、個人識別情報は保存しない。実音声corpusはlicense/容量から実装しなかった。
+- 同梱の25.825秒日本語合成fixture（f16、単語TSなし、1回）でCPU 24.129秒/107、OpenVINO
+  16.032秒/161、Vulkan 7.153秒/361、OpenVINO+Vulkan 14.804秒/174、全CER 0%/精度100。
+- 180秒連結fixtureはCPU 142.73秒/126、OpenVINO 41.13秒/438、Vulkan 23.15秒/777、ovvk
+  25.27秒/712。1,485秒はVulkan 154.122秒/964、ovvk 145.511秒/1021。短尺のVulkan優位から
+  長尺のovvk優位へ逆転し、Phase 3dと同じ交差を再現した（今回はf16・合成反復素材なので絶対値は
+  直接比較しない）。測定結果とauto(vulkan)の不一致も表示し、auto順序自体は変更していない。
+- 長尺CPUを途中でCtrl+C停止した際、180秒4構成はschema v3 JSONに完全に残った。console host側が
+  PythonへKeyboardInterruptを配送せずprocess終了したためstatusはrunningのままだったが、runningは
+  未完了と判別可能で、完了結果を失わない要件は実機で確認した。
+- モデル不要testは398件、Ruff、mypy、lock checkが合格。受入ハーネス既定実行は開始したが、
+  `config.acceptance.toml`が要求する`faster-whisper:large-v3-turbo`が本機に未取得で、G1-01等が
+  非対話のdownload確認によりexit 1となった。Phase 6aの「準備が必要な構成は利用者に選ばせる」
+  決定に従い、約1.6 GiBのモデルを無断取得せず中止した。これはbenchmark実装回帰ではなく環境前提
+  不足であり、同モデル取得後に受入ハーネス全件を再実行する必要がある。
+
 ## Phase bugfix-f 単語時刻と境界回帰（0.1.17、2026-08-28）
 
 ### F-1 原因、実測、対処

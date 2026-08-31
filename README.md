@@ -400,18 +400,36 @@ VulkanとOpenVINO+Vulkanの順位は音声長で変わります。Intel Arc 140T
 15.363秒／OpenVINO+Vulkan 19.638秒だった一方、24分46秒では110.730秒／65.141秒と逆転しました。
 単一環境・素材の観測であり、他環境へ一般化はできません。
 
-既定benchmark長は指定WAV全体です。15分以上を推奨し、短い測定には上記の逆転を示す警告が出ます。
+Phase 6a以降のbenchmarkはバックエンド、デバイス構成、モデル、量子化を独立した測定対象として
+扱います。`quick`（短尺・速度のみ、10〜20分）、`standard`（中尺・速度＋精度、30〜60分）、
+`detailed`（複数長・複数モデル、数時間）の3モードがあります。実行前にPhase 5kのキャッシュ済み
+デバイス検出を使い、ハードウェア上不可能な構成は表示せず、モデル取得・native build・OpenVINO IR
+生成で利用可能になる構成は「準備すれば可能」と案内します。
 
 ```console
 uv run utteran benchmark --audio long-sample.wav \
   --durations 180,900,full --variants vulkan,openvino_vulkan \
   --json benchmark.json
+uv run utteran benchmark --audio tests/fixtures/benchmark/japanese_reference.wav \
+  --mode standard --json benchmark.json --markdown benchmark.md
+uv run utteran benchmark --audio sample.wav \
+  --targets whisper-cpp/vulkan/large-v3-turbo,faster-whisper/cpu/large-v3-turbo
 uv run utteran benchmark --audio long-sample.wav --apply
 ```
 
-`benchmark`は認識本文やjobを保存しません。複数長の`--apply`は最長結果を採用し、測定秒数も
-configへ記録します。OpenVINO構成は事前にencoder IR生成が必要です。`auto`はIR未生成でも動く
-Vulkanを現在優先します。
+速度スコアは`実時間比 × 100`（780なら7.8倍速）で、large-v3-turboだけが基準値です。他モデルは
+参考値として表示します。日本語精度はNFKC正規化後に空白・句読点を除いたCERを使い、
+`精度スコア = max(0, 1 - CER) × 100`とします。WAVと同名の`.txt`または`--reference-text`が正解です。
+表示にはモデル、量子化、音声長、単語timestamp条件と「1時間の音声→約N分」を併記します。
+
+**このスコアは目安です。音声の内容、長さ、同時に動作する他の処理により変動します。
+スコアが2倍でも、処理時間が半分になることを保証するものではありません。**
+
+結果はログ保存先の`benchmarks/`へschema v3 JSONとして逐次保存され、Ctrl+Cでも完了分を残します。
+環境情報はCPU/GPU/driver再検出用fingerprint、runtime/model/versionを含みますが、認識本文、job、
+個人名は含みません。前回結果を自動比較し、utteran更新後は再測定を促します。`--markdown`は共有用、
+`--apply`は推奨構成と根拠（モデル、音声長、日時）をconfigへ記録します。既存`--variants`は互換alias
+として維持しています。OpenVINO構成はencoder IR生成が必要です。auto順序はPhase 6cまで変更しません。
 
 ## 設定と管理
 
