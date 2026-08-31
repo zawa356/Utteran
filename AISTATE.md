@@ -29,6 +29,8 @@
   要件定義config表不足1件（今回追記）、start.ps1 1件、集計1件、q5_0未取得3件、旧native commit期待
   3件。Phase 6a benchmark実行経路の失敗はない。環境前提・既存harness期待を別途是正後に全件合格を
   再確認する必要がある。
+- `build.ps1`で0.1.18のinstaller（19,831,295 bytes）を生成した。SHA-256は
+  `d78848bc7407e63278bb678ad448b26aed2b4083f7e939cfd57929eaa481f0fd`。
 
 ## Phase bugfix-f 単語時刻と境界回帰（0.1.17、2026-08-28）
 
