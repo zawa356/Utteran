@@ -335,7 +335,9 @@ def benchmark(
             elif item.state == "unknown":
                 console.print(f"[yellow]判定不能: {item.target.target_id} — {item.reason}[/yellow]")
         reference_path = reference_text
-        if reference_path is None and audio.with_suffix(".txt").is_file():
+        if mode and not selected_mode.accuracy:
+            reference_path = None
+        elif reference_path is None and audio.with_suffix(".txt").is_file():
             reference_path = audio.with_suffix(".txt")
         reference = reference_path.read_text(encoding="utf-8") if reference_path else None
         if mode and selected_mode.accuracy and reference is None:

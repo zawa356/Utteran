@@ -11,8 +11,9 @@
 - 速度スコア=RTF×100、基準large-v3-turbo、CER精度=`max(0,1-CER)×100`、1時間換算、条件、免責を
   table/schema v3/Markdownへ実装。結果はlogs/benchmarksへatomic逐次保存し、中断時も完了構成を残す。
   認識本文、入力path、job、個人識別情報は保存しない。実音声corpusはlicense/容量から実装しなかった。
-- 同梱の25.825秒日本語合成fixture（f16、単語TSなし、1回）でCPU 24.129秒/107、OpenVINO
-  16.032秒/161、Vulkan 7.153秒/361、OpenVINO+Vulkan 14.804秒/174、全CER 0%/精度100。
+- 同梱の25.825秒日本語合成fixture（standard、単語TSなし、1回）でfaster-whisper CPU
+  26.409秒/98、whisper.cpp CPU 24.360秒/106、OpenVINO 15.299秒/169、Vulkan 4.675秒/552、
+  OpenVINO+Vulkan 13.194秒/196、全CER 0%/精度100。quickでは正解textが存在しても速度だけを測る。
 - 180秒連結fixtureはCPU 142.73秒/126、OpenVINO 41.13秒/438、Vulkan 23.15秒/777、ovvk
   25.27秒/712。1,485秒はVulkan 154.122秒/964、ovvk 145.511秒/1021。短尺のVulkan優位から
   長尺のovvk優位へ逆転し、Phase 3dと同じ交差を再現した（今回はf16・合成反復素材なので絶対値は
@@ -20,11 +21,14 @@
 - 長尺CPUを途中でCtrl+C停止した際、180秒4構成はschema v3 JSONに完全に残った。console host側が
   PythonへKeyboardInterruptを配送せずprocess終了したためstatusはrunningのままだったが、runningは
   未完了と判別可能で、完了結果を失わない要件は実機で確認した。
-- モデル不要testは398件、Ruff、mypy、lock checkが合格。受入ハーネス既定実行は開始したが、
-  `config.acceptance.toml`が要求する`faster-whisper:large-v3-turbo`が本機に未取得で、G1-01等が
-  非対話のdownload確認によりexit 1となった。Phase 6aの「準備が必要な構成は利用者に選ばせる」
-  決定に従い、約1.6 GiBのモデルを無断取得せず中止した。これはbenchmark実装回帰ではなく環境前提
-  不足であり、同モデル取得後に受入ハーネス全件を再実行する必要がある。
+- モデル不要testは398件、Ruff、mypy、lock checkが合格。受入ハーネス初回は基準faster-whisper
+  model未取得で失敗したが、後半のREADME command検証が同model（1,621,670,045 bytes）を取得した。
+  その後の再実行は163件を完走し、136 pass / 16 fail / 11 skip（3,619.4秒）。G1〜G3、G5、
+  faster-whisper CPU、whisper.cpp 4構成、CPU/XPU diarization、3 backend組合せ、品質fixtureは合格。
+  failは既存SIGINT/lock 4件、破損したkotoba model 1件、過去outputのtoken-shaped metadata scan 2件、
+  要件定義config表不足1件（今回追記）、start.ps1 1件、集計1件、q5_0未取得3件、旧native commit期待
+  3件。Phase 6a benchmark実行経路の失敗はない。環境前提・既存harness期待を別途是正後に全件合格を
+  再確認する必要がある。
 
 ## Phase bugfix-f 単語時刻と境界回帰（0.1.17、2026-08-28）
 
