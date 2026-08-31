@@ -33,6 +33,7 @@ from utteran.benchmark import (
     default_result_dir,
     detect_benchmark_environment,
     discover_targets,
+    latest_run,
     markdown_report,
     mode_durations,
     new_run_payload,
@@ -44,6 +45,7 @@ from utteran.benchmark import (
     run_benchmark,
     save_run,
     target_availability,
+    version_changed,
     wav_duration,
 )
 from utteran.config import (
@@ -294,6 +296,8 @@ def benchmark(
             f"{selected_mode.label}モード: 所要時間の目安 {selected_mode.estimated_minutes} "
             f"(warmup {selected_warmup} / repeat {selected_repeat})"
         )
+    payload: dict[str, object] | None = None
+    result_file: Path | None = None
     try:
         source_duration = wav_duration(audio)
         requested_durations = (
@@ -337,6 +341,13 @@ def benchmark(
         if mode and selected_mode.accuracy and reference is None:
             console.print("[yellow]正解テキストがないため精度測定を省略します。[/yellow]")
         result_dir = default_result_dir(config)
+        previous_run = latest_run(result_dir)
+        if previous_run is not None:
+            console.print(f"前回結果と比較します: {previous_run[0]}")
+            if version_changed(previous_run[1]):
+                console.print(
+                    "[yellow]utteranのバージョンが変わったため再測定を推奨します。[/yellow]"
+                )
         stamp = time.strftime("%Y%m%d-%H%M%S")
         result_file = result_dir / f"benchmark-{stamp}.json"
         payload = new_run_payload(
@@ -346,12 +357,28 @@ def benchmark(
             availability,
         )
         save_run(result_file, payload)
+        assert payload is not None and result_file is not None
         measurements: list[BenchmarkMeasurement] = []
         with prepared_audio_lengths(audio, requested_durations) as prepared:
             for measured_duration, measured_audio in prepared:
                 warning = benchmark_warning(measured_duration)
                 if warning:
                     console.print(f"[yellow]警告 ({measured_duration:.3f}秒): {warning}[/yellow]")
+                partial_results: list[Any] = []
+
+                def persist_partial(
+                    result: Any,
+                    partial: list[Any] = partial_results,
+                    duration: float = measured_duration,
+                    selected_warning: str | None = warning,
+                ) -> None:
+                    partial.append(result)
+                    payload["in_progress_measurement"] = BenchmarkMeasurement(
+                        duration, selected_warning, tuple(partial)
+                    ).as_dict()
+                    payload["updated_at"] = datetime.now(UTC).isoformat()
+                    save_run(result_file, payload)
+
                 results = run_benchmark(
                     config,
                     measured_audio,
@@ -360,17 +387,20 @@ def benchmark(
                     repeat=selected_repeat,
                     warmup=selected_warmup,
                     reference_text=reference,
+                    result_callback=persist_partial,
                 )
                 measurement = BenchmarkMeasurement(measured_duration, warning, tuple(results))
                 measurements.append(measurement)
                 cast(list[object], payload["measurements"]).append(measurement.as_dict())
+                payload.pop("in_progress_measurement", None)
                 payload["updated_at"] = datetime.now(UTC).isoformat()
                 save_run(result_file, payload)
     except KeyboardInterrupt:
-        payload["status"] = "interrupted"
-        payload["updated_at"] = datetime.now(UTC).isoformat()
-        save_run(result_file, payload)
-        console.print(f"[yellow]中断しました。完了分を保存しました: {result_file}[/yellow]")
+        if payload is not None and result_file is not None:
+            payload["status"] = "interrupted"
+            payload["updated_at"] = datetime.now(UTC).isoformat()
+            save_run(result_file, payload)
+            console.print(f"[yellow]中断しました。完了分を保存しました: {result_file}[/yellow]")
         raise typer.Exit(130) from None
     except (OSError, ValueError, UtteranError) as exc:
         error_console.print(f"エラー: {mask_secrets(str(exc))}")
@@ -404,6 +434,8 @@ def benchmark(
         longest = max(measurements, key=lambda item: item.audio_duration_seconds)
         payload["recommendation"] = {
             "target": asdict(recommendation.target),
+            "speed_score": recommendation.speed_score,
+            "accuracy_score": recommendation.accuracy_score,
             "audio_duration_seconds": longest.audio_duration_seconds,
             "model": recommendation.target.model,
             "measured_at": payload["updated_at"],
@@ -418,6 +450,25 @@ def benchmark(
                 f"[yellow]現在のauto ({auto.asr_backend}/{auto.asr_device}) と"
                 "測定結果が異なります。[/yellow]"
             )
+    if previous_run is not None:
+        old_recommendation = previous_run[1].get("recommendation")
+        old_score = (
+            old_recommendation.get("speed_score") if isinstance(old_recommendation, dict) else None
+        )
+        new_recommendation = payload.get("recommendation")
+        new_score = (
+            new_recommendation.get("speed_score") if isinstance(new_recommendation, dict) else None
+        )
+        payload["comparison"] = {
+            "previous_result": str(previous_run[0]),
+            "utteran_version_changed": version_changed(previous_run[1]),
+            "previous_speed_score": old_score,
+            "speed_score_change": (
+                new_score - old_score
+                if isinstance(new_score, int) and isinstance(old_score, int)
+                else None
+            ),
+        }
     save_run(result_file, payload)
     console.print(f"結果を保存しました: {result_file}")
     if json_path is not None:
