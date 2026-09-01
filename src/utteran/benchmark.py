@@ -22,6 +22,7 @@ from platformdirs import user_log_dir
 from utteran import __version__
 from utteran.asr.base import ASRBackend
 from utteran.asr.faster_whisper import FasterWhisperBackend
+from utteran.asr.openvino_genai import OpenVINOGenAIBackend
 from utteran.asr.whisper_cpp import WhisperCppBackend
 from utteran.config import Config
 from utteran.devices import DeviceReport, detect_devices, device_probe_fingerprint
@@ -115,9 +116,14 @@ def _cpp_factory(config: Config, target: BenchmarkTarget) -> ASRBackend:
     return WhisperCppBackend(settings, allow_fallback=False)
 
 
+def _genai_factory(_config: Config, _target: BenchmarkTarget) -> ASRBackend:
+    return OpenVINOGenAIBackend(diarization_enabled=False)
+
+
 BACKEND_REGISTRY = {
     "faster-whisper": BackendAdapter(("cpu", "cuda"), _faster_factory),
     "whisper-cpp": BackendAdapter(("cpu", "openvino", "vulkan", "openvino_vulkan"), _cpp_factory),
+    "openvino-genai": BackendAdapter(("cpu", "gpu", "npu"), _genai_factory),
 }
 
 
@@ -150,10 +156,26 @@ class BenchmarkResult:
     def hour_minutes(self) -> int:
         return estimated_minutes_for_hour(self.realtime_factor)
 
+    @property
+    def median_transcribe_seconds(self) -> float:
+        return statistics.median(sample.transcribe_seconds for sample in self.samples)
+
+    @property
+    def realtime_factor_excluding_load(self) -> float:
+        audio_seconds = self.realtime_factor * self.median_total_seconds
+        return audio_seconds / self.median_transcribe_seconds
+
+    @property
+    def speed_score_excluding_load(self) -> int:
+        return speed_score(self.realtime_factor_excluding_load)
+
     def as_dict(self) -> dict[str, object]:
         result = asdict(self)
         result["hour_audio_minutes"] = self.hour_minutes
         result["is_baseline_model"] = self.target.baseline if self.target else True
+        result["median_transcribe_seconds"] = self.median_transcribe_seconds
+        result["realtime_factor_excluding_load"] = self.realtime_factor_excluding_load
+        result["speed_score_excluding_load"] = self.speed_score_excluding_load
         return result
 
 
@@ -247,7 +269,7 @@ def aggregate(
 
 
 def model_family(model: str) -> str:
-    return re.sub(r"-q(?:5_0|5_1|8_0)$", "", model)
+    return re.sub(r"-(?:q(?:5_0|5_1|8_0)|int8)$", "", model)
 
 
 def _entry(model: str, backend: str) -> ModelEntry:
@@ -277,7 +299,13 @@ def resolve_target(
         device,
         entry.model_id,
         entry.quantization,
-        compute_type if backend == "faster-whisper" else "ggml",
+        (
+            compute_type
+            if backend == "faster-whisper"
+            else "int8"
+            if backend == "openvino-genai"
+            else "ggml"
+        ),
     )
 
 
@@ -335,6 +363,22 @@ def target_availability(
                 f"utteran models download {entry.key}",
             )
         return TargetAvailability(target, "runnable", "CTranslate2で実行できます")
+    if target.backend == "openvino-genai":
+        available = {item.casefold() for item in report.openvino.values}
+        if report.openvino.status in {"timeout", "error"}:
+            return TargetAvailability(target, "unknown", "OpenVINOデバイスを判定できません")
+        if target.device not in available:
+            return TargetAvailability(
+                target, "hidden", f"利用可能なOpenVINO {target.device.upper()}がありません"
+            )
+        if manager.find_installed(entry)[0] is None:
+            return TargetAvailability(
+                target,
+                "preparation",
+                "モデルが未取得です",
+                f"utteran models download {entry.key}",
+            )
+        return TargetAvailability(target, "runnable", "OpenVINO GenAIで実行できます")
     if target.device in {"vulkan", "openvino_vulkan"}:
         if report.vulkan.status in {"timeout", "error"}:
             return TargetAvailability(target, "unknown", "Vulkanを判定できません")
@@ -666,8 +710,11 @@ def markdown_report(payload: Mapping[str, object]) -> str:
     lines = [
         "# utteran benchmark",
         "",
-        "| 音声長 | 構成 | モデル | 速度スコア | 1時間換算 | 精度スコア | CER |",
-        "|---:|---|---|---:|---:|---:|---:|",
+        (
+            "| 音声長 | 構成 | モデル | 速度スコア(load込/除外) | load | 推論 | "
+            "1時間換算 | 精度スコア | CER |"
+        ),
+        "|---:|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     measurements = payload.get("measurements", [])
     if isinstance(measurements, list):
@@ -684,7 +731,10 @@ def markdown_report(payload: Mapping[str, object]) -> str:
                     f"| {measurement['audio_duration_seconds']:.1f}秒 | "
                     f"{target.get('backend', '')} / "
                     f"{target.get('device', result['variant'])} | {target.get('model', '')} | "
-                    f"{result['speed_score']} | 約{result['hour_audio_minutes']}分 | "
+                    f"{result['speed_score']} / {result['speed_score_excluding_load']} | "
+                    f"{result['median_load_seconds']:.3f}秒 | "
+                    f"{result['median_transcribe_seconds']:.3f}秒 | "
+                    f"約{result['hour_audio_minutes']}分 | "
                     f"{accuracy_label} | {cer_label} |"
                 )
     return "\n".join([*lines, "", SCORE_DISCLAIMER, ""])

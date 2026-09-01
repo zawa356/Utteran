@@ -44,6 +44,8 @@ def test_aggregate_uses_medians_and_peak() -> None:
     assert result.median_total_seconds == 15
     assert result.median_load_seconds == 1
     assert result.realtime_factor == 100 / 15
+    assert result.median_transcribe_seconds == 14
+    assert result.speed_score_excluding_load == 714
     assert result.peak_ram_bytes == 300
     assert result.speed_score == 667
     assert result.hour_minutes == 9
@@ -65,6 +67,9 @@ def test_target_registry_rejects_invalid_combinations() -> None:
     assert target.baseline is True
     with pytest.raises(ValueError, match="無効な組み合わせ"):
         resolve_target("faster-whisper", "vulkan", "large-v3-turbo")
+    genai = resolve_target("openvino-genai", "npu", "large-v3-turbo-int8")
+    assert genai.compute_type == "int8"
+    assert genai.baseline is True
 
 
 def test_cuda_without_hardware_is_hidden_even_when_model_is_missing() -> None:
@@ -157,7 +162,9 @@ def test_result_save_load_and_markdown_are_transcript_free(tmp_path: Path) -> No
     restored = load_run(path)
     assert restored["status"] == "interrupted"
     assert restored["measurements"][0]["results"][0]["speed_score"] == 600
+    assert restored["measurements"][0]["results"][0]["speed_score_excluding_load"] == 667
     markdown = markdown_report(restored)
     assert "約10分" in markdown
+    assert "600 / 667" in markdown
     assert SCORE_DISCLAIMER in markdown
     assert "transcript" not in path.read_text(encoding="utf-8")
