@@ -704,7 +704,7 @@ def test_models_download_interactively_selects_multiple_models(
 
     monkeypatch.setattr("utteran.cli.ModelManager.download", fake_download)
 
-    result = runner.invoke(app, ["models", "download"], input="8,9\n")
+    result = runner.invoke(app, ["models", "download"], input="9,10\n")
 
     assert result.exit_code == 0
     assert selected == [

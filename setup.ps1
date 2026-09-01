@@ -54,7 +54,7 @@ $UvAssetName = "uv-x86_64-pc-windows-msvc.zip"
 $ProfileExtras = @{
     "cpu"    = @("cpu", "japanese")
     "cuda"   = @("cuda", "japanese")
-    "intel"  = @("xpu", "whisper-cpp", "openvino", "japanese")
+    "intel"  = @("xpu", "whisper-cpp", "openvino", "openvino-genai", "japanese")
     "vulkan" = @("cpu", "whisper-cpp", "japanese")
     "gui"    = @("gui")
 }

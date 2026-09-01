@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "utteran"
-version = "0.1.18"
+version = "0.1.19"
 description = "Local speaker-aware transcription CLI for audio and video files"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -55,6 +55,7 @@ xpu = [
 # other. Not part of the torch conflict set.
 whisper-cpp = ["cmake>=3.28,<5"]
 openvino = ["openvino>=2025,<2027", "openai-whisper>=20250625", "onnxscript>=0.2,<1"]
+openvino-genai = ["openvino-genai>=2026.1,<2027"]
 onnx = ["onnxruntime>=1.19,<2"]
 gui = [
   "fastapi>=0.115,<1",
@@ -155,6 +156,7 @@ module = [
   "numpy",
   "onnxruntime",
   "openvino",
+  "openvino_genai",
   "pyannote.*",
   "sudachipy",
   "torch",

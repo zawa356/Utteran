@@ -127,6 +127,23 @@ _CORE_CATALOG: tuple[ModelEntry, ...] = (
         gated=False,
     ),
     ModelEntry(
+        model_id="large-v3-turbo-int8",
+        display_name="OpenVINO Whisper large-v3-turbo INT8",
+        description=(
+            "ネイティブビルド不要のIntel CPU/GPU/NPU向けASR。英語では制限なく利用可能。"
+            "日本語など非スペース言語では話者分離と併用不可"
+        ),
+        backend="openvino-genai",
+        format="OpenVINO GenAI",
+        repository_id="OpenVINO/whisper-large-v3-turbo-int8-ov",
+        approximate_size_bytes=828_102_090,
+        license="MIT",
+        gated=False,
+        model_size="large-v3-turbo",
+        quantization="int8",
+        recommended=True,
+    ),
+    ModelEntry(
         model_id="kotoba-whisper-v2.0",
         display_name="Kotoba-Whisper v2.0",
         description="日本語音声認識向けASR",

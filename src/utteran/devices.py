@@ -1151,6 +1151,7 @@ def detect_backends() -> dict[str, bool]:
     return {
         "faster-whisper": _module_available("faster_whisper"),
         "whisper-cpp": WhisperCppBackend.is_available(),
+        "openvino-genai": _module_available("openvino_genai") and _module_available("openvino"),
         "pyannote": _module_available("pyannote.audio"),
         "openvino": _module_available("openvino"),
         "sherpa-onnx": _module_available("sherpa_onnx"),

@@ -23,7 +23,7 @@ from utteran.errors import ConfigurationError
 PROFILE_EXTRAS: dict[str, tuple[str, ...]] = {
     "cpu": ("cpu", "japanese"),
     "cuda": ("cuda", "japanese"),
-    "intel": ("xpu", "whisper-cpp", "openvino", "japanese"),
+    "intel": ("xpu", "whisper-cpp", "openvino", "openvino-genai", "japanese"),
     "vulkan": ("cpu", "whisper-cpp", "japanese"),
 }
 PROFILE_NAMES: tuple[str, ...] = tuple(PROFILE_EXTRAS)
