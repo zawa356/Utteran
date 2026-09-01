@@ -1,5 +1,89 @@
 # AI 作業状態
 
+## Phase 6b OpenVINO GenAI Step 0追加調査（Jライン、2026-09-01、判定C確定）
+
+`docs/utteran_Phase6b_追加調査指示書.md`に従い、Phase 6aの合成fixtureと新規の英語合成音声だけを
+使用してJ-1〜J-4を実機調査した。`input/`の実データと文字起こし本文は使用・記録していない。
+OpenVINO GenAIの実装やPhase 6b Step 1以降には着手せず、バージョンも変更していない。
+
+### J-1 — トークン単位時刻の取得可否
+
+- **取得不可。判定Cを確定する。** OpenVINO GenAI 2026.3.1.0
+  （build 3290、commit `56d9685302d`）のPython実オブジェクトを`dir()`と実値で列挙した。
+  `WhisperPipeline`の公開メソッドは`generate`、`get_generation_config`、`get_tokenizer`、
+  `set_generation_config`だけで、戻り値`WhisperDecodedResults`の公開フィールドは`texts`、`scores`、
+  `language`、`chunks`、`words`、`perf_metrics`だった。`words`の各要素は`word`、`token_ids`、
+  `start_ts`、`end_ts`を持つが、時刻はマージ後のwordに1組だけである。`chunks`は`text`、
+  `start_ts`、`end_ts`だけで、トークン時刻やattention/DTW出力は含まない。
+- `WhisperGenerationConfig`の全公開フィールドも列挙した。時刻粒度に関係する設定は
+  `return_timestamps`と`word_timestamps`、DTW head指定の`alignment_heads`だけで、token/character
+  粒度や生のalignment pathを返す設定はなかった。Tokenizerはword/chunkの`token_ids`を文字列へ
+  対応付けられるが、各tokenに対応する時刻がないため`align.py`には利用できない。
+- 25.825秒の日本語fixtureをCPUで再実測すると、130文字・118 tokenizer tokenが
+  1 word（0.00〜25.38秒）に融合した。phrase-level chunkは5件、平均26.0文字/chunkで、指示書の
+  「1チャンク10文字未満」を満たさない。180秒・900秒でも各約25.7秒ぶんが1 wordとなり、
+  180秒は7 words/約900文字、900秒は35 words/約4,500文字だった。得られる時刻は単調だが、
+  日本語テキストの部分文字列へ十分細かく対応しない。
+- 低レベル経路として、Python module/classの公開面、戻り値の全公開フィールド、Tokenizer、
+  C++公開headerと同版`releases/2026/3`の公式実装を確認した。内部実装はcross-attentionから
+  20 ms frameのDTW alignment pathを計算しているが、`add_word_level_timestamps`は言語を判定せず
+  常に`split_tokens_on_spaces`へ渡し、その後のマージ済み`WhisperWordTiming`だけを公開する。
+  生のalignment path、token境界時刻、alignment head tensorを返す公開APIはない。privateなdecoder
+  変換と約600行のDTW後処理をfork/再実装することは安定した「低レベルAPI経路」ではなく、
+  Phase 6bのバックエンド実装範囲も超えるため採用しない。
+
+### J-2 — 英語の単語分割
+
+- `System.Speech`で作成し16 kHz mono PCM16へ正規化した8.771秒の英語合成音声を、日本語と同じ
+  pipeline/configコードでCPU処理した。18 words、計106文字、**平均5.89文字/word**へ分割され、
+  時刻は0.00〜7.84秒で単調かつ音声範囲内だった。本文は記録していない。
+- よって「英語は分割、日本語は1語」であり、DTW自体ではなくOpenVINO GenAI 2026.3.1の
+  非スペース言語に対するword merge実装が原因である。公式C++実装が日本語でも無条件に
+  `split_tokens_on_spaces`を呼ぶこととも一致する。
+
+### J-3 — 実時間比
+
+- Step 0で使用した音声はPhase 6aの**25.825秒**日本語合成fixtureである。追加測定はPhase 6aの
+  1,485秒合成benchmark素材の先頭180秒・900秒を使用した。モデルは
+  `OpenVINO/whisper-large-v3-turbo-int8-ov`、単語時刻有効、各1回。スコアは
+  `音声秒 / 推論秒 * 100`で、ロード時間を含めていない。
+
+| device | load秒 | 180秒 inference / score | 900秒 inference / score |
+|---|---:|---:|---:|
+| CPU | 1.742 | 50.924 / 353 | 228.317 / 394 |
+| GPU | 8.983 | 13.169 / 1367 | 51.492 / 1748 |
+| NPU | 281.254（空cache） / 2.546（cache済み） | 30.756 / 585 | 151.339 / 595 |
+
+- GPUはPhase 6a比較値（180秒の最高1149、900秒の最高1733）と同等以上で速度は実用的だった。
+  CPUは既存OpenVINOの624/988より遅く、NPUも585/595で既存OpenVINOを下回った。しかしJ-1で
+  日本語に利用可能な粒度の時刻を取得できないため、速度だけでA/Bへ変更はできない。
+
+### J-4 — NPU compiled model cache
+
+- utteran checkout管理下の新規一時directoryを`CACHE_DIR`へ明示し、`STATIC_PIPELINE=True`、
+  `word_timestamps=True`で毎回別Python processからpipelineを構築した。ロードは1回目
+  **281.254秒**、2回目**2.612秒**、3回目**2.546秒**。別process間で約100分の1へ短縮し、
+  cacheが有効である。
+- 生成物は`.blob` 3ファイル、合計**2,212,110,925 bytes（約2.06 GiB）**。保存先は
+  `CACHE_DIR`で任意指定できるため、将来実装する場合もplatformdirsで解決したutteran管理cache
+  配下へ置ける。既定profileや一時領域へ勝手に保存する必要はない。調査用cacheは合成英語WAVと
+  ともに測定後削除し、使い捨てscriptも残していない。
+- OpenVINO公式資料ではcacheはruntime version、target device/hardware、model、model shape等が
+  同じ場合に再利用され、必要なら自動再生成される。cache形式はplatform/device依存でOpenVINO
+  version変更後は無効になり得る。モデル変更も別cache対象となる。**driver更新だけによる無効化条件は
+  今回確認できず未確認**であり、推測では埋めない。
+
+### 最終判定と再検討条件
+
+- **判定C**。内部DTWにはtoken相当のalignmentが存在するが、公開APIから取得できるのは
+  スペース分割後のword時刻だけで、日本語では約130文字/約25.7秒が1要素になる。token IDsと
+  文字列の対応だけでは時刻がなく、phrase chunksも平均約26文字で粗すぎるため、Sudachi境界へ
+  時刻を対応付けられない。Phase 6b Step 1以降は実装せず、利用者判断を待つ。
+- 再検討条件は、OpenVINO GenAIが日本語・中国語等でUnicode境界分割を実装した版を公開するか、
+  token/character単位の時刻または生のalignment pathを安定した公開APIで返すようになった場合。
+  再検討時は同じ日英fixtureで戻り値構造、平均文字数、単調性を再測定し、180/900秒性能とNPU
+  cache容量も再確認する。
+
 ## Phase 6b OpenVINO GenAI Step 0事前調査（2026-09-01、判定C）
 
 > Phase 3でOpenVINO GenAIを候補としながら実装せず、カタログエントリだけが残って
