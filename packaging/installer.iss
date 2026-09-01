@@ -223,6 +223,12 @@ begin
   Result := ExpandConstant('{localappdata}\utteran\utteran\Cache\models');
 end;
 
+function GenAICompiledCacheDir(): String;
+begin
+  { utteran.asr.openvino_genai: platformdirs.user_cache_dir("utteran") }
+  Result := ExpandConstant('{localappdata}\utteran\utteran\Cache\openvino-genai-compiled');
+end;
+
 function JobsDir(): String;
 begin
   { utteran.config: platformdirs.user_cache_dir("utteran")/jobs }
@@ -274,7 +280,8 @@ begin
     MsgBox(FmtMessage(CustomMessage('UninstallOptionVenvs'), [FormatByteSize(GetDirSize(VenvsDir()))]),
       mbConfirmation, MB_YESNO) = IDYES;
   DeleteModels :=
-    MsgBox(FmtMessage(CustomMessage('UninstallOptionModels'), [FormatByteSize(GetDirSize(ModelsDir()))]),
+    MsgBox(FmtMessage(CustomMessage('UninstallOptionModels'), [FormatByteSize(
+      GetDirSize(ModelsDir()) + GetDirSize(GenAICompiledCacheDir()))]),
       mbConfirmation, MB_YESNO) = IDYES;
   DeleteJobs :=
     MsgBox(FmtMessage(CustomMessage('UninstallOptionJobs'), [FormatByteSize(GetDirSize(JobsDir()))]),
@@ -303,9 +310,17 @@ begin
       StillPresent.Add(VenvsDir());
 
     if DeleteModels then
-      DelTree(ModelsDir(), True, True, True)
-    else if DirExists(ModelsDir()) then
-      StillPresent.Add(ModelsDir());
+    begin
+      DelTree(ModelsDir(), True, True, True);
+      DelTree(GenAICompiledCacheDir(), True, True, True);
+    end
+    else
+    begin
+      if DirExists(ModelsDir()) then
+        StillPresent.Add(ModelsDir());
+      if DirExists(GenAICompiledCacheDir()) then
+        StillPresent.Add(GenAICompiledCacheDir());
+    end;
 
     if DeleteJobs then
       DelTree(JobsDir(), True, True, True)

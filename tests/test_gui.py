@@ -625,6 +625,47 @@ def test_intel_auto_selection_defaults_to_whisper_cpp_not_cpu() -> None:
     }
 
 
+def test_genai_gui_options_mark_npu_discouraged_without_changing_auto() -> None:
+    devices = {
+        "backends": {"openvino-genai": True},
+        "openvino": {"values": ["CPU", "GPU.0", "NPU"]},
+        "auto_selection": {
+            "asr_backend": "whisper-cpp",
+            "asr_device": "vulkan",
+            "diarization_backend": "pyannote",
+            "diarization_device": "xpu:0",
+        },
+    }
+    models = [
+        {
+            "backend": "openvino-genai",
+            "model_id": "large-v3-turbo-int8",
+            "installed": True,
+        }
+    ]
+
+    options = derive_options(devices, models, {})
+    genai = next(item for item in options["asr"] if item["id"] == "openvino-genai")  # type: ignore[index]
+
+    assert [item["id"] for item in genai["devices"]] == ["cpu", "gpu", "npu"]
+    assert genai["devices"][-1]["recommended"] is False
+    assert "2.06 GiB" in genai["devices"][-1]["recommendation_reason"]
+    assert options["defaults"]["asr_backend"] == "whisper-cpp"  # type: ignore[index]
+
+
+def test_gui_assets_explain_genai_filter_and_hide_npu_by_default() -> None:
+    web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
+    index = (web / "index.html").read_text(encoding="utf-8")
+    script = (web / "app.js").read_text(encoding="utf-8")
+    translations = (web / "i18n.js").read_text(encoding="utf-8")
+
+    assert 'id="show-discouraged-configurations"' in index
+    assert 'id="configuration-notice"' in index
+    assert "item.recommended !== false" in script
+    assert 'item.id === "openvino-genai"' in script
+    assert "genaiDiarizationUnavailable" in translations
+
+
 def test_gui_assets_expose_model_management_dialogs_and_real_model_choice() -> None:
     web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
     index = (web / "index.html").read_text(encoding="utf-8")

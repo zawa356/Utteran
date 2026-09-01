@@ -240,21 +240,28 @@
   }
 
   function renderRuntimeOptions() {
-    const asr = state.environment?.options.asr || [];
     const defaults = state.environment?.options.defaults || {};
-    setOptions($("asr-backend"), asr, defaults.asr_backend);
-    renderAsrDetail(defaults.asr_model, defaults.asr_device);
-    const diarization = state.environment?.options.diarization || [];
-    setOptions($("diarization-backend"), diarization, defaults.diarization_backend);
-    renderDiarizationDetail(defaults.diarization_device);
     setOptions(
       $("language-select"),
       (state.environment?.options.languages || []).map((item) => ({
         id: item,
         label: item === "auto" ? t("automatic") : item,
       })),
-      "ja",
+      $("language-select").value || "ja",
     );
+    const blockedGenai = genaiIsBlocked();
+    const allAsr = state.environment?.options.asr || [];
+    const asr = allAsr.filter((item) => !(blockedGenai && item.id === "openvino-genai"));
+    setOptions($("asr-backend"), asr, $("asr-backend").value || defaults.asr_backend);
+    renderAsrDetail(defaults.asr_model, defaults.asr_device);
+    const diarization = state.environment?.options.diarization || [];
+    setOptions(
+      $("diarization-backend"),
+      diarization,
+      $("diarization-backend").value || defaults.diarization_backend,
+    );
+    renderDiarizationDetail($("diarization-device").value || defaults.diarization_device);
+    renderConfigurationNotice();
     const formats = state.environment?.options.formats || [];
     $("format-options").replaceChildren(
       ...formats.map((name) => formatChip(name, ["srt", "json", "md"].includes(name))),
@@ -269,10 +276,37 @@
   function renderAsrDetail(selectedModel = "", selectedDevice = "") {
     const group = selectedGroup(state.environment?.options.asr || [], $("asr-backend"));
     setOptions($("asr-model"), group?.models || [], selectedModel);
-    setOptions($("asr-device"), group?.devices || [], selectedDevice);
+    const devices = (group?.devices || []).filter(
+      (item) => $("show-discouraged-configurations").checked || item.recommended !== false,
+    );
+    setOptions($("asr-device"), devices, selectedDevice || $("asr-device").value);
     const defaults = state.environment?.options.defaults || {};
     if ($("asr-backend").value !== defaults.asr_backend && defaults.asr_backend) {
       $("form-status").textContent = `auto: ${defaults.asr_backend} / ${defaults.asr_device}`;
+    }
+    renderConfigurationNotice();
+  }
+
+  function genaiIsBlocked() {
+    return $("diarization-enabled").checked &&
+      ["auto", "ja", "zh", "th", "lo", "my", "yue"].includes($("language-select").value);
+  }
+
+  function renderConfigurationNotice() {
+    const notice = $("configuration-notice");
+    const allAsr = state.environment?.options.asr || [];
+    if (genaiIsBlocked() && allAsr.some((item) => item.id === "openvino-genai")) {
+      notice.textContent = t("genaiDiarizationUnavailable");
+      notice.classList.remove("hidden");
+      return;
+    }
+    const group = selectedGroup(allAsr, $("asr-backend"));
+    const device = (group?.devices || []).find((item) => item.id === $("asr-device").value);
+    if (device?.recommendation_reason) {
+      notice.textContent = device.recommendation_reason;
+      notice.classList.remove("hidden");
+    } else {
+      notice.classList.add("hidden");
     }
   }
 
@@ -1639,12 +1673,16 @@
     );
     $("refresh-environment").addEventListener("click", () => loadEnvironment($("profile-select").value));
     $("profile-select").addEventListener("change", (event) => loadEnvironment(event.target.value));
-    $("asr-backend").addEventListener("change", renderAsrDetail);
+    $("asr-backend").addEventListener("change", () => renderAsrDetail());
+    $("asr-device").addEventListener("change", renderConfigurationNotice);
+    $("language-select").addEventListener("change", renderRuntimeOptions);
+    $("show-discouraged-configurations").addEventListener("change", () => renderAsrDetail());
     $("diarization-backend").addEventListener("change", renderDiarizationDetail);
     $("speaker-mode").addEventListener("change", renderSpeakerMode);
-    $("diarization-enabled").addEventListener("change", () =>
-      $("diarization-fields").classList.toggle("hidden", !$("diarization-enabled").checked),
-    );
+    $("diarization-enabled").addEventListener("change", () => {
+      $("diarization-fields").classList.toggle("hidden", !$("diarization-enabled").checked);
+      renderRuntimeOptions();
+    });
     $("job-form").addEventListener("submit", startJob);
     $("pick-input-file").addEventListener("click", () => choosePath("input_file", "input-path"));
     $("pick-input-folder").addEventListener("click", () => choosePath("input_folder", "input-path"));

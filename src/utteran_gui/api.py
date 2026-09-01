@@ -593,6 +593,18 @@ def _validate_dynamic_selection(
         raise HTTPException(status_code=409, detail="ASR model is unavailable")
     if not _contains(asr.get("devices"), "id", payload.asr_device):
         raise HTTPException(status_code=409, detail="ASR device is unavailable")
+    if (
+        payload.asr_backend == "openvino-genai"
+        and payload.diarization_enabled
+        and payload.language.casefold() in {"auto", "ja", "zh", "th", "lo", "my", "yue"}
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "OpenVINO GenAI cannot be combined with diarization for auto or a non-space "
+                "language because reliable word timestamps are unavailable. Use whisper.cpp."
+            ),
+        )
     if payload.diarization_enabled:
         diarization = _find_option(options.get("diarization"), payload.diarization_backend)
         if diarization is None:
