@@ -1,5 +1,43 @@
 # AI 作業状態
 
+## Phase 6b OpenVINO GenAI Step 0事前調査（2026-09-01、判定C）
+
+> Phase 3でOpenVINO GenAIを候補としながら実装せず、カタログエントリだけが残って
+> 「取得できるが使えないモデル」を生んだ経緯がある。本作業で正式実装を検討する。
+
+- **判定はC**。OpenVINO GenAI 2026.3.1.0の`WhisperPipeline`はCPU/GPU/NPUすべてで
+  `word_timestamps=True`を受理し、`result.words`を返した。しかし25.825秒・130文字の日本語
+  合成fixtureでは全デバイスとも本文全体が1語に集約され、時刻範囲もCPU 0.00〜25.38秒、GPU
+  0.00〜25.54秒、NPU 0.00〜25.36秒だった。5件のphrase-level `chunks`は別途得られるものの、
+  この「1語」の中心時刻はutteranの単語単位話者割当に利用できない。日本語の空白非依存境界を
+  観測なしに按分して捏造せず、実装する場合は`words=[]`として既存segment-level fallbackへ渡し、
+  精度低下を警告し、auto対象外とする必要がある。指示書どおり実装継続前に利用者確認を行う。
+- **I-1（形式・デバイス）**: pipeline構築時とgeneration configの両方へ
+  `word_timestamps=True`を渡し、generation時に`return_timestamps=True`も指定する。CPU/GPUは
+  通常pipeline、NPUは公式sampleが指定する`STATIC_PIPELINE=True`を追加して実機完走した。
+  戻り値はphraseの`chunks[{start_ts,end_ts,text}]`と単語の
+  `words[{start_ts,end_ts,word,token_ids}]`。OpenVINO Core 2026.3.1は本機のCPU（Core Ultra 7
+  255H）、GPU（Arc 140T）、NPU（Intel AI Boost）をすべて列挙した。
+- **I-2（モデル）**: 実在する公開モデル
+  `OpenVINO/whisper-large-v3-turbo-int8-ov`（commit
+  `b568445dd5dc8c695bde596f8acbb4694fd6ba64`）を取得して検証した。OpenVINO IRのencoder/
+  decoderとtokenizer/detokenizer、設定fileを含む21 file、Hub metadata合計828,096,445 bytes、
+  ローカル実サイズ828,102,090 bytes、MIT、非gated。model card上の互換条件はOpenVINO
+  2026.1.0以上で、本機の2026.3.1は条件を満たす。暗黙downloadは使用していない。
+- **I-3（デバイス指定）**: `WhisperPipeline(model_path, "CPU"|"GPU"|"NPU", ...)`で指定する。
+  NPUは`STATIC_PIPELINE=True`で動作した。指示書にあった「WhisperではNPU固有制約なし」という
+  伝聞だけには依存せず、この設定を含む現行公式sampleと実機結果を採用した。
+- **I-4（最小速度測定）**: 同一25.825秒fixture、large-v3-turbo INT8、単語時刻有効、1回で、
+  CPU load 1.750秒/inference 6.279秒（速度スコア相当411）、GPU 8.886/3.948秒（654）、NPU
+  277.224/4.596秒（562）。短尺の推論速度は桁違いに遅くないが、NPU初回compileは非常に重い。
+  Phase 6aの同fixture OpenVINO+Vulkan 13.194秒（196）より推論単体は速い。ただし判定C確認前の
+  Step 0なので180/900/3600/10363秒とCER測定は未実施で、実装継続時に行う。
+- **I-5（依存）**: `openvino-genai>=2026.1,<2027`は別packageで、OpenVINOだけでは不足する。
+  実機導入では`openvino-genai`と`openvino-tokenizers`が追加され、OpenVINOは2026.2.1から
+  2026.3.1へ同一major内更新、追加site-packages実サイズは約13.6 MB。Apache-2.0。torch依存は
+  追加されず、導入後も`torch==2.11.0+xpu`と`torchaudio==2.11.0+xpu`のままでCPU版への
+  上書きはない。GUI venvには導入していない。
+
 ## Phase 6a バックエンド横断benchmark（0.1.18、2026-08-31）
 
 - `feature/phase6a-benchmark-matrix`で、benchmarkをbackend/device/model/quantizationのregistryへ
