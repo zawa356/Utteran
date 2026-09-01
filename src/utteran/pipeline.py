@@ -12,7 +12,7 @@ from typing import cast
 
 from utteran.align import align_transcription_with_statistics, speaker_turn_statistics
 from utteran.asr.base import ASRBackend
-from utteran.asr.registry import create_asr_backend
+from utteran.asr.registry import create_asr_backend, validate_asr_configuration
 from utteran.audio import normalize_audio
 from utteran.config import Config, TokenProvider, default_token_provider
 from utteran.diarization.base import DiarizationBackend
@@ -154,6 +154,7 @@ def run_pipeline(
     force_unlock: bool = False,
 ) -> PipelineOutcome:
     """Run or resume all stages for one audio/video input."""
+    validate_asr_configuration(config)
     _validate_input(input_path)
     if backend_pool is not None and (asr_backend is not None or diarization_backend is not None):
         raise ValueError("backend_pool と個別 backend は同時に指定できません。")

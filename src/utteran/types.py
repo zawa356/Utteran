@@ -134,6 +134,8 @@ class DeviceInfo:
     kind: DeviceKind
     name: str
     memory_bytes: int | None = None
+    recommended: bool = True
+    recommendation_reason: str | None = None
 
 
 @dataclass(frozen=True)

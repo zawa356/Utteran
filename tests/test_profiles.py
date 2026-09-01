@@ -28,7 +28,13 @@ def test_profile_names_match_the_documented_extras_table() -> None:
     assert PROFILE_NAMES == ("cpu", "cuda", "intel", "vulkan")
     assert PROFILE_EXTRAS["cpu"] == ("cpu", "japanese")
     assert PROFILE_EXTRAS["cuda"] == ("cuda", "japanese")
-    assert PROFILE_EXTRAS["intel"] == ("xpu", "whisper-cpp", "openvino", "japanese")
+    assert PROFILE_EXTRAS["intel"] == (
+        "xpu",
+        "whisper-cpp",
+        "openvino",
+        "openvino-genai",
+        "japanese",
+    )
     assert PROFILE_EXTRAS["vulkan"] == ("cpu", "whisper-cpp", "japanese")
 
 
