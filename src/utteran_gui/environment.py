@@ -182,6 +182,11 @@ def annotate_model_capabilities(
             if backend == "faster-whisper"
             else whisper_gpu
             if backend == "whisper-cpp"
+            else any(
+                str(item).split(".", 1)[0].upper() == "GPU"
+                for item in _dict(devices.get("openvino")).get("values", [])
+            )
+            if backend == "openvino-genai"
             else diar_gpu
             if backend == "pyannote"
             else False
@@ -204,6 +209,11 @@ def annotate_model_capabilities(
                 "この環境のCUDA GPUで実行できます。"
                 if gpu
                 else "この環境ではCTranslate2のGPUが検出されないためCPU実行です。"
+            )
+        elif backend == "openvino-genai":
+            model["recommendation_reason"] = (
+                "ネイティブビルド不要でIntel CPU/GPU/NPUを利用できます。"
+                "日本語など非スペース言語では話者分離と併用できません。"
             )
         elif backend == "pyannote":
             model["recommendation_reason"] = (
@@ -280,6 +290,42 @@ def derive_options(
                 "label": "whisper.cpp",
                 "models": by_backend["whisper-cpp"],
                 "devices": whisper_devices,
+            }
+        )
+
+    openvino_values = {
+        str(item).split(".", 1)[0].upper()
+        for item in _dict(devices.get("openvino")).get("values", [])
+    }
+    genai_devices = []
+    for identifier in ("CPU", "GPU", "NPU"):
+        if identifier not in openvino_values:
+            continue
+        recommended = identifier != "NPU"
+        genai_devices.append(
+            {
+                "id": identifier.casefold(),
+                "label": f"OpenVINO {identifier}" + (" (非推奨)" if not recommended else ""),
+                "recommended": recommended,
+                "recommendation_reason": (
+                    None
+                    if recommended
+                    else "初回ロード約306秒、キャッシュ約2.06 GiB。"
+                    "キャッシュ後は約4.8秒ですが、現時点ではGPUの方が高速です。"
+                ),
+            }
+        )
+    if (
+        backend_flags.get("openvino-genai") is True
+        and genai_devices
+        and by_backend.get("openvino-genai")
+    ):
+        asr.append(
+            {
+                "id": "openvino-genai",
+                "label": "OpenVINO GenAI",
+                "models": by_backend["openvino-genai"],
+                "devices": genai_devices,
             }
         )
 

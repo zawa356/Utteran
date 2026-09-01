@@ -67,6 +67,8 @@
             <label><span data-i18n="language">言語</span><select id="language-select"></select></label>
             <label><span data-i18n="resume">レジューム</span><select id="resume-mode"><option value="resume" data-i18n="resumeReuse">再利用する</option><option value="fresh" data-i18n="resumeFresh">キャッシュを使わない</option><option value="force" data-i18n="resumeForce">全段階を再実行</option></select></label>
           </div>
+          <label class="check-field"><input id="show-discouraged-configurations" type="checkbox"><span data-i18n="showDiscouragedConfigurations">非推奨の構成を表示する</span></label>
+          <div id="configuration-notice" class="notice warning hidden"></div>
 
           <div class="section-heading divided compact">
             <div><span class="step-number">03</span><h2 data-i18n="diarization">話者分離</h2></div>
