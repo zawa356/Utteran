@@ -83,10 +83,26 @@ def test_catalog_keeps_same_model_separate_by_backend() -> None:
 
 
 def test_catalog_contains_only_implemented_runtime_backends() -> None:
-    implemented = {"faster-whisper", "whisper-cpp", "whisper-cpp-vad", "pyannote"}
+    implemented = {
+        "faster-whisper",
+        "whisper-cpp",
+        "whisper-cpp-vad",
+        "openvino-genai",
+        "pyannote",
+    }
 
     assert {entry.backend for entry in list_models()} <= implemented
     assert not any(entry.backend == "openvino" for entry in list_models())
+
+
+def test_openvino_genai_catalog_uses_verified_public_model() -> None:
+    entry = get_model("openvino-genai:large-v3-turbo-int8")
+
+    assert entry.repository_id == "OpenVINO/whisper-large-v3-turbo-int8-ov"
+    assert entry.format == "OpenVINO GenAI"
+    assert entry.quantization == "int8"
+    assert entry.license == "MIT" and entry.gated is False
+    assert "話者分離" in entry.description and "英語" in entry.description
 
 
 def test_faster_whisper_catalog_includes_verified_small_to_medium_repositories() -> None:

@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.progress import Progress, TaskID
 from rich.table import Table
 
+from utteran.asr.registry import validate_asr_configuration
 from utteran.audio import find_ffmpeg
 from utteran.batch import BatchSummary, discover_inputs, run_batch
 from utteran.benchmark import (
@@ -410,7 +411,16 @@ def benchmark(
     if not any(measurement.results for measurement in measurements):
         error_console.print("エラー: 指定した構成に利用可能なバックエンド/モデルがありません。")
         raise typer.Exit(3)
-    table = Table("音声長", "構成", "モデル/量子化", "中央値", "速度スコア", "1時間換算", "精度")
+    table = Table(
+        "音声長",
+        "構成",
+        "モデル/量子化",
+        "load",
+        "推論",
+        "速度スコア(load込/除外)",
+        "1時間換算",
+        "精度",
+    )
     for measurement in measurements:
         for result in measurement.results:
             target = result.target
@@ -418,8 +428,10 @@ def benchmark(
                 f"{measurement.audio_duration_seconds:.3f}s",
                 f"{target.backend} / {target.device}" if target else result.variant,
                 f"{target.model} / {target.quantization or '-'}" if target else "-",
-                f"{result.median_total_seconds:.3f}s",
-                str(result.speed_score) + (" (参考値)" if target and not target.baseline else ""),
+                f"{result.median_load_seconds:.3f}s",
+                f"{result.median_transcribe_seconds:.3f}s",
+                f"{result.speed_score}/{result.speed_score_excluding_load}"
+                + (" (参考値)" if target and not target.baseline else ""),
                 f"約{result.hour_minutes}分",
                 (
                     f"{result.accuracy_score} (CER {result.character_error_rate * 100:.1f}%)"
@@ -695,6 +707,7 @@ def transcribe(
             quiet=quiet,
         )
         config = Config.load(config_path=config_path, cli_overrides=overrides)
+        validate_asr_configuration(config)
         configure_runtime_logging(
             level=config.general.log_level,
             log_dir=config.general.log_dir,
@@ -1015,6 +1028,28 @@ def models_verify(
 def models_path() -> None:
     """Print the effective utteran model directory."""
     typer.echo(_model_manager().root)
+
+
+@models_app.command("genai-cache")
+def models_genai_cache(
+    json_output: Annotated[bool, typer.Option("--json", help="JSONで表示")] = False,
+) -> None:
+    """Show the managed OpenVINO GenAI compiled-model cache path and size."""
+    from utteran.asr.openvino_genai import cache_usage_bytes, resolve_cache_dir
+
+    path = resolve_cache_dir()
+    size = cache_usage_bytes(path)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {"path": str(path), "size_bytes": size, "exists": path.is_dir()},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    console.print(f"OpenVINO GenAIキャッシュ: {path}")
+    console.print(f"使用量: {_format_size(size)}")
 
 
 @models_app.command("prepare-openvino")

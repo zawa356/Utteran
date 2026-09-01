@@ -349,6 +349,20 @@ def _missing_required_files(entry: ModelEntry, path: Path) -> tuple[str, ...]:
         if not any(path.glob("*.bin")):
             missing.append("*.bin")
         return tuple(missing)
+    if entry.format == "OpenVINO GenAI":
+        required: tuple[str, ...] = (
+            "config.json",
+            "generation_config.json",
+            "openvino_encoder_model.xml",
+            "openvino_encoder_model.bin",
+            "openvino_decoder_model.xml",
+            "openvino_decoder_model.bin",
+            "openvino_tokenizer.xml",
+            "openvino_tokenizer.bin",
+            "openvino_detokenizer.xml",
+            "openvino_detokenizer.bin",
+        )
+        return tuple(name for name in required if not (path / name).is_file())
     if entry.format == "pyannote pipeline":
         required = (
             "embedding/pytorch_model.bin",
