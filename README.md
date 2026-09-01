@@ -166,7 +166,7 @@ GPUで動くかどうか**は、`intel`と`vulkan`の間で処理時間に最も
 | Profile | 対象ハードウェア | 文字起こしの高速化 | 話者分離のGPU実行 | 主な依存 |
 |---|---|---|---|---|
 | `cuda` | NVIDIA GPU | ○（CUDA） | ○（CUDA） | CUDA 12.6 PyTorch、faster-whisper、pyannote、Sudachi |
-| `intel` | Intel GPU（Arc／内蔵GPU） | ○（OpenVINO／Vulkan） | ○（XPU） | XPU PyTorch、OpenVINO、whisper.cpp、Sudachi |
+| `intel` | Intel GPU（Arc／内蔵GPU） | ○（OpenVINO／Vulkan／GenAI） | ○（XPU） | XPU PyTorch、OpenVINO GenAI、whisper.cpp、Sudachi |
 | `vulkan` | AMD等のGPU、またはNVIDIA/Intel以外 | ○（Vulkan） | ×（CPUで実行） | CPU PyTorch、Vulkan whisper.cpp、Sudachi |
 | `cpu` | GPUなし | ×（CPUで実行） | ×（CPUで実行） | CPU PyTorch、faster-whisper、pyannote、Sudachi |
 | `gui` | （GUI専用、推論しない） | — | — | FastAPI、Uvicorn、pywebview（推論依存なし） |
@@ -190,7 +190,7 @@ uv run utteran devices
 uv run utteran transcribe audio.wav --no-diarization
 ```
 
-Intel profile相当は`--extra xpu --extra whisper-cpp --extra openvino --extra japanese`、Vulkan
+Intel profile相当は`--extra xpu --extra whisper-cpp --extra openvino --extra openvino-genai --extra japanese`、Vulkan
 profile相当は`--extra cpu --extra whisper-cpp --extra japanese`です。`cpu`/`cuda`/`xpu` extrasは
 同時指定できません。既存の推論profileは0.1.16更新後に同じ`setup.ps1 -Profile <name>`を再実行して
 Sudachi依存を同期してください。追加容量は実測約210.7 MiBで、GUI専用venv／installerには辞書を
@@ -205,6 +205,26 @@ Sudachi依存を同期してください。追加容量は実測約210.7 MiBで�
 有効にするスイッチではありません。`tiny`／`base`／`small`は試用・低スペック環境、`medium`は
 large系より軽い精度重視、`large-v3-turbo`は速度と精度の既定バランスです。Kotoba-Whisperは
 日本語特化モデルです。
+
+OpenVINO GenAIは、cmake／MSVC Build Tools／Vulkan SDKを必要としないIntel CPU/GPU/NPU経路です。
+モデルは`openvino-genai:large-v3-turbo-int8`を明示取得してください。英語では話者分離を含めて
+利用できますが、日本語・中国語などでは単語時刻が発話単位へ融合するため、話者分離と併用できません。
+言語`auto`と話者分離の組み合わせも安全のため拒否します。話者分離なしなら日本語でも利用できます。
+`auto`からは選ばれず、禁止構成でも別backendへ黙って切り替えません。
+
+```console
+uv run utteran models download openvino-genai:large-v3-turbo-int8
+uv run utteran transcribe lecture.wav --asr-backend openvino-genai \
+  --asr-model large-v3-turbo-int8 --asr-device gpu --no-diarization --language ja
+uv run utteran models genai-cache
+```
+
+NPUは固定依存版（OpenVINO GenAI 2026.2.1）の本機実測で初回ロード約306秒、
+cache 2,212,110,925 bytes（約2.06 GiB）、cache後約4.8秒で、
+現時点ではGPUより遅いため非推奨です。
+GUIでは「非推奨の構成を表示する」を有効にした場合だけ理由付きで表示します。CLI／benchmarkでは
+測定用に常に明示指定できます。cacheはutteranのuser cache配下に置かれ、アンインストール時の
+モデル削除対象および`scripts/reset-env.ps1`の削除対象です。
 
 ```console
 uv run utteran models list --available
@@ -414,6 +434,8 @@ uv run utteran benchmark --audio tests/fixtures/benchmark/japanese_reference.wav
   --mode standard --json benchmark.json --markdown benchmark.md
 uv run utteran benchmark --audio sample.wav \
   --targets whisper-cpp/vulkan/large-v3-turbo,faster-whisper/cpu/large-v3-turbo
+uv run utteran benchmark --audio sample.wav \
+  --targets openvino-genai/gpu/large-v3-turbo-int8
 uv run utteran benchmark --audio long-sample.wav --apply
 ```
 

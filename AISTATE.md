@@ -1,5 +1,81 @@
 # AI 作業状態
 
+## Phase 6b OpenVINO GenAI backend実装（0.1.19、2026-09-01）
+
+判定C確定後の改訂指示に従い、「backendの選択肢を増やし、最適化判断は測定とPhase 6cへ分離する」
+方針で`openvino-genai`を実装した。ネイティブビルド不要の明示選択経路であり、auto順位は変更せず、
+初期化失敗時も別backend/deviceへfallbackしない。モデルは実在・実機検証済みの公開repository
+`OpenVINO/whisper-large-v3-turbo-int8-ov`（MIT、非gated、828,102,090 bytes）だけを登録し、
+モデル管理による明示download/verify/removeを使う。
+
+### 言語・話者分離の制御
+
+- 話者分離ありでは言語`auto`と`ja, zh, th, lo, my, yue`を設定エラーとして拒否し、理由と
+  whisper.cppへの切替を案内する。黙ったfallbackではない。英語等を明示した話者分離、および
+  話者分離なしの全言語は許可する。
+- 集合の根拠は、同じintel profileへ導入済みの本家`openai-whisper` 20250625の
+  `whisper/tokenizer.py:Tokenizer.split_to_word_tokens()`がUnicode境界分割へ送る6言語集合である。
+- OpenVINO GenAIが非スペース言語のword mergeに対応した場合、またはtoken/character
+  時刻を安定した公開APIで返す場合は制限を解除できる。GPU性能は既存構成と同等以上だったため、
+  同じ日英fixtureで再評価する価値がある。
+
+phrase timestampを`Word`として代用しない。実データ区間長が未測定で、調査fixtureでも平均26文字と
+粗く、共通`Word`型の意味を壊し、bugfix-c〜fのalign/Viterbiへ回帰を持ち込む一方、上流対応後は
+不要になるためである。`align.py`とViterbiは変更していない。30文字以上のwordまたはsegment全体へ
+融合したwordを退化として検出するが、データは捨てず、件数・平均文字数・破棄0件を本文なしで記録し、
+話者分離時は警告する。
+
+キャンセルトークンはnative `generate()`の直前と直後に確認する。OpenVINO GenAI 2026.2.1の公開
+Whisper APIではstreamerによる途中停止が「30秒未満かつ`return_timestamps=False`」だけに限定され、
+本backendの単語timestamp要件と両立しない。このためnative推論中の要求は呼出し完了直後に反映される。
+timestampを失う回避策や終了不能なworker threadは採用しない。上流がtimestamp併用streamerを公開したら
+推論途中の停止へ切り替える。
+
+### device、cache、依存
+
+- CPU/GPU/NPUを列挙し、存在しないdeviceは非表示とする。NPUは汎用`recommended=false`属性と理由を
+  持ち、GUIは「非推奨の構成を表示する」の既定OFFで隠す。CLIとbenchmarkは常に明示指定可能。
+- `CACHE_DIR`は`platformdirs.user_cache_dir("utteran")/openvino-genai-compiled`へ固定した。
+  `models genai-cache`で使用量を確認でき、installerのモデル削除と`scripts/reset-env.ps1`の対象。
+- `openvino-genai>=2026.1,<2027`を独立extraとしてintel profileへ追加した。GUI venvには入れない。
+  lock固定環境はopenvino-genai/openvino-tokenizers/OpenVINO 2026.2.1で、導入後も
+  torch/torchaudioは2.11.0+xpuのままである。
+
+### 実機スモーク測定
+
+- 25.825秒の同梱日本語合成fixture、単語時刻ありで新backendを通した。cache済みload／inference／
+  load込みscore／load除外scoreはCPU 1.880秒／7.686秒／270／336、GPU 1.479秒／4.227秒／453／611、
+  NPU 2.655秒／4.624秒／355／559。全deviceで5 segment、1 word、130文字/wordの既知退化、破棄0件。
+  backend共通型、言語、model、deviceも期待どおりだった。
+- lock固定版2026.2.1で空NPU cache相当のloadは306.103秒、cache済みloadは4.824秒。NPU blobは
+  同一モデルを使った2026.3.1測定で2,212,110,925 bytes（約2.06 GiB）だった。runtime更新では別blobが
+  生成され得るため、2026.2.1でCPU/GPU/NPUを再構築した後の旧版込み総量は6,114,209,908 bytes。
+  GUI説明には固定版の再測定値を使用した。
+- 同梱fixtureを反復した合成WAV、各1回、単語時刻ありの実装後benchmarkは次のとおり。scoreは
+  `load込み / load除外`。Phase 6aの比較素材とは異なるため絶対値を混ぜず、定義・傾向確認値とする。
+
+| 音声長 | device | load秒 | inference秒 | score（込/除外） |
+|---:|---|---:|---:|---:|
+| 180秒 | CPU | 1.580 | 50.287 | 347 / 358 |
+| 180秒 | GPU | 1.812 | 14.609 | 1096 / 1232 |
+| 180秒 | NPU | 2.713 | 33.135 | 502 / 543 |
+| 900秒 | CPU | 1.292 | 258.743 | 346 / 348 |
+| 900秒 | GPU | 1.404 | 53.562 | 1637 / 1680 |
+| 900秒 | NPU | 2.815 | 160.793 | 550 / 560 |
+
+- 同梱25.825秒fixtureのCERは3 deviceすべて0.0%。長尺反復WAVは末尾がreferenceの途中で切れるため、
+  不正な正解textを捏造せずCER未測定とした。3600/10363秒は同梱素材がなく未測定。
+- `build.ps1`で`dist/installer/utteran-setup-0.1.19.exe`を生成した。19,835,843 bytesで0.1.18比
+  4,548 bytes増、SHA-256は
+  `fbd2673bca821be80e632c1321f43c5eb27b7d683ee414e1a545efaa24c55f1b`。GUI配布物に推論依存は含めない。
+
+### Phase 6dへの申し送り（本作業では未実装）
+
+GUI最適化ウィザードで「録音は一人か、複数人か」または参加者数を尋ね、技術用語なしに構成を
+決める案を残す。一人なら話者分離不要でGenAI候補、複数人ならwhisper.cpp、6名以上なら少数labelの
+信頼性低下を伝える。前提はPhase 6cの構成matrixとauto再決定である。backend側の禁止制御は実装済み
+なので、6d selector側へ同じ条件分岐を重複実装しない。
+
 ## Phase 6b OpenVINO GenAI Step 0追加調査（Jライン、2026-09-01、判定C確定）
 
 `docs/utteran_Phase6b_追加調査指示書.md`に従い、Phase 6aの合成fixtureと新規の英語合成音声だけを
