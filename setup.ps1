@@ -36,8 +36,13 @@ if ([Console]::IsOutputRedirected) {
 }
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DataRoot = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "utteran"
-$BinDir = Join-Path $DataRoot "bin"
+$ManagedDataRoot = if ($env:UTTERAN_DATA_ROOT) {
+    [IO.Path]::GetFullPath($env:UTTERAN_DATA_ROOT)
+}
+else {
+    Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "utteran"
+}
+$BinDir = Join-Path $ManagedDataRoot "bin"
 $BundledFfmpeg = Join-Path $BinDir "ffmpeg.exe"
 $EnvPath = Join-Path $ProjectRoot ".env"
 $EnvExample = Join-Path $ProjectRoot ".env.example"
@@ -155,6 +160,7 @@ function Write-ProfileManifest {
         profile        = $ProfileName
         lock_sha256    = (Get-FileHash -LiteralPath $LockPath -Algorithm SHA256).Hash.ToLowerInvariant()
         extras         = @($Extras)
+        venv_path      = [IO.Path]::GetFullPath($TargetVenv)
     } | ConvertTo-Json -Compress
     $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($ManifestPath, "$Payload`n", $Utf8NoBom)
@@ -166,6 +172,9 @@ function Get-VenvRoot {
     }
     if ($env:UTTERAN_VENV_DIR) {
         return [IO.Path]::GetFullPath($env:UTTERAN_VENV_DIR)
+    }
+    if ($env:UTTERAN_DATA_ROOT) {
+        return Join-Path ([IO.Path]::GetFullPath($env:UTTERAN_DATA_ROOT)) ".venvs"
     }
     return Join-Path $ProjectRoot ".venvs"
 }

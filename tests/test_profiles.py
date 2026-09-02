@@ -193,6 +193,7 @@ def test_setup_records_profile_dependency_manifest_after_successful_sync() -> No
     assert 'Join-Path $ProjectRoot "uv.lock"' in setup_script[writer:sync_success]
     assert 'Join-Path $TargetVenv ".utteran-profile.json"' in setup_script[writer:sync_success]
     assert "lock_sha256" in setup_script[writer:sync_success]
+    assert "venv_path" in setup_script[writer:sync_success]
     assert sync_success < write_call < verification
 
 

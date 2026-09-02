@@ -14,6 +14,7 @@ from typing import Any, Literal, cast
 
 from utteran_gui.processes import PopenFactory, TreeKiller, build_creation_kwargs, kill_process_tree
 from utteran_gui.security import mask_secrets, sanitize_json
+from utteran_paths import resolve_data_paths
 
 PROFILE_NAMES = ("cpu", "cuda", "intel", "vulkan")
 PROFILE_EXTRAS: dict[str, tuple[str, ...]] = {
@@ -86,11 +87,13 @@ class CliAdapter:
         *,
         popen_factory: PopenFactory | None = None,
         tree_killer: TreeKiller | None = None,
+        session_token: Callable[[], str | None] | None = None,
     ) -> None:
         self.repo_root = repo_root.resolve()
-        self.venv_root = (venv_root or self.repo_root / ".venvs").resolve()
+        self.venv_root = (venv_root or resolve_data_paths(self.repo_root).venvs).resolve()
         self._popen_factory = popen_factory
         self._tree_killer = tree_killer or kill_process_tree
+        self._session_token = session_token
 
     @property
     def os_slug(self) -> str:
@@ -140,6 +143,16 @@ class CliAdapter:
             return False, "dependency_lock_changed"
         if payload.get("extras") != list(PROFILE_EXTRAS[profile]):
             return False, "profile_extras_changed"
+        recorded_path = payload.get("venv_path")
+        if not isinstance(recorded_path, str):
+            return False, "profile_path_changed"
+        try:
+            current_path = os.path.normcase(str(root.resolve()))
+            recorded_venv_path = os.path.normcase(str(Path(recorded_path).expanduser().resolve()))
+        except OSError:
+            return False, "profile_path_changed"
+        if recorded_venv_path != current_path:
+            return False, "profile_path_changed"
         return True, None
 
     def profiles(self) -> tuple[ProfileInfo, ...]:
@@ -152,6 +165,8 @@ class CliAdapter:
         environment["PYTHONUTF8"] = "1"
         if child_log_dir := os.environ.get("UTTERAN_GUI_CHILD_LOG_DIR"):
             environment["UTTERAN_GENERAL__LOG_DIR"] = child_log_dir
+        if self._session_token is not None and (token := self._session_token()):
+            environment["HF_TOKEN"] = token
         return environment
 
     def _run(
