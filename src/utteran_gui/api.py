@@ -24,7 +24,7 @@ from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
 from utteran_gui.logging_runtime import gui_logging_status
 from utteran_gui.operation_queue import OperationQueue
-from utteran_gui.processes import build_creation_kwargs
+from utteran_gui.processes import ProcessSupervisor, build_creation_kwargs
 from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
 from utteran_gui.setup_wizard import (
     SetupWizardService,
@@ -135,11 +135,13 @@ def create_app(
     history_service: HistoryService | None = None,
     wizard_service: SetupWizardService | None = None,
     operation_queue: OperationQueue | None = None,
+    process_supervisor: ProcessSupervisor | None = None,
 ) -> FastAPI:
     """Create one session-scoped application without importing the CLI package."""
     if not session_key:
         raise ValueError("session_key must not be empty")
-    selected_cli = cli or CliAdapter(repo_root)
+    supervisor = process_supervisor or ProcessSupervisor()
+    selected_cli = cli or CliAdapter(repo_root, popen_factory=supervisor.popen)
     selected_settings = settings_store or SettingsStore()
     selected_tokens = token_store or TokenStore()
     selected_environment = environment_service or EnvironmentService(selected_cli)
@@ -150,13 +152,26 @@ def create_app(
         if wizard_service is not None
         else OperationQueue()
     )
-    selected_jobs = job_manager or JobManager(selected_cli, operation_queue=selected_queue)
+    selected_jobs = job_manager or JobManager(
+        selected_cli, popen_factory=supervisor.popen, operation_queue=selected_queue
+    )
     selected_history = history_service or HistoryService(selected_cli)
     selected_wizard = wizard_service or SetupWizardService(
-        selected_cli, settings_store=selected_settings, operation_queue=selected_queue
+        selected_cli,
+        settings_store=selected_settings,
+        popen_factory=supervisor.popen,
+        operation_queue=selected_queue,
     )
     web_root = Path(__file__).with_name("web")
     app = FastAPI(title="utteran GUI", docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.process_supervisor = supervisor
+
+    def shutdown_processes() -> None:
+        selected_jobs.shutdown()
+        selected_wizard.shutdown()
+        supervisor.shutdown()
+
+    app.router.add_event_handler("shutdown", shutdown_processes)
     app.mount("/assets", StaticFiles(directory=web_root), name="assets")
 
     @app.middleware("http")
@@ -341,7 +356,9 @@ def create_app(
 
     @app.get("/api/wizard/hardware")
     def wizard_hardware() -> dict[str, object]:
-        return hardware.detect_hardware(repo_root).to_dict()
+        return hardware.detect_hardware(
+            repo_root, probes=hardware.system_probes(popen_factory=supervisor.popen)
+        ).to_dict()
 
     @app.post("/api/wizard/jobs", status_code=202)
     def start_wizard_job(payload: WizardJobPayload) -> dict[str, object]:

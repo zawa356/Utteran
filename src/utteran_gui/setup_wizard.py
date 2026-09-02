@@ -386,6 +386,13 @@ class SetupWizardService:
         self.queue.cancel(job_id)
         return self.snapshot(job_id)
 
+    def shutdown(self) -> None:
+        """Cancel every non-terminal setup/model process during GUI shutdown."""
+        with self._lock:
+            job_ids = [job.id for job in self._jobs.values() if job.status not in TERMINAL_STATUSES]
+        for job_id in job_ids:
+            self._cancel_direct(job_id)
+
     def _cancel_direct(self, job_id: str) -> None:
         with self._lock:
             job = self._job(job_id)
