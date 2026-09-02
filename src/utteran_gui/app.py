@@ -80,6 +80,8 @@ def project_root() -> Path:
     configured = os.environ.get("UTTERAN_PROJECT_ROOT")
     if configured:
         return Path(configured).expanduser().resolve()
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
     candidate = Path.cwd().resolve()
     if (candidate / "pyproject.toml").is_file():
         return candidate

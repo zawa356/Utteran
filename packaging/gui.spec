@@ -40,6 +40,10 @@ SRC_ROOT = os.path.join(REPO_ROOT, "src")
 WEB_ASSETS_DIR = os.path.join(SRC_ROOT, "utteran_gui", "web")
 APP_ICON = os.path.join(REPO_ROOT, "icon", "utteran.ico")
 BUILD_VERSION = os.environ.get("UTTERAN_BUILD_VERSION", "0.0.0")
+DIST_NAME = os.environ.get("UTTERAN_GUI_DIST_NAME", "utteran-gui")
+runtime_hooks = []
+if os.environ.get("UTTERAN_BUILD_FLAVOR") == "portable":
+    runtime_hooks.append(os.path.join(REPO_ROOT, "packaging", "portable_runtime.py"))
 version_parts = tuple(int(part) for part in BUILD_VERSION.split("."))
 if len(version_parts) != 3:
     raise SystemExit(f"packaging/gui.spec: invalid build version: {BUILD_VERSION}")
@@ -99,6 +103,7 @@ a = Analysis(  # noqa: F821
     datas=datas,
     hiddenimports=hidden_imports,
     excludes=list(FORBIDDEN_MODULES),
+    runtime_hooks=runtime_hooks,
     noarchive=False,
 )
 
@@ -129,5 +134,5 @@ coll = COLLECT(  # noqa: F821
     a.datas,
     strip=False,
     upx=False,
-    name="utteran-gui",
+    name=DIST_NAME,
 )
