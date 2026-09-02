@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from platformdirs import user_data_dir
+from utteran_paths import resolve_data_paths
 
 GIB = 1024**3
 CALIBRATION_SCHEMA_VERSION = 1
@@ -238,7 +238,7 @@ def plan_diarization_memory(
 
 def default_calibration_path() -> Path:
     """Return profile-independent, platformdirs-managed calibration storage."""
-    return Path(user_data_dir("utteran")) / "memory-calibration.json"
+    return resolve_data_paths().memory_calibration
 
 
 class CalibrationStore:

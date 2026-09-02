@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import dotenv_values
-from platformdirs import user_cache_dir, user_config_dir
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
@@ -21,6 +20,7 @@ from pydantic_settings import (
 )
 
 from utteran.errors import ConfigurationError
+from utteran_paths import resolve_data_paths
 
 OutputFormat = Literal["srt", "vtt", "json", "txt", "md"]
 LogLevel = Literal["debug", "info", "warning", "error", "critical"]
@@ -303,7 +303,7 @@ class Config(BaseSettings):
         cli_overrides: dict[str, Any] | None = None,
     ) -> Config:
         """Load settings using CLI > env > .env > config.toml > defaults."""
-        selected_config = config_path or Path(user_config_dir("utteran")) / "config.toml"
+        selected_config = config_path or resolve_data_paths().core_config
         selected_dotenv = dotenv_path or Path.cwd() / ".env"
         merged: dict[str, Any] = {}
         _deep_merge(merged, _read_toml(selected_config))
@@ -325,12 +325,12 @@ class Config(BaseSettings):
     @property
     def effective_job_dir(self) -> Path:
         """Return the configured job dir or the platform cache default."""
-        return self.general.job_dir or Path(user_cache_dir("utteran")) / "jobs"
+        return self.general.job_dir or resolve_data_paths().jobs
 
 
 def default_config_path() -> Path:
     """Return the platform-specific config.toml location."""
-    return Path(user_config_dir("utteran")) / "config.toml"
+    return resolve_data_paths().core_config
 
 
 def initialize_config(path: Path | None = None) -> Path:

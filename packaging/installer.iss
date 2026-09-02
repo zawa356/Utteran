@@ -114,6 +114,7 @@ Source: "{#RepoRoot}\icon\utteran-glyph-512.png"; DestDir: "{app}\icon"; Flags: 
 Source: "{#RepoRoot}\icon\utteran.ico"; DestDir: "{app}\icon"; Flags: ignoreversion
 Source: "{#RepoRoot}\src\utteran\*"; DestDir: "{app}\src\utteran"; Flags: recursesubdirs ignoreversion; Excludes: "__pycache__,*.pyc"
 Source: "{#RepoRoot}\src\utteran_gui\*"; DestDir: "{app}\src\utteran_gui"; Flags: recursesubdirs ignoreversion; Excludes: "__pycache__,*.pyc"
+Source: "{#RepoRoot}\src\utteran_paths\*"; DestDir: "{app}\src\utteran_paths"; Flags: recursesubdirs ignoreversion; Excludes: "__pycache__,*.pyc"
 
 [Icons]
 Name: "{autoprograms}\utteran"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"

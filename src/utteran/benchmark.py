@@ -17,8 +17,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from platformdirs import user_log_dir
-
 from utteran import __version__
 from utteran.asr.base import ASRBackend
 from utteran.asr.faster_whisper import FasterWhisperBackend
@@ -37,6 +35,7 @@ from utteran.models.catalog import ModelEntry, get_model, list_models
 from utteran.models.manager import ModelManager
 from utteran.models.openvino import OpenVINOManager
 from utteran.types import ASROptions, CancelToken
+from utteran_paths import resolve_data_paths
 
 RECOMMENDED_BENCHMARK_SECONDS = 900
 BASELINE_MODEL = "large-v3-turbo"
@@ -749,7 +748,7 @@ def default_result_dir(config: Config) -> Path:
     if runtime:
         return runtime.log_dir / "benchmarks"
     selected, _, _ = resolve_log_dir(
-        config.general.log_dir, fallback_dir=Path(user_log_dir("utteran"))
+        config.general.log_dir, fallback_dir=resolve_data_paths().logs
     )
     return selected / "benchmarks"
 

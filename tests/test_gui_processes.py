@@ -123,6 +123,7 @@ def test_profile_manifest_detects_current_and_stale_dependencies(tmp_path: Path)
                 "profile": "cpu",
                 "lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
                 "extras": ["cpu", "japanese"],
+                "venv_path": str(missing.path.resolve()),
             }
         ),
         encoding="utf-8",
@@ -133,6 +134,35 @@ def test_profile_manifest_detects_current_and_stale_dependencies(tmp_path: Path)
     changed = cli.profile_info("cpu")
     assert changed.compatible is False
     assert changed.compatibility_reason == "dependency_lock_changed"
+
+
+def test_profile_manifest_detects_venv_move_without_disabling_profile(tmp_path: Path) -> None:
+    original = tmp_path / "original"
+    _create_profile(original)
+    lock = original / "uv.lock"
+    lock.write_text("lock", encoding="utf-8")
+    cli = CliAdapter(original)
+    info = cli.profile_info("cpu")
+    (info.path / ".utteran-profile.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "profile": "cpu",
+                "lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
+                "extras": ["cpu", "japanese"],
+                "venv_path": str(info.path.resolve()),
+            }
+        ),
+        encoding="utf-8",
+    )
+    moved = tmp_path / "moved"
+    original.rename(moved)
+
+    moved_info = CliAdapter(moved).profile_info("cpu")
+
+    assert moved_info.exists is True
+    assert moved_info.compatible is False
+    assert moved_info.compatibility_reason == "profile_path_changed"
 
 
 def test_hardware_powershell_probe_uses_no_window(monkeypatch: Any) -> None:

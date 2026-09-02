@@ -25,7 +25,13 @@ from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
 from utteran_gui.logging_runtime import gui_logging_status
 from utteran_gui.operation_queue import OperationQueue
 from utteran_gui.processes import ProcessSupervisor, build_creation_kwargs
-from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
+from utteran_gui.settings import (
+    GuiSettings,
+    SessionTokenStore,
+    SettingsStore,
+    TokenStore,
+    TokenStoreUnavailable,
+)
 from utteran_gui.setup_wizard import (
     SetupWizardService,
     WizardBusyError,
@@ -33,6 +39,7 @@ from utteran_gui.setup_wizard import (
     WizardProfileMissingError,
     WizardUnknownJobError,
 )
+from utteran_paths import is_portable_distribution, uses_session_token
 
 SESSION_COOKIE = "utteran_gui_session"
 SESSION_HEADER = "x-utteran-session"
@@ -141,9 +148,13 @@ def create_app(
     if not session_key:
         raise ValueError("session_key must not be empty")
     supervisor = process_supervisor or ProcessSupervisor()
-    selected_cli = cli or CliAdapter(repo_root, popen_factory=supervisor.popen)
     selected_settings = settings_store or SettingsStore()
-    selected_tokens = token_store or TokenStore()
+    selected_tokens = token_store or (SessionTokenStore() if uses_session_token() else TokenStore())
+    selected_cli = cli or CliAdapter(
+        repo_root,
+        popen_factory=supervisor.popen,
+        session_token=selected_tokens.session_token,
+    )
     selected_environment = environment_service or EnvironmentService(selected_cli)
     selected_queue = operation_queue or (
         job_manager.queue
@@ -253,6 +264,8 @@ def create_app(
         payload["token_store_available"] = token_status.available
         payload["token_store_backend"] = token_status.backend
         payload["token_store_error"] = token_status.error_type
+        payload["portable_distribution"] = is_portable_distribution()
+        payload["token_session_only"] = uses_session_token()
         payload.update(_logging_status(repo_root))
         return payload
 
@@ -263,6 +276,8 @@ def create_app(
         token_status = selected_tokens.status()
         response["token_configured"] = token_status.configured
         response["token_store_available"] = token_status.available
+        response["portable_distribution"] = is_portable_distribution()
+        response["token_session_only"] = uses_session_token()
         response.update(_logging_status(repo_root))
         return response
 
@@ -273,6 +288,8 @@ def create_app(
         token_status = selected_tokens.status()
         response["token_configured"] = token_status.configured
         response["token_store_available"] = token_status.available
+        response["portable_distribution"] = is_portable_distribution()
+        response["token_session_only"] = uses_session_token()
         response.update(_logging_status(repo_root))
         return response
 

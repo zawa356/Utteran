@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from platformdirs import user_log_dir
+from utteran_paths import resolve_data_paths
 
 _HF_TOKEN_PATTERN = re.compile(r"\bhf_[A-Za-z0-9_-]{4,}\b")
 _REGISTERED_SECRETS: set[str] = set()
@@ -112,7 +112,7 @@ def resolve_log_dir(
         if configured is not None
         else (install_dir or application_dir()).resolve() / "logs"
     )
-    fallback = (fallback_dir or Path(user_log_dir("utteran"))).expanduser().resolve()
+    fallback = (fallback_dir or resolve_data_paths().logs).expanduser().resolve()
     probe = writable or _is_writable_directory
     if probe(preferred):
         return preferred, preferred, False
