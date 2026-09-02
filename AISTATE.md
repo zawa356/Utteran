@@ -35,6 +35,22 @@
 - `README.en.md`は本Phaseで配布形態だけを追記した。whisper.cpp v1.9.1、OpenVINO GenAI未記載、
   `models genai-cache`未記載というPhase 3相当の遅れはDグループへ残し、全体同期していない。
 
+### 検証と成果物
+
+- `uv run pytest -m "not requires_model"`: 455 passed（既知のStarlette warning 1件）。ruff check／format、
+  mypy（62 source）、uv lock、JavaScript構文、PowerShell parser／BOM、`git diff --check`もpass。
+- `build.ps1`でinstallerとportable ZIPの両方を生成した。両GUIのProductVersion／FileVersionは0.1.24。
+- portable ZIPを一意の検証directoryへ展開し、repository rootをcwdにした状態でもGUIが
+  `Responding=True`で起動した。生成dataは展開先`data/logs`と`data/cache/webview2`配下で、
+  終了3秒後に記録した直接子processは0件だった。profile／modelの数GB構築、別drive、USB、tokenの
+  end-to-endは`ユーザー確認事項.md` D章へ残した。
+- installerは19,861,352 bytes、SHA-256
+  `beb6780bb4e28c79a6f441994988ee37a69b86a1a1453e4d593bfbe35394e710`。
+- portable ZIPは22,804,675 bytes、SHA-256
+  `30c61f375776246f996e1e38e5f5e349d2e6649a3063a358b7447096636a7147`。
+- `align.py`、Viterbi、ASR backend実行経路は変更していない。ac-1状態表示、ac-2 process／uninstall、
+  ac-3入出力directory記憶、Phase 6c-1 device解決を含む全model不要testがpassした。
+
 ## Phase enhancement ac-3 表示・記憶・文書整理（0.1.23、2026-09-02）
 
 ### A-2 format chip横overflow
