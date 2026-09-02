@@ -80,6 +80,8 @@ def project_root() -> Path:
     configured = os.environ.get("UTTERAN_PROJECT_ROOT")
     if configured:
         return Path(configured).expanduser().resolve()
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
     candidate = Path.cwd().resolve()
     if (candidate / "pyproject.toml").is_file():
         return candidate
@@ -120,9 +122,15 @@ def main() -> None:
             encoding="utf-8",
         )
         return
+    if len(sys.argv) == 2 and sys.argv[1] == "--delete-keyring-token":
+        TokenStore().clear()
+        return
     started = time.monotonic()
     set_windows_app_user_model_id()
-    configure_gui_logging(install_dir=project_root())
+    logging_status = configure_gui_logging(
+        install_dir=project_root(), packaged=bool(getattr(sys, "frozen", False))
+    )
+    os.environ["UTTERAN_GUI_CHILD_LOG_DIR"] = str(logging_status.log_dir)
     log_stage("gui_boot_start")
     import uvicorn
     import webview

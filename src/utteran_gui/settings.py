@@ -12,9 +12,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
-from platformdirs import user_config_dir
-
 from utteran_gui.security import mask_secrets, register_secret
+from utteran_paths import resolve_data_paths
 
 Theme = Literal["system", "dark", "light"]
 Language = Literal["ja", "en"]
@@ -126,7 +125,7 @@ class SettingsStore:
     """Atomic platformdirs-backed GUI preference store."""
 
     def __init__(self, path: Path | None = None) -> None:
-        self.path = path or Path(user_config_dir("utteran-gui")) / "settings.json"
+        self.path = path or resolve_data_paths().gui_settings
         self._lock = threading.RLock()
 
     def load(self) -> GuiSettings:
@@ -164,6 +163,23 @@ class SettingsStore:
             current = self.load().to_dict()
             current.update(changes)
             return self.save(GuiSettings.from_dict(current))
+
+    def remember_directories(
+        self,
+        *,
+        input_path: str | None = None,
+        output_dir: str | None = None,
+    ) -> GuiSettings:
+        """Remember independent folder defaults without persisting an input filename."""
+        changes: dict[str, object] = {}
+        if input_path is not None:
+            selected_input = Path(input_path).expanduser()
+            changes["default_input_dir"] = str(
+                selected_input if selected_input.is_dir() else selected_input.parent
+            )
+        if output_dir is not None:
+            changes["default_output_dir"] = str(Path(output_dir).expanduser())
+        return self.update(changes)
 
 
 class KeyringLike(Protocol):
@@ -206,6 +222,10 @@ class TokenStore:
         if not status.available:
             raise TokenStoreUnavailable(status.error_message or "OS keyring is unavailable")
         return status.configured
+
+    def session_token(self) -> str | None:
+        """Return no process-only token for the persistent keyring implementation."""
+        return None
 
     def status(self) -> TokenStatus:
         """Return configured/unavailable as distinct states without exposing a token."""
@@ -304,6 +324,41 @@ class TokenStore:
             selected = cast(KeyringLike, get_keyring())
         selected_type = type(selected)
         return f"{selected_type.__module__}.{selected_type.__qualname__}"
+
+
+class SessionTokenStore(TokenStore):
+    """Keep a portable-build token in memory until the GUI process exits."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._token: str | None = None
+
+    def status(self) -> TokenStatus:
+        return TokenStatus(bool(self._token), True, "session")
+
+    def set(self, token: str) -> None:
+        selected = token.strip()
+        if not selected:
+            raise ValueError("token must not be empty")
+        register_secret(selected)
+        self._token = selected
+
+    def clear(self) -> None:
+        self._token = None
+
+    def session_token(self) -> str | None:
+        return self._token
+
+    def diagnose(self) -> dict[str, object]:
+        return {
+            "import_success": True,
+            "backend": "session",
+            "get_success": True,
+            "set_success": True,
+            "delete_success": True,
+            "error_type": "",
+            "error_message": "",
+        }
 
 
 def _bounded_string(value: object) -> str:

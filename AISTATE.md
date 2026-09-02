@@ -1,5 +1,249 @@
 # AI 作業状態
 
+## Phase enhancement ac-4 ポータブル配布（0.1.24、2026-09-02）
+
+### データ配置とビルド判断
+
+- `utteran_paths.resolve_data_paths()`へアプリ管理pathを集約した。インストーラー版は従来の配置を
+  維持し、ポータブル版だけがPyInstaller runtime hookで`{app}/data`を既定rootとして与える。
+  実行fileや周辺fileからmodeを推測する処理はない。
+- `build.ps1`は同じspecからinstaller用onedirとportable用onedirを別々に構築し、既存installerと
+  portable ZIP、各SHA-256 sidecarを生成する。ZIPは余分な外側階層を持たない。
+
+| データ | インストーラー版 | ポータブル版 |
+|---|---|---|
+| `.venvs` | install directory直下 | `{app}/data/.venvs` |
+| model／OpenVINO IR | platform user cache `models` | `{app}/data/models` |
+| GenAI compiled／device probe cache | platform user cache | `{app}/data/cache` |
+| native build | `~/.utteran/native` | `{app}/data/native` |
+| ffmpeg | platform user data `bin` | `{app}/data/bin` |
+| job history／文字起こし結果 | platform user cache `jobs` | `{app}/data/jobs` |
+| CLI／GUI設定、memory calibration | platform user config/data | `{app}/data/config` |
+| log／diagnostics／benchmark | platform user log | `{app}/data/logs` |
+
+- ポータブルbuildはuv、Hugging Face、torch、pip、WebView2のcacheも`data/cache`へ向ける。utteranが
+  管理する永続dataでユーザー領域に残る例外はない。Windowsの実行履歴、ウイルス対策softwareの記録、
+  driver/runtime自体はOS／外部softwareの管理物であり削除対象外である。
+- 利用者指定の入力・出力directoryはデータrootへ含めず、従来どおり利用者指定pathを尊重する。
+
+### tokenとprofile移動
+
+- portable tokenは`SessionTokenStore`のprocess memoryだけに保持し、profile childへ`HF_TOKEN`として
+  渡す。keyringや別fileへ保存せず、GUI終了時に破棄する。GUIのtoken入力箇所にも明記した。
+- profile manifestへ構築時venv絶対pathを追加した。移動後の不一致は`profile_path_changed`として
+  再構築を案内するが、既存環境を保持し、即FAILEDへ変えない。
+- `README.en.md`は本Phaseで配布形態だけを追記した。whisper.cpp v1.9.1、OpenVINO GenAI未記載、
+  `models genai-cache`未記載というPhase 3相当の遅れはDグループへ残し、全体同期していない。
+
+### 検証と成果物
+
+- `uv run pytest -m "not requires_model"`: 455 passed（既知のStarlette warning 1件）。ruff check／format、
+  mypy（62 source）、uv lock、JavaScript構文、PowerShell parser／BOM、`git diff --check`もpass。
+- `build.ps1`でinstallerとportable ZIPの両方を生成した。両GUIのProductVersion／FileVersionは0.1.24。
+- portable ZIPを一意の検証directoryへ展開し、repository rootをcwdにした状態でもGUIが
+  `Responding=True`で起動した。生成dataは展開先`data/logs`と`data/cache/webview2`配下で、
+  終了3秒後に記録した直接子processは0件だった。profile／modelの数GB構築、別drive、USB、tokenの
+  end-to-endは`ユーザー確認事項.md` D章へ残した。
+- installerは19,861,352 bytes、SHA-256
+  `beb6780bb4e28c79a6f441994988ee37a69b86a1a1453e4d593bfbe35394e710`。
+- portable ZIPは22,804,675 bytes、SHA-256
+  `30c61f375776246f996e1e38e5f5e349d2e6649a3063a358b7447096636a7147`。
+- `align.py`、Viterbi、ASR backend実行経路は変更していない。ac-1状態表示、ac-2 process／uninstall、
+  ac-3入出力directory記憶、Phase 6c-1 device解決を含む全model不要testがpassした。
+
+## Phase enhancement ac-3 表示・記憶・文書整理（0.1.23、2026-09-02）
+
+### A-2 format chip横overflow
+
+- `.format-chip input`は`position: absolute`だったが、親`.format-chip`に配置基準がなく、外側の包含blockを
+  基準にはみ出していた。親へ`position: relative`を追加した。同じ親の絶対配置子はこのinputだけで、
+  switch／wizard card／speaker filterは別の親に既存の配置基準を持つ。
+- CSS契約testを追加した。WebView2上での横幅変更・全画面の目視は
+  `ユーザー確認事項.md` C-1へ残した。ac-4のA-3/A-4には着手していない。
+
+### A-5 version表示
+
+- 原因は`pyproject.toml`、`utteran.__version__`、`utteran_gui.__version__`への手書き重複と、README冒頭を
+  検査しないtestだった。`pyproject.toml`を唯一の入力とし、両packageはdistribution metadataから取得、
+  PyInstallerは同metadataを同梱する。installer/exeはbuild時に同じ値を埋め込む。
+- 日英README冒頭は自動生成できないため、package versionとの一致testで更新漏れを検出する。package、
+  GUI API、README、PyInstaller/Inno設定の整合testに加え、`build.ps1`がGUIとinstaller双方の
+  ProductVersion／FileVersionを実物から検査する。
+- 初回0.1.23 buildの実物確認でinstallerのFileVersionだけ空欄と判明したため、Inno Setupの
+  `VersionInfoVersion`を明示して修正した。最終実物は4値すべて0.1.23。
+- `README.en.md`は指示どおり冒頭versionだけ更新した。whisper.cpp v1.9.1、OpenVINO GenAI未記載、
+  `models genai-cache`未記載というPhase 3相当の遅れはDグループ（国際化）へ残し、本Phaseで同期しない。
+
+### A-7 入出力directoryの独立記憶とprivacy判断
+
+- `GuiSettings`には独立fieldが既にあったが、設定画面から手動保存するだけで、実際に使用した値を
+  自動更新していなかった。ジョブ投入成功時に入力fileの親または入力folder自身と、出力directoryを
+  別fieldへ保存する。再出力成功時は出力だけを更新する。
+- README／要件はdirectoryの既定値を保存してよい一方、入力file履歴・file名を保存しない方針である。
+  よってdirectoryだけの保存は方針内と判断した。入力file名がsettings JSONに現れず、一方だけの更新で
+  他方が変わらないtestを追加した。設定保存失敗で開始済みjobをAPI errorにしない。
+
+### 文書と検証
+
+- Phase 3d由来の旧配置の手順書を`docs/archive/受入試験_手動確認手順書.md`へ移し、本文は変えず、
+  `ユーザー確認事項.md`との役割説明だけを
+  冒頭に追加した。指示書内の移動元記述を除く全参照を更新した。文書移動はコードと別commit。
+- `ユーザー確認事項.md` C章へレイアウト、配布版version表示、入出力directory独立記憶の実機手順を追加。
+  実機項目は作業と同じ単位で追記し、確認後も結果を残す運用を`要件定義.md`へ明記した。
+- `uv run pytest -m "not requires_model"`: 449 passed（既知のStarlette warning 1件）。ruff check／format、
+  mypy（61 source）、uv lock、JavaScript構文、PowerShell parser／BOM、`git diff --check`もpass。
+  ac-1状態表示、ac-2 process supervisor、Phase 6c-1 device解決を含む既存testがpassし、`align.py`、
+  Viterbi、ASR backend実行経路は変更していない。
+- 開発版`gui.ps1`は起動・応答を確認した。自動化側の`CloseMainWindow()`では15秒以内に閉じず強制終了へ
+  切り替えたが、その後の残留は0件。最終配布exeは`Responding=True`で起動し、強制終了3秒後に記録した
+  直接子2件は0件になった。レイアウトと画面表示の実機目視はユーザー確認事項へ残す。
+- 最終installerは19,850,600 bytes、SHA-256
+  `ae0cf3a8dc4fd661abffcd1bf0109e4ac87e22203b02a471c90ecba2a1e64f85`。
+
+## Phase enhancement ac-2 プロセス・インストーラー（0.1.22、2026-09-02）
+
+### Step 1 切り分け（0.1.21、修正前）
+
+#### C-1: GUI 終了後に残るプロセス
+
+| 条件 | 修正前の結果 | 根拠 |
+|---|---|---|
+| job、wizard、probe のない正常終了 | 残留なし | ac-1 の source `gui.ps1`／配布 exe 実測を再利用。Uvicorn thread と WebView2 群はウィンドウ終了に追従する。 |
+| job 実行中／wizard 操作中にウィンドウを閉じる | profile の `utteran`／`setup.ps1` process tree が残り得る | `app.main()` の `finally` は Uvicorn だけを停止し、`JobManager`、`SetupWizardService`、共通 queue に shutdown を通知しない。worker は daemon thread のため GUI 本体だけ終了できる。 |
+| cancel 直後に閉じる | `taskkill /T /F` 完了後なら残らないが、終了処理との競合を保証していない | cancel API 自体は同期的に tree kill する一方、GUI 全体の shutdown は稼働 process の完了を待たず、全 process を列挙して再確認する処理もない。 |
+| device probe 中に閉じる | profile CLI とその probe 子 process が残り得る | GUI は profile CLI を `CREATE_NEW_PROCESS_GROUP` で起動し、その配下で probe を起動する。timeout 時の tree kill はあるが、GUI 終了時の tree kill はない。 |
+| GUI 本体を強制終了 | 直接の profile 子 process とその子孫が残る | 修正前と同じ `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` で親 Python と sleep 子を起動し、親を強制終了する隔離 harness を実行。親 PID 18896 の終了 1 秒後も子 PID 51668 が生存したため、確認後に子だけを明示終了した。process group は親死亡時の連動終了機構ではない。 |
+
+source と配布 exe は同じ `app.py`、manager、process 起動 helper を使用し、終了処理に分岐はない。
+配布 exe の idle 起動では GUI 本体と WebView2 群だけ、source の処理実行時にはこれに profile
+`utteran` と probe／backend 子 process が加わる。差は凍結 GUI shell か Python GUI shell かであり、
+残留の原因である profile process の所有方法は共通だった。
+
+#### C-2: アンインストール後の残留
+
+0.1.21 installer を隔離先 `output/ac2-installer-lab/install` へ clean install し、GUI が生成する
+`logs/app.log`と模擬 `.venvs/win-cpu`を置いて、process が一つもない状態で silent uninstall した。
+uninstaller は exit 0 を返したが、両 directory と install directory が残り、log に directory error 145
+（directory not empty）が記録された。したがって C-2 は C-1 がなくても再現する。
+
+| 対象 | 0.1.21 の挙動 | ac-2 方針 |
+|---|---|---|
+| installer が配置した app 本体 | 常に削除 | 常に削除 |
+| profile `.venvs` | 対話時に選択、silent は保持 | 再生成可能な実行環境なので削除。実行中なら先に停止し、失敗を明示する |
+| model cache、OpenVINO IR、GenAI compiled cache | model 選択時に削除。GenAI cache は既に同じ選択へ含まれる。silent は保持 | 再取得／再生成可能な cache なので削除。旧 runtime blob も directory 単位で削除する |
+| device probe cache | 選択肢がなく保持 | 再生成可能なので削除 |
+| native build (`~/.utteran/native`) | 選択肢がなく保持 | 再構築可能なので削除対象に含める |
+| job history／文字起こし結果 | 対話時に選択、silent は保持 | 利用者データ。既定で保持し、対話時だけ明示選択で削除 |
+| GUI 設定、core `config.toml`、memory calibration | GUI 設定だけ選択。core 設定と calibration は保持 | 利用者設定。既定で保持し、削除は明示選択に限る |
+| log／benchmark／diagnostics | install directory または user log directory に残る | 本文を含み得るため利用者データとして既定保持。残る場所を明示する |
+| Hugging Face token（OS keyring） | 選択肢がなく保持 | 認証情報なので対話時に独立して選択させる。silent は同意を得られないため保持する |
+| 利用者が指定した出力 directory | installer 管理外 | 常に保持し、一切走査・削除しない |
+
+#### C-3: 上書き・downgrade
+
+- 0.1.21 配布 exe を隔離 install 先で実行したまま同じ 0.1.21 installer を silent 実行した。
+  Inno Setup Restart Manager が `utteran GUI` を検出して終了させ、6.63 秒、exit 0 で上書きに成功した。
+  無言の file copy failure にはならないが、製品固有 mutex／明示 message はなく、orphan profile process
+  まで確実に停止したという保証はない。
+- `.venvs`は上書き対象外で保持される。venv が新しい `uv.lock`／選択 profile extras と一致するかを
+  記録・照合する manifest がなく、0.1.19 のような依存追加後も既存利用者には再構築案内が出ない。
+- 同じ payload を `AppVersion=0.1.20` として実 compile し、0.1.21 の隔離 install 先へ silent install
+  したところ exit 0、Uninstall registry の `DisplayVersion=0.1.20` となった。downgrade は無条件で許可
+  され、警告も互換性判定もない。
+
+#### 因果関係
+
+C-1 は install directory／`.venvs` 内の executable や DLL を掴む経路なので、削除・上書き失敗を
+悪化させ得る。しかし C-2 は process なしで再現し、C-3 の downgrade と stale venv も process と
+無関係に再現した。よって **C-1 は一部の file lock の原因候補だが、C-2／C-3 全体の原因ではなく、
+3件には独立した欠陥がある**と判定する。
+
+### i7 機での確認項目（AC ライン完了後に実施）
+
+| 追加版 | 手順 | 合格条件 |
+|---|---|---|
+| 0.1.21 (ac-1) | i7-1165G7／Iris Xe／NVIDIAなしで cache を消して GUI を起動し、初回検出と「再検出」を各1回行う | 全体が200秒以内に終端となり、実行中・成功・timeout・error・不明が誤って FAILED／成功へ反転せず、GPU非搭載向け選択肢だけが表示される |
+| 0.1.22 (ac-2) | idle、job実行中、cancel直後、device probe中の各状態でGUIを閉じ、最後にGUIを強制終了する。各回でGUI／profile `utteran`／probe／WebView2を確認する | 各終了後、今回起動した process が timeout 内に0件になる。終了待ちは失敗表示にせず、失敗時だけ診断を残す |
+| 0.1.22 (ac-2) | clean install後にprofile、model、GenAI cacheを作り、利用者データは保持を選んでuninstallする | app directory、`.venvs`、model／IR／GenAI／probe cache、native buildが残らず、job、出力、設定、token、保持を選んだlogだけが明示場所に残る |
+| 0.1.22 (ac-2) | 旧版profileを残した0.1.21→0.1.22更新、0.1.22実行中の上書き、0.1.22→0.1.21 downgradeを順に試す | 実行中更新は明示案内後に安全に停止、stale profileは再構築案内、downgradeは警告なしに進まず、承認した場合だけ完了する |
+
+### B グループ追加課題
+
+**B-5: OpenVINO コンパイルキャッシュの剪定。** OpenVINO runtime が更新されるたびに別 blob が
+生成され、旧版込みで 6,114,209,908 bytes（約5.7 GiB）を観測した。`models genai-cache`で確認し、
+`reset-env.ps1`とuninstallで全削除はできるが、古い blob だけを選択的に削除する手段がない。
+利用者が気づかないうちに蓄積するため「環境を汚さない」方針の穴である。使用中でない blob の検出と
+削除、または`models genai-cache --prune`を別phaseで検討する。ac-2では剪定を実装しない。
+
+### Step 2 C-1 実装
+
+- GUIが直接起動するprofile CLI、setup、model操作、runtime probeを`ProcessSupervisor`へ集約した。
+  正常shutdownはmanagerの非終端jobを子からtree killし、supervisorが最大5秒待つ。新規起動とshutdownが
+  競合した場合は起動直後のtreeを止め、未管理processを作らない。
+- Windowsでは`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`を設定したJob Objectへ全直接子processを所属させる。
+  GUIを強制終了してもOSが最後のhandleを閉じ、profile processとそこから生まれたprobe／backend子孫を
+  終了する。所属に失敗した場合はそのtreeを即時終了して起動失敗とする。
+- job、wizard双方にshutdown APIを追加し、FastAPIのshutdown hookからjob→wizard→supervisorの順で
+  終了する。UvicornはWebView終了後にこのhookを完了してからserver threadを閉じる。
+- キャンセルbuttonは即時disableし、「終了処理中」と15分音声での最大待ち目安（GPU約1分、NPU約3分、
+  CPU約5分、長尺はさらに延びる）を表示する。キャンセル機構／OpenVINO GenAI推論コードは変更していない。
+- Windows実process testで、supervisorの明示shutdown後に子が0件になること、およびsupervisorを持つ
+  親processを強制終了した場合もJob Objectの子PIDが10秒以内に消えることを確認した。GUI／hardware／
+  wizardを含む対象testは82 passed、ruff、mypy（61 source）、JavaScript構文、`git diff --check`もpass。
+- 修正後のsource `gui.ps1`を起動し、environment snapshot／device確認中にGUI PID 22060を強制終了した。
+  2秒後に同PIDとその直接子は0件で、起動logにもJob Object所属失敗はなかった。配布exeおよび実job中の
+  最終確認は0.1.22 build後に行う。
+
+### Step 3 C-2 実装
+
+- `.venvs`、model／OpenVINO IR、GenAI compiled cache（旧blob込み）、device probe cache、native build、
+  ffmpegを再生成可能なruntime/cacheとして、対話／silentの別なくuninstall開始時に削除する。uvは共有
+  directory内の別fileなので保持し、利用者が指定した出力directoryは走査しない。
+- job／文字起こし結果、GUI／CLI設定、memory calibration、log／diagnostics／benchmark、keyring tokenは
+  利用者データとして既定保持にした。対話時だけ4つのYes/Noで個別に削除でき、silent時は全て保持する。
+  tokenはapp本体が消える前に`utteran-gui.exe --delete-keyring-token`で既存`TokenStore.clear()`を呼ぶ。
+- 0.1.22配布GUIの既定log先をinstall directoryからuser log directoryへ変更し、GUIが起動しただけで
+  `{app}/logs`が残る問題を解消した。GUIから起動するprofile CLIにも同じ実効log先を渡す。利用者が
+  `log_dir`を明示した場合は従来どおり優先する。旧版の`{app}/logs`は削除同意を得た場合だけ削除する。
+- platformdirsのWindows実値を実行してpathを確定した。特にcore config/dataは
+  `{localappdata}/utteran/utteran`直下を共有するためrootごと消さず、`config.toml`と
+  `memory-calibration.json`だけを対象にした。
+- Inno Setup 6.7.3で実compileに成功。runtime/cache常時削除、silent時のuser data既定保持、token専用
+  command、配布log先の回帰testを含む17件、ruff、mypy（61 source）、`git diff --check`がpassした。
+  実cacheを持つ開発user上でのuninstallは既存データを破壊するため行わず、clean環境での実確認を
+  i7機／Windows Sandbox確認項目として残す。
+
+### Step 4 C-3 実装
+
+- `setup.ps1`のprofile sync成功後、venv直下へschema 1、profile、extras、`uv.lock` SHA-256を持つ
+  `.utteran-profile.json`をUTF-8 BOMなしで保存する。GUIはmissing／invalid／lock changed／extras changedを
+  区別し、利用可能性を即FAILEDへ変えず、既存profileを使える状態のまま再構築案内を表示する。
+- Inno Setupの既存Restart Manager挙動を`CloseApplications=force`、`RestartApplications=no`で明示した。
+  上書き時は実行中GUIを更新前に終了し、Step 2のJob Objectがその子processも終了する。更新後に旧GUIを
+  自動再起動せず、利用者が新しい版を明示起動する。
+- HKCUの同一AppId `DisplayVersion`を4 componentの数値として比較する。downgradeは対話時に現行版と
+  導入版を示して承認を求め、silent時は同意不能なので開始前に拒否する。同版／upgradeは許可する。
+- profile manifest current／missing／lock changed、GUI再構築warning、setup書込順、installerの実行中終了
+  設定とsilent downgrade拒否を自動testへ追加した。関連102件とmypy（61 source）はpassし、Inno Setup
+  6.7.3の実compileも成功した。
+
+### Step 5 最終検証と配布物
+
+- `uv run pytest -m "not requires_model"`: 446 passed（既知のStarlette warning 1件）。
+  `uv run ruff check src tests tools`、`uv run ruff format --check src tests tools`、
+  `uv run mypy`（61 source）、`uv lock --check`、PowerShell parser、tracked PowerShell UTF-8 BOM確認、
+  `git diff --check`: pass。
+- `build.ps1`: pass。`dist/utteran-gui/utteran-gui.exe`とinstallerのProductVersion／FileVersionが
+  0.1.22であることを確認した。配布GUIを起動するとWebView2とprofile `utteran profiles list --json`が
+  実際に子として起動し、GUI PID 18492を強制終了して3秒後、親と記録した直接子はいずれも0件だった。
+- installerは19,850,713 bytes、SHA-256
+  `4a120356c8249ceca4f7794f6de0edcf54b2c82dde474862d8abe538e0442036`。
+- 本sessionの開発userには実model／cacheがあるため、常時削除仕様のuninstallerは実行していない。
+  clean install／uninstall、対話downgrade、idle／job／cancel／probe各状態の通常終了、および指定された
+  Core i7-1165G7／Iris Xe機でのac-1/ac-2通し確認は、上記i7機／Windows Sandbox確認項目に残す。
+- formatter適用対象だった`openvino_genai.py`、`benchmark.py`、`devices.py`、`test_benchmark.py`は
+  空白・改行だけの変更で、ASR経路、device解決、Viterbi、`align.py`の実装は変更していない。
+
 ## Phase enhancement ac-1 GUI状態表示（0.1.21、2026-09-02）
 
 ### Step 1 切り分け（修正前）
@@ -2168,7 +2412,7 @@ Phase 5d事前準備で個別に実施・記録済みの受入結果があるこ
   Python APIと機械可読サマリーJSON出力を追加した。既存G13（CUDA耐久）へ`requires: {cuda: true}`
   を付与し、本機（NVIDIA不在）では理由付きskipとして扱われるようにした。
 - P0〜P11から74ケースを新規追加した（P12〜P16は自動化・他手段での充足・手動手順書のいずれかに
-  分類し`docs/受入試験_手動確認手順書.md`と`tools/acceptance/README.md`に記録、詳細は次項）。
+  分類し`docs/archive/受入試験_手動確認手順書.md`と`tools/acceptance/README.md`に記録、詳細は次項）。
   ほぼ全ケースが既存の`command-output`/`json-output`/`validate.py formats|json|equivalent`を
   再利用でき、新規に追加したのは`scenarios.py`の`native-manifest`（manifestのcommit・
   非可搬パス不在確認）・`profile-isolation`（プロファイル更新が他プロファイルのtorchへ

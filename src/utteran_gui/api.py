@@ -24,8 +24,14 @@ from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
 from utteran_gui.logging_runtime import gui_logging_status
 from utteran_gui.operation_queue import OperationQueue
-from utteran_gui.processes import build_creation_kwargs
-from utteran_gui.settings import GuiSettings, SettingsStore, TokenStore, TokenStoreUnavailable
+from utteran_gui.processes import ProcessSupervisor, build_creation_kwargs
+from utteran_gui.settings import (
+    GuiSettings,
+    SessionTokenStore,
+    SettingsStore,
+    TokenStore,
+    TokenStoreUnavailable,
+)
 from utteran_gui.setup_wizard import (
     SetupWizardService,
     WizardBusyError,
@@ -33,6 +39,7 @@ from utteran_gui.setup_wizard import (
     WizardProfileMissingError,
     WizardUnknownJobError,
 )
+from utteran_paths import is_portable_distribution, uses_session_token
 
 SESSION_COOKIE = "utteran_gui_session"
 SESSION_HEADER = "x-utteran-session"
@@ -135,13 +142,19 @@ def create_app(
     history_service: HistoryService | None = None,
     wizard_service: SetupWizardService | None = None,
     operation_queue: OperationQueue | None = None,
+    process_supervisor: ProcessSupervisor | None = None,
 ) -> FastAPI:
     """Create one session-scoped application without importing the CLI package."""
     if not session_key:
         raise ValueError("session_key must not be empty")
-    selected_cli = cli or CliAdapter(repo_root)
+    supervisor = process_supervisor or ProcessSupervisor()
     selected_settings = settings_store or SettingsStore()
-    selected_tokens = token_store or TokenStore()
+    selected_tokens = token_store or (SessionTokenStore() if uses_session_token() else TokenStore())
+    selected_cli = cli or CliAdapter(
+        repo_root,
+        popen_factory=supervisor.popen,
+        session_token=selected_tokens.session_token,
+    )
     selected_environment = environment_service or EnvironmentService(selected_cli)
     selected_queue = operation_queue or (
         job_manager.queue
@@ -150,13 +163,26 @@ def create_app(
         if wizard_service is not None
         else OperationQueue()
     )
-    selected_jobs = job_manager or JobManager(selected_cli, operation_queue=selected_queue)
+    selected_jobs = job_manager or JobManager(
+        selected_cli, popen_factory=supervisor.popen, operation_queue=selected_queue
+    )
     selected_history = history_service or HistoryService(selected_cli)
     selected_wizard = wizard_service or SetupWizardService(
-        selected_cli, settings_store=selected_settings, operation_queue=selected_queue
+        selected_cli,
+        settings_store=selected_settings,
+        popen_factory=supervisor.popen,
+        operation_queue=selected_queue,
     )
     web_root = Path(__file__).with_name("web")
     app = FastAPI(title="utteran GUI", docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.process_supervisor = supervisor
+
+    def shutdown_processes() -> None:
+        selected_jobs.shutdown()
+        selected_wizard.shutdown()
+        supervisor.shutdown()
+
+    app.router.add_event_handler("shutdown", shutdown_processes)
     app.mount("/assets", StaticFiles(directory=web_root), name="assets")
 
     @app.middleware("http")
@@ -238,6 +264,8 @@ def create_app(
         payload["token_store_available"] = token_status.available
         payload["token_store_backend"] = token_status.backend
         payload["token_store_error"] = token_status.error_type
+        payload["portable_distribution"] = is_portable_distribution()
+        payload["token_session_only"] = uses_session_token()
         payload.update(_logging_status(repo_root))
         return payload
 
@@ -248,6 +276,8 @@ def create_app(
         token_status = selected_tokens.status()
         response["token_configured"] = token_status.configured
         response["token_store_available"] = token_status.available
+        response["portable_distribution"] = is_portable_distribution()
+        response["token_session_only"] = uses_session_token()
         response.update(_logging_status(repo_root))
         return response
 
@@ -258,6 +288,8 @@ def create_app(
         token_status = selected_tokens.status()
         response["token_configured"] = token_status.configured
         response["token_store_available"] = token_status.available
+        response["portable_distribution"] = is_portable_distribution()
+        response["token_session_only"] = uses_session_token()
         response.update(_logging_status(repo_root))
         return response
 
@@ -341,7 +373,9 @@ def create_app(
 
     @app.get("/api/wizard/hardware")
     def wizard_hardware() -> dict[str, object]:
-        return hardware.detect_hardware(repo_root).to_dict()
+        return hardware.detect_hardware(
+            repo_root, probes=hardware.system_probes(popen_factory=supervisor.popen)
+        ).to_dict()
 
     @app.post("/api/wizard/jobs", status_code=202)
     def start_wizard_job(payload: WizardJobPayload) -> dict[str, object]:
@@ -427,7 +461,15 @@ def create_app(
         snapshot = selected_environment.snapshot(payload.profile)
         _validate_dynamic_selection(payload, snapshot)
         try:
-            return selected_jobs.start(_to_options(payload))
+            result = selected_jobs.start(_to_options(payload))
+            try:
+                selected_settings.remember_directories(
+                    input_path=payload.input_path,
+                    output_dir=payload.output_dir,
+                )
+            except OSError:
+                logging.getLogger(__name__).warning("Could not remember job directories")
+            return result
         except JobBusyError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from None
         except CliError as exc:
@@ -519,6 +561,10 @@ def create_app(
                 )
             )
             selected_history.invalidate(payload.profile, job_id)
+            try:
+                selected_settings.remember_directories(output_dir=payload.output_dir)
+            except OSError:
+                logging.getLogger(__name__).warning("Could not remember output directory")
             return result
         except CliError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None

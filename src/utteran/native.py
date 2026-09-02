@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from utteran.errors import DependencyError
+from utteran_paths import resolve_data_paths
 
 MANIFEST_SCHEMA_VERSION = 1
 _OPENVINO_DIR_FLAG = "-DOpenVINO_DIR="
@@ -126,7 +127,7 @@ class BuildResult:
 
 def default_native_dir() -> Path:
     """Short home-relative default; `platformdirs.user_data_dir` gets long on Windows."""
-    return Path.home() / ".utteran" / "native"
+    return resolve_data_paths().native
 
 
 def resolve_native_dir(configured: Path | None = None) -> Path:

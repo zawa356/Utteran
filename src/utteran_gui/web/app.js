@@ -107,8 +107,8 @@
     if (!$("output-dir").value) $("output-dir").value = state.settings.default_output_dir || "";
     $("log-path").textContent = state.settings.log_dir || "—";
     $("raw-log-warning").classList.toggle("hidden", !state.settings.raw_subprocess_logs);
-    renderTokenState();
     translate();
+    renderTokenState();
     renderHistory();
     if (state.detail?.result) {
       renderViewerMetadata(state.detail.result);
@@ -118,6 +118,9 @@
 
   function tokenStateText() {
     if (state.settings.token_store_available === false) return t("tokenStoreUnavailable");
+    if (state.settings.token_session_only && state.settings.token_configured) {
+      return t("tokenSessionSet");
+    }
     return state.settings.token_configured ? t("tokenSet") : t("tokenUnset");
   }
 
@@ -125,6 +128,18 @@
     const message = tokenStateText();
     $("token-state").textContent = message;
     $("wizard-token-state").textContent = message;
+    const sessionOnly = Boolean(state.settings.token_session_only);
+    $("wizard-portable-token-note").classList.toggle("hidden", !sessionOnly);
+    $("settings-portable-note").classList.toggle(
+      "hidden",
+      !state.settings.portable_distribution,
+    );
+    document.querySelectorAll(".token-privacy").forEach((node) => {
+      node.textContent = t(sessionOnly ? "tokenSessionPrivacy" : "tokenPrivacy");
+    });
+    document.querySelectorAll(".token-save-label").forEach((node) => {
+      node.textContent = t(sessionOnly ? "useTokenSession" : "saveToken");
+    });
   }
 
   async function saveToken(inputId) {
@@ -231,6 +246,9 @@
       alert.classList.remove("hidden");
     } else if (state.environment.errors.length) {
       alert.textContent = state.environment.errors.join(" · ");
+      alert.classList.remove("hidden");
+    } else if ((state.environment.profile_warnings || []).length) {
+      alert.textContent = state.environment.profile_warnings.join(" · ");
       alert.classList.remove("hidden");
     } else if ((state.environment.options.guidance || []).length) {
       alert.textContent = state.environment.options.guidance.join(" · ");
@@ -1735,7 +1753,12 @@
       }
     });
     $("cancel-button").addEventListener("click", async () => {
-      if (state.job) await api(`/api/jobs/${state.job.id}/cancel`, { method: "POST" });
+      if (state.job) {
+        $("cancel-button").disabled = true;
+        $("stall-warning").textContent = t("cancellationPending");
+        $("stall-warning").classList.remove("hidden");
+        await api(`/api/jobs/${state.job.id}/cancel`, { method: "POST" });
+      }
     });
     $("settings-form").addEventListener("submit", saveSettings);
     $("open-logs").addEventListener("click", () => openFolder(state.settings.log_dir));

@@ -58,6 +58,8 @@ class EnvironmentService:
                 "path": str(profile.path),
                 "exists": profile.exists,
                 "updated_at": profile.updated_at,
+                "compatible": profile.compatible,
+                "compatibility_reason": profile.compatibility_reason,
             }
             for profile in local_profiles
         ]
@@ -89,6 +91,11 @@ class EnvironmentService:
             "native": None,
             "options": _empty_options(),
             "errors": errors,
+            "profile_warnings": [
+                _profile_warning(str(row["name"]), row["compatibility_reason"])
+                for row in profile_rows
+                if row["exists"] is True and row["compatible"] is False
+            ],
         }
         if active is None:
             log_stage(
@@ -156,6 +163,18 @@ class EnvironmentService:
             error_count=len(errors),
         )
         return response
+
+
+def _profile_warning(name: str, reason: object) -> str:
+    if reason == "profile_path_changed":
+        return (
+            f"{name} profileは構築時から保存場所が変わりました。既存環境は保持されていますが、"
+            "実行前にセットアップから再構築してください。"
+        )
+    return (
+        f"{name} profileの依存環境が現在の版と一致しません。"
+        "既存環境は保持されていますが、セットアップから再構築してください。"
+    )
 
 
 def annotate_model_capabilities(
