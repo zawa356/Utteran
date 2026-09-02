@@ -18,6 +18,7 @@ from utteran_gui.app import NativeDialogApi, bind_loopback_socket
 from utteran_gui.cli import CliAdapter, RegenerationOptions, TranscriptionOptions
 from utteran_gui.environment import (
     EnvironmentService,
+    _profile_warning,
     annotate_model_capabilities,
     derive_options,
 )
@@ -257,6 +258,29 @@ def test_session_key_is_required_for_every_api_request(tmp_path: Path) -> None:
     assert client.get("/api/settings").status_code == 200
 
 
+def test_portable_api_keeps_token_in_session_and_discloses_policy(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("UTTERAN_DATA_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("UTTERAN_DISTRIBUTION", "portable")
+    monkeypatch.setenv("UTTERAN_TOKEN_MODE", "session")
+    app = create_app("session-secret", repo_root=tmp_path)
+    client = TestClient(app, headers={SESSION_HEADER: "session-secret"})
+
+    settings = client.get("/api/settings").json()
+    assert settings["portable_distribution"] is True
+    assert settings["token_session_only"] is True
+    saved = client.put("/api/token", json={"token": "hf_process_memory_only"}).json()
+    assert saved == {
+        "configured": True,
+        "available": True,
+        "backend": "session",
+        "error_type": "",
+        "error_message": "",
+    }
+    assert not (tmp_path / "data" / "config" / "gui-settings.json").exists()
+
+
 def test_loopback_socket_uses_os_assigned_port() -> None:
     server_socket = bind_loopback_socket()
     try:
@@ -299,6 +323,8 @@ def test_workspace_grids_and_logging_controls_cannot_force_horizontal_overflow()
     assert ".stage-list li { min-width: 0; overflow-wrap: anywhere;" in styles
     assert ".stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }" in styles
     assert ".token-actions input { width: min(220px, 100%); min-width: 0; }" in styles
+    assert ".format-chip { position: relative; }" in styles
+    assert ".format-chip input { position: absolute; opacity: 0; }" in styles
     assert 'class="view viewer-view"' not in index
     assert 'id="raw-log-warning"' in index and 'id="open-logs"' in index
     assert "state.settings.raw_subprocess_logs" in script
@@ -389,6 +415,28 @@ def test_settings_partial_updates_preserve_other_changes_and_wizard_state(tmp_pa
     )
     assert 'method: "PATCH"' in script
     assert "state.settings.language = event.target.value;\n      applySettings();" not in script
+
+
+def test_input_and_output_directories_are_remembered_independently(tmp_path: Path) -> None:
+    settings = SettingsStore(tmp_path / "settings.json")
+    input_dir = tmp_path / "private-input"
+    input_dir.mkdir()
+    input_file = input_dir / "must-not-be-saved.wav"
+    input_file.touch()
+    first_output = tmp_path / "first-output"
+    second_output = tmp_path / "second-output"
+
+    settings.save(GuiSettings(default_output_dir=str(first_output)))
+    after_input = settings.remember_directories(input_path=str(input_file))
+
+    assert after_input.default_input_dir == str(input_dir)
+    assert after_input.default_output_dir == str(first_output)
+    assert input_file.name not in settings.path.read_text(encoding="utf-8")
+
+    after_output = settings.remember_directories(output_dir=str(second_output))
+
+    assert after_output.default_input_dir == str(input_dir)
+    assert after_output.default_output_dir == str(second_output)
 
 
 def test_simultaneous_settings_updates_do_not_roll_each_other_back(tmp_path: Path) -> None:
@@ -548,10 +596,19 @@ def test_model_gpu_capability_uses_injected_detection_not_quantization() -> None
     assert "量子化方式" in annotated[2]["recommendation_reason"]
 
 
+def test_profile_move_warning_preserves_environment_and_requests_rebuild() -> None:
+    warning = _profile_warning("cpu", "profile_path_changed")
+
+    assert "保存場所が変わりました" in warning
+    assert "既存環境は保持" in warning
+    assert "再構築" in warning
+
+
 def test_environment_reads_all_state_from_profile_json_contracts(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
     _create_profile(tmp_path, "cuda")
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
     cli = CliAdapter(tmp_path)
     calls: list[tuple[str, tuple[str, ...]]] = []
 
@@ -584,6 +641,7 @@ def test_environment_reads_all_state_from_profile_json_contracts(
 
     assert snapshot["active_profile"] == "cuda"
     assert snapshot["errors"] == []
+    assert snapshot["profile_warnings"]
     assert calls == [
         ("cuda", ("profiles", "list", "--json")),
         ("cuda", ("devices", "--json")),
@@ -637,6 +695,18 @@ def test_job_status_display_is_exhaustive_and_does_not_finish_on_done_event_earl
     assert 'definition.outcome === "success"' in finish
     assert 'definition.outcome === "failure"' in finish
     assert 'loadEnvironment($("profile-select").value, true)' in script
+
+
+def test_cancel_explains_that_native_inference_may_take_time() -> None:
+    project = Path(__file__).parents[1]
+    script = (project / "src" / "utteran_gui" / "web" / "app.js").read_text(encoding="utf-8")
+    translations = (project / "src" / "utteran_gui" / "web" / "i18n.js").read_text(encoding="utf-8")
+
+    handler = script[script.index('$("cancel-button").addEventListener') :]
+    assert 't("cancellationPending")' in handler
+    assert "GPU約1分" in translations
+    assert "NPU約3分" in translations
+    assert "CPU約5分" in translations
 
 
 def test_intel_auto_selection_defaults_to_whisper_cpp_not_cpu() -> None:

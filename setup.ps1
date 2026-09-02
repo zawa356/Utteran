@@ -36,8 +36,13 @@ if ([Console]::IsOutputRedirected) {
 }
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DataRoot = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "utteran"
-$BinDir = Join-Path $DataRoot "bin"
+$ManagedDataRoot = if ($env:UTTERAN_DATA_ROOT) {
+    [IO.Path]::GetFullPath($env:UTTERAN_DATA_ROOT)
+}
+else {
+    Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "utteran"
+}
+$BinDir = Join-Path $ManagedDataRoot "bin"
 $BundledFfmpeg = Join-Path $BinDir "ffmpeg.exe"
 $EnvPath = Join-Path $ProjectRoot ".env"
 $EnvExample = Join-Path $ProjectRoot ".env.example"
@@ -142,12 +147,34 @@ function Invoke-UvSyncWithRetry {
     return $false
 }
 
+function Write-ProfileManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$TargetVenv,
+        [Parameter(Mandatory = $true)][string]$ProfileName,
+        [Parameter(Mandatory = $true)][string[]]$Extras
+    )
+    $LockPath = Join-Path $ProjectRoot "uv.lock"
+    $ManifestPath = Join-Path $TargetVenv ".utteran-profile.json"
+    $Payload = [ordered]@{
+        schema_version = 1
+        profile        = $ProfileName
+        lock_sha256    = (Get-FileHash -LiteralPath $LockPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        extras         = @($Extras)
+        venv_path      = [IO.Path]::GetFullPath($TargetVenv)
+    } | ConvertTo-Json -Compress
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($ManifestPath, "$Payload`n", $Utf8NoBom)
+}
+
 function Get-VenvRoot {
     if ($VenvDir) {
         return [IO.Path]::GetFullPath($VenvDir)
     }
     if ($env:UTTERAN_VENV_DIR) {
         return [IO.Path]::GetFullPath($env:UTTERAN_VENV_DIR)
+    }
+    if ($env:UTTERAN_DATA_ROOT) {
+        return Join-Path ([IO.Path]::GetFullPath($env:UTTERAN_DATA_ROOT)) ".venvs"
     }
     return Join-Path $ProjectRoot ".venvs"
 }
@@ -574,6 +601,8 @@ function Invoke-ProfileSetup {
             -ForegroundColor Red
         exit 1
     }
+
+    Write-ProfileManifest -TargetVenv $VenvPath -ProfileName $ProfileName -Extras $Extras
 
     if ($ProfileName -ne "gui") {
         Write-Step "Checking ffmpeg" -Stage "ffmpeg"

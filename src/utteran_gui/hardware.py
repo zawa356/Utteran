@@ -24,7 +24,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from utteran_gui.processes import build_creation_kwargs, build_popen_kwargs, kill_process_tree
+from utteran_gui.processes import (
+    PopenFactory,
+    build_creation_kwargs,
+    build_popen_kwargs,
+    kill_process_tree,
+)
 from utteran_gui.settings import PROFILE_NAMES
 
 GpuVendor = Literal["nvidia", "intel", "amd", "other", "none"]
@@ -139,13 +144,13 @@ class HardwareProbeSet:
     runtime: Callable[[Path], RuntimeCapabilities] | None = None
 
 
-def system_probes() -> HardwareProbeSet:
+def system_probes(*, popen_factory: PopenFactory | None = None) -> HardwareProbeSet:
     """Create the real, OS-backed probe collection."""
     return HardwareProbeSet(
         gpu=detect_gpu,
         memory=detect_memory,
         disk=detect_disk,
-        runtime=detect_runtime_capabilities,
+        runtime=lambda root: detect_runtime_capabilities(root, popen_factory=popen_factory),
     )
 
 
@@ -369,7 +374,9 @@ def _alternative(profile: str, runtime: RuntimeCapabilities | None = None) -> Al
     )
 
 
-def detect_runtime_capabilities(repo_root: Path) -> RuntimeCapabilities:
+def detect_runtime_capabilities(
+    repo_root: Path, *, popen_factory: PopenFactory | None = None
+) -> RuntimeCapabilities:
     """Ask an existing inference profile for its isolated, cached runtime report."""
     suffix = "Scripts/utteran.exe" if os.name == "nt" else "bin/utteran"
     candidates = (
@@ -385,7 +392,7 @@ def detect_runtime_capabilities(repo_root: Path) -> RuntimeCapabilities:
     environment = dict(os.environ)
     environment["UTTERAN_PROFILE"] = profile
     try:
-        popen = cast(Callable[..., subprocess.Popen[str]], subprocess.Popen)
+        popen = popen_factory or cast(Callable[..., subprocess.Popen[str]], subprocess.Popen)
         process = popen(
             [str(executable), "devices", "--json"],
             **build_popen_kwargs(cwd=repo_root, env=environment),

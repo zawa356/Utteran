@@ -51,6 +51,7 @@ $PackagingDir = Join-Path $RepoRoot "packaging"
 $DistDir = Join-Path $RepoRoot "dist"
 $BuildDir = Join-Path $RepoRoot "build"
 $GuiDistDir = Join-Path $DistDir "utteran-gui"
+$PortableDistDir = Join-Path $DistDir "portable-stage"
 $BuildVenvDir = Join-Path $RepoRoot ".venvs\win-gui-build"
 
 function Write-BuildStep {
@@ -123,6 +124,8 @@ $PythonExe = Join-Path $BuildVenvDir "Scripts\python.exe"
 
 Write-BuildStep "Running PyInstaller (onedir)"
 $env:UTTERAN_BUILD_VERSION = $Version
+$env:UTTERAN_BUILD_FLAVOR = "installer"
+$env:UTTERAN_GUI_DIST_NAME = "utteran-gui"
 & $PythonExe -m PyInstaller --noconfirm --distpath $DistDir --workpath $BuildDir `
     (Join-Path $PackagingDir "gui.spec")
 if ($LASTEXITCODE -ne 0) {
@@ -132,9 +135,11 @@ $GuiExe = Join-Path $GuiDistDir "utteran-gui.exe"
 if (-not (Test-Path -LiteralPath $GuiExe -PathType Leaf)) {
     throw "PyInstaller did not produce $GuiExe"
 }
-$GuiVersion = (Get-Item -LiteralPath $GuiExe).VersionInfo.ProductVersion
-if ($GuiVersion -ne $Version) {
-    throw "GUI ProductVersion '$GuiVersion' does not match project version '$Version'"
+$GuiVersionInfo = (Get-Item -LiteralPath $GuiExe).VersionInfo
+foreach ($EmbeddedVersion in @($GuiVersionInfo.ProductVersion, $GuiVersionInfo.FileVersion)) {
+    if ($EmbeddedVersion -ne $Version) {
+        throw "GUI embedded version '$EmbeddedVersion' does not match project version '$Version'"
+    }
 }
 
 Write-BuildStep "Verifying the distributable excludes the inference core"
@@ -170,6 +175,50 @@ if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
     throw "Expected installer executable was not found: $InstallerPath"
 }
 $Installer = Get-Item -LiteralPath $InstallerPath
+$InstallerVersionInfo = $Installer.VersionInfo
+foreach ($EmbeddedVersion in @($InstallerVersionInfo.ProductVersion, $InstallerVersionInfo.FileVersion)) {
+    if ($EmbeddedVersion.Trim() -ne $Version) {
+        throw "Installer embedded version '$EmbeddedVersion' does not match project version '$Version'"
+    }
+}
+
+Write-BuildStep "Building portable GUI shell"
+$env:UTTERAN_BUILD_FLAVOR = "portable"
+$env:UTTERAN_GUI_DIST_NAME = "portable-stage"
+& $PythonExe -m PyInstaller --noconfirm --distpath $DistDir `
+    --workpath (Join-Path $BuildDir "portable") (Join-Path $PackagingDir "gui.spec")
+if ($LASTEXITCODE -ne 0) {
+    throw "Portable PyInstaller build failed (exit $LASTEXITCODE)"
+}
+$PortableExe = Join-Path $PortableDistDir "utteran-gui.exe"
+if (-not (Test-Path -LiteralPath $PortableExe -PathType Leaf)) {
+    throw "Portable PyInstaller did not produce $PortableExe"
+}
+$PortableVersionInfo = (Get-Item -LiteralPath $PortableExe).VersionInfo
+foreach ($EmbeddedVersion in @($PortableVersionInfo.ProductVersion, $PortableVersionInfo.FileVersion)) {
+    if ($EmbeddedVersion -ne $Version) {
+        throw "Portable GUI embedded version '$EmbeddedVersion' does not match project version '$Version'"
+    }
+}
+
+Write-BuildStep "Adding portable setup payload"
+$PortableFiles = @(
+    "pyproject.toml", "uv.lock", "setup.ps1", "run.ps1", ".env.example",
+    "LICENSE", "THIRD_PARTY_NOTICES.md"
+)
+foreach ($RelativePath in $PortableFiles) {
+    Copy-Item -LiteralPath (Join-Path $RepoRoot $RelativePath) -Destination $PortableDistDir
+}
+Copy-Item -LiteralPath (Join-Path $PackagingDir "README.portable.md") `
+    -Destination (Join-Path $PortableDistDir "README.md")
+foreach ($Directory in @("icon", "src\utteran", "src\utteran_gui", "src\utteran_paths")) {
+    $Destination = Join-Path $PortableDistDir $Directory
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    Copy-Item -Path (Join-Path $RepoRoot "$Directory\*") -Destination $Destination -Recurse -Force
+}
+Get-ChildItem -LiteralPath $PortableDistDir -Recurse -Force |
+    Where-Object { $_.Name -eq "__pycache__" -or $_.Extension -eq ".pyc" } |
+    Remove-Item -Recurse -Force
 
 Write-BuildStep "Computing SHA-256"
 $Hash = Get-FileHash -LiteralPath $Installer.FullName -Algorithm SHA256
@@ -179,6 +228,19 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText($HashFile, "$HashLine`n", $Utf8NoBom)
 Write-Host $HashLine
 
+$PortablePath = Join-Path $DistDir "utteran-portable-$Version.zip"
+Write-BuildStep "Creating portable ZIP"
+Compress-Archive -Path (Join-Path $PortableDistDir "*") -DestinationPath $PortablePath `
+    -CompressionLevel Optimal
+$Portable = Get-Item -LiteralPath $PortablePath
+$PortableHash = Get-FileHash -LiteralPath $Portable.FullName -Algorithm SHA256
+$PortableHashLine = "$($PortableHash.Hash.ToLowerInvariant())  $($Portable.Name)"
+$PortableHashFile = "$($Portable.FullName).sha256"
+[IO.File]::WriteAllText($PortableHashFile, "$PortableHashLine`n", $Utf8NoBom)
+Write-Host $PortableHashLine
+
 Write-Host "`nBuild complete." -ForegroundColor Green
 Write-Host "Installer: $($Installer.FullName)"
 Write-Host "SHA-256:   $HashFile"
+Write-Host "Portable:  $($Portable.FullName)"
+Write-Host "SHA-256:   $PortableHashFile"

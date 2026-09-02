@@ -8,8 +8,6 @@ import wave
 from pathlib import Path
 from typing import Any, ClassVar
 
-from platformdirs import user_cache_dir
-
 from utteran.asr.base import ASRBackend
 from utteran.errors import BackendUnavailableError, ModelNotFoundError
 from utteran.logging import structured_event
@@ -25,6 +23,7 @@ from utteran.types import (
     TranscriptionResult,
     Word,
 )
+from utteran_paths import resolve_data_paths
 
 DEGRADED_WORD_CHARACTER_THRESHOLD = 30
 NPU_RECOMMENDATION_REASON = (
@@ -35,7 +34,7 @@ NPU_RECOMMENDATION_REASON = (
 
 def resolve_cache_dir() -> Path:
     """Keep OpenVINO compiled blobs inside utteran's managed cache tree."""
-    return Path(user_cache_dir("utteran")) / "openvino-genai-compiled"
+    return resolve_data_paths().openvino_genai_cache
 
 
 def cache_usage_bytes(path: Path | None = None) -> int:
@@ -85,8 +84,7 @@ class OpenVINOGenAIBackend(ASRBackend):
             import openvino
 
             available = {
-                str(item).split(".", 1)[0].upper()
-                for item in openvino.Core().available_devices
+                str(item).split(".", 1)[0].upper() for item in openvino.Core().available_devices
             }
         except Exception:
             return []
@@ -251,16 +249,13 @@ def _convert_result(
 ) -> TranscriptionResult:
     raw_words = list(getattr(result, "words", None) or [])
     words = [
-        Word(float(item.start_ts), float(item.end_ts), str(item.word), None)
-        for item in raw_words
+        Word(float(item.start_ts), float(item.end_ts), str(item.word), None) for item in raw_words
     ]
     raw_chunks = list(getattr(result, "chunks", None) or [])
     segments: list[Segment] = []
     for chunk in raw_chunks:
         start, end = float(chunk.start_ts), float(chunk.end_ts)
-        selected_words = [
-            word for word in words if start <= (word.start + word.end) / 2 <= end
-        ]
+        selected_words = [word for word in words if start <= (word.start + word.end) / 2 <= end]
         segments.append(Segment(start, end, str(chunk.text), selected_words))
     if not segments:
         texts = list(getattr(result, "texts", None) or [])
@@ -278,9 +273,7 @@ def _convert_result(
             )
             target.words.append(word)
     language = (
-        str(getattr(result, "language", "") or "unknown")
-        .removeprefix("<|")
-        .removesuffix("|>")
+        str(getattr(result, "language", "") or "unknown").removeprefix("<|").removesuffix("|>")
     )
     return TranscriptionResult(
         segments, language, duration, OpenVINOGenAIBackend.name, entry.model_id, device

@@ -1,3 +1,5 @@
 """Local speaker-aware transcription."""
 
-__version__ = "0.1.21"
+from importlib.metadata import version
+
+__version__ = version("utteran")
