@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -15,6 +16,13 @@ from utteran_gui.processes import PopenFactory, TreeKiller, build_creation_kwarg
 from utteran_gui.security import mask_secrets, sanitize_json
 
 PROFILE_NAMES = ("cpu", "cuda", "intel", "vulkan")
+PROFILE_EXTRAS: dict[str, tuple[str, ...]] = {
+    "cpu": ("cpu", "japanese"),
+    "cuda": ("cuda", "japanese"),
+    "intel": ("xpu", "whisper-cpp", "openvino", "openvino-genai", "japanese"),
+    "vulkan": ("cpu", "whisper-cpp", "japanese"),
+}
+PROFILE_MANIFEST = ".utteran-profile.json"
 OUTPUT_FORMATS = ("srt", "vtt", "json", "txt", "md")
 ResumeMode = Literal["resume", "fresh", "force"]
 
@@ -30,6 +38,8 @@ class ProfileInfo:
     exists: bool
     executable: Path
     updated_at: str | None = None
+    compatible: bool | None = None
+    compatibility_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,13 +109,38 @@ class CliAdapter:
             updated = root.stat().st_mtime if root.is_dir() else None
         except OSError:
             updated = None
+        compatible, compatibility_reason = self._profile_compatibility(profile, root)
         return ProfileInfo(
             profile,
             root,
             root.is_dir() and executable.is_file(),
             executable,
             None if updated is None else str(updated),
+            compatible,
+            compatibility_reason,
         )
+
+    def _profile_compatibility(self, profile: str, root: Path) -> tuple[bool | None, str | None]:
+        if not root.is_dir():
+            return None, None
+        lock_path = self.repo_root / "uv.lock"
+        if not lock_path.is_file():
+            return None, "current_lock_missing"
+        manifest_path = root / PROFILE_MANIFEST
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        except FileNotFoundError:
+            return False, "profile_manifest_missing"
+        except (OSError, json.JSONDecodeError, UnicodeError):
+            return False, "profile_manifest_invalid"
+        if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+            return False, "profile_manifest_invalid"
+        expected_hash = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+        if payload.get("lock_sha256") != expected_hash:
+            return False, "dependency_lock_changed"
+        if payload.get("extras") != list(PROFILE_EXTRAS[profile]):
+            return False, "profile_extras_changed"
+        return True, None
 
     def profiles(self) -> tuple[ProfileInfo, ...]:
         return tuple(self.profile_info(profile) for profile in PROFILE_NAMES)

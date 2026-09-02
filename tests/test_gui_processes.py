@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -102,6 +103,36 @@ def test_profile_cli_run_uses_no_window(tmp_path: Path, monkeypatch: Any) -> Non
 
     assert CliAdapter(tmp_path).run_json("cpu", ["devices", "--json"]) == {}
     assert captured["creationflags"] == NO_WINDOW
+
+
+def test_profile_manifest_detects_current_and_stale_dependencies(tmp_path: Path) -> None:
+    _create_profile(tmp_path)
+    lock = tmp_path / "uv.lock"
+    lock.write_text("version = 1\n", encoding="utf-8")
+    cli = CliAdapter(tmp_path)
+
+    missing = cli.profile_info("cpu")
+    assert missing.compatible is False
+    assert missing.compatibility_reason == "profile_manifest_missing"
+
+    manifest = missing.path / ".utteran-profile.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "profile": "cpu",
+                "lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
+                "extras": ["cpu", "japanese"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert cli.profile_info("cpu").compatible is True
+
+    lock.write_text("version = 2\n", encoding="utf-8")
+    changed = cli.profile_info("cpu")
+    assert changed.compatible is False
+    assert changed.compatibility_reason == "dependency_lock_changed"
 
 
 def test_hardware_powershell_probe_uses_no_window(monkeypatch: Any) -> None:

@@ -182,6 +182,20 @@ def test_setup_retries_uv_sync_and_fails_before_unrelated_guidance() -> None:
     assert "exit 1" in setup_script[fail_fast:ffmpeg]
 
 
+def test_setup_records_profile_dependency_manifest_after_successful_sync() -> None:
+    setup_script = (Path(__file__).parents[1] / "setup.ps1").read_text(encoding="utf-8")
+
+    writer = setup_script.index("function Write-ProfileManifest")
+    sync_success = setup_script.index("if (-not $DependencySyncSucceeded)", writer)
+    write_call = setup_script.index("Write-ProfileManifest -TargetVenv", sync_success)
+    verification = setup_script.index('Write-Step "Verifying profile', write_call)
+
+    assert 'Join-Path $ProjectRoot "uv.lock"' in setup_script[writer:sync_success]
+    assert 'Join-Path $TargetVenv ".utteran-profile.json"' in setup_script[writer:sync_success]
+    assert "lock_sha256" in setup_script[writer:sync_success]
+    assert sync_success < write_call < verification
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Spawns Windows PowerShell")
 def test_setup_list_writes_valid_utf8_when_stdout_is_piped() -> None:
     """`setup.ps1`'s own Write-Host output must decode as UTF-8 when piped.

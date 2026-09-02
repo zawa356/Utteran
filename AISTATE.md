@@ -113,6 +113,20 @@ C-1 は install directory／`.venvs` 内の executable や DLL を掴む経路�
   実cacheを持つ開発user上でのuninstallは既存データを破壊するため行わず、clean環境での実確認を
   i7機／Windows Sandbox確認項目として残す。
 
+### Step 4 C-3 実装
+
+- `setup.ps1`のprofile sync成功後、venv直下へschema 1、profile、extras、`uv.lock` SHA-256を持つ
+  `.utteran-profile.json`をUTF-8 BOMなしで保存する。GUIはmissing／invalid／lock changed／extras changedを
+  区別し、利用可能性を即FAILEDへ変えず、既存profileを使える状態のまま再構築案内を表示する。
+- Inno Setupの既存Restart Manager挙動を`CloseApplications=force`、`RestartApplications=no`で明示した。
+  上書き時は実行中GUIを更新前に終了し、Step 2のJob Objectがその子processも終了する。更新後に旧GUIを
+  自動再起動せず、利用者が新しい版を明示起動する。
+- HKCUの同一AppId `DisplayVersion`を4 componentの数値として比較する。downgradeは対話時に現行版と
+  導入版を示して承認を求め、silent時は同意不能なので開始前に拒否する。同版／upgradeは許可する。
+- profile manifest current／missing／lock changed、GUI再構築warning、setup書込順、installerの実行中終了
+  設定とsilent downgrade拒否を自動testへ追加した。関連102件とmypy（61 source）はpassし、Inno Setup
+  6.7.3の実compileも成功した。
+
 ## Phase enhancement ac-1 GUI状態表示（0.1.21、2026-09-02）
 
 ### Step 1 切り分け（修正前）

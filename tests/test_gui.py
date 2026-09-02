@@ -552,6 +552,7 @@ def test_environment_reads_all_state_from_profile_json_contracts(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
     _create_profile(tmp_path, "cuda")
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
     cli = CliAdapter(tmp_path)
     calls: list[tuple[str, tuple[str, ...]]] = []
 
@@ -584,6 +585,7 @@ def test_environment_reads_all_state_from_profile_json_contracts(
 
     assert snapshot["active_profile"] == "cuda"
     assert snapshot["errors"] == []
+    assert snapshot["profile_warnings"]
     assert calls == [
         ("cuda", ("profiles", "list", "--json")),
         ("cuda", ("devices", "--json")),

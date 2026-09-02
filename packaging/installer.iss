@@ -46,6 +46,8 @@ LicenseFile={#RepoRoot}\LICENSE
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile={#RepoRoot}\icon\utteran.ico
 ChangesEnvironment=no
+CloseApplications=force
+RestartApplications=no
 ; Set only when build.ps1 is given a signing command (-SignCommand); an
 ; unsigned build never references SignTool at all, so ISCC does not
 ; require one to be registered. See docs/utteran_Phase5d_指示書.md's
@@ -90,6 +92,8 @@ english.UninstallOptionLogs=Also remove logs, diagnostics, and benchmark results
 english.UninstallOptionToken=Also remove the Hugging Face token stored in Windows Credential Manager?
 english.UninstallTokenFailed=The Hugging Face token could not be removed. Check Windows Credential Manager for service "utteran", user "huggingface".
 english.UninstallRemainingDataIntro=The following data was not selected and is still present:
+japanese.DowngradeWarning=新しい版 %1 が既にインストールされています。古い版 %2 へ戻すと、設定やジョブの互換性が失われる可能性があります。続行しますか?
+english.DowngradeWarning=A newer version, %1, is already installed. Downgrading to %2 may make settings or jobs incompatible. Continue?
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -125,6 +129,57 @@ Name: "{autodesktop}\utteran"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{
 
 [Code]
 { ---- Install-time informational pages (no user input, just disclosure) ---- }
+
+function VersionPart(var Version: String): Integer;
+var
+  Separator: Integer;
+  Part: String;
+begin
+  Separator := Pos('.', Version);
+  if Separator = 0 then
+  begin
+    Part := Version;
+    Version := '';
+  end
+  else
+  begin
+    Part := Copy(Version, 1, Separator - 1);
+    Delete(Version, 1, Separator);
+  end;
+  Result := StrToIntDef(Part, 0);
+end;
+
+function CompareVersions(Left, Right: String): Integer;
+var
+  Index, LeftPart, RightPart: Integer;
+begin
+  Result := 0;
+  for Index := 1 to 4 do
+  begin
+    LeftPart := VersionPart(Left);
+    RightPart := VersionPart(Right);
+    if LeftPart > RightPart then begin Result := 1; exit; end;
+    if LeftPart < RightPart then begin Result := -1; exit; end;
+  end;
+end;
+
+function InitializeSetup(): Boolean;
+var
+  InstalledVersion: String;
+begin
+  Result := True;
+  if RegQueryStringValue(HKCU,
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\{E370A3A9-7D2D-46FB-BD71-4BC429AC5FED}_is1',
+    'DisplayVersion', InstalledVersion) and
+    (CompareVersions(InstalledVersion, '{#MyAppVersion}') > 0) then
+  begin
+    if WizardSilent() then
+      Result := False
+    else
+      Result := MsgBox(FmtMessage(CustomMessage('DowngradeWarning'), [InstalledVersion,
+        '{#MyAppVersion}']), mbConfirmation, MB_YESNO) = IDYES;
+  end;
+end;
 
 procedure InitializeWizard();
 begin

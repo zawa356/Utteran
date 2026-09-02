@@ -58,6 +58,8 @@ class EnvironmentService:
                 "path": str(profile.path),
                 "exists": profile.exists,
                 "updated_at": profile.updated_at,
+                "compatible": profile.compatible,
+                "compatibility_reason": profile.compatibility_reason,
             }
             for profile in local_profiles
         ]
@@ -89,6 +91,12 @@ class EnvironmentService:
             "native": None,
             "options": _empty_options(),
             "errors": errors,
+            "profile_warnings": [
+                f"{row['name']} profileの依存環境が現在の版と一致しません。"
+                "セットアップから環境を再構築してください。"
+                for row in profile_rows
+                if row["exists"] is True and row["compatible"] is False
+            ],
         }
         if active is None:
             log_stage(
