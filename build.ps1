@@ -132,9 +132,11 @@ $GuiExe = Join-Path $GuiDistDir "utteran-gui.exe"
 if (-not (Test-Path -LiteralPath $GuiExe -PathType Leaf)) {
     throw "PyInstaller did not produce $GuiExe"
 }
-$GuiVersion = (Get-Item -LiteralPath $GuiExe).VersionInfo.ProductVersion
-if ($GuiVersion -ne $Version) {
-    throw "GUI ProductVersion '$GuiVersion' does not match project version '$Version'"
+$GuiVersionInfo = (Get-Item -LiteralPath $GuiExe).VersionInfo
+foreach ($EmbeddedVersion in @($GuiVersionInfo.ProductVersion, $GuiVersionInfo.FileVersion)) {
+    if ($EmbeddedVersion -ne $Version) {
+        throw "GUI embedded version '$EmbeddedVersion' does not match project version '$Version'"
+    }
 }
 
 Write-BuildStep "Verifying the distributable excludes the inference core"
@@ -170,6 +172,12 @@ if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
     throw "Expected installer executable was not found: $InstallerPath"
 }
 $Installer = Get-Item -LiteralPath $InstallerPath
+$InstallerVersionInfo = $Installer.VersionInfo
+foreach ($EmbeddedVersion in @($InstallerVersionInfo.ProductVersion, $InstallerVersionInfo.FileVersion)) {
+    if ($EmbeddedVersion.Trim() -ne $Version) {
+        throw "Installer embedded version '$EmbeddedVersion' does not match project version '$Version'"
+    }
+}
 
 Write-BuildStep "Computing SHA-256"
 $Hash = Get-FileHash -LiteralPath $Installer.FullName -Algorithm SHA256

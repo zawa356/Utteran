@@ -51,8 +51,15 @@ def test_windows_build_embeds_and_verifies_project_version() -> None:
     assert 'StringStruct("ProductVersion", BUILD_VERSION)' in spec
     assert "version=version_info" in spec
     assert "$env:UTTERAN_BUILD_VERSION = $Version" in build
-    assert ".VersionInfo.ProductVersion" in build
+    assert "VersionInfo.ProductVersion" in build
+    assert "VersionInfo.FileVersion" in build
     assert '"utteran-setup-$Version.exe"' in build
+
+    installer = (project / "packaging" / "installer.iss").read_text(encoding="utf-8")
+    assert "AppVersion={#MyAppVersion}" in installer
+    assert "VersionInfoVersion={#MyAppVersion}" in installer
+    assert "$InstallerVersionInfo.ProductVersion" in build
+    assert "$InstallerVersionInfo.FileVersion" in build
 
 
 def test_installer_does_not_launch_gui_before_setup_exits() -> None:
