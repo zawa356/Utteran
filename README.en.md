@@ -6,7 +6,7 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.23` (unreleased).
+> Current development version: `0.1.24` (unreleased).
 > APIs and configuration may change before 1.0.
 
 ## Supported environments
@@ -19,6 +19,19 @@ transcription API.
 
 GPU, native-build, real-model, and long-audio behavior is verified by the acceptance harness on
 matching hardware, not by CI.
+
+## Choose a Windows distribution
+
+Use `utteran-setup-<version>.exe` for regular, ongoing use. It keeps profiles, models, settings,
+jobs, and logs in the existing per-user Windows locations. Use
+`utteran-portable-<version>.zip` for temporary use: extract it and run `utteran-gui.exe`; all
+utteran-managed data is created under the extracted `data` folder, so removing the extracted
+folder removes that data.
+
+The portable build does not save a Hugging Face token; enter it again on every launch. Profiles
+and models consume several GB after setup, moving the extracted folder can require rebuilding its
+venv, and USB storage can be slow. It uses the same executable as the installer build and does not
+bypass Smart App Control.
 
 ## Windows quick start
 
