@@ -112,6 +112,20 @@ def test_uninstaller_deletes_keyring_token_only_after_interactive_consent() -> N
     assert "--delete-keyring-token" in installer
 
 
+def test_build_creates_installer_and_portable_artifacts() -> None:
+    root = Path(__file__).parents[1]
+    build = (root / "build.ps1").read_text(encoding="utf-8-sig")
+    spec = (root / "packaging" / "gui.spec").read_text(encoding="utf-8")
+    hook = (root / "packaging" / "portable_runtime.py").read_text(encoding="utf-8")
+
+    assert '"utteran-setup-$Version.exe"' in build
+    assert '"utteran-portable-$Version.zip"' in build
+    assert "Compress-Archive" in build
+    assert 'UTTERAN_BUILD_FLAVOR") == "portable"' in spec
+    assert 'os.environ["UTTERAN_DATA_ROOT"]' in hook
+    assert 'os.environ["UTTERAN_TOKEN_MODE"] = "session"' in hook
+
+
 def test_installer_explicitly_closes_running_app_and_blocks_silent_downgrade() -> None:
     installer = (Path(__file__).parents[1] / "packaging" / "installer.iss").read_text(
         encoding="utf-8"
