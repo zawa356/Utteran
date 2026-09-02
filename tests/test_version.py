@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -13,6 +14,32 @@ def test_package_version_matches_project_metadata() -> None:
 
     assert utteran.__version__ == metadata["project"]["version"]
     assert utteran_gui.__version__ == metadata["project"]["version"]
+
+
+def test_readme_versions_match_project_metadata() -> None:
+    project = Path(__file__).parents[1]
+    metadata = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
+    expected = metadata["project"]["version"]
+
+    for name in ("README.md", "README.en.md"):
+        readme = (project / name).read_text(encoding="utf-8")
+        match = re.search(r"^> .*development version: `([^`]+)`", readme, re.MULTILINE | re.I)
+        if name == "README.md":
+            match = re.search(r"^> 現在の開発版: `([^`]+)`", readme, re.MULTILINE)
+        assert match is not None, f"{name} must state the current development version"
+        assert match.group(1) == expected
+
+
+def test_packages_resolve_version_from_distribution_metadata() -> None:
+    project = Path(__file__).parents[1]
+
+    for package in ("utteran", "utteran_gui"):
+        source = (project / "src" / package / "__init__.py").read_text(encoding="utf-8")
+        assert '__version__ = version("utteran")' in source
+        assert not re.search(r'__version__\s*=\s*["\']\d', source)
+
+    spec = (project / "packaging" / "gui.spec").read_text(encoding="utf-8")
+    assert '*copy_metadata("utteran")' in spec
 
 
 def test_windows_build_embeds_and_verifies_project_version() -> None:
