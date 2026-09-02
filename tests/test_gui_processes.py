@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -156,3 +158,71 @@ def test_real_hidden_process_tree_can_still_be_cancelled(tmp_path: Path) -> None
             process.kill()
 
     assert process.poll() is not None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job Object regression")
+def test_supervisor_shutdown_terminates_a_real_child(tmp_path: Path) -> None:
+    supervisor = processes.ProcessSupervisor()
+    process = supervisor.popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        **processes.build_popen_kwargs(cwd=tmp_path, env=dict(os.environ)),
+    )
+
+    supervisor.shutdown()
+
+    assert process.poll() is not None
+    assert supervisor.active_pids() == ()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job Object parent-death regression")
+def test_supervisor_job_closes_after_forced_parent_exit(tmp_path: Path) -> None:
+    pid_file = tmp_path / "child.pid"
+    helper = tmp_path / "job_parent.py"
+    helper.write_text(
+        "\n".join(
+            [
+                "import os, sys, time",
+                "from pathlib import Path",
+                "from utteran_gui.processes import ProcessSupervisor, build_popen_kwargs",
+                "supervisor = ProcessSupervisor()",
+                "child = supervisor.popen([sys.executable, '-c', 'import time; time.sleep(60)'], "
+                "**build_popen_kwargs(cwd=Path.cwd(), env=dict(os.environ)))",
+                "Path(sys.argv[1]).write_text(str(child.pid), encoding='ascii')",
+                "time.sleep(60)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    parent = subprocess.Popen(
+        [sys.executable, str(helper), str(pid_file)],
+        cwd=Path(__file__).parents[1],
+        env=dict(os.environ),
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    deadline = time.monotonic() + 10
+    while not pid_file.is_file() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert pid_file.is_file()
+    child_pid = int(pid_file.read_text(encoding="ascii"))
+
+    parent.kill()
+    parent.wait(timeout=10)
+    deadline = time.monotonic() + 10
+    while _process_exists(child_pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    assert not _process_exists(child_pid)
+
+
+def _process_exists(pid: int) -> bool:
+    try:
+        process = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError:
+        return False
+    return str(pid) in process.stdout

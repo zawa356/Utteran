@@ -639,6 +639,18 @@ def test_job_status_display_is_exhaustive_and_does_not_finish_on_done_event_earl
     assert 'loadEnvironment($("profile-select").value, true)' in script
 
 
+def test_cancel_explains_that_native_inference_may_take_time() -> None:
+    project = Path(__file__).parents[1]
+    script = (project / "src" / "utteran_gui" / "web" / "app.js").read_text(encoding="utf-8")
+    translations = (project / "src" / "utteran_gui" / "web" / "i18n.js").read_text(encoding="utf-8")
+
+    handler = script[script.index('$("cancel-button").addEventListener') :]
+    assert 't("cancellationPending")' in handler
+    assert "GPU約1分" in translations
+    assert "NPU約3分" in translations
+    assert "CPU約5分" in translations
+
+
 def test_intel_auto_selection_defaults_to_whisper_cpp_not_cpu() -> None:
     devices = {
         "backends": {"faster-whisper": True, "whisper-cpp": True},
