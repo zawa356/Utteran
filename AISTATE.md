@@ -1,5 +1,40 @@
 # AI 作業状態
 
+## Phase enhancement ac-4 ポータブル配布（0.1.24、2026-09-02）
+
+### データ配置とビルド判断
+
+- `utteran_paths.resolve_data_paths()`へアプリ管理pathを集約した。インストーラー版は従来の配置を
+  維持し、ポータブル版だけがPyInstaller runtime hookで`{app}/data`を既定rootとして与える。
+  実行fileや周辺fileからmodeを推測する処理はない。
+- `build.ps1`は同じspecからinstaller用onedirとportable用onedirを別々に構築し、既存installerと
+  portable ZIP、各SHA-256 sidecarを生成する。ZIPは余分な外側階層を持たない。
+
+| データ | インストーラー版 | ポータブル版 |
+|---|---|---|
+| `.venvs` | install directory直下 | `{app}/data/.venvs` |
+| model／OpenVINO IR | platform user cache `models` | `{app}/data/models` |
+| GenAI compiled／device probe cache | platform user cache | `{app}/data/cache` |
+| native build | `~/.utteran/native` | `{app}/data/native` |
+| ffmpeg | platform user data `bin` | `{app}/data/bin` |
+| job history／文字起こし結果 | platform user cache `jobs` | `{app}/data/jobs` |
+| CLI／GUI設定、memory calibration | platform user config/data | `{app}/data/config` |
+| log／diagnostics／benchmark | platform user log | `{app}/data/logs` |
+
+- ポータブルbuildはuv、Hugging Face、torch、pip、WebView2のcacheも`data/cache`へ向ける。utteranが
+  管理する永続dataでユーザー領域に残る例外はない。Windowsの実行履歴、ウイルス対策softwareの記録、
+  driver/runtime自体はOS／外部softwareの管理物であり削除対象外である。
+- 利用者指定の入力・出力directoryはデータrootへ含めず、従来どおり利用者指定pathを尊重する。
+
+### tokenとprofile移動
+
+- portable tokenは`SessionTokenStore`のprocess memoryだけに保持し、profile childへ`HF_TOKEN`として
+  渡す。keyringや別fileへ保存せず、GUI終了時に破棄する。GUIのtoken入力箇所にも明記した。
+- profile manifestへ構築時venv絶対pathを追加した。移動後の不一致は`profile_path_changed`として
+  再構築を案内するが、既存環境を保持し、即FAILEDへ変えない。
+- `README.en.md`は本Phaseで配布形態だけを追記した。whisper.cpp v1.9.1、OpenVINO GenAI未記載、
+  `models genai-cache`未記載というPhase 3相当の遅れはDグループへ残し、全体同期していない。
+
 ## Phase enhancement ac-3 表示・記憶・文書整理（0.1.23、2026-09-02）
 
 ### A-2 format chip横overflow

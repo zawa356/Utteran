@@ -747,9 +747,7 @@ def default_result_dir(config: Config) -> Path:
     runtime = runtime_logging()
     if runtime:
         return runtime.log_dir / "benchmarks"
-    selected, _, _ = resolve_log_dir(
-        config.general.log_dir, fallback_dir=resolve_data_paths().logs
-    )
+    selected, _, _ = resolve_log_dir(config.general.log_dir, fallback_dir=resolve_data_paths().logs)
     return selected / "benchmarks"
 
 

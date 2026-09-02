@@ -124,6 +124,8 @@ def test_build_creates_installer_and_portable_artifacts() -> None:
     assert 'UTTERAN_BUILD_FLAVOR") == "portable"' in spec
     assert 'os.environ["UTTERAN_DATA_ROOT"]' in hook
     assert 'os.environ["UTTERAN_TOKEN_MODE"] = "session"' in hook
+    for variable in ("UV_CACHE_DIR", "HF_HOME", "TORCH_HOME", "WEBVIEW2_USER_DATA_FOLDER"):
+        assert f'os.environ["{variable}"]' in hook
 
 
 def test_installer_explicitly_closes_running_app_and_blocks_silent_downgrade() -> None:
