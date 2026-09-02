@@ -1,5 +1,54 @@
 # AI 作業状態
 
+## Phase enhancement ac-3 表示・記憶・文書整理（0.1.23、2026-09-02）
+
+### A-2 format chip横overflow
+
+- `.format-chip input`は`position: absolute`だったが、親`.format-chip`に配置基準がなく、外側の包含blockを
+  基準にはみ出していた。親へ`position: relative`を追加した。同じ親の絶対配置子はこのinputだけで、
+  switch／wizard card／speaker filterは別の親に既存の配置基準を持つ。
+- CSS契約testを追加した。WebView2上での横幅変更・全画面の目視は
+  `ユーザー確認事項.md` C-1へ残した。ac-4のA-3/A-4には着手していない。
+
+### A-5 version表示
+
+- 原因は`pyproject.toml`、`utteran.__version__`、`utteran_gui.__version__`への手書き重複と、README冒頭を
+  検査しないtestだった。`pyproject.toml`を唯一の入力とし、両packageはdistribution metadataから取得、
+  PyInstallerは同metadataを同梱する。installer/exeはbuild時に同じ値を埋め込む。
+- 日英README冒頭は自動生成できないため、package versionとの一致testで更新漏れを検出する。package、
+  GUI API、README、PyInstaller/Inno設定の整合testに加え、`build.ps1`がGUIとinstaller双方の
+  ProductVersion／FileVersionを実物から検査する。
+- 初回0.1.23 buildの実物確認でinstallerのFileVersionだけ空欄と判明したため、Inno Setupの
+  `VersionInfoVersion`を明示して修正した。最終実物は4値すべて0.1.23。
+- `README.en.md`は指示どおり冒頭versionだけ更新した。whisper.cpp v1.9.1、OpenVINO GenAI未記載、
+  `models genai-cache`未記載というPhase 3相当の遅れはDグループ（国際化）へ残し、本Phaseで同期しない。
+
+### A-7 入出力directoryの独立記憶とprivacy判断
+
+- `GuiSettings`には独立fieldが既にあったが、設定画面から手動保存するだけで、実際に使用した値を
+  自動更新していなかった。ジョブ投入成功時に入力fileの親または入力folder自身と、出力directoryを
+  別fieldへ保存する。再出力成功時は出力だけを更新する。
+- README／要件はdirectoryの既定値を保存してよい一方、入力file履歴・file名を保存しない方針である。
+  よってdirectoryだけの保存は方針内と判断した。入力file名がsettings JSONに現れず、一方だけの更新で
+  他方が変わらないtestを追加した。設定保存失敗で開始済みjobをAPI errorにしない。
+
+### 文書と検証
+
+- Phase 3d由来の旧配置の手順書を`docs/archive/受入試験_手動確認手順書.md`へ移し、本文は変えず、
+  `ユーザー確認事項.md`との役割説明だけを
+  冒頭に追加した。指示書内の移動元記述を除く全参照を更新した。文書移動はコードと別commit。
+- `ユーザー確認事項.md` C章へレイアウト、配布版version表示、入出力directory独立記憶の実機手順を追加。
+  実機項目は作業と同じ単位で追記し、確認後も結果を残す運用を`要件定義.md`へ明記した。
+- `uv run pytest -m "not requires_model"`: 449 passed（既知のStarlette warning 1件）。ruff check／format、
+  mypy（61 source）、uv lock、JavaScript構文、PowerShell parser／BOM、`git diff --check`もpass。
+  ac-1状態表示、ac-2 process supervisor、Phase 6c-1 device解決を含む既存testがpassし、`align.py`、
+  Viterbi、ASR backend実行経路は変更していない。
+- 開発版`gui.ps1`は起動・応答を確認した。自動化側の`CloseMainWindow()`では15秒以内に閉じず強制終了へ
+  切り替えたが、その後の残留は0件。最終配布exeは`Responding=True`で起動し、強制終了3秒後に記録した
+  直接子2件は0件になった。レイアウトと画面表示の実機目視はユーザー確認事項へ残す。
+- 最終installerは19,850,600 bytes、SHA-256
+  `ae0cf3a8dc4fd661abffcd1bf0109e4ac87e22203b02a471c90ecba2a1e64f85`。
+
 ## Phase enhancement ac-2 プロセス・インストーラー（0.1.22、2026-09-02）
 
 ### Step 1 切り分け（0.1.21、修正前）
