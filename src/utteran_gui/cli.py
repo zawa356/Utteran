@@ -115,6 +115,8 @@ class CliAdapter:
         environment["UTTERAN_PROFILE"] = profile
         environment["PYTHONIOENCODING"] = "utf-8"
         environment["PYTHONUTF8"] = "1"
+        if child_log_dir := os.environ.get("UTTERAN_GUI_CHILD_LOG_DIR"):
+            environment["UTTERAN_GENERAL__LOG_DIR"] = child_log_dir
         return environment
 
     def _run(
