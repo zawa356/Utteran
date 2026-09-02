@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from utteran_gui import api, hardware, processes
+from utteran_gui import app as gui_app
 from utteran_gui.api import SESSION_HEADER, create_app
 from utteran_gui.cli import CliAdapter
 
@@ -142,6 +143,22 @@ def test_non_windows_creation_kwargs_are_empty(monkeypatch: Any) -> None:
 
     assert processes.build_creation_kwargs() == {}
     assert processes.build_creation_kwargs(new_process_group=True) == {}
+
+
+def test_uninstaller_command_deletes_only_the_saved_token(monkeypatch: Any) -> None:
+    cleared: list[bool] = []
+
+    class FakeTokenStore:
+        @staticmethod
+        def clear() -> None:
+            cleared.append(True)
+
+    monkeypatch.setattr(gui_app, "TokenStore", FakeTokenStore)
+    monkeypatch.setattr(gui_app.sys, "argv", ["utteran-gui.exe", "--delete-keyring-token"])
+
+    gui_app.main()
+
+    assert cleared == [True]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows process-tree cancellation regression")
