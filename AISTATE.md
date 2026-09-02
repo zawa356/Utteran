@@ -1,6 +1,6 @@
 # AI 作業状態
 
-## Phase enhancement ac-2 プロセス・インストーラー（0.1.22、2026-09-02、進行中）
+## Phase enhancement ac-2 プロセス・インストーラー（0.1.22、2026-09-02）
 
 ### Step 1 切り分け（0.1.21、修正前）
 
@@ -126,6 +126,23 @@ C-1 は install directory／`.venvs` 内の executable や DLL を掴む経路�
 - profile manifest current／missing／lock changed、GUI再構築warning、setup書込順、installerの実行中終了
   設定とsilent downgrade拒否を自動testへ追加した。関連102件とmypy（61 source）はpassし、Inno Setup
   6.7.3の実compileも成功した。
+
+### Step 5 最終検証と配布物
+
+- `uv run pytest -m "not requires_model"`: 446 passed（既知のStarlette warning 1件）。
+  `uv run ruff check src tests tools`、`uv run ruff format --check src tests tools`、
+  `uv run mypy`（61 source）、`uv lock --check`、PowerShell parser、tracked PowerShell UTF-8 BOM確認、
+  `git diff --check`: pass。
+- `build.ps1`: pass。`dist/utteran-gui/utteran-gui.exe`とinstallerのProductVersion／FileVersionが
+  0.1.22であることを確認した。配布GUIを起動するとWebView2とprofile `utteran profiles list --json`が
+  実際に子として起動し、GUI PID 18492を強制終了して3秒後、親と記録した直接子はいずれも0件だった。
+- installerは19,850,713 bytes、SHA-256
+  `4a120356c8249ceca4f7794f6de0edcf54b2c82dde474862d8abe538e0442036`。
+- 本sessionの開発userには実model／cacheがあるため、常時削除仕様のuninstallerは実行していない。
+  clean install／uninstall、対話downgrade、idle／job／cancel／probe各状態の通常終了、および指定された
+  Core i7-1165G7／Iris Xe機でのac-1/ac-2通し確認は、上記i7機／Windows Sandbox確認項目に残す。
+- formatter適用対象だった`openvino_genai.py`、`benchmark.py`、`devices.py`、`test_benchmark.py`は
+  空白・改行だけの変更で、ASR経路、device解決、Viterbi、`align.py`の実装は変更していない。
 
 ## Phase enhancement ac-1 GUI状態表示（0.1.21、2026-09-02）
 
