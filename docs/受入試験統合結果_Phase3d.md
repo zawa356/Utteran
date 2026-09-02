@@ -20,7 +20,7 @@
 - 破壊的ケース: 明示的に選択し、CPU/Intel/Vulkan profile更新、Vulkan削除→復元、native
   clean→build、whisper.cpp base削除→再取得、OpenVINO IR生成→削除を確認
 - P14: 話者分離なし102.7秒、XPU話者分離あり378.5秒、同条件resume 1.1秒で合格
-- 手動項目: `docs/受入試験_手動確認手順書.md`へ分類済み。G12ではParser、read-only menu、
+- 手動項目: `docs/archive/受入試験_手動確認手順書.md`へ分類済み。G12ではParser、read-only menu、
   transcription dry-runを自動確認
 
 ## 初回失敗と是正

@@ -7,10 +7,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from platformdirs import user_data_dir
-
 from utteran.errors import AudioDecodeError, FfmpegNotFoundError, InputFileNotFoundError
 from utteran.types import CancelToken, ProgressCallback, ProgressEvent
+from utteran_paths import resolve_data_paths
 
 
 def find_ffmpeg(configured_path: Path | None = None) -> Path:
@@ -22,7 +21,7 @@ def find_ffmpeg(configured_path: Path | None = None) -> Path:
     if from_path:
         return Path(from_path)
 
-    bundled_dir = Path(user_data_dir("utteran")) / "bin"
+    bundled_dir = resolve_data_paths().ffmpeg_bin
     for executable_name in ("ffmpeg.exe", "ffmpeg"):
         candidate = bundled_dir / executable_name
         if candidate.is_file():

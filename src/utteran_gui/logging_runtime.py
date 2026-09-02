@@ -12,9 +12,8 @@ from datetime import UTC, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from platformdirs import user_config_dir, user_log_dir
-
 from utteran_gui.security import mask_secrets
+from utteran_paths import resolve_data_paths
 
 
 @dataclass(frozen=True)
@@ -66,7 +65,7 @@ def log_stage(stage: str, *, level: int = logging.INFO, **fields: object) -> Non
 def load_logging_settings() -> GuiLoggingSettings:
     """Read only the two logging values the standalone GUI must expose."""
     payload: object = {}
-    path = Path(user_config_dir("utteran")) / "config.toml"
+    path = resolve_data_paths().core_config
     try:
         with path.open("rb") as file:
             payload = tomllib.load(file).get("general", {})
@@ -95,24 +94,27 @@ def resolve_gui_log_dir(
     settings: GuiLoggingSettings,
     *,
     install_dir: Path,
+    packaged: bool = False,
 ) -> tuple[Path, bool]:
     preferred = (
         settings.log_dir.resolve()
         if settings.log_dir is not None
+        else resolve_data_paths().logs.resolve()
+        if packaged
         else install_dir.resolve() / "logs"
     )
     if _writable(preferred):
         return preferred, False
-    fallback = Path(user_log_dir("utteran")).resolve()
+    fallback = resolve_data_paths().logs.resolve()
     if not _writable(fallback):
         raise OSError(f"ログ保存先へ書き込めません: {preferred}; fallback={fallback}")
     return fallback, True
 
 
-def configure_gui_logging(*, install_dir: Path) -> GuiLoggingStatus:
+def configure_gui_logging(*, install_dir: Path, packaged: bool = False) -> GuiLoggingStatus:
     global _STATUS
     settings = load_logging_settings()
-    selected, fell_back = resolve_gui_log_dir(settings, install_dir=install_dir)
+    selected, fell_back = resolve_gui_log_dir(settings, install_dir=install_dir, packaged=packaged)
     deleted, deleted_bytes = _cleanup(
         selected,
         retention_days=settings.retention_days,

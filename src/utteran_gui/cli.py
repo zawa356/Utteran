@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -11,10 +12,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from utteran_gui.processes import build_creation_kwargs, kill_process_tree
+from utteran_gui.processes import PopenFactory, TreeKiller, build_creation_kwargs, kill_process_tree
 from utteran_gui.security import mask_secrets, sanitize_json
+from utteran_paths import resolve_data_paths
 
 PROFILE_NAMES = ("cpu", "cuda", "intel", "vulkan")
+PROFILE_EXTRAS: dict[str, tuple[str, ...]] = {
+    "cpu": ("cpu", "japanese"),
+    "cuda": ("cuda", "japanese"),
+    "intel": ("xpu", "whisper-cpp", "openvino", "openvino-genai", "japanese"),
+    "vulkan": ("cpu", "whisper-cpp", "japanese"),
+}
+PROFILE_MANIFEST = ".utteran-profile.json"
 OUTPUT_FORMATS = ("srt", "vtt", "json", "txt", "md")
 ResumeMode = Literal["resume", "fresh", "force"]
 
@@ -30,6 +39,8 @@ class ProfileInfo:
     exists: bool
     executable: Path
     updated_at: str | None = None
+    compatible: bool | None = None
+    compatibility_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,9 +80,20 @@ class RegenerationOptions:
 class CliAdapter:
     """Resolve profile environments and invoke only their console executable."""
 
-    def __init__(self, repo_root: Path, venv_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        repo_root: Path,
+        venv_root: Path | None = None,
+        *,
+        popen_factory: PopenFactory | None = None,
+        tree_killer: TreeKiller | None = None,
+        session_token: Callable[[], str | None] | None = None,
+    ) -> None:
         self.repo_root = repo_root.resolve()
-        self.venv_root = (venv_root or self.repo_root / ".venvs").resolve()
+        self.venv_root = (venv_root or resolve_data_paths(self.repo_root).venvs).resolve()
+        self._popen_factory = popen_factory
+        self._tree_killer = tree_killer or kill_process_tree
+        self._session_token = session_token
 
     @property
     def os_slug(self) -> str:
@@ -90,13 +112,48 @@ class CliAdapter:
             updated = root.stat().st_mtime if root.is_dir() else None
         except OSError:
             updated = None
+        compatible, compatibility_reason = self._profile_compatibility(profile, root)
         return ProfileInfo(
             profile,
             root,
             root.is_dir() and executable.is_file(),
             executable,
             None if updated is None else str(updated),
+            compatible,
+            compatibility_reason,
         )
+
+    def _profile_compatibility(self, profile: str, root: Path) -> tuple[bool | None, str | None]:
+        if not root.is_dir():
+            return None, None
+        lock_path = self.repo_root / "uv.lock"
+        if not lock_path.is_file():
+            return None, "current_lock_missing"
+        manifest_path = root / PROFILE_MANIFEST
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        except FileNotFoundError:
+            return False, "profile_manifest_missing"
+        except (OSError, json.JSONDecodeError, UnicodeError):
+            return False, "profile_manifest_invalid"
+        if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+            return False, "profile_manifest_invalid"
+        expected_hash = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+        if payload.get("lock_sha256") != expected_hash:
+            return False, "dependency_lock_changed"
+        if payload.get("extras") != list(PROFILE_EXTRAS[profile]):
+            return False, "profile_extras_changed"
+        recorded_path = payload.get("venv_path")
+        if not isinstance(recorded_path, str):
+            return False, "profile_path_changed"
+        try:
+            current_path = os.path.normcase(str(root.resolve()))
+            recorded_venv_path = os.path.normcase(str(Path(recorded_path).expanduser().resolve()))
+        except OSError:
+            return False, "profile_path_changed"
+        if recorded_venv_path != current_path:
+            return False, "profile_path_changed"
+        return True, None
 
     def profiles(self) -> tuple[ProfileInfo, ...]:
         return tuple(self.profile_info(profile) for profile in PROFILE_NAMES)
@@ -106,6 +163,10 @@ class CliAdapter:
         environment["UTTERAN_PROFILE"] = profile
         environment["PYTHONIOENCODING"] = "utf-8"
         environment["PYTHONUTF8"] = "1"
+        if child_log_dir := os.environ.get("UTTERAN_GUI_CHILD_LOG_DIR"):
+            environment["UTTERAN_GENERAL__LOG_DIR"] = child_log_dir
+        if self._session_token is not None and (token := self._session_token()):
+            environment["HF_TOKEN"] = token
         return environment
 
     def _run(
@@ -128,7 +189,7 @@ class CliAdapter:
         info = self.profile_info(profile)
         if not info.exists:
             raise CliError(f"Profile is not available: {profile}")
-        popen = cast(Callable[..., subprocess.Popen[str]], subprocess.Popen)
+        popen = self._popen_factory or cast(Callable[..., subprocess.Popen[str]], subprocess.Popen)
         process = popen(
             [str(info.executable), *arguments],
             cwd=self.repo_root,
@@ -144,7 +205,7 @@ class CliAdapter:
         try:
             stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            kill_process_tree(process)
+            self._tree_killer(process)
             stdout, stderr = process.communicate()
             raise CliError(f"CLI timed out after {timeout:g}s: {' '.join(arguments)}") from None
         return subprocess.CompletedProcess(
