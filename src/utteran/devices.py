@@ -23,11 +23,10 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Literal, cast
 
-from platformdirs import user_cache_dir
-
 from utteran.audio import find_ffmpeg
 from utteran.errors import BackendUnavailableError, FfmpegNotFoundError
 from utteran.logging import structured_event
+from utteran_paths import resolve_data_paths
 
 _DLL_DIRECTORY_HANDLES: list[Any] = []
 DEFAULT_PROBE_TIMEOUT_SECONDS = 20.0
@@ -381,7 +380,7 @@ class _ProbeRun:
 
 def default_probe_cache_path() -> Path:
     """Return the profile-independent platform cache used by ``devices``."""
-    return Path(user_cache_dir("utteran")) / "device-probes-v1.json"
+    return resolve_data_paths().device_probe_cache
 
 
 def clear_probe_cache(path: Path | None = None) -> bool:

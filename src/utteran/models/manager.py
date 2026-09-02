@@ -15,8 +15,6 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
-from platformdirs import user_cache_dir
-
 from utteran.config import TokenProvider, default_token_provider
 from utteran.errors import (
     HuggingFaceAuthenticationError,
@@ -27,6 +25,7 @@ from utteran.errors import (
 from utteran.logging import structured_event
 from utteran.models.catalog import ModelEntry, get_model, list_models
 from utteran.types import CancelToken, ProgressCallback, ProgressEvent
+from utteran_paths import resolve_data_paths
 
 _SAFE_COMPONENT = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -307,7 +306,7 @@ def resolve_model_dir(configured: Path | None = None) -> Path:
         return configured.expanduser()
     if environment := os.environ.get("UTTERAN_MODEL_DIR"):
         return Path(environment).expanduser()
-    return Path(user_cache_dir("utteran")) / "models"
+    return resolve_data_paths().models
 
 
 def find_runtime_model(

@@ -8,8 +8,6 @@ import wave
 from pathlib import Path
 from typing import Any, ClassVar
 
-from platformdirs import user_cache_dir
-
 from utteran.asr.base import ASRBackend
 from utteran.errors import BackendUnavailableError, ModelNotFoundError
 from utteran.logging import structured_event
@@ -25,6 +23,7 @@ from utteran.types import (
     TranscriptionResult,
     Word,
 )
+from utteran_paths import resolve_data_paths
 
 DEGRADED_WORD_CHARACTER_THRESHOLD = 30
 NPU_RECOMMENDATION_REASON = (
@@ -35,7 +34,7 @@ NPU_RECOMMENDATION_REASON = (
 
 def resolve_cache_dir() -> Path:
     """Keep OpenVINO compiled blobs inside utteran's managed cache tree."""
-    return Path(user_cache_dir("utteran")) / "openvino-genai-compiled"
+    return resolve_data_paths().openvino_genai_cache
 
 
 def cache_usage_bytes(path: Path | None = None) -> int:
