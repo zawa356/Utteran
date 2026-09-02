@@ -258,6 +258,29 @@ def test_session_key_is_required_for_every_api_request(tmp_path: Path) -> None:
     assert client.get("/api/settings").status_code == 200
 
 
+def test_portable_api_keeps_token_in_session_and_discloses_policy(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("UTTERAN_DATA_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("UTTERAN_DISTRIBUTION", "portable")
+    monkeypatch.setenv("UTTERAN_TOKEN_MODE", "session")
+    app = create_app("session-secret", repo_root=tmp_path)
+    client = TestClient(app, headers={SESSION_HEADER: "session-secret"})
+
+    settings = client.get("/api/settings").json()
+    assert settings["portable_distribution"] is True
+    assert settings["token_session_only"] is True
+    saved = client.put("/api/token", json={"token": "hf_process_memory_only"}).json()
+    assert saved == {
+        "configured": True,
+        "available": True,
+        "backend": "session",
+        "error_type": "",
+        "error_message": "",
+    }
+    assert not (tmp_path / "data" / "config" / "gui-settings.json").exists()
+
+
 def test_loopback_socket_uses_os_assigned_port() -> None:
     server_socket = bind_loopback_socket()
     try:
