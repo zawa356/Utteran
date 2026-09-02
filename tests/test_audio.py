@@ -19,7 +19,7 @@ def test_ffmpeg_missing_has_actionable_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("utteran.audio.shutil.which", lambda _name: None)
-    monkeypatch.setattr("utteran.audio.user_data_dir", lambda _name: str(tmp_path))
+    monkeypatch.setattr("utteran_paths.user_data_dir", lambda _name: str(tmp_path))
 
     with pytest.raises(FfmpegNotFoundError, match="PATH"):
         find_ffmpeg()
