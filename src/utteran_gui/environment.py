@@ -41,8 +41,14 @@ class EnvironmentService:
     def __init__(self, cli: CliAdapter) -> None:
         self.cli = cli
 
-    def snapshot(self, requested_profile: str | None = None) -> dict[str, object]:
-        log_stage("environment_snapshot_start", requested_profile=requested_profile)
+    def snapshot(
+        self, requested_profile: str | None = None, *, refresh_devices: bool = False
+    ) -> dict[str, object]:
+        log_stage(
+            "environment_snapshot_start",
+            requested_profile=requested_profile,
+            refresh_devices=refresh_devices,
+        )
         started = time.monotonic()
         local_profiles = self.cli.profiles()
         errors: list[str] = []
@@ -97,10 +103,11 @@ class EnvironmentService:
         native: dict[str, Any] = {}
         try:
             devices_started = time.monotonic()
+            device_arguments = ["devices", "--json"]
+            if refresh_devices:
+                device_arguments.append("--refresh")
             devices = as_json_dict(
-                self.cli.run_json(
-                    active, ["devices", "--json"], timeout=_DEVICES_PROBE_TIMEOUT_SECONDS
-                )
+                self.cli.run_json(active, device_arguments, timeout=_DEVICES_PROBE_TIMEOUT_SECONDS)
             )
             log_stage(
                 "environment_devices_probe_done",

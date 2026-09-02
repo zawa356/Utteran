@@ -33,19 +33,16 @@ from utteran.benchmark import (
     collect_environment,
     default_result_dir,
     detect_benchmark_environment,
-    discover_targets,
     latest_run,
     markdown_report,
     mode_durations,
     new_run_payload,
     parse_durations,
-    parse_target,
     prepared_audio_lengths,
     recommend,
-    resolve_legacy_variants,
+    resolve_benchmark_targets,
     run_benchmark,
     save_run,
-    target_availability,
     version_changed,
     wav_duration,
 )
@@ -58,6 +55,7 @@ from utteran.config import (
     resolve_token_status,
 )
 from utteran.devices import (
+    PROBE_PROGRESS_STATES,
     DeviceReport,
     ProbeProgress,
     detect_devices,
@@ -254,9 +252,7 @@ def main(ctx: typer.Context) -> None:
 @app.command()
 def benchmark(
     audio: Annotated[Path, typer.Option("--audio", help="測定用WAV (実データは明示指定)")],
-    variants: Annotated[
-        str, typer.Option(help="構成名のカンマ区切り")
-    ] = "cpu,openvino,vulkan,openvino_vulkan,faster-whisper",
+    variants: Annotated[str | None, typer.Option(help="構成名のカンマ区切り")] = None,
     targets: Annotated[
         str | None,
         typer.Option(help="backend/device/modelのカンマ区切り (model省略可、--variantsより優先)"),
@@ -310,22 +306,29 @@ def benchmark(
         )
         report = detect_benchmark_environment(config)
         if targets:
-            requested_targets = tuple(
-                parse_target(item.strip(), config) for item in targets.split(",") if item.strip()
+            availability = resolve_benchmark_targets(
+                config,
+                report,
+                "targets",
+                targets=tuple(item.strip() for item in targets.split(",") if item.strip()),
             )
-            availability = tuple(target_availability(item, report) for item in requested_targets)
         elif mode:
-            availability = discover_targets(
-                config, report, multiple_models=selected_mode.multiple_models
-            )
-            requested_targets = tuple(
-                item.target for item in availability if item.state == "runnable"
+            availability = resolve_benchmark_targets(
+                config,
+                report,
+                "mode",
+                multiple_models=selected_mode.multiple_models,
             )
         else:
-            requested_targets = resolve_legacy_variants(
-                config, tuple(item.strip() for item in variants.split(",") if item.strip())
+            selected_variants = variants or "cpu,openvino,vulkan,openvino_vulkan,faster-whisper"
+            availability = resolve_benchmark_targets(
+                config,
+                report,
+                "variants",
+                variants=tuple(
+                    item.strip() for item in selected_variants.split(",") if item.strip()
+                ),
             )
-            availability = tuple(target_availability(item, report) for item in requested_targets)
         runnable = tuple(item.target for item in availability if item.state == "runnable")
         for item in availability:
             if item.state == "preparation":
@@ -1881,18 +1884,28 @@ def _format_duration(seconds: float) -> str:
     return f"{int(hours):02d}:{int(minutes):02d}:{seconds_part:06.3f}"
 
 
+_PROBE_PROGRESS_LABELS = {
+    "started": "実行中",
+    "completed": "成功",
+    "timeout": "タイムアウト (判定不能、次へ進みます)",
+    "error": "失敗 (判定不能、次へ進みます)",
+    "cached": "成功 (キャッシュ済み)",
+    "unknown": "不明 (詳細ログを確認してください)",
+}
+
+
 def _print_probe_progress(item: ProbeProgress) -> None:
-    labels = {
-        "started": "実行中",
-        "completed": "完了",
-        "timeout": "タイムアウト (判定不能、次へ進みます)",
-        "error": "判定エラー (次へ進みます)",
-        "cached": "キャッシュ済み",
-    }
+    label = _PROBE_PROGRESS_LABELS.get(item.state)
+    if label is None:
+        logging.getLogger(__name__).warning("Unknown device probe progress state: %r", item.state)
+        label = _PROBE_PROGRESS_LABELS["unknown"]
     typer.echo(
-        f"[probe {item.position}/{item.total}] {item.label}: {labels[item.state]}",
+        f"[probe {item.position}/{item.total}] {item.label}: {label}",
         err=True,
     )
+
+
+assert set(_PROBE_PROGRESS_LABELS) == PROBE_PROGRESS_STATES
 
 
 def _probe_display(available: bool, status: str) -> str:

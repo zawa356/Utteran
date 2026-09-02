@@ -215,9 +215,9 @@ def create_app(
         return {"version": __version__}
 
     @app.get("/api/environment")
-    def environment(profile: str | None = None) -> dict[str, object]:
+    def environment(profile: str | None = None, refresh: bool = False) -> dict[str, object]:
         selected = profile or selected_settings.load().default_profile
-        return selected_environment.snapshot(selected)
+        return selected_environment.snapshot(selected, refresh_devices=refresh)
 
     @app.get("/api/queue")
     def operation_queue_status() -> list[dict[str, object]]:

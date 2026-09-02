@@ -451,7 +451,10 @@ uv run utteran benchmark --audio long-sample.wav --apply
 環境情報はCPU/GPU/driver再検出用fingerprint、runtime/model/versionを含みますが、認識本文、job、
 個人名は含みません。前回結果を自動比較し、utteran更新後は再測定を促します。`--markdown`は共有用、
 `--apply`は推奨構成と根拠（モデル、音声長、日時）をconfigへ記録します。既存`--variants`は互換alias
-として維持しています。OpenVINO構成はencoder IR生成が必要です。auto順序はPhase 6cまで変更しません。
+として維持しています。`--variants`と`--targets`は同じdevice解決を使い、`auto`だけが検出結果へ
+解決されます。明示deviceは利用不能でも別deviceへ切り替えずerrorになります。JSONの
+`target.device_resolution`には要求値、実際のdevice、明示／auto／matrix列挙の別、決定根拠を保存します。
+OpenVINO構成はencoder IR生成が必要です。
 
 ## 設定と管理
 
@@ -488,9 +491,9 @@ NVIDIA GPUを持たない環境でCTranslate2/PyTorchのCUDA検出がネイテ�
 - NVIDIA GPUがない環境では、PyTorch CUDA/XPUプローブがタイムアウトするため
   **初回（未キャッシュ）の検出に数十秒程度かかる**ことがあります。GUIはこの間、
   起動処理やジョブキューをブロックしません。
-- 結果はハードウェア・ドライバ・パッケージ構成をキーにキャッシュされ、
-  2回目以降は数秒で完了します。`utteran devices --refresh`で明示的に
-  再検出できます。
+- 全プローブが正常に完了した結果だけが、ハードウェア・ドライバ・パッケージ構成をキーに
+  キャッシュされ、2回目以降は数秒で完了します。失敗・タイムアウトはキャッシュされません。
+  CLIでは`utteran devices --refresh`、GUIでは「再検出」でキャッシュを破棄して再試行できます。
 - タイムアウト秒数は`utteran devices --probe-timeout <秒>`、または
   `config.toml`の`[general] device_probe_timeout_seconds`で変更できます。
 
