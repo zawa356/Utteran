@@ -1,5 +1,80 @@
 # AI 作業状態
 
+## Phase enhancement ac-2 プロセス・インストーラー（0.1.22、2026-09-02、進行中）
+
+### Step 1 切り分け（0.1.21、修正前）
+
+#### C-1: GUI 終了後に残るプロセス
+
+| 条件 | 修正前の結果 | 根拠 |
+|---|---|---|
+| job、wizard、probe のない正常終了 | 残留なし | ac-1 の source `gui.ps1`／配布 exe 実測を再利用。Uvicorn thread と WebView2 群はウィンドウ終了に追従する。 |
+| job 実行中／wizard 操作中にウィンドウを閉じる | profile の `utteran`／`setup.ps1` process tree が残り得る | `app.main()` の `finally` は Uvicorn だけを停止し、`JobManager`、`SetupWizardService`、共通 queue に shutdown を通知しない。worker は daemon thread のため GUI 本体だけ終了できる。 |
+| cancel 直後に閉じる | `taskkill /T /F` 完了後なら残らないが、終了処理との競合を保証していない | cancel API 自体は同期的に tree kill する一方、GUI 全体の shutdown は稼働 process の完了を待たず、全 process を列挙して再確認する処理もない。 |
+| device probe 中に閉じる | profile CLI とその probe 子 process が残り得る | GUI は profile CLI を `CREATE_NEW_PROCESS_GROUP` で起動し、その配下で probe を起動する。timeout 時の tree kill はあるが、GUI 終了時の tree kill はない。 |
+| GUI 本体を強制終了 | 直接の profile 子 process とその子孫が残る | 修正前と同じ `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` で親 Python と sleep 子を起動し、親を強制終了する隔離 harness を実行。親 PID 18896 の終了 1 秒後も子 PID 51668 が生存したため、確認後に子だけを明示終了した。process group は親死亡時の連動終了機構ではない。 |
+
+source と配布 exe は同じ `app.py`、manager、process 起動 helper を使用し、終了処理に分岐はない。
+配布 exe の idle 起動では GUI 本体と WebView2 群だけ、source の処理実行時にはこれに profile
+`utteran` と probe／backend 子 process が加わる。差は凍結 GUI shell か Python GUI shell かであり、
+残留の原因である profile process の所有方法は共通だった。
+
+#### C-2: アンインストール後の残留
+
+0.1.21 installer を隔離先 `output/ac2-installer-lab/install` へ clean install し、GUI が生成する
+`logs/app.log`と模擬 `.venvs/win-cpu`を置いて、process が一つもない状態で silent uninstall した。
+uninstaller は exit 0 を返したが、両 directory と install directory が残り、log に directory error 145
+（directory not empty）が記録された。したがって C-2 は C-1 がなくても再現する。
+
+| 対象 | 0.1.21 の挙動 | ac-2 方針 |
+|---|---|---|
+| installer が配置した app 本体 | 常に削除 | 常に削除 |
+| profile `.venvs` | 対話時に選択、silent は保持 | 再生成可能な実行環境なので削除。実行中なら先に停止し、失敗を明示する |
+| model cache、OpenVINO IR、GenAI compiled cache | model 選択時に削除。GenAI cache は既に同じ選択へ含まれる。silent は保持 | 再取得／再生成可能な cache なので削除。旧 runtime blob も directory 単位で削除する |
+| device probe cache | 選択肢がなく保持 | 再生成可能なので削除 |
+| native build (`~/.utteran/native`) | 選択肢がなく保持 | 再構築可能なので削除対象に含める |
+| job history／文字起こし結果 | 対話時に選択、silent は保持 | 利用者データ。既定で保持し、対話時だけ明示選択で削除 |
+| GUI 設定、core `config.toml`、memory calibration | GUI 設定だけ選択。core 設定と calibration は保持 | 利用者設定。既定で保持し、削除は明示選択に限る |
+| log／benchmark／diagnostics | install directory または user log directory に残る | 本文を含み得るため利用者データとして既定保持。残る場所を明示する |
+| Hugging Face token（OS keyring） | 選択肢がなく保持 | 認証情報なので対話時に独立して選択させる。silent は同意を得られないため保持する |
+| 利用者が指定した出力 directory | installer 管理外 | 常に保持し、一切走査・削除しない |
+
+#### C-3: 上書き・downgrade
+
+- 0.1.21 配布 exe を隔離 install 先で実行したまま同じ 0.1.21 installer を silent 実行した。
+  Inno Setup Restart Manager が `utteran GUI` を検出して終了させ、6.63 秒、exit 0 で上書きに成功した。
+  無言の file copy failure にはならないが、製品固有 mutex／明示 message はなく、orphan profile process
+  まで確実に停止したという保証はない。
+- `.venvs`は上書き対象外で保持される。venv が新しい `uv.lock`／選択 profile extras と一致するかを
+  記録・照合する manifest がなく、0.1.19 のような依存追加後も既存利用者には再構築案内が出ない。
+- 同じ payload を `AppVersion=0.1.20` として実 compile し、0.1.21 の隔離 install 先へ silent install
+  したところ exit 0、Uninstall registry の `DisplayVersion=0.1.20` となった。downgrade は無条件で許可
+  され、警告も互換性判定もない。
+
+#### 因果関係
+
+C-1 は install directory／`.venvs` 内の executable や DLL を掴む経路なので、削除・上書き失敗を
+悪化させ得る。しかし C-2 は process なしで再現し、C-3 の downgrade と stale venv も process と
+無関係に再現した。よって **C-1 は一部の file lock の原因候補だが、C-2／C-3 全体の原因ではなく、
+3件には独立した欠陥がある**と判定する。
+
+### i7 機での確認項目（AC ライン完了後に実施）
+
+| 追加版 | 手順 | 合格条件 |
+|---|---|---|
+| 0.1.21 (ac-1) | i7-1165G7／Iris Xe／NVIDIAなしで cache を消して GUI を起動し、初回検出と「再検出」を各1回行う | 全体が200秒以内に終端となり、実行中・成功・timeout・error・不明が誤って FAILED／成功へ反転せず、GPU非搭載向け選択肢だけが表示される |
+| 0.1.22 (ac-2) | idle、job実行中、cancel直後、device probe中の各状態でGUIを閉じ、最後にGUIを強制終了する。各回でGUI／profile `utteran`／probe／WebView2を確認する | 各終了後、今回起動した process が timeout 内に0件になる。終了待ちは失敗表示にせず、失敗時だけ診断を残す |
+| 0.1.22 (ac-2) | clean install後にprofile、model、GenAI cacheを作り、利用者データは保持を選んでuninstallする | app directory、`.venvs`、model／IR／GenAI／probe cache、native buildが残らず、job、出力、設定、token、保持を選んだlogだけが明示場所に残る |
+| 0.1.22 (ac-2) | 旧版profileを残した0.1.21→0.1.22更新、0.1.22実行中の上書き、0.1.22→0.1.21 downgradeを順に試す | 実行中更新は明示案内後に安全に停止、stale profileは再構築案内、downgradeは警告なしに進まず、承認した場合だけ完了する |
+
+### B グループ追加課題
+
+**B-5: OpenVINO コンパイルキャッシュの剪定。** OpenVINO runtime が更新されるたびに別 blob が
+生成され、旧版込みで 6,114,209,908 bytes（約5.7 GiB）を観測した。`models genai-cache`で確認し、
+`reset-env.ps1`とuninstallで全削除はできるが、古い blob だけを選択的に削除する手段がない。
+利用者が気づかないうちに蓄積するため「環境を汚さない」方針の穴である。使用中でない blob の検出と
+削除、または`models genai-cache --prune`を別phaseで検討する。ac-2では剪定を実装しない。
+
 ## Phase enhancement ac-1 GUI状態表示（0.1.21、2026-09-02）
 
 ### Step 1 切り分け（修正前）
