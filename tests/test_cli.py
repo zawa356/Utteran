@@ -308,7 +308,7 @@ def test_missing_ffmpeg_returns_dependency_exit_code(
     input_path = tmp_path / "audio.wav"
     input_path.write_bytes(b"audio")
     monkeypatch.setattr("utteran.audio.shutil.which", lambda _name: None)
-    monkeypatch.setattr("utteran.audio.user_data_dir", lambda _name: str(tmp_path))
+    monkeypatch.setattr("utteran_paths.user_data_dir", lambda _name: str(tmp_path))
 
     result = runner.invoke(
         app,
