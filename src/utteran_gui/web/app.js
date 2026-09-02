@@ -1735,7 +1735,12 @@
       }
     });
     $("cancel-button").addEventListener("click", async () => {
-      if (state.job) await api(`/api/jobs/${state.job.id}/cancel`, { method: "POST" });
+      if (state.job) {
+        $("cancel-button").disabled = true;
+        $("stall-warning").textContent = t("cancellationPending");
+        $("stall-warning").classList.remove("hidden");
+        await api(`/api/jobs/${state.job.id}/cancel`, { method: "POST" });
+      }
     });
     $("settings-form").addEventListener("submit", saveSettings);
     $("open-logs").addEventListener("click", () => openFolder(state.settings.log_dir));

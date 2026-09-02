@@ -75,6 +75,25 @@ C-1 は install directory／`.venvs` 内の executable や DLL を掴む経路�
 利用者が気づかないうちに蓄積するため「環境を汚さない」方針の穴である。使用中でない blob の検出と
 削除、または`models genai-cache --prune`を別phaseで検討する。ac-2では剪定を実装しない。
 
+### Step 2 C-1 実装
+
+- GUIが直接起動するprofile CLI、setup、model操作、runtime probeを`ProcessSupervisor`へ集約した。
+  正常shutdownはmanagerの非終端jobを子からtree killし、supervisorが最大5秒待つ。新規起動とshutdownが
+  競合した場合は起動直後のtreeを止め、未管理processを作らない。
+- Windowsでは`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`を設定したJob Objectへ全直接子processを所属させる。
+  GUIを強制終了してもOSが最後のhandleを閉じ、profile processとそこから生まれたprobe／backend子孫を
+  終了する。所属に失敗した場合はそのtreeを即時終了して起動失敗とする。
+- job、wizard双方にshutdown APIを追加し、FastAPIのshutdown hookからjob→wizard→supervisorの順で
+  終了する。UvicornはWebView終了後にこのhookを完了してからserver threadを閉じる。
+- キャンセルbuttonは即時disableし、「終了処理中」と15分音声での最大待ち目安（GPU約1分、NPU約3分、
+  CPU約5分、長尺はさらに延びる）を表示する。キャンセル機構／OpenVINO GenAI推論コードは変更していない。
+- Windows実process testで、supervisorの明示shutdown後に子が0件になること、およびsupervisorを持つ
+  親processを強制終了した場合もJob Objectの子PIDが10秒以内に消えることを確認した。GUI／hardware／
+  wizardを含む対象testは82 passed、ruff、mypy（61 source）、JavaScript構文、`git diff --check`もpass。
+- 修正後のsource `gui.ps1`を起動し、environment snapshot／device確認中にGUI PID 22060を強制終了した。
+  2秒後に同PIDとその直接子は0件で、起動logにもJob Object所属失敗はなかった。配布exeおよび実job中の
+  最終確認は0.1.22 build後に行う。
+
 ## Phase enhancement ac-1 GUI状態表示（0.1.21、2026-09-02）
 
 ### Step 1 切り分け（修正前）

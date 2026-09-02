@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from utteran_gui.processes import build_creation_kwargs, kill_process_tree
+from utteran_gui.processes import PopenFactory, TreeKiller, build_creation_kwargs, kill_process_tree
 from utteran_gui.security import mask_secrets, sanitize_json
 
 PROFILE_NAMES = ("cpu", "cuda", "intel", "vulkan")
@@ -69,9 +69,18 @@ class RegenerationOptions:
 class CliAdapter:
     """Resolve profile environments and invoke only their console executable."""
 
-    def __init__(self, repo_root: Path, venv_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        repo_root: Path,
+        venv_root: Path | None = None,
+        *,
+        popen_factory: PopenFactory | None = None,
+        tree_killer: TreeKiller | None = None,
+    ) -> None:
         self.repo_root = repo_root.resolve()
         self.venv_root = (venv_root or self.repo_root / ".venvs").resolve()
+        self._popen_factory = popen_factory
+        self._tree_killer = tree_killer or kill_process_tree
 
     @property
     def os_slug(self) -> str:
@@ -128,7 +137,7 @@ class CliAdapter:
         info = self.profile_info(profile)
         if not info.exists:
             raise CliError(f"Profile is not available: {profile}")
-        popen = cast(Callable[..., subprocess.Popen[str]], subprocess.Popen)
+        popen = self._popen_factory or cast(Callable[..., subprocess.Popen[str]], subprocess.Popen)
         process = popen(
             [str(info.executable), *arguments],
             cwd=self.repo_root,
@@ -144,7 +153,7 @@ class CliAdapter:
         try:
             stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            kill_process_tree(process)
+            self._tree_killer(process)
             stdout, stderr = process.communicate()
             raise CliError(f"CLI timed out after {timeout:g}s: {' '.join(arguments)}") from None
         return subprocess.CompletedProcess(
