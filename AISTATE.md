@@ -2312,7 +2312,7 @@ Phase 5d事前準備で個別に実施・記録済みの受入結果があるこ
   Python APIと機械可読サマリーJSON出力を追加した。既存G13（CUDA耐久）へ`requires: {cuda: true}`
   を付与し、本機（NVIDIA不在）では理由付きskipとして扱われるようにした。
 - P0〜P11から74ケースを新規追加した（P12〜P16は自動化・他手段での充足・手動手順書のいずれかに
-  分類し`docs/受入試験_手動確認手順書.md`と`tools/acceptance/README.md`に記録、詳細は次項）。
+  分類し`docs/archive/受入試験_手動確認手順書.md`と`tools/acceptance/README.md`に記録、詳細は次項）。
   ほぼ全ケースが既存の`command-output`/`json-output`/`validate.py formats|json|equivalent`を
   再利用でき、新規に追加したのは`scenarios.py`の`native-manifest`（manifestのcommit・
   非可搬パス不在確認）・`profile-isolation`（プロファイル更新が他プロファイルのtorchへ

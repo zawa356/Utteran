@@ -157,5 +157,5 @@ print(summary.passed, summary.failed, summary.skipped)
 ## 手動確認手順書
 
 対話メニューでの実操作やExplorer起動など、パイプ入力や終了コードだけでは意味のある検証が
-できない項目は`docs/受入試験_手動確認手順書.md`にまとめてある。どの項目を手順書に回したか、
+できない項目は`docs/archive/受入試験_手動確認手順書.md`にまとめてある。どの項目を手順書に回したか、
 どの項目をユニットテストや他ツール（`utteran benchmark`等）に委ねたかも同文書に明記している。
