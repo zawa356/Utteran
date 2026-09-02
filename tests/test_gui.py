@@ -593,6 +593,52 @@ def test_environment_reads_all_state_from_profile_json_contracts(
     ]
 
 
+def test_environment_refresh_forwards_cli_cache_bypass(monkeypatch: Any, tmp_path: Path) -> None:
+    _create_profile(tmp_path, "cpu")
+    cli = CliAdapter(tmp_path)
+    device_calls: list[list[str]] = []
+
+    def run_json(profile: str, arguments: list[str], *, timeout: float = 60.0) -> object:
+        del profile, timeout
+        if arguments == ["profiles", "list", "--json"]:
+            return {"profiles": [{"name": "cpu", "exists": True, "updated_at": None}]}
+        if arguments[:2] == ["devices", "--json"]:
+            device_calls.append(arguments)
+            return {"backends": {}}
+        if arguments == ["models", "list", "--available", "--all", "--json"]:
+            return []
+        if arguments == ["native", "status", "--json"]:
+            return {"runnable": {}}
+        if arguments == ["models", "list-openvino", "--json"]:
+            return []
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(cli, "run_json", run_json)
+    monkeypatch.setattr(cli, "run_text", lambda *_args, **_kwargs: "C:/models\n")
+
+    EnvironmentService(cli).snapshot("cpu", refresh_devices=True)
+
+    assert device_calls == [["devices", "--json", "--refresh"]]
+
+
+def test_job_status_display_is_exhaustive_and_does_not_finish_on_done_event_early() -> None:
+    script = (Path(__file__).parents[1] / "src" / "utteran_gui" / "web" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    definitions = script.split("const JOB_STATUS_DEFINITIONS", 1)[1].split(");", 1)[0]
+    finish = script.split("async function finishJob()", 1)[1].split("async function startJob", 1)[0]
+
+    for status in ("starting", "running", "completed", "failed", "cancelled"):
+        assert f"{status}:" in definitions
+    assert 'outcome: "unknown"' in script
+    assert 'kind: "unknown_job_status"' in script
+    assert "if (!definition.terminal) return;" in finish
+    assert finish.index("if (!definition.terminal) return;") < finish.index("state.source?.close()")
+    assert 'definition.outcome === "success"' in finish
+    assert 'definition.outcome === "failure"' in finish
+    assert 'loadEnvironment($("profile-select").value, true)' in script
+
+
 def test_intel_auto_selection_defaults_to_whisper_cpp_not_cpu() -> None:
     devices = {
         "backends": {"faster-whisper": True, "whisper-cpp": True},
