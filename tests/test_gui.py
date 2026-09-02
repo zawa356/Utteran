@@ -299,6 +299,8 @@ def test_workspace_grids_and_logging_controls_cannot_force_horizontal_overflow()
     assert ".stage-list li { min-width: 0; overflow-wrap: anywhere;" in styles
     assert ".stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }" in styles
     assert ".token-actions input { width: min(220px, 100%); min-width: 0; }" in styles
+    assert ".format-chip { position: relative; }" in styles
+    assert ".format-chip input { position: absolute; opacity: 0; }" in styles
     assert 'class="view viewer-view"' not in index
     assert 'id="raw-log-warning"' in index and 'id="open-logs"' in index
     assert "state.settings.raw_subprocess_logs" in script
