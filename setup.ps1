@@ -142,6 +142,24 @@ function Invoke-UvSyncWithRetry {
     return $false
 }
 
+function Write-ProfileManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$TargetVenv,
+        [Parameter(Mandatory = $true)][string]$ProfileName,
+        [Parameter(Mandatory = $true)][string[]]$Extras
+    )
+    $LockPath = Join-Path $ProjectRoot "uv.lock"
+    $ManifestPath = Join-Path $TargetVenv ".utteran-profile.json"
+    $Payload = [ordered]@{
+        schema_version = 1
+        profile        = $ProfileName
+        lock_sha256    = (Get-FileHash -LiteralPath $LockPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        extras         = @($Extras)
+    } | ConvertTo-Json -Compress
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($ManifestPath, "$Payload`n", $Utf8NoBom)
+}
+
 function Get-VenvRoot {
     if ($VenvDir) {
         return [IO.Path]::GetFullPath($VenvDir)
@@ -574,6 +592,8 @@ function Invoke-ProfileSetup {
             -ForegroundColor Red
         exit 1
     }
+
+    Write-ProfileManifest -TargetVenv $VenvPath -ProfileName $ProfileName -Extras $Extras
 
     if ($ProfileName -ne "gui") {
         Write-Step "Checking ffmpeg" -Stage "ffmpeg"

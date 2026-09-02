@@ -76,3 +76,19 @@ def test_uninstaller_deletes_keyring_token_only_after_interactive_consent() -> N
     assert "and DeleteToken" not in installer
     assert "if DeleteToken then" in installer
     assert "--delete-keyring-token" in installer
+
+
+def test_installer_explicitly_closes_running_app_and_blocks_silent_downgrade() -> None:
+    installer = (Path(__file__).parents[1] / "packaging" / "installer.iss").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CloseApplications=force" in installer
+    assert "RestartApplications=no" in installer
+    initialize = installer.split("function InitializeSetup(): Boolean;", 1)[1].split(
+        "procedure InitializeWizard", 1
+    )[0]
+    assert "CompareVersions(InstalledVersion, '{#MyAppVersion}') > 0" in initialize
+    assert "if WizardSilent() then" in initialize
+    assert "Result := False" in initialize
+    assert "DowngradeWarning" in initialize

@@ -232,6 +232,9 @@
     } else if (state.environment.errors.length) {
       alert.textContent = state.environment.errors.join(" · ");
       alert.classList.remove("hidden");
+    } else if ((state.environment.profile_warnings || []).length) {
+      alert.textContent = state.environment.profile_warnings.join(" · ");
+      alert.classList.remove("hidden");
     } else if ((state.environment.options.guidance || []).length) {
       alert.textContent = state.environment.options.guidance.join(" · ");
       alert.classList.remove("hidden");
