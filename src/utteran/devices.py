@@ -34,9 +34,7 @@ DEFAULT_PROBE_TIMEOUT_SECONDS = 20.0
 _PROBE_CACHE_SCHEMA = 1
 _LOGGER = logging.getLogger(__name__)
 ProbeState = Literal["completed", "timeout", "error"]
-PROBE_PROGRESS_STATES = frozenset(
-    {"started", "completed", "timeout", "error", "cached", "unknown"}
-)
+PROBE_PROGRESS_STATES = frozenset({"started", "completed", "timeout", "error", "cached", "unknown"})
 
 
 @dataclass(frozen=True)

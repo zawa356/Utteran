@@ -121,9 +121,9 @@ def test_every_benchmark_target_route_is_declared() -> None:
 
 def test_legacy_variant_auto_uses_detected_cuda_instead_of_cpu() -> None:
     config = Config()
-    target = resolve_legacy_variants(
-        config, ("faster-whisper",), _device_report(cuda_usable=True)
-    )[0]
+    target = resolve_legacy_variants(config, ("faster-whisper",), _device_report(cuda_usable=True))[
+        0
+    ]
     assert target.device == "cuda:0"
     assert target.compute_type == "int8"
     assert target.device_resolution is not None
