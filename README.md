@@ -6,7 +6,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.23`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.24`（未release）。API・設定は1.0まで変更されます。
 
 ## 主な機能
 
@@ -17,10 +17,26 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 - profile別venv、model／job／native build管理、device診断
 - WindowsデスクトップGUI（進捗・中断、結果閲覧・検索、ジョブ履歴、再出力）
 - Windows番号menu (`start.ps1`) と自動化向けCLI
-- Windowsインストーラー（管理者権限不要、Phase 5d）
+- WindowsインストーラーとポータブルZIP
 
 主対象はWindows 10/11、Python 3.11/3.12です。Linuxは副対象で、CIがモデル不要testとimportを
 確認します。GPU、native build、実model、長時間処理は対象hardware上の受入試験で保証します。
+
+## 配布形態を選ぶ（Windows）
+
+| 配布形態 | 向いている用途 | データ配置 |
+|---|---|---|
+| `utteran-setup-<version>.exe` | 継続利用、通常はこちらを推奨 | Windowsのユーザー領域（従来どおり） |
+| `utteran-portable-<version>.zip` | 一時利用、PCへutteranのデータを残したくない場合 | 展開先の`data`配下 |
+
+ポータブル版はZIPを展開し、直下の`utteran-gui.exe`を起動します。設定、ログ、ジョブ、モデル、
+キャッシュ、ffmpeg、native build、プロファイルvenvは展開先だけに作られるため、必要な出力を
+別の場所へ移してから展開フォルダーを削除すればutteranの管理データは残りません。
+
+ただし、ポータブル版ではHugging Face tokenを保存せず、起動のたびに入力が必要です。
+venvとモデルの取得後は数GBを使用し、展開フォルダーを移動するとvenvの再構築案内が出る場合が
+あります。USBメモリでは構築・モデル読込・処理が遅くなる可能性があります。ポータブル版も同じ
+`utteran-gui.exe`を使うため、Smart App Controlを回避するものではありません。
 
 ## インストーラーで始める（推奨・Windows）
 
@@ -84,11 +100,12 @@ Windows 10で起動時に画面が表示されない場合は、
 
 ### ダウンロードの検証（SHA-256）
 
-各releaseのGitHub Releasesページには、インストーラーのSHA-256ハッシュを掲載しています。
+各releaseのGitHub Releasesページには、インストーラーとポータブルZIPのSHA-256ハッシュを掲載しています。
 PowerShellでダウンロードしたファイルのハッシュを計算し、一致することを確認してください。
 
 ```powershell
 Get-FileHash .\utteran-setup-<version>.exe -Algorithm SHA256
+Get-FileHash .\utteran-portable-<version>.zip -Algorithm SHA256
 ```
 
 表示された値がReleasesページ記載の値と一致しない場合は、ファイルを削除し、公式の
