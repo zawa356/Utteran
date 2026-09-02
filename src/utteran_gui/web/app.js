@@ -181,10 +181,13 @@
     $("transcript-spacer").style.height = "0px";
   }
 
-  async function loadEnvironment(profile) {
+  async function loadEnvironment(profile, refresh = false) {
     $("form-status").textContent = t("detecting");
+    const query = new URLSearchParams();
+    if (profile) query.set("profile", profile);
+    if (refresh) query.set("refresh", "true");
     state.environment = await api(
-      `/api/environment${profile ? `?profile=${encodeURIComponent(profile)}` : ""}`,
+      `/api/environment${query.size ? `?${query}` : ""}`,
     );
     const existing = state.environment.profiles.filter((item) => item.exists);
     setOptions(
@@ -888,28 +891,59 @@
       appendLog(data.message || data.reason || `${kind}: ${data.input_path || data.job_id || ""}`);
     }
     if (kind === "output_written") appendLog(`${data.format}: ${data.path}`);
+    // The CLI writes the done JSONL event before the OS process has exited.
+    // finishJob therefore verifies the retained server status and leaves the
+    // event stream/poller alive while it is still running.
     if (kind === "done") finishJob();
+  }
+
+  const JOB_STATUS_DEFINITIONS = Object.freeze({
+    starting: Object.freeze({ terminal: false, outcome: "running" }),
+    running: Object.freeze({ terminal: false, outcome: "running" }),
+    completed: Object.freeze({ terminal: true, outcome: "success" }),
+    failed: Object.freeze({ terminal: true, outcome: "failure" }),
+    cancelled: Object.freeze({ terminal: true, outcome: "cancelled" }),
+  });
+
+  function jobStatusDefinition(status) {
+    const definition = JOB_STATUS_DEFINITIONS[status];
+    if (definition) return definition;
+    queueFrontendError({
+      kind: "unknown_job_status",
+      message: `Unknown job status: ${String(status)}`,
+    });
+    return Object.freeze({ terminal: false, outcome: "unknown" });
   }
 
   async function finishJob() {
     if (!state.job) return;
+    const result = await api(`/api/jobs/${state.job.id}`);
+    const definition = jobStatusDefinition(result.status);
+    if (!definition.terminal) return;
+    state.job = result;
     state.source?.close();
     clearInterval(state.poller);
-    const result = await api(`/api/jobs/${state.job.id}`);
-    state.job = result;
     $("cancel-button").disabled = true;
-    if (result.exit_code === 0) $("progress-bar").style.width = "100%";
+    if (definition.outcome === "success") $("progress-bar").style.width = "100%";
     $("result-panel").classList.remove("hidden");
     $("result-eyebrow").textContent =
-      result.exit_code === 0 ? "COMPLETE" : result.exit_code === 130 ? "CANCELLED" : "FAILED";
+      definition.outcome === "success"
+        ? "COMPLETE"
+        : definition.outcome === "cancelled"
+          ? "CANCELLED"
+          : definition.outcome === "failure"
+            ? "FAILED"
+            : "UNKNOWN";
     $("result-title").textContent =
-      result.exit_code === 0
+      definition.outcome === "success"
         ? t("complete")
-        : result.exit_code === 130
+        : definition.outcome === "cancelled"
           ? t("cancelled")
-          : result.exit_code === 5
-            ? t("partial")
-            : t("failed");
+        : result.exit_code === 5
+          ? t("partial")
+          : definition.outcome === "failure"
+            ? t("failed")
+            : t("unknown");
     const guidance = $("result-guidance");
     if (result.guidance) {
       guidance.textContent = t(`guide_${result.guidance.key}`);
@@ -938,7 +972,10 @@
     );
     const resolved = [...result.events].reverse().find((item) => item.event === "job_resolved");
     $("open-result").dataset.jobId = resolved?.job_id || "";
-    $("open-result").classList.toggle("hidden", result.exit_code !== 0 || !resolved?.job_id);
+    $("open-result").classList.toggle(
+      "hidden",
+      definition.outcome !== "success" || !resolved?.job_id,
+    );
     $("open-output").classList.toggle("hidden", !result.outputs.length);
     result.logs.forEach(appendLog);
     $("start-button").disabled = false;
@@ -1671,7 +1708,9 @@
         if (button.dataset.view === "queue") await loadQueue();
       }),
     );
-    $("refresh-environment").addEventListener("click", () => loadEnvironment($("profile-select").value));
+    $("refresh-environment").addEventListener("click", () =>
+      loadEnvironment($("profile-select").value, true),
+    );
     $("profile-select").addEventListener("change", (event) => loadEnvironment(event.target.value));
     $("asr-backend").addEventListener("change", () => renderAsrDetail());
     $("asr-device").addEventListener("change", renderConfigurationNotice);
