@@ -70,12 +70,12 @@ japanese.DownloadsNoticeBody=このインストーラー自体には推論に使
 japanese.ThirdPartyNoticeCaption=サードパーティ ライセンスについて
 japanese.ThirdPartyNoticeSubCaption=utteran 自体は MIT License ですが、依存ライブラリやモデルは別のライセンスです
 japanese.ThirdPartyNoticeBody=utteran のソースコードは MIT License で提供されますが、初回起動時に追加取得する依存ライブラリやAIモデルには個別のライセンス・利用条件が適用されます。%n%n特に注意が必要な項目:%n  ・ffmpeg（gyan.dev配布ビルド）: GPLv3%n  ・pyannote speaker-diarization モデル: Hugging Face 上での利用条件への同意が必要（CC-BY-4.0）%n%n詳細はインストール先の THIRD_PARTY_NOTICES.md を参照してください。
-japanese.UninstallOptionsIntro=アプリ本体（このインストーラーが配置したファイル）は、この後常に削除されます。%n%n続けて、それ以外のデータを個別に削除するか確認します。それぞれ「いいえ」を選ぶと、そのデータは削除されずに残ります。
-japanese.UninstallOptionGuiSettings=GUI設定（テーマ・言語・既定フォルダー）も削除しますか?
-japanese.UninstallOptionVenvs=プロファイル実行環境 (.venvs) も削除しますか? (%1)
-japanese.UninstallOptionModels=ダウンロード済みモデルも削除しますか? (%1)
+japanese.UninstallOptionsIntro=アプリ本体と、再構築できる実行環境・キャッシュは常に削除されます（プロファイル .venvs、モデル、OpenVINOキャッシュ、デバイスキャッシュ、native build、ffmpeg）。%n%n続けて、利用者データを個別に削除するか確認します。「いいえ」を選ぶと保持されます。
+japanese.UninstallOptionGuiSettings=GUI設定、CLI設定、メモリ較正データも削除しますか?
 japanese.UninstallOptionJobs=ジョブ履歴と文字起こし結果も削除しますか? 本文を含みます。(%1)
-japanese.UninstallOptionFfmpeg=ffmpegも削除しますか? (uvは共有フォルダーのため削除されません)
+japanese.UninstallOptionLogs=ログ、診断、ベンチマーク結果も削除しますか? 生ログは文字起こし本文を含む場合があります。(%1)
+japanese.UninstallOptionToken=Windows資格情報マネージャーに保存したHugging Faceトークンも削除しますか?
+japanese.UninstallTokenFailed=Hugging Faceトークンを削除できませんでした。Windows資格情報マネージャーで service「utteran」、user「huggingface」を確認してください。
 japanese.UninstallRemainingDataIntro=以下のデータは選択されなかったため残っています:
 english.DownloadsNoticeCaption=Additional downloads are required
 english.DownloadsNoticeSubCaption=First launch needs an internet connection and free disk space
@@ -83,12 +83,12 @@ english.DownloadsNoticeBody=This installer does not bundle the inference librari
 english.ThirdPartyNoticeCaption=Third-party licenses
 english.ThirdPartyNoticeSubCaption=utteran itself is MIT-licensed, but its dependencies and models are not
 english.ThirdPartyNoticeBody=utteran's own source code is MIT-licensed, but the dependencies and AI models fetched on first launch carry their own licenses and usage terms.%n%nNotably:%n  - ffmpeg (gyan.dev build): GPLv3%n  - pyannote speaker-diarization model: requires accepting usage terms on Hugging Face (CC-BY-4.0)%n%nSee THIRD_PARTY_NOTICES.md in the install folder for the full list.
-english.UninstallOptionsIntro=The app body (files this installer placed) will always be removed next.%n%nYou will now be asked about each other kind of data separately. Answering "No" leaves that data in place.
-english.UninstallOptionGuiSettings=Also remove GUI settings (theme, language, default folders)?
-english.UninstallOptionVenvs=Also remove profile environments (.venvs)? (%1)
-english.UninstallOptionModels=Also remove downloaded models? (%1)
+english.UninstallOptionsIntro=The app body and all reproducible runtimes/caches are always removed (profile .venvs, models, OpenVINO caches, device cache, native builds, and ffmpeg).%n%nYou will now be asked about user data. Answering "No" preserves it.
+english.UninstallOptionGuiSettings=Also remove GUI settings, CLI settings, and memory calibration data?
 english.UninstallOptionJobs=Also remove job history and transcription results? This includes transcript text. (%1)
-english.UninstallOptionFfmpeg=Also remove ffmpeg? (uv is kept - it shares the same folder)
+english.UninstallOptionLogs=Also remove logs, diagnostics, and benchmark results? Raw logs may contain transcript text. (%1)
+english.UninstallOptionToken=Also remove the Hugging Face token stored in Windows Credential Manager?
+english.UninstallTokenFailed=The Hugging Face token could not be removed. Check Windows Credential Manager for service "utteran", user "huggingface".
 english.UninstallRemainingDataIntro=The following data was not selected and is still present:
 
 [Tasks]
@@ -156,7 +156,7 @@ end;
 // behind" the default instead of something this code has to special-case.
 
 var
-  DeleteGuiSettings, DeleteVenvs, DeleteModels, DeleteJobs, DeleteFfmpeg: Boolean;
+  DeleteUserSettings, DeleteJobs, DeleteLogs, DeleteToken: Boolean;
 
 function GetDirSize(Path: String): Int64;
 var
@@ -207,7 +207,17 @@ end;
 function GuiSettingsDir(): String;
 begin
   { utteran_gui.settings.SettingsStore: platformdirs.user_config_dir("utteran-gui") }
-  Result := ExpandConstant('{localappdata}\utteran-gui');
+  Result := ExpandConstant('{localappdata}\utteran-gui\utteran-gui');
+end;
+
+function CoreConfigFile(): String;
+begin
+  Result := ExpandConstant('{localappdata}\utteran\utteran\config.toml');
+end;
+
+function MemoryCalibrationFile(): String;
+begin
+  Result := ExpandConstant('{localappdata}\utteran\utteran\memory-calibration.json');
 end;
 
 function VenvsDir(): String;
@@ -229,10 +239,35 @@ begin
   Result := ExpandConstant('{localappdata}\utteran\utteran\Cache\openvino-genai-compiled');
 end;
 
+function CoreCacheDir(): String;
+begin
+  Result := ExpandConstant('{localappdata}\utteran\utteran\Cache');
+end;
+
+function DeviceProbeCacheFile(): String;
+begin
+  Result := CoreCacheDir() + '\device-probes-v1.json';
+end;
+
+function NativeBuildDir(): String;
+begin
+  Result := ExpandConstant('{userprofile}\.utteran\native');
+end;
+
 function JobsDir(): String;
 begin
   { utteran.config: platformdirs.user_cache_dir("utteran")/jobs }
   Result := ExpandConstant('{localappdata}\utteran\utteran\Cache\jobs');
+end;
+
+function UserLogsDir(): String;
+begin
+  Result := ExpandConstant('{localappdata}\utteran\utteran\Logs');
+end;
+
+function InstallLogsDir(): String;
+begin
+  Result := ExpandConstant('{app}\logs');
 end;
 
 function FfmpegBinDir(): String;
@@ -251,18 +286,26 @@ begin
   DeleteFile(BinDir + '\ffprobe.exe');
 end;
 
+procedure DeleteRuntimeData();
+begin
+  DelTree(VenvsDir(), True, True, True);
+  DelTree(ModelsDir(), True, True, True);
+  DelTree(GenAICompiledCacheDir(), True, True, True);
+  DeleteFile(DeviceProbeCacheFile());
+  DelTree(NativeBuildDir(), True, True, True);
+  DeleteFfmpegFiles();
+end;
+
 function InitializeUninstall(): Boolean;
 begin
   Result := True;
-  DeleteGuiSettings := False;
-  DeleteVenvs := False;
-  DeleteModels := False;
+  DeleteUserSettings := False;
   DeleteJobs := False;
-  DeleteFfmpeg := False;
+  DeleteLogs := False;
+  DeleteToken := False;
 
-  { A silent/unattended uninstall (e.g. from a script) must never delete
-    multi-GB profile environments or transcription results without
-    explicit interactive confirmation - it only removes the app body. }
+  { Silent uninstall removes reproducible runtime/cache data, but it must
+    never delete user data or credentials without interactive consent. }
   if UninstallSilent() then
     exit;
 
@@ -274,52 +317,57 @@ begin
     of one combined screen. }
   MsgBox(CustomMessage('UninstallOptionsIntro'), mbInformation, MB_OK);
 
-  DeleteGuiSettings :=
+  DeleteUserSettings :=
     MsgBox(CustomMessage('UninstallOptionGuiSettings'), mbConfirmation, MB_YESNO) = IDYES;
-  DeleteVenvs :=
-    MsgBox(FmtMessage(CustomMessage('UninstallOptionVenvs'), [FormatByteSize(GetDirSize(VenvsDir()))]),
-      mbConfirmation, MB_YESNO) = IDYES;
-  DeleteModels :=
-    MsgBox(FmtMessage(CustomMessage('UninstallOptionModels'), [FormatByteSize(
-      GetDirSize(ModelsDir()) + GetDirSize(GenAICompiledCacheDir()))]),
-      mbConfirmation, MB_YESNO) = IDYES;
   DeleteJobs :=
     MsgBox(FmtMessage(CustomMessage('UninstallOptionJobs'), [FormatByteSize(GetDirSize(JobsDir()))]),
       mbConfirmation, MB_YESNO) = IDYES;
-  DeleteFfmpeg :=
-    MsgBox(CustomMessage('UninstallOptionFfmpeg'), mbConfirmation, MB_YESNO) = IDYES;
+  DeleteLogs :=
+    MsgBox(FmtMessage(CustomMessage('UninstallOptionLogs'), [FormatByteSize(
+      GetDirSize(UserLogsDir()) + GetDirSize(InstallLogsDir()))]),
+      mbConfirmation, MB_YESNO) = IDYES;
+  DeleteToken :=
+    MsgBox(CustomMessage('UninstallOptionToken'), mbConfirmation, MB_YESNO) = IDYES;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   StillPresent: TStringList;
+  ResultCode: Integer;
 begin
+  if CurUninstallStep = usUninstall then
+  begin
+    if DeleteToken then
+    begin
+      if (not Exec(ExpandConstant('{app}\{#MyAppExeName}'), '--delete-keyring-token',
+        ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
+        MsgBox(CustomMessage('UninstallTokenFailed'), mbError, MB_OK);
+    end;
+    { Delete app-local runtime and selected legacy logs before Inno removes
+      its own files, so the install directory can become empty. }
+    DeleteRuntimeData();
+    if DeleteLogs then
+      DelTree(InstallLogsDir(), True, True, True);
+    exit;
+  end;
   if CurUninstallStep <> usPostUninstall then
     exit;
 
   StillPresent := TStringList.Create;
   try
-    if DeleteGuiSettings then
-      DelTree(GuiSettingsDir(), True, True, True)
-    else if DirExists(GuiSettingsDir()) then
-      StillPresent.Add(GuiSettingsDir());
+    DeleteRuntimeData();
 
-    if DeleteVenvs then
-      DelTree(VenvsDir(), True, True, True)
-    else if DirExists(VenvsDir()) then
-      StillPresent.Add(VenvsDir());
-
-    if DeleteModels then
+    if DeleteUserSettings then
     begin
-      DelTree(ModelsDir(), True, True, True);
-      DelTree(GenAICompiledCacheDir(), True, True, True);
+      DelTree(GuiSettingsDir(), True, True, True);
+      DeleteFile(CoreConfigFile());
+      DeleteFile(MemoryCalibrationFile());
     end
     else
     begin
-      if DirExists(ModelsDir()) then
-        StillPresent.Add(ModelsDir());
-      if DirExists(GenAICompiledCacheDir()) then
-        StillPresent.Add(GenAICompiledCacheDir());
+      if DirExists(GuiSettingsDir()) then StillPresent.Add(GuiSettingsDir());
+      if FileExists(CoreConfigFile()) then StillPresent.Add(CoreConfigFile());
+      if FileExists(MemoryCalibrationFile()) then StillPresent.Add(MemoryCalibrationFile());
     end;
 
     if DeleteJobs then
@@ -327,8 +375,16 @@ begin
     else if DirExists(JobsDir()) then
       StillPresent.Add(JobsDir());
 
-    if DeleteFfmpeg then
-      DeleteFfmpegFiles();
+    if DeleteLogs then
+    begin
+      DelTree(UserLogsDir(), True, True, True);
+      DelTree(InstallLogsDir(), True, True, True);
+    end
+    else
+    begin
+      if DirExists(UserLogsDir()) then StillPresent.Add(UserLogsDir());
+      if DirExists(InstallLogsDir()) then StillPresent.Add(InstallLogsDir());
+    end;
 
     if (StillPresent.Count > 0) and not UninstallSilent() then
       MsgBox(CustomMessage('UninstallRemainingDataIntro') + #13#10#13#10 + StillPresent.Text,

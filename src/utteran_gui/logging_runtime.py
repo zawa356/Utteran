@@ -95,10 +95,13 @@ def resolve_gui_log_dir(
     settings: GuiLoggingSettings,
     *,
     install_dir: Path,
+    packaged: bool = False,
 ) -> tuple[Path, bool]:
     preferred = (
         settings.log_dir.resolve()
         if settings.log_dir is not None
+        else Path(user_log_dir("utteran")).resolve()
+        if packaged
         else install_dir.resolve() / "logs"
     )
     if _writable(preferred):
@@ -109,10 +112,10 @@ def resolve_gui_log_dir(
     return fallback, True
 
 
-def configure_gui_logging(*, install_dir: Path) -> GuiLoggingStatus:
+def configure_gui_logging(*, install_dir: Path, packaged: bool = False) -> GuiLoggingStatus:
     global _STATUS
     settings = load_logging_settings()
-    selected, fell_back = resolve_gui_log_dir(settings, install_dir=install_dir)
+    selected, fell_back = resolve_gui_log_dir(settings, install_dir=install_dir, packaged=packaged)
     deleted, deleted_bytes = _cleanup(
         selected,
         retention_days=settings.retention_days,

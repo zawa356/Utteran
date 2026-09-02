@@ -94,6 +94,25 @@ C-1 は install directory／`.venvs` 内の executable や DLL を掴む経路�
   2秒後に同PIDとその直接子は0件で、起動logにもJob Object所属失敗はなかった。配布exeおよび実job中の
   最終確認は0.1.22 build後に行う。
 
+### Step 3 C-2 実装
+
+- `.venvs`、model／OpenVINO IR、GenAI compiled cache（旧blob込み）、device probe cache、native build、
+  ffmpegを再生成可能なruntime/cacheとして、対話／silentの別なくuninstall開始時に削除する。uvは共有
+  directory内の別fileなので保持し、利用者が指定した出力directoryは走査しない。
+- job／文字起こし結果、GUI／CLI設定、memory calibration、log／diagnostics／benchmark、keyring tokenは
+  利用者データとして既定保持にした。対話時だけ4つのYes/Noで個別に削除でき、silent時は全て保持する。
+  tokenはapp本体が消える前に`utteran-gui.exe --delete-keyring-token`で既存`TokenStore.clear()`を呼ぶ。
+- 0.1.22配布GUIの既定log先をinstall directoryからuser log directoryへ変更し、GUIが起動しただけで
+  `{app}/logs`が残る問題を解消した。GUIから起動するprofile CLIにも同じ実効log先を渡す。利用者が
+  `log_dir`を明示した場合は従来どおり優先する。旧版の`{app}/logs`は削除同意を得た場合だけ削除する。
+- platformdirsのWindows実値を実行してpathを確定した。特にcore config/dataは
+  `{localappdata}/utteran/utteran`直下を共有するためrootごと消さず、`config.toml`と
+  `memory-calibration.json`だけを対象にした。
+- Inno Setup 6.7.3で実compileに成功。runtime/cache常時削除、silent時のuser data既定保持、token専用
+  command、配布log先の回帰testを含む17件、ruff、mypy（61 source）、`git diff --check`がpassした。
+  実cacheを持つ開発user上でのuninstallは既存データを破壊するため行わず、clean環境での実確認を
+  i7機／Windows Sandbox確認項目として残す。
+
 ## Phase enhancement ac-1 GUI状態表示（0.1.21、2026-09-02）
 
 ### Step 1 切り分け（修正前）
