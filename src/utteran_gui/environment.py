@@ -92,8 +92,7 @@ class EnvironmentService:
             "options": _empty_options(),
             "errors": errors,
             "profile_warnings": [
-                f"{row['name']} profileの依存環境が現在の版と一致しません。"
-                "セットアップから環境を再構築してください。"
+                _profile_warning(str(row["name"]), row["compatibility_reason"])
                 for row in profile_rows
                 if row["exists"] is True and row["compatible"] is False
             ],
@@ -164,6 +163,18 @@ class EnvironmentService:
             error_count=len(errors),
         )
         return response
+
+
+def _profile_warning(name: str, reason: object) -> str:
+    if reason == "profile_path_changed":
+        return (
+            f"{name} profileは構築時から保存場所が変わりました。既存環境は保持されていますが、"
+            "実行前にセットアップから再構築してください。"
+        )
+    return (
+        f"{name} profileの依存環境が現在の版と一致しません。"
+        "既存環境は保持されていますが、セットアップから再構築してください。"
+    )
 
 
 def annotate_model_capabilities(

@@ -18,6 +18,7 @@ from utteran_gui.app import NativeDialogApi, bind_loopback_socket
 from utteran_gui.cli import CliAdapter, RegenerationOptions, TranscriptionOptions
 from utteran_gui.environment import (
     EnvironmentService,
+    _profile_warning,
     annotate_model_capabilities,
     derive_options,
 )
@@ -570,6 +571,14 @@ def test_model_gpu_capability_uses_injected_detection_not_quantization() -> None
     assert annotated[1]["gpu_execution"] is True
     assert annotated[2]["gpu_execution"] is True
     assert "量子化方式" in annotated[2]["recommendation_reason"]
+
+
+def test_profile_move_warning_preserves_environment_and_requests_rebuild() -> None:
+    warning = _profile_warning("cpu", "profile_path_changed")
+
+    assert "保存場所が変わりました" in warning
+    assert "既存環境は保持" in warning
+    assert "再構築" in warning
 
 
 def test_environment_reads_all_state_from_profile_json_contracts(
