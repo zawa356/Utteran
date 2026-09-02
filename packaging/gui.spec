@@ -83,6 +83,9 @@ hidden_imports = (
 
 datas = [
     (WEB_ASSETS_DIR, os.path.join("utteran_gui", "web")),
+    # Both Python packages resolve the product version from this single
+    # distribution metadata source instead of carrying hand-written copies.
+    *copy_metadata("utteran"),
     # keyring discovers even its built-in Windows backend through the
     # ``keyring.backends`` entry-point metadata.  Collecting Python modules
     # alone therefore leaves a frozen executable with the fail backend.
