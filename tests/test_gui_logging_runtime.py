@@ -15,7 +15,7 @@ def test_packaged_gui_defaults_logs_outside_the_install_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     user_logs = tmp_path / "user-logs"
-    monkeypatch.setattr(logging_runtime, "user_log_dir", lambda _name: str(user_logs))
+    monkeypatch.setattr("utteran_paths.user_log_dir", lambda _name: str(user_logs))
     monkeypatch.setattr(logging_runtime, "_writable", lambda _path: True)
 
     selected, fell_back = logging_runtime.resolve_gui_log_dir(
