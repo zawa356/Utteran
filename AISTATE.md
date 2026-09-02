@@ -1,5 +1,124 @@
 # AI 作業状態
 
+## Phase enhancement ac-1 GUI状態表示（0.1.21、2026-09-02）
+
+### Step 1 切り分け（修正前）
+
+| 症状 | 壊れていた層 | 再現条件・根拠 |
+|---|---|---|
+| A-1 検出中が失敗表示 | CLI人間向け表示／cache方針 | probe eventは`started/completed/timeout/error/cached`を保持していたが、成功・失敗・不明の表示契約が一覧化されず、timeout/errorを含む結果まで成功cacheと同じ扱いだった。未知値はcache読込失敗にはなるが、その旨をlogへ残さなかった。 |
+| A-6 成功処理がFAILED | **GUI表示確定** | 処理、出力file、CLI `done(exit_code=0)`、GUI job保持の最終`completed/exit_code=0`は正常。CLIがprocess終了直前に`done` JSONLをflushすると、SSE handlerが即時`finishJob()`を呼び、まだ`running/exit_code=null`のsnapshotを既定分岐でFAILED表示し、pollerも停止するため訂正されなかった。history manifestは`done`であり、保持・再起動読込の反転ではない。 |
+| A-8 初回timeout | ウィザード外側timeout設定 | 個別probeはCore i7記録で正常0.4～数秒、20秒到達はnative hangだったため20秒を延ばす根拠はない。未cache全体はCore i7で94.7～105.7秒、理論値7×20秒＋終了overhead。環境画面は200秒だがwizard runtime経路だけ180秒だった。2026-09-02のCore Ultra 7/Arc 140T修正前実測は7件全成功、全体14.4秒以内（個別最大1.031秒）。NPU 306.103秒はASR model初回loadでありdevice列挙とは別経路。 |
+| A-9 失敗cache | core cache保存／GUI再検出 | `_save_probe_cache`がoutcomeを問わず集約結果を保存し、次回はtimeout/errorをcache hitとして返した。CLIには`--refresh`があったがGUI「再検出」は`devices --json`のままでcacheを破棄しなかった。 |
+
+A-6はA-1/A-8/A-9とは**独立したSSE/process終了競合**である。A-1/A-9は同じprobe状態・cache経路で
+連鎖するが、A-8の180秒不整合は外側wizard経路の別設定である。したがって4件を1件の因果とは
+みなさず、A-6、状態表示、cache、外側timeoutを個別に修正した。Python source GUIとPyInstaller GUIは
+同じFastAPI/job manager/静的`app.js`を使用し、このコード経路にsource/exe分岐はない。差が生じうる
+profile CLI起動は最終的に両方で確認する。
+
+### 採用仕様
+
+- GUI job状態は`starting/running/completed/failed/cancelled`を唯一の一覧とし、前2つは進行中、
+  `completed`だけ成功、`failed`だけ失敗、`cancelled`は中断。未知値は不明としてfrontend logへ記録し、
+  終端とみなさない。`done` eventは終了予告であり、保持状態が終端になるまでpollを続ける。
+- probe表示は実行中・成功（cache済みを含む）・失敗・timeout・不明を区別する。未知値を失敗にしない。
+- 全outcomeが`completed`の検出だけをcacheする。timeout/errorを含む結果と旧cacheは再利用しない。
+  CLI `utteran devices --refresh`とGUI「再検出」はcache fileを破棄してから再試行する。
+- 個別20秒は維持し、wizardの全体上限を実測105.7秒・理論140秒超に終了overheadを加えた200秒へ
+  環境画面と統一した。timeout撤廃やNPU load向け306秒超への拡大は行わない。
+- job履歴と進捗JSONLのschemaは変えない。成功cacheもschema v1のまま互換。旧失敗cacheだけ無効化する。
+
+### ac-2への申し送り（本Phaseでは未実装）
+
+- OpenVINO GenAIのcancel反映は推論前後だけで、900秒音声では要求後の最大待ちがGPU約54秒、NPU
+  約161秒、CPU約259秒。GUIの「キャンセル中」が長時間続くと強制終了され、C-1のprocess残留を
+  誘発し得る。今回整理した「進行中を失敗としない」「未知を不明にする」原則をC-1にも適用する。
+- OpenVINO runtime更新ごとにblobが増え、旧版込み6,114,209,908 bytes（約5.7 GiB）を観測。
+  `models genai-cache`で確認、`reset-env.ps1`で全削除はできるが、旧blobの選択的剪定は未実装。
+  利用者環境を汚さない方針の未解決穴としてac-2へ送る。
+
+### 検証
+
+- `uv run pytest -m "not requires_model"`: 435 passed（既知のStarlette warning 1件）。状態一覧からの
+  probe表示test、成功cache、timeout/error非cache、cache破棄、GUI `--refresh`転送、`done`受信時に
+  非終端snapshotならpollerを止めない回帰testを含む。
+- `uv run ruff check src tests tools`、`uv run mypy`（61 source files）、`node --check app.js`、
+  `uv lock --check`、`git diff --check`: pass。
+- source `gui.ps1`: Core Ultra 7 255H / Arc 140Tで`Responding=True`。Intel profileのdevice検出
+  16.172秒、snapshot全体26.594秒、error 0。終了後のprocess残留なし。
+- `build.ps1`: pass。最終buildの`dist/utteran-gui/utteran-gui.exe`も`Responding=True`、device検出
+  5.547秒、snapshot全体15.125秒、error 0。job成功表示は実入力を使わず自動回帰testで検証した。
+- 指示書指定のCore i7-1165G7 / Iris Xe / NVIDIAなし機は本sessionから接続できず、今回版の実機確認は
+  **未実施**。過去実測94.7～105.7秒はtimeout設計根拠として参照したが、今回版の合格とは数えない。
+- installerは19,845,956 bytes、SHA-256
+  `b5363339926accbfdee74e915f97579f2fbe3e5a6e3dd1f62df5d38272dd6211`。
+
+## Phase 6c-1 benchmarkデバイス解決修正（0.1.20、2026-09-01）
+
+### A-11の原因と修正
+
+原因は`src/utteran/benchmark.py::resolve_legacy_variants()`にあった。旧`--variants`の
+`faster-whisper`だけが、`config.asr.device == "auto"`のとき検出結果を参照せず、既定値`cpu`を
+`BenchmarkTarget`へ埋め込んでいた。そのtargetが`run_benchmark()`から
+`FasterWhisperBackend.load()`へそのまま渡るため、同じprocessの`detect_devices()`が
+`faster-whisper/cuda:0/int8`を選んでいても、実行は最初からCPUになっていた。fallbackではない。
+
+benchmarkの指定経路は、明示的な`--targets`、互換aliasの`--variants`、modeによるmatrix列挙の3つ。
+benchmarkはASRだけを測り、話者分離deviceを受け取る経路はない。3経路を
+`resolve_benchmark_targets()`へ集約し、target生成はすべて`resolve_target()`を通す。
+faster-whisperの`auto`は既存の`devices.py::select_faster_whisper_device()`へ検出済み
+`CTranslate2Report`を渡してdevice indexとcompute typeを確定する。明示deviceも同じ関数で検証し、
+利用不能ならerrorで停止する。whisper.cppはfactoryで`allow_fallback=False`を維持し、実行時の
+`BackendUnavailableError`もbenchmarkが握り潰さない。
+
+結果JSONの各`target.device_resolution`へ`requested`、実際の`resolved`、`source`
+（`explicit` / `auto` / `discovery`）、`reason`を保存する。`target.device`はbackendの`load()`へ渡した
+実値であり、モデル不要testで両者の一致を検証する。経路一覧`BENCHMARK_TARGET_ROUTES`を固定し、
+一覧自体、`--targets`相当、`--variants`相当、auto、明示値保持、利用不能時error、JSONとload引数一致を
+回帰testにした。新しい経路を追加すると一覧testの更新が必要になり、経路だけが無検証で増えない。
+
+影響範囲は、`--variants`に`faster-whisper`を含め、ASR device設定が`auto`だった実行。CUDA機では
+利用可能なCUDAがCPUへ置き換わる。CUDAなし機では結果がCPUなので表面化しないが、決定根拠が
+欠落していた。whisper.cppのvariant、OpenVINO GenAI、明示deviceの`--targets`、mode列挙には
+`cpu`埋め込みはなく、A-11の直接影響はない。
+
+### 既存測定値のA-11汚染判定
+
+保存済みschema v3 JSONの`target.device`と、文書に記録された意図を突合した。旧schemaには
+`device_resolution`がないため、意図を文書から確定できないものは有効と推測しない。
+
+| 出典・測定値 | 記録device / 意図 | 判定 | 根拠 |
+|---|---|---|---|
+| 0.1.18、25.825秒 faster-whisper 98 | CPU / CPU matrix | 有効 | Intel機のstandard matrixでCPU targetとして記録。CUDA targetは同機で非runnable |
+| 0.1.18、25.825秒 whisper.cpp CPU 106、OpenVINO 169、Vulkan 552、ovvk 196 | 各明示variant | 有効 | A-11のfaster-whisper legacy aliasを通らない |
+| Phase 6a、180秒 126/438/777/712、1,485秒 964/1021 | 各明示whisper.cpp variant | 有効 | 保存JSONと意図が一致し、A-11非該当 |
+| Phase 6a別系列、180秒 624/1149/827、900秒以降 | 各明示whisper.cpp variant | 有効（A-11について） | A-11非該当。ただし777/712系列との条件差は未解決で比較判断には未使用 |
+| Phase 6b GenAI、CPU/GPU/NPU（25.825/180/900秒） | cpu/gpu/npu / 同じ | 有効 | `--targets`で3 deviceを明示し、保存JSONと一致。faster-whisperではない |
+| CUDA機 faster-whisper（観測JSONでcpu） | CPU / CUDAを意図 | **無効** | `devices`は`faster-whisper/cuda:0/int8`を選択しており、A-11の症状と一致 |
+| 上記以外の旧JSONで、実行時の指定経路・意図を裏付ける記録がない値 | 個別 | 判定不能 | schema v3には決定元がなく、記録deviceだけでは意図を復元できない |
+
+無効・判定不能な値、および条件差を解消していないPhase 6aの2系列は、Phase 6c-3のauto順位判断に
+使わない。A-11修正後かつ条件統一後の再測定値だけを採用する。
+
+### Phase 6c-2への申し送り（本Phaseでは未実装）
+
+1. 単語timestampは実運用の話者分離に必要なため「あり」で統一する。0.1.18はなし、0.1.19はありで、
+   Jラインとの差からcostはCPU約12%、GPU約4%と推定される。
+2. Phase 6aの180秒値は`vulkan/ovvk=1149/827`と`777/712`の2系列がある。A-11上は双方有効だが、
+   素材・量子化・timestamp条件を文書とJSONだけでは一意に対応付けられない。条件を特定できなければ
+   両方を比較基準から外して測り直す。
+3. GGML、OpenVINO IR、GenAI INT8で量子化形式を統一できないため、統一を断念しCERを必ず併記して
+   速度と精度を組で評価する。
+4. 現fixtureは全構成CER 0.0%で差が出ない。長尺・複数話者・専門用語を含み、構成差を観測できる
+   fixtureを用意する。
+5. 180/900/3600/10363秒の全構成測定は数時間〜半日規模になる。schema v3のatomic逐次保存を使い、
+   中断時も完了targetが残る前提で実施する。
+
+Phase 6c-1では新しいbenchmark測定を行っていない。`align.py`とViterbiも変更していない。
+`build.ps1`で`dist/installer/utteran-setup-0.1.20.exe`を生成した。サイズは19,837,450 bytes、
+SHA-256は`bdcd2739635cdceba351617323564b8344ba9535d0d76403c689544abdda82bc`。
+
 ## Phase 6b OpenVINO GenAI backend実装（0.1.19、2026-09-01）
 
 判定C確定後の改訂指示に従い、「backendの選択肢を増やし、最適化判断は測定とPhase 6cへ分離する」

@@ -41,6 +41,11 @@ _APPROX_DISK_BYTES: dict[str, int] = {
     "vulkan": int(1.1 * 1024**3),
 }
 
+# Match the environment endpoint's measured first-run allowance. The Core i7
+# reference machine needed 105.7s, while seven 20s isolated probes plus tree
+# termination overhead have a 140s+ theoretical ceiling.
+_RUNTIME_PROBE_TIMEOUT_SECONDS = 200.0
+
 
 @dataclass(frozen=True)
 class GpuAdapter:
@@ -386,7 +391,7 @@ def detect_runtime_capabilities(repo_root: Path) -> RuntimeCapabilities:
             **build_popen_kwargs(cwd=repo_root, env=environment),
         )
         try:
-            stdout, stderr = process.communicate(timeout=180.0)
+            stdout, stderr = process.communicate(timeout=_RUNTIME_PROBE_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             kill_process_tree(process)
             stdout, stderr = process.communicate()

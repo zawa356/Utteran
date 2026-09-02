@@ -25,7 +25,12 @@ from utteran.asr.faster_whisper import FasterWhisperBackend
 from utteran.asr.openvino_genai import OpenVINOGenAIBackend
 from utteran.asr.whisper_cpp import WhisperCppBackend
 from utteran.config import Config
-from utteran.devices import DeviceReport, detect_devices, device_probe_fingerprint
+from utteran.devices import (
+    DeviceReport,
+    detect_devices,
+    device_probe_fingerprint,
+    select_faster_whisper_device,
+)
 from utteran.errors import BackendUnavailableError, ModelNotFoundError
 from utteran.logging import resolve_log_dir, runtime_logging
 from utteran.models.catalog import ModelEntry, get_model, list_models
@@ -46,6 +51,9 @@ SHORT_BENCHMARK_WARNING = (
 )
 AvailabilityState = Literal["runnable", "preparation", "hidden", "unknown"]
 BenchmarkModeName = Literal["quick", "standard", "detailed"]
+DeviceResolutionSource = Literal["explicit", "auto", "discovery"]
+BenchmarkTargetRoute = Literal["targets", "variants", "mode"]
+BENCHMARK_TARGET_ROUTES: tuple[BenchmarkTargetRoute, ...] = ("targets", "variants", "mode")
 
 
 @dataclass(frozen=True)
@@ -70,12 +78,21 @@ BENCHMARK_MODES: dict[BenchmarkModeName, BenchmarkMode] = {
 
 
 @dataclass(frozen=True)
+class DeviceResolution:
+    requested: str
+    resolved: str
+    source: DeviceResolutionSource
+    reason: str
+
+
+@dataclass(frozen=True)
 class BenchmarkTarget:
     backend: str
     device: str
     model: str
     quantization: str | None
     compute_type: str
+    device_resolution: DeviceResolution | None = None
 
     @property
     def target_id(self) -> str:
@@ -285,31 +302,95 @@ def _entry(model: str, backend: str) -> ModelEntry:
 
 
 def resolve_target(
-    backend: str, device: str, model: str, *, compute_type: str = "auto"
+    backend: str,
+    device: str,
+    model: str,
+    *,
+    compute_type: str = "auto",
+    report: DeviceReport | None = None,
+    source: DeviceResolutionSource = "explicit",
 ) -> BenchmarkTarget:
     adapter = BACKEND_REGISTRY.get(backend)
     if adapter is None:
         raise ValueError(f"未対応のベンチマークバックエンドです: {backend}")
-    kind = "cuda" if device.startswith("cuda:") else device
+    requested_device = device.casefold()
+    resolved_device = requested_device
+    resolved_compute_type = compute_type
+    reason = (
+        "benchmark matrixが列挙したデバイスを使用します。"
+        if source == "discovery"
+        else "benchmarkで明示指定されたデバイスを変更せず使用します。"
+    )
+    if requested_device == "auto":
+        if report is None:
+            raise ValueError("device=autoの解決にはデバイス検出結果が必要です")
+        if backend == "faster-whisper":
+            selection = select_faster_whisper_device(
+                "auto", compute_type, report=report.ctranslate2
+            )
+            resolved_device = (
+                f"cuda:{selection.device_index}"
+                if selection.device == "cuda"
+                else selection.device
+            )
+            resolved_compute_type = selection.compute_type
+            reason = (
+                "CTranslate2のデバイス検出結果から"
+                f"{resolved_device}/{resolved_compute_type}を選択しました。"
+            )
+            if selection.note:
+                reason += selection.note
+        else:
+            auto = report.auto_selection
+            if auto.asr_backend != backend:
+                raise BackendUnavailableError(
+                    f"auto判定は{auto.asr_backend}/{auto.asr_device}です。"
+                    f"{backend}のデバイスをautoでは決定できません。明示指定してください。"
+                )
+            resolved_device = auto.asr_device
+            resolved_compute_type = auto.asr_compute_type
+            reason = (
+                "devicesのauto判定から"
+                f"{auto.asr_backend}/{auto.asr_device}/{auto.asr_compute_type}を選択しました。"
+            )
+        source = "auto"
+    elif backend == "faster-whisper" and report is not None:
+        selection = select_faster_whisper_device(
+            requested_device, compute_type, report=report.ctranslate2
+        )
+        resolved_device = (
+            f"cuda:{selection.device_index}"
+            if selection.device == "cuda"
+            else selection.device
+        )
+        resolved_compute_type = selection.compute_type
+        reason = (
+            f"明示指定{requested_device}をCTranslate2で検証し、"
+            f"{resolved_device}/{resolved_compute_type}を使用します。"
+        )
+    kind = "cuda" if resolved_device.startswith("cuda:") else resolved_device
     if kind not in adapter.devices:
-        raise ValueError(f"無効な組み合わせです: {backend} / {device}")
+        raise ValueError(f"無効な組み合わせです: {backend} / {resolved_device}")
     entry = _entry(model, backend)
     return BenchmarkTarget(
         backend,
-        device,
+        resolved_device,
         entry.model_id,
         entry.quantization,
         (
-            compute_type
+            resolved_compute_type
             if backend == "faster-whisper"
             else "int8"
             if backend == "openvino-genai"
             else "ggml"
         ),
+        DeviceResolution(requested_device, resolved_device, source, reason),
     )
 
 
-def parse_target(value: str, config: Config) -> BenchmarkTarget:
+def parse_target(
+    value: str, config: Config, report: DeviceReport | None = None
+) -> BenchmarkTarget:
     parts = value.split("/", 2)
     if len(parts) not in {2, 3}:
         raise ValueError("--targetsはbackend/device[/model]形式で指定してください")
@@ -318,22 +399,66 @@ def parse_target(value: str, config: Config) -> BenchmarkTarget:
         parts[1],
         parts[2] if len(parts) == 3 else config.asr.model,
         compute_type=config.asr.compute_type,
+        report=report,
     )
 
 
-def resolve_legacy_variants(config: Config, variants: Sequence[str]) -> tuple[BenchmarkTarget, ...]:
+def resolve_legacy_variants(
+    config: Config,
+    variants: Sequence[str],
+    report: DeviceReport | None = None,
+) -> tuple[BenchmarkTarget, ...]:
     targets = []
     for variant in variants:
         if variant == "faster-whisper":
-            device = config.asr.device if config.asr.device != "auto" else "cpu"
             targets.append(
                 resolve_target(
-                    "faster-whisper", device, config.asr.model, compute_type=config.asr.compute_type
+                    "faster-whisper",
+                    config.asr.device,
+                    config.asr.model,
+                    compute_type=config.asr.compute_type,
+                    report=report,
                 )
             )
         else:
-            targets.append(resolve_target("whisper-cpp", variant, config.asr.model))
+            targets.append(
+                resolve_target(
+                    "whisper-cpp", variant, config.asr.model, report=report
+                )
+            )
     return tuple(targets)
+
+
+def resolve_benchmark_targets(
+    config: Config,
+    report: DeviceReport,
+    route: BenchmarkTargetRoute,
+    *,
+    variants: Sequence[str] = (),
+    targets: Sequence[str] = (),
+    multiple_models: bool = False,
+) -> tuple[TargetAvailability, ...]:
+    """Resolve every CLI selection route through the same target/device policy."""
+    if route not in BENCHMARK_TARGET_ROUTES:
+        raise ValueError(f"未対応のbenchmark指定経路です: {route}")
+    if route == "mode":
+        return discover_targets(
+            config, report, multiple_models=multiple_models
+        )
+    selected = (
+        tuple(parse_target(value, config, report) for value in targets)
+        if route == "targets"
+        else resolve_legacy_variants(config, variants, report)
+    )
+    availability = tuple(target_availability(item, report) for item in selected)
+    for item in availability:
+        resolution = item.target.device_resolution
+        if item.state in {"hidden", "unknown"} and resolution is not None:
+            raise BackendUnavailableError(
+                f"{resolution.requested}で指定された{item.target.target_id}は利用できません: "
+                f"{item.reason}。自動フォールバックは行いません。"
+            )
+    return availability
 
 
 def target_availability(
@@ -440,7 +565,11 @@ def discover_targets(
             for device in adapter.devices:
                 row = target_availability(
                     resolve_target(
-                        backend, device, entry.model_id, compute_type=config.asr.compute_type
+                        backend,
+                        device,
+                        entry.model_id,
+                        compute_type=config.asr.compute_type,
+                        source="discovery",
                     ),
                     report,
                     manager,
@@ -584,7 +713,7 @@ def run_benchmark(
                 if index >= warmup:
                     samples.append(BenchmarkSample(loaded - started, finished - loaded))
                     hypothesis = "".join(segment.text for segment in transcription.segments)
-        except (BackendUnavailableError, ModelNotFoundError):
+        except ModelNotFoundError:
             continue
         result = aggregate(
             target.legacy_variant,
