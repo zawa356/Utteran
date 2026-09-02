@@ -393,6 +393,28 @@ def test_settings_partial_updates_preserve_other_changes_and_wizard_state(tmp_pa
     assert "state.settings.language = event.target.value;\n      applySettings();" not in script
 
 
+def test_input_and_output_directories_are_remembered_independently(tmp_path: Path) -> None:
+    settings = SettingsStore(tmp_path / "settings.json")
+    input_dir = tmp_path / "private-input"
+    input_dir.mkdir()
+    input_file = input_dir / "must-not-be-saved.wav"
+    input_file.touch()
+    first_output = tmp_path / "first-output"
+    second_output = tmp_path / "second-output"
+
+    settings.save(GuiSettings(default_output_dir=str(first_output)))
+    after_input = settings.remember_directories(input_path=str(input_file))
+
+    assert after_input.default_input_dir == str(input_dir)
+    assert after_input.default_output_dir == str(first_output)
+    assert input_file.name not in settings.path.read_text(encoding="utf-8")
+
+    after_output = settings.remember_directories(output_dir=str(second_output))
+
+    assert after_output.default_input_dir == str(input_dir)
+    assert after_output.default_output_dir == str(second_output)
+
+
 def test_simultaneous_settings_updates_do_not_roll_each_other_back(tmp_path: Path) -> None:
     settings = SettingsStore(tmp_path / "settings.json")
     settings.save(GuiSettings())
