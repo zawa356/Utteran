@@ -34,6 +34,9 @@ DEFAULT_PROBE_TIMEOUT_SECONDS = 20.0
 _PROBE_CACHE_SCHEMA = 1
 _LOGGER = logging.getLogger(__name__)
 ProbeState = Literal["completed", "timeout", "error"]
+PROBE_PROGRESS_STATES = frozenset(
+    {"started", "completed", "timeout", "error", "cached", "unknown"}
+)
 
 
 @dataclass(frozen=True)
@@ -181,7 +184,7 @@ class ProbeProgress:
     label: str
     position: int
     total: int
-    state: Literal["started", "completed", "timeout", "error", "cached"]
+    state: Literal["started", "completed", "timeout", "error", "cached", "unknown"]
 
 
 @dataclass(frozen=True)
@@ -298,10 +301,17 @@ def detect_devices(
     if probes is None:
         selected_cache = cache_path or default_probe_cache_path()
         fingerprint = hardware_fingerprint or device_probe_fingerprint()
+        if refresh:
+            clear_probe_cache(selected_cache)
         isolated = None if refresh else _load_probe_cache(selected_cache, fingerprint)
         if isolated is None:
             isolated = _detect_isolated_runtimes(probe_timeout_seconds, progress)
-            _save_probe_cache(selected_cache, fingerprint, isolated)
+            if _probe_results_are_cacheable(isolated):
+                _save_probe_cache(selected_cache, fingerprint, isolated)
+            else:
+                _LOGGER.info(
+                    "Device probe result was not cached because at least one probe did not complete"
+                )
         else:
             cache_hit = True
             isolated = replace(
@@ -374,6 +384,18 @@ class _ProbeRun:
 def default_probe_cache_path() -> Path:
     """Return the profile-independent platform cache used by ``devices``."""
     return Path(user_cache_dir("utteran")) / "device-probes-v1.json"
+
+
+def clear_probe_cache(path: Path | None = None) -> bool:
+    """Discard the device-probe cache so the next detection performs a real retry."""
+    selected = path or default_probe_cache_path()
+    try:
+        existed = selected.is_file()
+        selected.unlink(missing_ok=True)
+        return existed
+    except OSError as exc:
+        _LOGGER.warning("Could not clear device probe cache: %s", _bounded_error(exc))
+        return False
 
 
 def device_probe_fingerprint() -> str:
@@ -781,6 +803,9 @@ def _parse_nvidia_metadata(stdout: str) -> dict[int, tuple[str, int | None]]:
 
 
 def _save_probe_cache(path: Path, fingerprint: str, reports: _IsolatedReports) -> None:
+    if not _probe_results_are_cacheable(reports):
+        _LOGGER.info("Refused to cache incomplete device probe results")
+        return
     payload = {
         "schema_version": _PROBE_CACHE_SCHEMA,
         "fingerprint": fingerprint,
@@ -818,7 +843,7 @@ def _load_probe_cache(path: Path, fingerprint: str) -> _IsolatedReports | None:
         outcomes = payload["outcomes"]
         if not isinstance(reports, dict) or not isinstance(outcomes, list):
             return None
-        return _IsolatedReports(
+        loaded = _IsolatedReports(
             _cached_ctranslate2(cast(dict[str, Any], reports["ctranslate2"])),
             _cached_torch(cast(dict[str, Any], reports["torch"])),
             _cached_optional(cast(dict[str, Any], reports["openvino"])),
@@ -826,14 +851,23 @@ def _load_probe_cache(path: Path, fingerprint: str) -> _IsolatedReports | None:
             _cached_vulkan(cast(dict[str, Any], reports["vulkan"])),
             tuple(_cached_outcome(cast(dict[str, Any], item)) for item in outcomes),
         )
+        # 0.1.20 and earlier cached timeout/error outcomes. Ignore those old
+        # files so a transient failure can recover without manual deletion.
+        return loaded if _probe_results_are_cacheable(loaded) else None
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
 
 
 def _probe_state(value: object) -> ProbeState:
     if value not in {"completed", "timeout", "error"}:
+        _LOGGER.warning("Unknown device probe state in cache: %r", value)
         raise ValueError(f"invalid probe state: {value}")
     return cast(ProbeState, value)
+
+
+def _probe_results_are_cacheable(reports: _IsolatedReports) -> bool:
+    """Cache only conclusive probe executions, including conclusive unavailability."""
+    return bool(reports.outcomes) and all(item.status == "completed" for item in reports.outcomes)
 
 
 def _cached_accelerator(raw: dict[str, Any]) -> AcceleratorDevice:
