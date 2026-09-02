@@ -444,7 +444,15 @@ def create_app(
         snapshot = selected_environment.snapshot(payload.profile)
         _validate_dynamic_selection(payload, snapshot)
         try:
-            return selected_jobs.start(_to_options(payload))
+            result = selected_jobs.start(_to_options(payload))
+            try:
+                selected_settings.remember_directories(
+                    input_path=payload.input_path,
+                    output_dir=payload.output_dir,
+                )
+            except OSError:
+                logging.getLogger(__name__).warning("Could not remember job directories")
+            return result
         except JobBusyError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from None
         except CliError as exc:
@@ -536,6 +544,10 @@ def create_app(
                 )
             )
             selected_history.invalidate(payload.profile, job_id)
+            try:
+                selected_settings.remember_directories(output_dir=payload.output_dir)
+            except OSError:
+                logging.getLogger(__name__).warning("Could not remember output directory")
             return result
         except CliError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
