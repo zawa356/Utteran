@@ -165,6 +165,23 @@ class SettingsStore:
             current.update(changes)
             return self.save(GuiSettings.from_dict(current))
 
+    def remember_directories(
+        self,
+        *,
+        input_path: str | None = None,
+        output_dir: str | None = None,
+    ) -> GuiSettings:
+        """Remember independent folder defaults without persisting an input filename."""
+        changes: dict[str, object] = {}
+        if input_path is not None:
+            selected_input = Path(input_path).expanduser()
+            changes["default_input_dir"] = str(
+                selected_input if selected_input.is_dir() else selected_input.parent
+            )
+        if output_dir is not None:
+            changes["default_output_dir"] = str(Path(output_dir).expanduser())
+        return self.update(changes)
+
 
 class KeyringLike(Protocol):
     def get_password(self, service_name: str, username: str) -> str | None: ...
