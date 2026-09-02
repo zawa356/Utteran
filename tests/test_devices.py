@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 import utteran.devices as device_module
+from utteran import cli as cli_module
 from utteran.devices import (
     AcceleratorDevice,
     CPUReport,
@@ -236,14 +237,14 @@ def test_suppress_torch_import_leaves_a_real_import_untouched(
     assert sys.modules["torch"] is real_module
 
 
-def test_probe_cache_round_trip_and_hardware_invalidation(tmp_path: Path) -> None:
+def test_successful_probe_cache_round_trip_and_hardware_invalidation(tmp_path: Path) -> None:
     reports = device_module._IsolatedReports(
         CTranslate2Report(True, "test", ("int8",), 0, ()),
-        TorchReport(True, "test", False, (), xpu_status="timeout"),
+        TorchReport(True, "test", False, ()),
         OptionalRuntimeReport(True, ("CPU", "GPU")),
         OptionalRuntimeReport(True, ("CPUExecutionProvider",)),
         VulkanReport(False, "missing", False, None, "missing"),
-        (device_module.ProbeOutcome("torch_xpu", "PyTorch XPU", "timeout", 20.0, "判定不能"),),
+        (device_module.ProbeOutcome("torch_xpu", "PyTorch XPU", "completed", 0.2),),
     )
     path = tmp_path / "devices.json"
 
@@ -251,9 +252,52 @@ def test_probe_cache_round_trip_and_hardware_invalidation(tmp_path: Path) -> Non
     loaded = device_module._load_probe_cache(path, "hardware-a")
 
     assert loaded is not None
-    assert loaded.torch.xpu_status == "timeout"
-    assert loaded.outcomes[0].status == "timeout"
+    assert loaded.torch.xpu_status == "completed"
+    assert loaded.outcomes[0].status == "completed"
     assert device_module._load_probe_cache(path, "hardware-b") is None
+
+
+@pytest.mark.parametrize("failed_state", ["timeout", "error"])
+def test_failed_or_timed_out_probe_result_is_not_cached(
+    tmp_path: Path, failed_state: device_module.ProbeState
+) -> None:
+    reports = device_module._IsolatedReports(
+        CTranslate2Report(True, "test", ("int8",), 0, ()),
+        TorchReport(True, "test", False, (), xpu_status=failed_state),
+        OptionalRuntimeReport(True, ("CPU",)),
+        OptionalRuntimeReport(True, ("CPUExecutionProvider",)),
+        VulkanReport(False, "missing", False, None, "missing"),
+        (device_module.ProbeOutcome("torch_xpu", "PyTorch XPU", failed_state, 20.0),),
+    )
+    path = tmp_path / "devices.json"
+
+    device_module._save_probe_cache(path, "hardware", reports)
+
+    assert not path.exists()
+    assert device_module._load_probe_cache(path, "hardware") is None
+
+
+def test_refresh_can_discard_probe_cache_for_retry(tmp_path: Path) -> None:
+    path = tmp_path / "devices.json"
+    path.write_text("cached", encoding="utf-8")
+
+    assert device_module.clear_probe_cache(path) is True
+    assert not path.exists()
+    assert device_module.clear_probe_cache(path) is False
+
+
+@pytest.mark.parametrize("state", sorted(device_module.PROBE_PROGRESS_STATES))
+def test_every_probe_progress_state_has_a_distinct_non_default_label(
+    state: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    progress = device_module.ProbeProgress("probe", "Probe", 1, 1, state)  # type: ignore[arg-type]
+
+    cli_module._print_probe_progress(progress)
+
+    output = capsys.readouterr().err
+    assert cli_module._PROBE_PROGRESS_LABELS[state] in output
+    if state in {"started", "completed", "cached", "timeout", "unknown"}:
+        assert "失敗" not in output
 
 
 def test_timeout_kills_probe_process_tree(tmp_path: Path) -> None:

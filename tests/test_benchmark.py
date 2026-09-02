@@ -7,12 +7,18 @@ from typing import cast
 
 import pytest
 
+from utteran.asr.base import ASRBackend
 from utteran.benchmark import (
+    BACKEND_REGISTRY,
+    BENCHMARK_TARGET_ROUTES,
     SCORE_DISCLAIMER,
     SHORT_BENCHMARK_WARNING,
+    BackendAdapter,
     BenchmarkMeasurement,
     BenchmarkResult,
     BenchmarkSample,
+    BenchmarkTargetRoute,
+    TargetAvailability,
     accuracy_score,
     aggregate,
     apply_target,
@@ -25,14 +31,51 @@ from utteran.benchmark import (
     new_run_payload,
     parse_durations,
     prepared_audio_lengths,
+    resolve_benchmark_targets,
+    resolve_legacy_variants,
     resolve_target,
+    run_benchmark,
     save_run,
     speed_score,
     target_availability,
     wav_duration,
 )
 from utteran.config import Config
-from utteran.devices import DeviceReport
+from utteran.devices import AcceleratorDevice, CTranslate2Report, DeviceReport
+from utteran.errors import BackendUnavailableError
+
+
+def _device_report(*, cuda_usable: bool) -> DeviceReport:
+    cuda_devices = (
+        (
+            AcceleratorDevice(
+                0,
+                "test CUDA",
+                8 * 1024**3,
+                ("int8", "float32"),
+                usable=True,
+            ),
+        )
+        if cuda_usable
+        else ()
+    )
+    return cast(
+        DeviceReport,
+        SimpleNamespace(
+            ctranslate2=CTranslate2Report(
+                True,
+                "test",
+                ("int8", "float32"),
+                len(cuda_devices),
+                cuda_devices,
+            ),
+            auto_selection=SimpleNamespace(
+                asr_backend="faster-whisper",
+                asr_device="cuda:0" if cuda_usable else "cpu",
+                asr_compute_type="int8",
+            ),
+        ),
+    )
 
 
 def test_aggregate_uses_medians_and_peak() -> None:
@@ -70,6 +113,167 @@ def test_target_registry_rejects_invalid_combinations() -> None:
     genai = resolve_target("openvino-genai", "npu", "large-v3-turbo-int8")
     assert genai.compute_type == "int8"
     assert genai.baseline is True
+
+
+def test_every_benchmark_target_route_is_declared() -> None:
+    assert BENCHMARK_TARGET_ROUTES == ("targets", "variants", "mode")
+
+
+def test_legacy_variant_auto_uses_detected_cuda_instead_of_cpu() -> None:
+    config = Config()
+    target = resolve_legacy_variants(
+        config, ("faster-whisper",), _device_report(cuda_usable=True)
+    )[0]
+    assert target.device == "cuda:0"
+    assert target.compute_type == "int8"
+    assert target.device_resolution is not None
+    assert target.device_resolution.requested == "auto"
+    assert target.device_resolution.source == "auto"
+    assert "CTranslate2" in target.device_resolution.reason
+
+
+def test_targets_route_auto_uses_the_same_device_resolver() -> None:
+    target = resolve_target(
+        "faster-whisper",
+        "auto",
+        "large-v3-turbo",
+        report=_device_report(cuda_usable=True),
+    )
+    assert target.device == "cuda:0"
+    assert target.device_resolution is not None
+    assert target.device_resolution.source == "auto"
+
+
+@pytest.mark.parametrize(
+    ("route", "variants", "targets"),
+    (
+        ("variants", ("faster-whisper",), ()),
+        ("targets", (), ("faster-whisper/auto/large-v3-turbo",)),
+    ),
+)
+def test_user_routes_pass_through_shared_device_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    route: BenchmarkTargetRoute,
+    variants: tuple[str, ...],
+    targets: tuple[str, ...],
+) -> None:
+    monkeypatch.setattr(
+        "utteran.benchmark.target_availability",
+        lambda target, _report: TargetAvailability(target, "runnable", "test"),
+    )
+    availability = resolve_benchmark_targets(
+        Config(),
+        _device_report(cuda_usable=True),
+        route,
+        variants=variants,
+        targets=targets,
+    )
+    assert availability[0].target.device == "cuda:0"
+    assert availability[0].target.device_resolution is not None
+    assert availability[0].target.device_resolution.source == "auto"
+
+
+def test_explicit_device_is_not_replaced_and_unavailable_cuda_errors() -> None:
+    cpu = resolve_target(
+        "faster-whisper",
+        "cpu",
+        "large-v3-turbo",
+        report=_device_report(cuda_usable=True),
+    )
+    assert cpu.device == "cpu"
+    assert cpu.device_resolution is not None
+    assert cpu.device_resolution.requested == "cpu"
+    assert cpu.device_resolution.source == "explicit"
+    with pytest.raises(BackendUnavailableError, match="自動フォールバックは行いません"):
+        resolve_target(
+            "faster-whisper",
+            "cuda:0",
+            "large-v3-turbo",
+            report=_device_report(cuda_usable=False),
+        )
+
+
+def test_result_device_matches_backend_load_device_without_a_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    loaded: list[tuple[str, str, str]] = []
+
+    class FakeBackend:
+        def load(self, model: str, device: str, compute_type: str) -> None:
+            loaded.append((model, device, compute_type))
+
+        def transcribe(self, *_args: object, **_kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(segments=(SimpleNamespace(text="test"),))
+
+        def unload(self) -> None:
+            pass
+
+    target = resolve_target(
+        "faster-whisper",
+        "auto",
+        "large-v3-turbo",
+        report=_device_report(cuda_usable=True),
+    )
+    monkeypatch.setattr("utteran.benchmark.wav_duration", lambda _path: 1.0)
+    monkeypatch.setattr(
+        "utteran.benchmark._installed_model", lambda _model, _backend: "installed-model"
+    )
+    monkeypatch.setitem(
+        BACKEND_REGISTRY,
+        "faster-whisper",
+        BackendAdapter(
+            ("cpu", "cuda"),
+            lambda _config, _target: cast(ASRBackend, FakeBackend()),
+        ),
+    )
+    clock = iter((0.0, 0.25, 1.0))
+    results = run_benchmark(
+        Config(),
+        tmp_path / "unused.wav",
+        targets=(target,),
+        word_timestamps=False,
+        repeat=1,
+        warmup=0,
+        clock=lambda: next(clock),
+    )
+    assert loaded == [("installed-model", "cuda:0", "int8")]
+    result_target = cast(dict[str, object], results[0].as_dict()["target"])
+    assert result_target["device"] == loaded[0][1]
+    assert cast(dict[str, object], result_target["device_resolution"])["source"] == "auto"
+
+
+def test_backend_unavailability_stops_instead_of_falling_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class FailingBackend:
+        def load(self, *_args: object) -> None:
+            raise BackendUnavailableError("explicit device failed")
+
+        def unload(self) -> None:
+            pass
+
+    target = resolve_target("whisper-cpp", "vulkan", "large-v3-turbo-q5_0")
+    monkeypatch.setattr("utteran.benchmark.wav_duration", lambda _path: 1.0)
+    monkeypatch.setattr(
+        "utteran.benchmark._installed_model", lambda _model, _backend: "installed-model"
+    )
+    monkeypatch.setitem(
+        BACKEND_REGISTRY,
+        "whisper-cpp",
+        BackendAdapter(
+            ("cpu", "openvino", "vulkan", "openvino_vulkan"),
+            lambda _config, _target: cast(ASRBackend, FailingBackend()),
+        ),
+    )
+    with pytest.raises(BackendUnavailableError, match="explicit device failed"):
+        run_benchmark(
+            Config(),
+            tmp_path / "unused.wav",
+            targets=(target,),
+            word_timestamps=False,
+            repeat=1,
+            warmup=0,
+        )
 
 
 def test_cuda_without_hardware_is_hidden_even_when_model_is_missing() -> None:
@@ -161,8 +365,10 @@ def test_result_save_load_and_markdown_are_transcript_free(tmp_path: Path) -> No
     save_run(path, payload)
     restored = load_run(path)
     assert restored["status"] == "interrupted"
-    assert restored["measurements"][0]["results"][0]["speed_score"] == 600
-    assert restored["measurements"][0]["results"][0]["speed_score_excluding_load"] == 667
+    measurements = cast(list[dict[str, object]], restored["measurements"])
+    results = cast(list[dict[str, object]], measurements[0]["results"])
+    assert results[0]["speed_score"] == 600
+    assert results[0]["speed_score_excluding_load"] == 667
     markdown = markdown_report(restored)
     assert "約10分" in markdown
     assert "600 / 667" in markdown
