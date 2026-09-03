@@ -827,6 +827,27 @@ def test_native_build_exits_nonzero_when_nothing_builds(monkeypatch: pytest.Monk
     assert result.exit_code == 3
 
 
+def test_native_build_exits_nonzero_when_only_an_unrequested_old_build_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeBuilder:
+        def __init__(self, _native_dir: object) -> None:
+            pass
+
+        def build_all(self, *, variants: object, force: bool) -> dict[str, object]:
+            return {
+                "backends": {"cpu": {"executable": "/old/whisper-cli"}},
+                "errors": {"vulkan": "no glslc"},
+            }
+
+    monkeypatch.setattr("utteran.cli.NativeBuilder", FakeBuilder)
+
+    result = runner.invoke(app, ["native", "build", "--variant", "vulkan"])
+
+    assert result.exit_code == 3
+    assert "要求した構成" in result.output
+
+
 def test_native_build_rejects_unknown_variant_name() -> None:
     result = runner.invoke(app, ["native", "build", "--variant", "cpu,rocm"])
 

@@ -1,5 +1,57 @@
 # AI 作業状態
 
+## Phase bugfix-j native build再構築（0.1.28、2026-09-03）
+
+### 原因と修正
+
+- 推定どおり、ac-2で`~/.utteran/native`を再生成可能runtimeとして削除する方針は正しい一方、
+  Phase 5cウィザードはvenv・model・smoke testだけを実行し、native buildの再生成経路を持たなかった。
+  bugfix-iでuninstallが初めて完走した後に、Intel推奨のwhisper.cpp構成がASR stage開始時まで欠落を
+  検出できず、汎用dependency案内で失敗する既存不具合が露呈した。
+- whisper.cppモデルの場合だけ、ASR smoke test前に`native_build` jobを追加した。Intelは
+  `openvino_vulkan,vulkan,openvino`、Vulkan profileは`vulkan`、明示CPU系は`cpu`を要求する。
+  faster-whisper／OpenVINO GenAIは対象外。jobは既存queue/SSE/経過時間/stalled表示を使い、ビルド中を
+  FAILEDにしない。画面に数分～数十分の目安を表示し、確認は挟まない。
+- build失敗時はfull stdout/stderrとcommandを`<native>/<platform>/logs`へ保存する。短いstaging
+  directoryだけで構築し、失敗時は部分成果物のfile数・bytesをerror/manifestへ記録して削除する。
+  成功時だけ既存buildと置換する。configureは600秒、compileは3600秒の既存timeoutを維持した。
+
+### Step 0 実測（Windows 11、2026-09-03）
+
+| 構成・項目 | 実測結果 | 利用者が事前に用意するもの |
+|---|---|---|
+| CMake | OS PATHにない状態から`uv run --extra whisper-cpp`がPyPI CMake 4.4.0を導入。v1.9.2全4構成をMSVCでbuild成功 | なし（profile依存として導入） |
+| Ninja | 同環境に未導入。Visual Studio 17 2022マルチ構成generatorでbuildでき、現行Windows経路では不使用 | なし |
+| MSVC | VS 2022 Community 17.14、MSVC 19.44をconfigure/compiler/linkerで実使用 | Visual Studio InstallerからC++ Build Tools（自動化不可） |
+| Vulkan SDKなし | `VULKAN_SDK`とSDK PATHを除いて実configureし、`Vulkan_LIBRARY`、`Vulkan_INCLUDE_DIR`、`glslc`不足でexit 1 | Vulkan構成ではLunarG Vulkan SDK |
+| Vulkan Runtime | driver同梱`vulkaninfo` 1.4.350.0を確認。ただしSDKなしbuildの代替にはならない | Vulkan対応GPU driver |
+| `cpu` | PyPI CMake+MSVCで実build成功 | MSVC |
+| `openvino` | pip OpenVINO CMake config+MSVCで実build成功 | MSVC、対応Intel GPU/driver（Python packageはprofile依存） |
+| `vulkan` | SDK検出後、製品既定と同じ短いpathで実build成功。長いpathではFileTracker上限も再現 | MSVC、Vulkan SDK、対応GPU driver |
+| `openvino_vulkan` | pip OpenVINOとVulkan SDKの両前提を使い、短いpathで実build成功 | 上記OpenVINO+Vulkan双方 |
+
+利用者の手作業が必須なのは、全native構成のMSVC C++ Build Tools、Vulkan構成のLunarG Vulkan SDK、
+対応GPU driverである。CMakeはPyPI wheelを既存`whisper-cpp` extraからuv導入でき、Ninjaは不要。
+前提自体は自動導入せず、不足名と導入先を表示する。
+
+### 検証・配布
+
+- モデル不要test 468件、ruff check／format、mypy（60 source）、uv lock、JavaScript構文、
+  PowerShell parser、`git diff --check`が合格した。実データ、`align.py`、Viterbiは変更・使用していない。
+- `build.ps1`はInno Setup定数14種を検証し、0.1.28 installerとportable ZIPを生成した。
+  installerは19,864,186 bytes、SHA-256
+  `a40cd8f6bdb9580a4ccae7bf19531a14ee85f43822cb788a1fddd649d3e980d0`。portable ZIPは
+  22,441,111 bytes、SHA-256
+  `d0a66c8ee90ac55a387644b09e0648aed4e2850e0baf68914c43b4dd8c43a8cb`。
+- Arc機のアンインストール→再インストール→ウィザード完走と、前提不足環境の表示目視は
+  `ユーザー確認事項.md` B-4へ残した。配布版での同経路は対象機確認まで未完了とし、推測で合格にしない。
+
+### B-4との関係
+
+本修正は利用者環境で再buildする暫定経路である。根本解決は署名・検証済みwhisper.cpp成果物を配布する
+B-4であり、アンインストール後の復旧時間とMSVC/Vulkan SDKの手動前提をなくせるため優先度を上げる
+材料とする。本phaseではB-4に着手しない。
+
 ## Phase bugfix-i アンインストーラー実行時エラー（0.1.27、2026-09-03）
 
 ### 原因・混入範囲

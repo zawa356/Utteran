@@ -6,7 +6,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.27`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.28`（未release）。API・設定は1.0まで変更されます。
 
 ## 主な機能
 
@@ -184,8 +184,9 @@ GUIは結果の仮想スクロール、全文検索、話者／時間フィル�
 キューはGUI終了時に破棄され、稼働中の子プロセスも終了します。キャンセル後は終了処理中の表示を維持し、
 OpenVINO GenAIでは15分音声でGPU約1分、NPU約3分、CPU約5分、長い音声ではさらに応答に時間が
 かかる場合があります。次回起動時はCLIのレジューム／再取得を使用します。IR生成では追加のPyTorch重み
-（最大約3GB）が必要です。native buildはSDK等の
-前提があるため画面の案内に従ってCLIで実行します。
+（最大約3GB）が必要です。whisper.cppモデルを選んだ場合、ウィザードはスモークテストより前にnative
+buildの欠落を検出し、前提が揃っていれば確認なしで再構築します。画面は数分～数十分の目安、経過時間、
+継続中であることを表示します。失敗時は不足した前提とnative build logの場所を表示します。
 
 入力file、入力folder、出力folderは選択dialogから指定でき、pathの手入力も利用できます。入力欄へ
 Explorerから1件のfileまたはfolderをdrag-and-dropすると、pywebviewのnative連携で絶対pathを取得します。
@@ -466,8 +467,11 @@ CPU基礎量も入らない場合は`--no-diarization`または入力fileの事�
 ## whisper.cppとbenchmark
 
 GUIは独自のbackend既定を持たず、選択profileの`utteran devices --json`が返すauto構成を既定にします。
-Intel/Vulkan環境ではnative buildとGGMLモデルが揃うとwhisper.cppのVulkan等が選ばれます。不足時は
-モデル管理または`utteran native build`の案内が表示されます。構成差は大きく、単一Intel Arc 140T環境の
+Intel/Vulkan環境ではnative buildとGGMLモデルが揃うとwhisper.cppのVulkan等が選ばれます。初回
+ウィザードでは必要な構成だけを自動再構築し、faster-whisper／OpenVINO GenAIではnative判定を行いません。
+手動構築時はCMakeを`whisper-cpp` extraから導入できます。WindowsではMSVC C++ Build Toolsが全構成に
+必要で、Vulkan構成にはVulkan SDK（headers、`vulkan-1.lib`、`glslc`）も必要です。GPUドライバのVulkan
+Runtimeだけではビルドできません。構成差は大きく、単一Intel Arc 140T環境の
 300秒素材ではfaster-whisper/CPUが74.34秒（実時間比4.04倍）、whisper.cpp/Vulkanが21.62秒
 （13.88倍）でした。素材・driver・modelで変動するため保証値ではありません。
 

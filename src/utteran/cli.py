@@ -1514,6 +1514,10 @@ def native_build_command(
         native_dir = resolve_native_dir(config.general.native_dir)
         variants = _parse_variant_selection(variant)
         console.print(f"ネイティブビルド先: {native_dir}")
+        console.print(
+            "ネイティブビルドを開始します。構成により数分から数十分かかります。"
+            "処理中は終了せず、そのままお待ちください。"
+        )
         builder = NativeBuilder(native_dir)
         manifest = builder.build_all(variants=variants, force=force)
     except UtteranError as exc:
@@ -1526,8 +1530,11 @@ def native_build_command(
             console.print(f"[green]構築成功:[/green] {name} -> {entry['executable']}")
         elif name in errors:
             console.print(f"[yellow]スキップ:[/yellow] {name}: {errors[name]}")
-    if not backends:
-        error_console.print("[red]エラー:[/red] 構築できた構成がありません。")
+    if not any(name in backends for name in variants):
+        error_console.print(
+            "[red]エラー:[/red] 要求した構成を構築できませんでした。"
+            "上記の不足項目と導入方法を確認してください。"
+        )
         raise typer.Exit(code=3)
 
 
