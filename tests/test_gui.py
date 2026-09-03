@@ -223,6 +223,28 @@ def test_gui_assets_disable_nonfunctional_drop_and_forward_frontend_errors() -> 
     assert "report_frontend_error" in script
 
 
+def test_gui_uses_one_keyboard_accessible_i18n_modal() -> None:
+    web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
+    script = (web / "app.js").read_text(encoding="utf-8")
+    index = (web / "index.html").read_text(encoding="utf-8")
+    styles = (web / "styles.css").read_text(encoding="utf-8")
+    translations = (web / "i18n.js").read_text(encoding="utf-8")
+
+    assert "window.alert(" not in script
+    assert "window.confirm(" not in script
+    assert "window.prompt(" not in script
+    assert index.count('id="app-dialog"') == 1
+    assert 'role="dialog"' in index and 'aria-modal="true"' in index
+    assert 'event.key === "Escape"' in script
+    assert 'event.key === "Enter"' in script
+    assert 'event.target === backdrop' in script
+    assert "if (dialogState.active) return Promise.resolve(false)" in script
+    assert "confirm && destructive ? cancelButton : confirmButton" in script
+    assert "position: fixed" in styles
+    for key in ("dialogErrorTitle", "dialogConfirmTitle", "dialogOk", "dialogCancel"):
+        assert translations.count(f"{key}:") == 2
+
+
 def test_cli_and_gui_use_the_same_keyring_service_and_username() -> None:
     core_config = (Path(__file__).parents[1] / "src" / "utteran" / "config.py").read_text(
         encoding="utf-8"
