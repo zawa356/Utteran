@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -60,6 +62,74 @@ def test_windows_build_embeds_and_verifies_project_version() -> None:
     assert "VersionInfoVersion={#MyAppVersion}" in installer
     assert "$InstallerVersionInfo.ProductVersion" in build
     assert "$InstallerVersionInfo.FileVersion" in build
+    assert "scripts\\validate_inno_constants.py" in build
+
+
+def test_inno_setup_constants_are_known_before_build() -> None:
+    project = Path(__file__).parents[1]
+    validator = project / "scripts" / "validate_inno_constants.py"
+    installer = project / "packaging" / "installer.iss"
+
+    result = subprocess.run(
+        [sys.executable, str(validator), str(installer)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "{%USERPROFILE}" in result.stdout
+    assert "ExpandConstant('{userprofile}" not in installer.read_text(encoding="utf-8")
+
+
+def test_inno_setup_constant_validator_rejects_runtime_only_unknowns(tmp_path: Path) -> None:
+    project = Path(__file__).parents[1]
+    validator = project / "scripts" / "validate_inno_constants.py"
+    script = tmp_path / "broken.iss"
+    script.write_text(
+        "[Setup]\nDefaultDirName={localappdata}\\Example\n"
+        "[Code]\nfunction Bad(): String;\nbegin\n"
+        "  Result := ExpandConstant('{userprofile}\\Example');\nend;\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(validator), str(script)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert 'unknown Inno Setup constant "{userprofile}"' in result.stderr
+
+
+def test_inno_setup_constant_validator_distinguishes_supported_forms(tmp_path: Path) -> None:
+    project = Path(__file__).parents[1]
+    validator = project / "scripts" / "validate_inno_constants.py"
+    script = tmp_path / "supported.iss"
+    script.write_text(
+        "#define Payload 'payload.exe'\n"
+        "[Setup]\nAppId={{01234567-89AB-CDEF-0123-456789ABCDEF}\n"
+        "DefaultDirName={%LOCALAPPDATA}\\{code:Subdir}\n"
+        "[Files]\nSource: {#Payload}; DestDir: {app}\n"
+        "[Code]\n{ ExpandConstant('{not-a-constant}') is only a comment. }\n"
+        "function Value(): String;\nbegin\n"
+        "  Result := ExpandConstant('{localappdata}\\Example');\nend;\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(validator), str(script)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "{%LOCALAPPDATA}" in result.stdout
+    assert "{#Payload}" in result.stdout
+    assert "{code:Subdir}" in result.stdout
 
 
 def test_installer_does_not_launch_gui_before_setup_exits() -> None:

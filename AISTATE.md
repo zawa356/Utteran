@@ -1,5 +1,54 @@
 # AI 作業状態
 
+## Phase bugfix-i アンインストーラー実行時エラー（0.1.27、2026-09-03）
+
+### 原因・混入範囲
+
+- `packaging/installer.iss`の`NativeBuildDir()`が、`Path.home() / ".utteran" / "native"`にある
+  再生成可能なnative buildを削除するため、存在しない`{userprofile}`を`ExpandConstant`へ渡していた。
+  Inno Setupは定数を使用行の実行時に展開するためcompileは成功するが、uninstallの
+  `DeleteRuntimeData()`到達時に`Unknown constant "userprofile"`で中断した。
+- 混入は0.1.22のcommit `d42aa025c647ec54b6b2af919c96d0b5c9941761`。0.1.22～0.1.26が影響を
+  受ける。意図したhome directoryと一致するInno Setupの環境変数形式`{%USERPROFILE}`へ置換した。
+- ac-2では0.1.21のclean install後に、模擬`.venvs`とinstall内logを置いてsilent uninstallし、
+  修正前の残留を調べた。しかし試験コマンドは追跡されたharnessやreleaseごとの必須testにならず、
+  `output/ac2-installer-lab`のlogとmarkerだけが残った。0.1.22以降はcompileと成果物起動の確認に留まり、
+  修正後uninstallerを再実行しなかったため、実行時だけ発生する誤りを0.1.26まで検出できなかった。
+  `ユーザー確認事項.md` A-1へ移したまま実施を後回しにしたことも直接の要因だった。
+
+### 全定数検証と再発防止
+
+- Inno Setup 6.7.3公式定義と照合した。install時に評価されるのは`{#GuiDistDir}`、
+  `{#MyAppExeName}`、`{#MyAppName}`、`{#MyAppPublisher}`、`{#MyAppURL}`、`{#MyAppVersion}`、
+  `{#RepoRoot}`、`{app}`、`{autodesktop}`、`{autoprograms}`、`{cm:AdditionalIcons}`、
+  `{cm:CreateDesktopIcon}`、`{localappdata}`。uninstall時に`[Code]`の`ExpandConstant`で評価されるのは
+  `{app}`、`{localappdata}`、`{%USERPROFILE}`。`{#MyAppVersion}`はinstall時Codeにも展開される。
+  全14種に未知定数はなく、`{userprofile}`以外の誤りはなかった。
+- `scripts/validate_inno_constants.py`は通常sectionと`[Code]`の`ExpandConstant`文字列を走査し、
+  literal brace `{{`、Pascal comment、`{#...}`、`{%...}`、`{cm:...}`、`{code:...}`等を区別する。
+  Inno Setup 6の既知定数以外を検出すると失敗する。回帰testに加え、`build.ps1`がPyInstaller前に
+  必ず実行するため、実行時まで未知定数を持ち越さない。
+
+### 削除方針と検証
+
+- 変更はnative build pathの表記と検査だけで、ac-2の削除対象は不変。`.venvs`、model／OpenVINO・
+  GenAI・device cache、native build、ffmpegは常に削除し、job／文字起こし結果、設定、memory
+  calibration、log、token、利用者指定出力は既定保持する。portable版の削除方式には影響しない。
+- `scripts/verify_uninstaller.ps1`を追跡可能な隔離harnessとして追加した。専用AppIdを使い、
+  `{localappdata}`をlab copyだけ`{%LOCALAPPDATA}`へ変換して全削除対象を`.tmp`配下へ閉じ込める。
+  0.1.27 clean install後に代表profile／model／cache／利用者データを配置し、凍結GUIを起動・終了した。
+  silent uninstallと対話uninstall（利用者データ4項目は全て保持）はどちらもInno log上で成功し、
+  runtime/cacheは削除、job／設定／log／共有uvは保持、対話時は残留場所を表示した。数GBの実modelは
+  削除処理と無関係なため取得せず、同じpathに代表markerを置いた。開発環境の既存dataは全て維持した。
+- Git上の0.1.26 scriptから未知定数を含むlab installerを再現し、同じAppId・directoryへ0.1.27を
+  上書きした。その後のsilent uninstallはexit 0で成功し、修正版上書きによる復旧を確認した。
+- `uv run pytest -m "not requires_model"`は462件、ruff check／format、mypy（60 source）、uv lock、
+  PowerShell parser、JavaScript構文、`git diff --check`は全て合格した。`build.ps1`はinstaller／portableを生成し、両GUIとinstallerの
+  ProductVersion／FileVersion 0.1.27を確認した。installerは19,861,139 bytes、SHA-256
+  `9bcc4600c4d98dbdd644f60f57bb7d95ad38b6a140a4f6ecf8ae9cbb7c5d0db4`、portable ZIPは
+  22,811,450 bytes、SHA-256
+  `a3de97a806bbdc35eef902066950e081234efc65accfcc9a1009cb0044d96e2e`。
+
 ## Phase enhancement ac-6 modal・drag-and-drop（0.1.26、2026-09-03）
 
 ### A-3 modal
