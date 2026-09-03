@@ -18,7 +18,9 @@
          metadata, and the release tag can never drift apart.
       5. Compute and write the installer's SHA-256 next to it.
 
-    Every previous dist\ and build\ directory is removed first so a stale
+    Final artifacts are written together under dist\release, while
+    PyInstaller staging trees stay under dist\staging. Every previous dist\
+    and build\ directory is removed first so a stale
     artifact from an earlier version can never masquerade as this run's
     output.
 
@@ -49,9 +51,11 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PackagingDir = Join-Path $RepoRoot "packaging"
 $DistDir = Join-Path $RepoRoot "dist"
+$ReleaseDir = Join-Path $DistDir "release"
+$StagingDir = Join-Path $DistDir "staging"
 $BuildDir = Join-Path $RepoRoot "build"
-$GuiDistDir = Join-Path $DistDir "utteran-gui"
-$PortableDistDir = Join-Path $DistDir "portable-stage"
+$GuiDistDir = Join-Path $StagingDir "installer-gui"
+$PortableDistDir = Join-Path $StagingDir "portable-gui"
 $BuildVenvDir = Join-Path $RepoRoot ".venvs\win-gui-build"
 
 function Write-BuildStep {
@@ -108,10 +112,13 @@ Write-Host "utteran installer build - version $Version"
 Write-Host "Inno Setup compiler: $Iscc"
 
 Write-BuildStep "Cleaning previous build output"
-foreach ($Path in @($DistDir, $BuildDir)) {
-    if (Test-Path -LiteralPath $Path) {
-        Remove-Item -LiteralPath $Path -Recurse -Force
-    }
+if (Test-Path -LiteralPath $DistDir) {
+    # Keep the dist directory itself so a terminal opened there does not make
+    # cleanup fail on Windows. Its contents are still removed in full.
+    Get-ChildItem -LiteralPath $DistDir -Force | Remove-Item -Recurse -Force
+}
+if (Test-Path -LiteralPath $BuildDir) {
+    Remove-Item -LiteralPath $BuildDir -Recurse -Force
 }
 
 Write-BuildStep "Syncing GUI build environment ($BuildVenvDir)"
@@ -125,8 +132,8 @@ $PythonExe = Join-Path $BuildVenvDir "Scripts\python.exe"
 Write-BuildStep "Running PyInstaller (onedir)"
 $env:UTTERAN_BUILD_VERSION = $Version
 $env:UTTERAN_BUILD_FLAVOR = "installer"
-$env:UTTERAN_GUI_DIST_NAME = "utteran-gui"
-& $PythonExe -m PyInstaller --noconfirm --distpath $DistDir --workpath $BuildDir `
+$env:UTTERAN_GUI_DIST_NAME = "installer-gui"
+& $PythonExe -m PyInstaller --noconfirm --distpath $StagingDir --workpath $BuildDir `
     (Join-Path $PackagingDir "gui.spec")
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller failed (exit $LASTEXITCODE)"
@@ -169,8 +176,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup compilation failed (exit $LASTEXITCODE)"
 }
 
-$InstallerDir = Join-Path $DistDir "installer"
-$InstallerPath = Join-Path $InstallerDir "utteran-setup-$Version.exe"
+$InstallerPath = Join-Path $ReleaseDir "utteran-setup-$Version.exe"
 if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
     throw "Expected installer executable was not found: $InstallerPath"
 }
@@ -184,8 +190,8 @@ foreach ($EmbeddedVersion in @($InstallerVersionInfo.ProductVersion, $InstallerV
 
 Write-BuildStep "Building portable GUI shell"
 $env:UTTERAN_BUILD_FLAVOR = "portable"
-$env:UTTERAN_GUI_DIST_NAME = "portable-stage"
-& $PythonExe -m PyInstaller --noconfirm --distpath $DistDir `
+$env:UTTERAN_GUI_DIST_NAME = "portable-gui"
+& $PythonExe -m PyInstaller --noconfirm --distpath $StagingDir `
     --workpath (Join-Path $BuildDir "portable") (Join-Path $PackagingDir "gui.spec")
 if ($LASTEXITCODE -ne 0) {
     throw "Portable PyInstaller build failed (exit $LASTEXITCODE)"
@@ -228,7 +234,7 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText($HashFile, "$HashLine`n", $Utf8NoBom)
 Write-Host $HashLine
 
-$PortablePath = Join-Path $DistDir "utteran-portable-$Version.zip"
+$PortablePath = Join-Path $ReleaseDir "utteran-portable-$Version.zip"
 Write-BuildStep "Creating portable ZIP"
 Compress-Archive -Path (Join-Path $PortableDistDir "*") -DestinationPath $PortablePath `
     -CompressionLevel Optimal

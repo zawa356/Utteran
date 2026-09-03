@@ -124,8 +124,17 @@ def test_build_creates_installer_and_portable_artifacts() -> None:
     assert 'UTTERAN_BUILD_FLAVOR") == "portable"' in spec
     assert 'os.environ["UTTERAN_DATA_ROOT"]' in hook
     assert 'os.environ["UTTERAN_TOKEN_MODE"] = "session"' in hook
+    assert '$ReleaseDir = Join-Path $DistDir "release"' in build
+    assert '$StagingDir = Join-Path $DistDir "staging"' in build
+    assert 'Join-Path $ReleaseDir "utteran-setup-$Version.exe"' in build
+    assert 'Join-Path $ReleaseDir "utteran-portable-$Version.zip"' in build
+    assert "--distpath $StagingDir" in build
     for variable in ("UV_CACHE_DIR", "HF_HOME", "TORCH_HOME", "WEBVIEW2_USER_DATA_FOLDER"):
         assert f'os.environ["{variable}"]' in hook
+
+    installer = (root / "packaging" / "installer.iss").read_text(encoding="utf-8")
+    assert "OutputDir={#RepoRoot}\\dist\\release" in installer
+    assert "..\\dist\\staging\\installer-gui" in installer
 
 
 def test_python_launcher_is_scoped_diagnostic_and_non_installing() -> None:

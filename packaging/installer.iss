@@ -20,7 +20,7 @@
 #define MyAppPublisher "utteran contributors"
 #define MyAppURL "https://github.com/zawa356/Utteran"
 #define MyAppExeName "utteran-gui.exe"
-#define GuiDistDir SourcePath + "..\dist\utteran-gui"
+#define GuiDistDir SourcePath + "..\dist\staging\installer-gui"
 #define RepoRoot SourcePath + ".."
 
 [Setup]
@@ -38,7 +38,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-OutputDir={#RepoRoot}\dist\installer
+OutputDir={#RepoRoot}\dist\release
 OutputBaseFilename=utteran-setup-{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
