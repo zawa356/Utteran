@@ -213,6 +213,7 @@ def test_gui_assets_use_native_full_path_drop_and_forward_frontend_errors() -> N
     web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
     script = (web / "app.js").read_text(encoding="utf-8")
     index = (web / "index.html").read_text(encoding="utf-8")
+    translations = (web / "i18n.js").read_text(encoding="utf-8")
 
     assert "window.native" not in script
     assert 'id="input-drop-zone"' in index
@@ -222,6 +223,15 @@ def test_gui_assets_use_native_full_path_drop_and_forward_frontend_errors() -> N
     assert 'window.addEventListener("error"' in script
     assert 'window.addEventListener("unhandledrejection"' in script
     assert "report_frontend_error" in script
+    for key in (
+        "dropHint",
+        "dropAcceptedFile",
+        "dropAcceptedFolder",
+        "dropMultipleRejected",
+        "dropUnsupported",
+        "dropPathUnavailable",
+    ):
+        assert translations.count(f"{key}:") == 2
 
 
 def test_native_drop_extracts_only_ephemeral_full_paths(tmp_path: Path) -> None:
