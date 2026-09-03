@@ -140,5 +140,10 @@ select:disabled, input:disabled { opacity: .5; }
 .transcript-row mark { color: var(--text); background: var(--mark); border-radius: 2px; padding: 0 1px; }.transcript-row mark.current { color: var(--accent-text); background: var(--mark-current); outline: 1px solid var(--text); }
 .regenerate-panel { margin-top: 16px; padding: 24px; }.regenerate-panel form { display: grid; gap: 18px; }.regenerate-panel .form-actions { margin-top: 4px; }
 .speaker-label-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }.speaker-label-fields label { padding-left: 9px; border-left: 3px solid var(--speaker-color); }.speaker-label-fields label > span { font: 10px var(--font-mono); }
+.dialog-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / .62); }
+.app-dialog { width: min(520px, 100%); padding: 25px; box-shadow: 0 18px 60px rgb(0 0 0 / .35); }
+.dialog-message { min-height: 1.5em; margin: 17px 0 23px; color: var(--text); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 9px; }
+body.dialog-open { overflow: hidden; }
 .hidden { display: none !important; }
 @media (max-width: 900px) { .app-shell { grid-template-columns: 170px minmax(0,1fr); } main { padding: 30px 24px; } .environment-strip, .model-banner { grid-template-columns: repeat(2, minmax(0, 1fr)); }.environment-strip article:nth-child(2), .model-banner article:nth-child(2) { border-right: 0; }.stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }.stage-list li:last-child { grid-column: 1 / -1; }.field-grid.three, .speaker-label-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }.token-card { align-items: stretch; flex-direction: column; }.token-actions { flex-wrap: wrap; }.token-actions input { flex: 1 1 180px; }.log-location { align-items: stretch; flex-direction: column; }.transcript-row { grid-template-columns: 105px 110px minmax(0, 1fr); }.filter-row { align-items: stretch; flex-direction: column; }.time-filter { width: 100%; } }

@@ -326,6 +326,17 @@
       </section>
     </main>
   </div>
+  <div id="app-dialog" class="dialog-backdrop hidden" aria-hidden="true">
+    <section class="app-dialog panel" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-message">
+      <p class="eyebrow" data-i18n="dialogEyebrow">UTTERAN</p>
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-message" class="dialog-message"></p>
+      <div class="dialog-actions">
+        <button id="dialog-cancel" class="button secondary" type="button" data-i18n="dialogCancel">キャンセル</button>
+        <button id="dialog-confirm" class="button primary" type="button" data-i18n="dialogOk">OK</button>
+      </div>
+    </section>
+  </div>
   <script src="/assets/i18n.js"></script>
   <script src="/assets/app.js"></script>
 </body>
