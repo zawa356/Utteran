@@ -129,6 +129,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 $PythonExe = Join-Path $BuildVenvDir "Scripts\python.exe"
 
+Write-BuildStep "Validating Inno Setup constants"
+& $PythonExe (Join-Path $RepoRoot "scripts\validate_inno_constants.py") `
+    (Join-Path $PackagingDir "installer.iss")
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup constant validation failed (exit $LASTEXITCODE)"
+}
+
 Write-BuildStep "Running PyInstaller (onedir)"
 $env:UTTERAN_BUILD_VERSION = $Version
 $env:UTTERAN_BUILD_FLAVOR = "installer"

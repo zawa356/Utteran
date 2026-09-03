@@ -308,7 +308,9 @@ end;
 
 function NativeBuildDir(): String;
 begin
-  Result := ExpandConstant('{userprofile}\.utteran\native');
+  // utteran.native.builder uses Path.home()/".utteran"/"native". USERPROFILE
+  // is the exact equivalent; Inno's environment-variable form is {%NAME}.
+  Result := ExpandConstant('{%USERPROFILE}\.utteran\native');
 end;
 
 function JobsDir(): String;
