@@ -501,6 +501,19 @@ def test_command_builder_uses_profile_executable_and_argument_array(tmp_path: Pa
     assert environment["UTTERAN_PROFILE"] == "cuda"
 
 
+def test_python_direct_mode_uses_profile_interpreter_and_module(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    executable = _create_profile(tmp_path, "cpu")
+    python = executable.with_name("python.exe" if platform.system() == "Windows" else "python")
+    python.write_text("", encoding="utf-8")
+    monkeypatch.setenv("UTTERAN_PYTHON_DIRECT", "1")
+
+    command = CliAdapter(tmp_path).command("cpu", ["devices", "--json"])
+
+    assert command == [str(python), "-m", "utteran", "devices", "--json"]
+
+
 def test_regeneration_builder_passes_labels_as_shell_free_arguments(
     monkeypatch: Any, tmp_path: Path
 ) -> None:

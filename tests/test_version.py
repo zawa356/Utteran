@@ -128,6 +128,22 @@ def test_build_creates_installer_and_portable_artifacts() -> None:
         assert f'os.environ["{variable}"]' in hook
 
 
+def test_python_launcher_is_scoped_diagnostic_and_non_installing() -> None:
+    root = Path(__file__).parents[1]
+    batch = (root / "launch-python.bat").read_text(encoding="utf-8")
+    launcher = (root / "launch-python.ps1").read_text(encoding="utf-8")
+
+    assert "-ExecutionPolicy Bypass" in batch
+    assert "Set-ExecutionPolicy" not in batch + launcher
+    assert "UTTERAN_PYTHON_DIRECT" in launcher
+    assert "-m utteran_gui" in launcher
+    assert "Start-Transcript" in launcher
+    assert "Install-Uv" not in launcher
+    assert "Invoke-WebRequest" not in launcher
+    for prerequisite in ("Python", "uv", "ffmpeg"):
+        assert prerequisite in launcher
+
+
 def test_installer_explicitly_closes_running_app_and_blocks_silent_downgrade() -> None:
     installer = (Path(__file__).parents[1] / "packaging" / "installer.iss").read_text(
         encoding="utf-8"
