@@ -24,6 +24,7 @@ PROFILE_EXTRAS: dict[str, tuple[str, ...]] = {
     "vulkan": ("cpu", "whisper-cpp", "japanese"),
 }
 PROFILE_MANIFEST = ".utteran-profile.json"
+PYTHON_DIRECT_ENV = "UTTERAN_PYTHON_DIRECT"
 OUTPUT_FORMATS = ("srt", "vtt", "json", "txt", "md")
 ResumeMode = Literal["resume", "fresh", "force"]
 
@@ -158,6 +159,20 @@ class CliAdapter:
     def profiles(self) -> tuple[ProfileInfo, ...]:
         return tuple(self.profile_info(profile) for profile in PROFILE_NAMES)
 
+    def command(self, profile: str, arguments: list[str]) -> list[str]:
+        """Build a profile command without changing packaged launch behavior."""
+        info = self.profile_info(profile)
+        if not info.exists:
+            raise CliError(f"Profile is not available: {profile}")
+        if os.environ.get(PYTHON_DIRECT_ENV) == "1":
+            python = info.path / (
+                "Scripts/python.exe" if platform.system() == "Windows" else "bin/python"
+            )
+            if not python.is_file():
+                raise CliError(f"Profile Python is not available: {python}")
+            return [str(python), "-m", "utteran", *arguments]
+        return [str(info.executable), *arguments]
+
     def environment(self, profile: str) -> dict[str, str]:
         environment = dict(os.environ)
         environment["UTTERAN_PROFILE"] = profile
@@ -186,12 +201,9 @@ class CliAdapter:
         already raises, rather than letting `subprocess.TimeoutExpired`
         propagate uncaught past callers that only catch `CliError`.
         """
-        info = self.profile_info(profile)
-        if not info.exists:
-            raise CliError(f"Profile is not available: {profile}")
         popen = self._popen_factory or cast(Callable[..., subprocess.Popen[str]], subprocess.Popen)
         process = popen(
-            [str(info.executable), *arguments],
+            self.command(profile, arguments),
             cwd=self.repo_root,
             env=self.environment(profile),
             stdin=subprocess.DEVNULL,
@@ -241,9 +253,6 @@ class CliAdapter:
         options: TranscriptionOptions,
     ) -> tuple[list[str], dict[str, str]]:
         """Build a shell-free argument vector for one GUI request."""
-        info = self.profile_info(options.profile)
-        if not info.exists:
-            raise CliError(f"Profile is not available: {options.profile}")
         if not options.input_path.strip():
             raise CliError("Input path is required")
         if not options.output_dir.strip():
@@ -251,25 +260,27 @@ class CliAdapter:
         formats = tuple(dict.fromkeys(item.lower() for item in options.formats))
         if not formats or any(item not in OUTPUT_FORMATS for item in formats):
             raise CliError("At least one supported output format is required")
-        arguments = [
-            str(info.executable),
-            "transcribe",
-            options.input_path,
-            "--output-dir",
-            options.output_dir,
-            "--asr-backend",
-            options.asr_backend,
-            "--asr-model",
-            options.asr_model,
-            "--asr-device",
-            options.asr_device,
-            "--language",
-            options.language,
-            "--format",
-            ",".join(formats),
-            "--progress-json",
-            "--quiet",
-        ]
+        arguments = self.command(
+            options.profile,
+            [
+                "transcribe",
+                options.input_path,
+                "--output-dir",
+                options.output_dir,
+                "--asr-backend",
+                options.asr_backend,
+                "--asr-model",
+                options.asr_model,
+                "--asr-device",
+                options.asr_device,
+                "--language",
+                options.language,
+                "--format",
+                ",".join(formats),
+                "--progress-json",
+                "--quiet",
+            ],
+        )
         if options.diarization_enabled:
             arguments.extend(
                 [

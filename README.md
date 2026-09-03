@@ -6,7 +6,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.24`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.25`（未release）。API・設定は1.0まで変更されます。
 
 ## 主な機能
 
@@ -17,17 +17,18 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 - profile別venv、model／job／native build管理、device診断
 - WindowsデスクトップGUI（進捗・中断、結果閲覧・検索、ジョブ履歴、再出力）
 - Windows番号menu (`start.ps1`) と自動化向けCLI
-- WindowsインストーラーとポータブルZIP
+- Windowsインストーラー、ポータブルZIP、Python直起動
 
 主対象はWindows 10/11、Python 3.11/3.12です。Linuxは副対象で、CIがモデル不要testとimportを
 確認します。GPU、native build、実model、長時間処理は対象hardware上の受入試験で保証します。
 
-## 配布形態を選ぶ（Windows）
+## 起動経路を選ぶ（Windows）
 
-| 配布形態 | 向いている用途 | データ配置 |
+| 起動経路 | 向いている用途 | データ配置 |
 |---|---|---|
 | `utteran-setup-<version>.exe` | 継続利用、通常はこちらを推奨 | Windowsのユーザー領域（従来どおり） |
 | `utteran-portable-<version>.zip` | 一時利用、PCへutteranのデータを残したくない場合 | 展開先の`data`配下 |
+| `launch-python.bat` | Smart App Control環境、未署名exeを使えない環境、既存Python環境から使う場合 | venvはrepository配下、その他はWindowsのユーザー領域 |
 
 ポータブル版はZIPを展開し、直下の`utteran-gui.exe`を起動します。設定、ログ、ジョブ、モデル、
 キャッシュ、ffmpeg、native build、プロファイルvenvは展開先だけに作られるため、必要な出力を
@@ -37,6 +38,16 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 venvとモデルの取得後は数GBを使用し、展開フォルダーを移動するとvenvの再構築案内が出る場合が
 あります。USBメモリでは構築・モデル読込・処理が遅くなる可能性があります。ポータブル版も同じ
 `utteran-gui.exe`を使うため、Smart App Controlを回避するものではありません。
+
+Python直起動はrepositoryを取得し、Python 3.11/3.12、uv、ffmpegを利用者自身で導入してから
+`launch-python.bat`を実行します。batはその起動に限ってPowerShellを`ExecutionPolicy Bypass`で呼び、
+恒久的な実行ポリシーは変更しません。不足項目と導入先、失敗理由、次の操作、診断ログの保存先を
+consoleに表示します。前提条件を自動導入せず、GUIと推論profileをuv製venvの`python.exe -m`で
+起動します。
+
+この経路がSmart App Controlを回避できるかは未検証です。Python自体が起動しても、構成によっては
+torch、OpenVINO、OpenVINO GenAIや、利用者環境で構築したwhisper.cppのnative DLLが阻止される
+可能性があります。一部構成だけ動作する可能性も含め、実機確認後に記述を更新します。
 
 ## インストーラーで始める（推奨・Windows）
 
@@ -110,6 +121,18 @@ Get-FileHash .\utteran-portable-<version>.zip -Algorithm SHA256
 
 表示された値がReleasesページ記載の値と一致しない場合は、ファイルを削除し、公式の
 [GitHub Releases](https://github.com/zawa356/Utteran/releases)から再ダウンロードしてください。
+
+## Pythonから直接使う（Windows）
+
+一般利用者向けの入口は次のbatです。前提条件の確認後、GUI環境がなければ構築し、Python
+インタプリタからGUIを起動します。構築中は進行中として表示し、失敗扱いにはしません。
+
+```bat
+launch-python.bat
+```
+
+確認だけを行いGUIを開かない場合は`launch-python.bat -CheckOnly`を使えます。診断ログは
+`%LocalAppData%\utteran\utteran\Logs\python-launch-*.log`です。
 
 ## 開発者向け: PowerShellから直接使う
 
