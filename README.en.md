@@ -6,7 +6,7 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.24` (unreleased).
+> Current development version: `0.1.25` (unreleased).
 > APIs and configuration may change before 1.0.
 
 ## Supported environments
@@ -20,13 +20,25 @@ transcription API.
 GPU, native-build, real-model, and long-audio behavior is verified by the acceptance harness on
 matching hardware, not by CI.
 
-## Choose a Windows distribution
+## Choose a Windows launch path
 
 Use `utteran-setup-<version>.exe` for regular, ongoing use. It keeps profiles, models, settings,
 jobs, and logs in the existing per-user Windows locations. Use
 `utteran-portable-<version>.zip` for temporary use: extract it and run `utteran-gui.exe`; all
 utteran-managed data is created under the extracted `data` folder, so removing the extracted
 folder removes that data.
+
+There is a third path for Smart App Control environments, policies that prohibit unsigned app
+executables, and users who already maintain Python environments. From a source checkout, install
+Python 3.11/3.12, uv, and ffmpeg yourself, then run `launch-python.bat`. It checks prerequisites
+without installing them, uses `ExecutionPolicy Bypass` only for that invocation, records a
+diagnostic log, and starts both the GUI and profile commands through the venv `python.exe -m`
+entry points. Its venv stays under the repository; other managed data uses the normal per-user
+locations.
+
+This path has not been verified to bypass Smart App Control. Python may start while native DLLs
+from torch, OpenVINO, OpenVINO GenAI, or a locally built whisper.cpp are still blocked, so only
+some profiles may work. This statement will be updated after testing on an enabled machine.
 
 The portable build does not save a Hugging Face token; enter it again on every launch. Profiles
 and models consume several GB after setup, moving the extracted folder can require rebuilding its

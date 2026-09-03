@@ -293,7 +293,7 @@ class SetupWizardService:
         info = self.cli.profile_info(profile)
         if not info.exists:
             raise WizardProfileMissingError(f"Profile venv does not exist yet: {profile}")
-        command = [str(info.executable), "models", "download", model_ref, "--progress-json"]
+        command = self.cli.command(profile, ["models", "download", model_ref, "--progress-json"])
         return self._start(
             "model_download",
             profile,
@@ -323,7 +323,7 @@ class SetupWizardService:
         return self._start(
             "model_action",
             profile,
-            [str(info.executable), *arguments],
+            self.cli.command(profile, arguments),
             self.cli.environment(profile),
             model_ref=model_ref,
         )
@@ -363,17 +363,19 @@ class SetupWizardService:
                 model_flags = ["--asr-backend", backend, "--asr-model", model_id]
             else:
                 model_flags = ["--asr-model", asr_model_ref]
-        command = [
-            str(info.executable),
-            "transcribe",
-            str(audio_path),
-            "--output-dir",
-            str(output_dir),
-            "--format",
-            "txt",
-            *model_flags,
-            *diarization_flags,
-        ]
+        command = self.cli.command(
+            profile,
+            [
+                "transcribe",
+                str(audio_path),
+                "--output-dir",
+                str(output_dir),
+                "--format",
+                "txt",
+                *model_flags,
+                *diarization_flags,
+            ],
+        )
         return self._start(
             "smoke_test",
             profile,

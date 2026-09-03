@@ -1,5 +1,27 @@
 # AI 作業状態
 
+## Phase enhancement ac-5 Python直起動（0.1.25、2026-09-03）
+
+### 起動経路とデータ配置の判断
+
+- `launch-python.bat`はそのprocessだけ`ExecutionPolicy Bypass`で`launch-python.ps1`を呼ぶ。恒久的な
+  policy変更は行わず、処理内容をconsoleへ明示する。Python 3.11/3.12、uv、ffmpegを検出し、不足時は
+  導入先と再確認方法を示すが自動導入しない。GUI venvの構築は進行中と表示し、診断logをplatform
+  user logへ残す。
+- `UTTERAN_PYTHON_DIRECT=1`のときだけGUIを`python.exe -m utteran_gui`、全profile CLIを
+  `python.exe -m utteran`で起動する。installer／portableは環境変数を設定しないため既存console
+  launcherを使い続け、挙動を変更しない。
+- Python直起動はsource checkoutとして扱い、`UTTERAN_DATA_ROOT`を設定しない。ac-4 resolverの分岐を
+  増やさず、venvはrepository配下、モデル・cache・job・設定・log等は従来のplatform user領域を使う。
+  sourceとvenvを一緒に管理でき、既存2配布形態の意味を変えないため、この配置を選んだ。
+
+### 未確認事項
+
+- Smart App Control回避効果は未検証。`python.exe`からGUIまで動いてもtorch、OpenVINO、OpenVINO GenAI、
+  locally-built whisper.cppのnative DLLが阻止され、一部構成のみ動く可能性がある。利用者実機で
+  判定A（全経路）、B（一部構成）、C（Python自体を阻止）を段階的に記録するまで確定表現をしない。
+- distの構成判断と最終build結果はStep 5の独立commitで追記する。
+
 ## Phase enhancement ac-4 ポータブル配布（0.1.24、2026-09-02）
 
 ### データ配置とビルド判断
