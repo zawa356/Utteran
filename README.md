@@ -6,7 +6,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.25`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.26`（未release）。API・設定は1.0まで変更されます。
 
 ## 主な機能
 
@@ -182,11 +182,15 @@ OpenVINO GenAIでは15分音声でGPU約1分、NPU約3分、CPU約5分、長い�
 （最大約3GB）が必要です。native buildはSDK等の
 前提があるため画面の案内に従ってCLIで実行します。
 
-入力file、入力folder、出力folderは選択dialogから指定でき、pathの手入力も利用できます。
-WebViewの標準drag-and-dropではWindowsの絶対pathを安全に取得できないため、drag-and-dropには
-対応しません。ファイル名だけが入力されたように見えて実行時に失敗する状態を避けています。
-単一の入力rootを選ぶ仕様で、folder内の複数fileは「サブフォルダも処理」とglob指定でbatch処理します。
-選択したpathは履歴として保存しません。
+入力file、入力folder、出力folderは選択dialogから指定でき、pathの手入力も利用できます。入力欄へ
+Explorerから1件のfileまたはfolderをdrag-and-dropすると、pywebviewのnative連携で絶対pathを取得します。
+複数項目と非対応形式は理由を表示して受理しません。folder内の複数fileは「サブフォルダも処理」と
+glob指定でbatch処理します。使用した入力directoryと出力directoryだけを次回の既定値として記憶し、
+入力file名や履歴は保存しません。
+
+エラー、ジョブ／モデル／OpenVINO IRの削除、取得・生成の確認はアプリ内modalで表示します。Enterで確定、
+Escまたは背景clickで取り消せます。破壊的な操作では「キャンセル」に初期focusを置きます。file／folder
+選択は従来どおりOSのnative dialogです。
 
 テーマは既定でWindowsのライト／ダーク設定に追従し、設定画面からライトまたはダークへ固定
 できます。既に明示保存されているテーマはそのまま尊重されます。
