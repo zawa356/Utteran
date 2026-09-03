@@ -1,5 +1,48 @@
 # AI 作業状態
 
+## Phase enhancement ac-6 modal・drag-and-drop（0.1.26、2026-09-03）
+
+### A-3 modal
+
+- `app.js`のbrowser標準`alert`／`confirm`を、DOM上に1つだけ存在するアプリ内modalへ全置換した。
+  `prompt`の使用箇所はなかった。Enter確定、Esc／背景click取消、Tab focus trap、呼出元へのfocus復帰を
+  実装し、ジョブ／model／OpenVINO IR削除では取消を初期focusにした。追加要求はfalseで完了させ、
+  modalや破壊的操作を多重化しない。文言は日英i18n辞書を通す。OS native path dialogは変更していない。
+
+### A-4 調査と判定B
+
+- 対象実版は`uv.lock`のpywebview 6.2.1。通常のbrowser `DataTransfer.files`はfile名しか公開しないが、
+  pywebview公式FAQとdrag-drop exampleはDOM event内の
+  `event['dataTransfer']['files'][n]['pywebviewFullPath']`を規定している。
+  <https://pywebview.flowrl.com/guide/faq>、<https://pywebview.flowrl.com/examples/drag_drop>
+- 導入済み6.2.1 sourceも確認した。Edge Chromium backendはdrop時に
+  `chrome.webview.postMessageWithAdditionalObjects`へ`FileList`を渡し、native側の
+  `CoreWebView2File.Path`をfile名と対応付けて`pywebviewFullPath`へ追加する。WebView2のdrop eventを
+  pywebviewが直接扱う既存経路で、独自の`window.native`公開や.NET object再帰を追加しない。
+- 開発版を実起動し、最終page load後に`#input-drop-zone`へのDOM drop handlerがbindされ、WebView2が
+  `Responding=True`を維持することを確認した。synthetic空wavを使ったOLE drop自動注入も試したが、
+  harness側drag sourceがdrop完了を生成できずend-to-end判定には使わなかった。推測で合格扱いにせず、
+  Explorerからの実操作はinstaller／portableを含め`ユーザー確認事項.md`へ残す。
+- 以上から、APIとWindows実装経路は存在するがnative renderer専用で配布形態ごとの実操作確認を要する
+  **判定B**とした。1 fileまたは1 folderだけを受理する。複数項目は全件拒否し、folderは既存batch入力、
+  `.wav/.mp3/.m4a/.flac/.ogg/.aac/.wma/.mp4/.mkv/.mov/.avi/.webm/.ts`以外のfile、path取得不能、
+  link等は理由をmodal表示する。中途半端な`File.name` fallbackは設けない。
+
+### privacy・回帰
+
+- drop pathはPython→JavaScriptのprocess memory内だけで入力欄へ渡し、path payloadをlog出力しない。
+  job投入成功後はac-3の既存経路が入力親directoryだけを記憶するため、filename保存方針を維持する。
+- A-3とA-4は独立commitとした。model不要459件、ruff check／format（`src`・`tests`）、mypy
+  （62 source）、uv lock、JavaScript構文、`git diff --check`が合格した。`align.py`、Viterbi、ASR
+  backend実行経路は変更していない。
+- `build.ps1`でinstaller／portableを生成し、両凍結GUIで`input_drop_bound`、`Responding=True`、
+  ProductVersion／FileVersion 0.1.26、通常終了3秒後の直接子process 0件を確認した。Explorerからの
+  実dropとmodal目視はユーザー確認事項C-4／D-7へ残した。
+- installerは19,864,428 bytes、SHA-256
+  `22cb02bca0beba565f461172d4c12c57acebb2c0c657ee0c25de5314ac39fe46`、portable ZIPは
+  22,812,254 bytes、SHA-256
+  `9bc87dd9628b852fb58b5c2f7f5a49b2b64ce58282c8bc72a848310949e2d92c`。
+
 ## Phase enhancement ac-5 Python直起動（0.1.25、2026-09-03）
 
 ### 起動経路とデータ配置の判断
