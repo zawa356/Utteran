@@ -34,6 +34,7 @@ WIZARD_EXECUTION_STAGES = (
     "diarization_model",
     "vad_model",
     "asr_model",
+    "native",
     "smoke",
 )
 

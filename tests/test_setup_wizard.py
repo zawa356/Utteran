@@ -281,6 +281,58 @@ def test_model_management_action_uses_explicit_cli_command_without_wizard_stage(
     assert service.status()["completed_stages"] == []
 
 
+def test_whisper_cpp_native_build_runs_before_smoke_as_a_distinct_stage(tmp_path: Path) -> None:
+    executable = _create_profile(tmp_path, "intel")
+    process = FakeWizardProcess(["ネイティブビルドを開始します。数分から数十分かかります。\n"])
+    captured: list[str] = []
+
+    def popen(command: list[str], **_kwargs: Any) -> FakeWizardProcess:
+        captured.extend(command)
+        return process
+
+    service = _service(tmp_path, popen=popen)
+    started = service.start_native_build("intel", "whisper-cpp:large-v3-turbo-q5_0")
+    job_id = str(started["id"])
+    _wait_until(lambda: service.snapshot(job_id)["status"] == "running")
+    assert service.snapshot(job_id)["status"] == "running"
+    process.returncode = 0
+    process.finished.set()
+    _wait_until(lambda: service.snapshot(job_id)["status"] == "completed")
+
+    assert captured == [
+        str(executable),
+        "native",
+        "build",
+        "--variant",
+        "openvino_vulkan,vulkan,openvino",
+    ]
+    assert service.status()["completed_stages"] == ["native"]
+
+
+def test_non_whisper_model_does_not_request_a_native_build(tmp_path: Path) -> None:
+    _create_profile(tmp_path, "cpu")
+    service = _service(tmp_path)
+
+    with pytest.raises(ValueError, match="only required for whisper-cpp"):
+        service.start_native_build("cpu", "faster-whisper:large-v3-turbo")
+
+
+def test_failed_native_build_has_specific_guidance(tmp_path: Path) -> None:
+    _create_profile(tmp_path, "vulkan")
+    process = FakeWizardProcess(["glslc (Vulkan SDK シェーダーコンパイラ) が見つかりません。\n"])
+    process.returncode = 3
+    service = _service(tmp_path, popen=lambda _command, **_kwargs: process)
+
+    started = service.start_native_build("vulkan", "whisper-cpp:base")
+    process.finished.set()
+    _wait_until(lambda: service.snapshot(str(started["id"]))["status"] == "failed")
+
+    assert service.snapshot(str(started["id"]))["guidance"] == {
+        "key": "native",
+        "settings_anchor": "",
+    }
+
+
 def test_smoke_test_requires_an_existing_profile_venv(tmp_path: Path) -> None:
     service = _service(tmp_path)
     with pytest.raises(WizardProfileMissingError):

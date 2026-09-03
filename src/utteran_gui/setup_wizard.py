@@ -32,7 +32,9 @@ from utteran_gui.processes import PopenFactory, TreeKiller, build_popen_kwargs, 
 from utteran_gui.security import mask_secrets
 from utteran_gui.settings import PROFILE_NAMES, WIZARD_EXECUTION_STAGES, WIZARD_STEPS, SettingsStore
 
-WizardJobKind = Literal["venv_build", "model_download", "model_action", "smoke_test"]
+WizardJobKind = Literal[
+    "venv_build", "model_download", "model_action", "native_build", "smoke_test"
+]
 WizardJobStatus = Literal["starting", "running", "completed", "failed", "cancelled"]
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 
@@ -328,6 +330,29 @@ class SetupWizardService:
             model_ref=model_ref,
         )
 
+    def start_native_build(self, profile: str, model_ref: str) -> dict[str, object]:
+        """Ensure the native variant required by a selected whisper.cpp model exists."""
+        _validate_profile(profile)
+        if not model_ref.startswith("whisper-cpp:"):
+            raise ValueError("A native build is only required for whisper-cpp models")
+        info = self.cli.profile_info(profile)
+        if not info.exists:
+            raise WizardProfileMissingError(f"Profile venv does not exist yet: {profile}")
+        variants = {
+            "intel": "openvino_vulkan,vulkan,openvino",
+            "vulkan": "vulkan",
+            "cpu": "cpu",
+            "cuda": "cpu",
+        }[profile]
+        command = self.cli.command(profile, ["native", "build", "--variant", variants])
+        return self._start(
+            "native_build",
+            profile,
+            command,
+            self.cli.environment(profile),
+            model_ref=model_ref,
+        )
+
     def start_smoke_test(
         self,
         profile: str,
@@ -568,6 +593,8 @@ class SetupWizardService:
                     )
                 )
                 self._record_stage(stage)
+            elif job.kind == "native_build":
+                self._record_stage("native")
             if job.kind == "smoke_test":
                 self._last_successful_smoke_test_profile = job.profile
                 self._record_stage("smoke")

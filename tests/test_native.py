@@ -386,6 +386,27 @@ def test_build_variant_raises_native_build_error_on_configure_failure(tmp_path: 
 
     assert "cpu" not in manifest["backends"]
     assert "cmake" in manifest["errors"]["cpu"] or "構成に失敗" in manifest["errors"]["cpu"]
+    assert "部分成果物" in manifest["errors"]["cpu"]
+    assert list(builder.platform_dir.glob("logs/native-build-cpu-configure-*.log"))
+    assert not (builder.platform_dir / "n-cpu").exists()
+
+
+def test_build_timeout_is_recorded_and_partial_output_is_removed(tmp_path: Path) -> None:
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if "rev-parse" in command:
+            return _ok(WHISPER_CPP_COMMIT)
+        if "--build" in command:
+            raise subprocess.TimeoutExpired(command, 3600, output="still compiling")
+        return _ok()
+
+    builder = _make_builder(tmp_path, FakeRunner(handler))
+
+    manifest = builder.build_all(variants=("cpu",))
+
+    assert "3600秒でタイムアウト" in manifest["errors"]["cpu"]
+    assert "部分成果物" in manifest["errors"]["cpu"]
+    assert list(builder.platform_dir.glob("logs/native-build-cpu-build-timeout-*.log"))
+    assert not (builder.platform_dir / "n-cpu").exists()
 
 
 def test_ensure_source_raises_when_git_missing(

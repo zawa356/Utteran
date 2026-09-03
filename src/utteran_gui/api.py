@@ -92,7 +92,7 @@ class OpenFolderPayload(BaseModel):
 
 
 class WizardJobPayload(BaseModel):
-    kind: Literal["venv_build", "model_download", "smoke_test"]
+    kind: Literal["venv_build", "model_download", "native_build", "smoke_test"]
     profile: Literal["cpu", "cuda", "intel", "vulkan"]
     model_ref: str | None = Field(default=None, max_length=200)
     diarization_enabled: bool = False
@@ -386,6 +386,10 @@ def create_app(
                 if not payload.model_ref or not payload.model_ref.strip():
                     raise HTTPException(status_code=422, detail="model_ref is required")
                 return selected_wizard.start_model_download(payload.profile, payload.model_ref)
+            if payload.kind == "native_build":
+                if not payload.model_ref or not payload.model_ref.strip():
+                    raise HTTPException(status_code=422, detail="model_ref is required")
+                return selected_wizard.start_native_build(payload.profile, payload.model_ref)
             return selected_wizard.start_smoke_test(
                 payload.profile,
                 asr_model_ref=payload.model_ref,

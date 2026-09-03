@@ -1165,6 +1165,23 @@ def test_wizard_api_routes_run_status_events_and_complete(tmp_path: Path) -> Non
     assert missing.status_code == 404
 
 
+def test_wizard_native_build_api_requires_a_model_reference(tmp_path: Path) -> None:
+    settings = SettingsStore(tmp_path / "settings.json")
+    wizard = SetupWizardService(CliAdapter(tmp_path), settings_store=settings)
+    app = create_app(
+        "session-secret",
+        repo_root=tmp_path,
+        settings_store=settings,
+        wizard_service=wizard,
+    )
+    client = TestClient(app, headers={SESSION_HEADER: "session-secret"})
+    _create_profile(tmp_path, "intel")
+
+    response = client.post("/api/wizard/jobs", json={"kind": "native_build", "profile": "intel"})
+
+    assert response.status_code == 422
+
+
 def test_wizard_token_preflight_uses_profile_cli_and_never_returns_token(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
@@ -1256,6 +1273,10 @@ def test_wizard_frontend_separates_input_from_unattended_execution_and_resumes()
     )
     assert unattended.index("wizardState.diarizationModelRef") < unattended.index(
         "wizardState.modelRef"
+    )
+    assert 'wizardState.modelRef.startsWith("whisper-cpp:")' in unattended
+    assert unattended.index('runWizardJob("native_build"') < unattended.index(
+        'runWizardJob("smoke_test"'
     )
     assert "await showWizardToken(result.access)" in unattended
     assert 'status.step === "execution"' in app_js
