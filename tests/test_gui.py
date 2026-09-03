@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from utteran_gui import __version__
 from utteran_gui.api import SESSION_HEADER, create_app
-from utteran_gui.app import NativeDialogApi, bind_loopback_socket
+from utteran_gui.app import NativeDialogApi, _dropped_input_items, bind_loopback_socket
 from utteran_gui.cli import CliAdapter, RegenerationOptions, TranscriptionOptions
 from utteran_gui.environment import (
     EnvironmentService,
@@ -209,18 +209,41 @@ def test_native_dialog_bridge_never_exposes_native_window_to_pywebview() -> None
     assert api.report_frontend_error(None) is False
 
 
-def test_gui_assets_disable_nonfunctional_drop_and_forward_frontend_errors() -> None:
+def test_gui_assets_use_native_full_path_drop_and_forward_frontend_errors() -> None:
     web = Path(__file__).parents[1] / "src" / "utteran_gui" / "web"
     script = (web / "app.js").read_text(encoding="utf-8")
     index = (web / "index.html").read_text(encoding="utf-8")
 
-    assert "file.path" not in script
-    assert "dataTransfer.files" not in script
     assert "window.native" not in script
-    assert "dropHint" not in index
+    assert 'id="input-drop-zone"' in index
+    assert 'window.addEventListener("utteran-input-dropped"' in script
+    assert "supportedDropExtensions" in script
+    assert "dropMultipleRejected" in script
     assert 'window.addEventListener("error"' in script
     assert 'window.addEventListener("unhandledrejection"' in script
     assert "report_frontend_error" in script
+
+
+def test_native_drop_extracts_only_ephemeral_full_paths(tmp_path: Path) -> None:
+    media = tmp_path / "private-name.wav"
+    folder = tmp_path / "folder"
+    media.write_bytes(b"")
+    folder.mkdir()
+
+    assert _dropped_input_items(
+        {
+            "dataTransfer": {
+                "files": [
+                    {"name": media.name, "pywebviewFullPath": str(media)},
+                    {"name": folder.name, "pywebviewFullPath": str(folder)},
+                    {"name": "browser-only.wav"},
+                ]
+            }
+        }
+    ) == [
+        {"path": str(media), "kind": "file"},
+        {"path": str(folder), "kind": "folder"},
+    ]
 
 
 def test_gui_uses_one_keyboard_accessible_i18n_modal() -> None:
@@ -237,7 +260,7 @@ def test_gui_uses_one_keyboard_accessible_i18n_modal() -> None:
     assert 'role="dialog"' in index and 'aria-modal="true"' in index
     assert 'event.key === "Escape"' in script
     assert 'event.key === "Enter"' in script
-    assert 'event.target === backdrop' in script
+    assert "event.target === backdrop" in script
     assert "if (dialogState.active) return Promise.resolve(false)" in script
     assert "confirm && destructive ? cancelButton : confirmButton" in script
     assert "position: fixed" in styles
