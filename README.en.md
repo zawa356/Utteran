@@ -40,6 +40,9 @@ This path has not been verified to bypass Smart App Control. Python may start wh
 from torch, OpenVINO, OpenVINO GenAI, or a locally built whisper.cpp are still blocked, so only
 some profiles may work. This statement will be updated after testing on an enabled machine.
 
+`build.ps1` places only the installer, portable ZIP, and their `.sha256` sidecars in
+`dist/release`. `dist/staging` contains intermediate files and is not distributed.
+
 The portable build does not save a Hugging Face token; enter it again on every launch. Profiles
 and models consume several GB after setup, moving the extracted folder can require rebuilding its
 venv, and USB storage can be slow. It uses the same executable as the installer build and does not

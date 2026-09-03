@@ -20,7 +20,21 @@
 - Smart App Control回避効果は未検証。`python.exe`からGUIまで動いてもtorch、OpenVINO、OpenVINO GenAI、
   locally-built whisper.cppのnative DLLが阻止され、一部構成のみ動く可能性がある。利用者実機で
   判定A（全経路）、B（一部構成）、C（Python自体を阻止）を段階的に記録するまで確定表現をしない。
-- distの構成判断と最終build結果はStep 5の独立commitで追記する。
+- distは`dist/release`を配布専用の安定した一階層とし、installer、portable ZIP、各SHA-256 sidecarを
+  集約した。PyInstaller onedirは`dist/staging/installer-gui`と`portable-gui`へ分離した。配布対象を
+  人にも後続のhash公開処理にも一意にし、中間物を誤配布しないためである。`dist/`全体は従来どおり
+  `.gitignore`対象で、中間物も追跡されない。
+- `build.ps1`で両成果物を生成し、installer／portable GUIのProductVersionとFileVersionがすべて
+  0.1.25であることを確認した。installerは19,863,159 bytes、SHA-256
+  `97991447037cf9f7a46f265fa1071a67bce924471a2c9f3f73e2cae248facf32`、portable ZIPは
+  22,432,733 bytes、SHA-256
+  `168aa708b41bcf48a1b011bd82c0f75780c9b88999f0b818b3328712fd4aa1e3`。
+- Windows Terminalが`dist`を作業directoryにしていてもbuildが失敗しないよう、clean時は`dist`
+  rootを保持して全内容だけを削除する。stale成果物を全削除する契約は維持する。
+- 最終回帰はモデル不要457件、ruff check／format、mypy（62 source）、uv lock、全PowerShell parser／
+  BOM、JavaScript構文、`git diff --check`が合格した。bat経由のPython GUIは`Responding=True`、
+  portable GUIも`Responding=True`で、各停止3秒後の直接子processは0件だった。Smart App Control、
+  実モデル、installerの実installは利用者確認事項へ残す。
 
 ## Phase enhancement ac-4 ポータブル配布（0.1.24、2026-09-02）
 
