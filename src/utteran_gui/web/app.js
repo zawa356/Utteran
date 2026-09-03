@@ -62,6 +62,73 @@
   const t = (key) =>
     (window.UTTERAN_I18N[state.settings?.language || "ja"] || {})[key] || key;
 
+  const dialogState = { active: false, previousFocus: null };
+
+  function showDialog(message, { confirm = false, destructive = false } = {}) {
+    if (dialogState.active) return Promise.resolve(false);
+    dialogState.active = true;
+    dialogState.previousFocus = document.activeElement;
+    const backdrop = $("app-dialog");
+    const cancelButton = $("dialog-cancel");
+    const confirmButton = $("dialog-confirm");
+    $("dialog-title").textContent = t(confirm ? "dialogConfirmTitle" : "dialogErrorTitle");
+    $("dialog-message").textContent = String(message || "");
+    cancelButton.textContent = t("dialogCancel");
+    confirmButton.textContent = t("dialogOk");
+    cancelButton.classList.toggle("hidden", !confirm);
+    backdrop.classList.remove("hidden");
+    backdrop.setAttribute("aria-hidden", "false");
+    document.body.classList.add("dialog-open");
+
+    return new Promise((resolve) => {
+      const finish = (accepted) => {
+        if (!dialogState.active) return;
+        dialogState.active = false;
+        backdrop.classList.add("hidden");
+        backdrop.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("dialog-open");
+        backdrop.removeEventListener("keydown", onKeyDown);
+        backdrop.removeEventListener("click", onBackdropClick);
+        cancelButton.removeEventListener("click", onCancel);
+        confirmButton.removeEventListener("click", onConfirm);
+        if (dialogState.previousFocus?.isConnected) dialogState.previousFocus.focus();
+        dialogState.previousFocus = null;
+        resolve(accepted);
+      };
+      const onCancel = () => finish(false);
+      const onConfirm = () => finish(true);
+      const onBackdropClick = (event) => {
+        if (event.target === backdrop) onCancel();
+      };
+      const onKeyDown = (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          onConfirm();
+        } else if (event.key === "Tab") {
+          const buttons = confirm ? [cancelButton, confirmButton] : [confirmButton];
+          const position = buttons.indexOf(document.activeElement);
+          const next = event.shiftKey
+            ? (position <= 0 ? buttons.length - 1 : position - 1)
+            : (position + 1) % buttons.length;
+          event.preventDefault();
+          buttons[next].focus();
+        }
+      };
+      cancelButton.addEventListener("click", onCancel);
+      confirmButton.addEventListener("click", onConfirm);
+      backdrop.addEventListener("click", onBackdropClick);
+      backdrop.addEventListener("keydown", onKeyDown);
+      (confirm && destructive ? cancelButton : confirmButton).focus();
+    });
+  }
+
+  const showAlert = (message) => showDialog(message);
+  const showConfirm = (message, options = {}) =>
+    showDialog(message, { ...options, confirm: true });
+
   async function api(path, options = {}) {
     const response = await fetch(path, {
       credentials: "same-origin",
@@ -451,7 +518,7 @@
       if (status.step === "model") renderWizardModels();
       showWizardStep(status.step || "welcome");
     } catch (error) {
-      window.alert(error.message);
+      await showAlert(error.message);
       showWizardStep("welcome");
     }
   }
@@ -465,7 +532,7 @@
       await api("/api/wizard/start", { method: "POST" });
       wizardState.hardware = await api("/api/wizard/hardware");
     } catch (error) {
-      window.alert(error.message);
+      await showAlert(error.message);
       return;
     }
     renderWizardRecommendation();
@@ -1061,7 +1128,7 @@
       $("start-button").disabled = false;
       appendLog(error.message);
       $("progress-panel").classList.add("hidden");
-      window.alert(error.message);
+      await showAlert(error.message);
     }
   }
 
@@ -1485,7 +1552,7 @@
     const message = t("deleteConfirm")
       .replace("{name}", job.input_name)
       .replace("{size}", formatBytes(job.size_bytes));
-    if (!window.confirm(message)) return;
+    if (!(await showConfirm(message, { destructive: true }))) return;
     try {
       const profile = $("history-profile").value || $("profile-select").value;
       await api(
@@ -1520,7 +1587,7 @@
       const path = await bridge.choose_path(kind);
       if (path) $(targetId).value = path;
     } catch (error) {
-      window.alert(error.message || String(error));
+      await showAlert(error.message || String(error));
     }
   }
 
@@ -1551,13 +1618,15 @@
         const label = document.createElement("span");
         label.textContent = `${size}: ${status?.installed ? t("installed") : t("notInstalled")}`;
         const model = rows.find((item) => item.backend === "whisper-cpp" && item.model_size === size);
-        const button = actionButton(status?.installed ? t("delete") : t("generate"), () => {
+        const button = actionButton(status?.installed ? t("delete") : t("generate"), async () => {
           if (!model) return;
           const action = status?.installed ? "remove_openvino" : "prepare_openvino";
           const warning = status?.installed
             ? t("removeIrConfirm")
             : t("prepareIrConfirm").replace("{size}", size);
-          if (window.confirm(warning)) runModelAction(action, model.key, `${size} OpenVINO IR`);
+          if (await showConfirm(warning, { destructive: Boolean(status?.installed) })) {
+            runModelAction(action, model.key, `${size} OpenVINO IR`);
+          }
         }, status?.installed ? "danger" : "secondary");
         row.append(label, button);
         return row;
@@ -1588,16 +1657,16 @@
     if (model.installed) {
       actions.append(
         actionButton(t("verify"), () => runModelAction("verify", model.key, model.display_name), "secondary"),
-        actionButton(t("delete"), () => {
-          if (window.confirm(t("deleteModelConfirm").replace("{name}", model.display_name).replace("{size}", formatBytes(model.size_bytes)))) {
+        actionButton(t("delete"), async () => {
+          if (await showConfirm(t("deleteModelConfirm").replace("{name}", model.display_name).replace("{size}", formatBytes(model.size_bytes)), { destructive: true })) {
             runModelAction("remove", model.key, model.display_name);
           }
         }, "danger"),
       );
     } else {
-      actions.append(actionButton(t("download"), () => {
+      actions.append(actionButton(t("download"), async () => {
         const message = t("downloadModelConfirm").replace("{name}", model.display_name).replace("{size}", formatBytes(model.approximate_size_bytes));
-        if (window.confirm(message)) runModelAction("download", model.key, model.display_name);
+        if (await showConfirm(message)) runModelAction("download", model.key, model.display_name);
       }, "primary"));
     }
     card.append(head, description, reason, metadata, actions);
