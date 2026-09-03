@@ -30,6 +30,9 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 | `utteran-portable-<version>.zip` | 一時利用、PCへutteranのデータを残したくない場合 | 展開先の`data`配下 |
 | `launch-python.bat` | Smart App Control環境、未署名exeを使えない環境、既存Python環境から使う場合 | venvはrepository配下、その他はWindowsのユーザー領域 |
 
+`build.ps1`で生成する配布対象は`dist/release`にまとまります。installer、portable ZIP、各
+`.sha256`だけをここから配布し、`dist/staging`は配布しない中間生成物です。
+
 ポータブル版はZIPを展開し、直下の`utteran-gui.exe`を起動します。設定、ログ、ジョブ、モデル、
 キャッシュ、ffmpeg、native build、プロファイルvenvは展開先だけに作られるため、必要な出力を
 別の場所へ移してから展開フォルダーを削除すればutteranの管理データは残りません。
