@@ -897,6 +897,14 @@
         await runWizardJob("model_download", { model_ref: wizardState.modelRef });
         wizardState.completedStages.add("asr_model");
       }
+      if (
+        wizardState.modelRef.startsWith("whisper-cpp:") &&
+        !wizardState.completedStages.has("native")
+      ) {
+        $("wizard-progress-title").textContent = t("wizardStepNative");
+        await runWizardJob("native_build", { model_ref: wizardState.modelRef });
+        wizardState.completedStages.add("native");
+      }
       if (!wizardState.completedStages.has("smoke")) {
         $("wizard-progress-title").textContent = t("wizardStepSmoke");
         await runWizardJob("smoke_test", {

@@ -290,6 +290,8 @@ def guidance_for(
     error_types = {str(event.get("error_type", "")).casefold() for event in events}
     if exit_code == 130:
         key = "cancelled"
+    elif operation == "native_build":
+        key = "native"
     elif "memorybudgeterror" in error_types or "memory" in combined or "メモリ" in combined:
         key = "memory"
     elif model_operation and (

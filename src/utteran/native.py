@@ -191,7 +191,11 @@ def probe_glslc() -> PrerequisiteCheck:
     executable = shutil.which("glslc") or shutil.which("glslc.exe")
     if executable is None:
         return PrerequisiteCheck(
-            False, "glslc (Vulkan SDK シェーダーコンパイラ) が見つかりません。"
+            False,
+            "glslcが見つかりません。Vulkan buildに必要なheaders、vulkan-1 library、glslcを含む"
+            "LunarG Vulkan SDKを https://vulkan.lunarg.com/sdk/home から導入し、"
+            "新しいターミナルで再試行してください。GPUドライバ同梱のVulkan Runtimeだけでは"
+            "ビルドできません。",
         )
     return PrerequisiteCheck(True)
 
@@ -531,7 +535,10 @@ class NativeBuilder:
         """Clone or update whisper.cpp to the pinned tag/commit and verify HEAD."""
         git = shutil.which("git")
         if not git:
-            raise NativeBuildError("git が見つからないため whisper.cpp を取得できません。")
+            raise NativeBuildError(
+                "git が見つからないため whisper.cpp を取得できません。"
+                "https://git-scm.com/download/win からGit for Windowsを導入してください。"
+            )
         if (self.source_dir / ".git").is_dir():
             result = self.runner.run([git, "-C", str(self.source_dir), "rev-parse", "HEAD"])
             if result.returncode == 0 and result.stdout.strip() == WHISPER_CPP_COMMIT and not force:
@@ -603,14 +610,21 @@ class NativeBuilder:
                     return BuildResult(name, executable, flags, requires)
 
         build_dir = self.build_dir(name)
-        build_dir.mkdir(parents=True, exist_ok=True)
+        # Keep this name even shorter than the final slug: ggml's nested Vulkan
+        # shader build is close to Windows FileTracker's path limit.
+        staging_dir = build_dir.with_name(f"n-{_BUILD_DIR_SLUGS[name]}")
+        if staging_dir.is_dir():
+            removed_files, removed_bytes = _tree_size(staging_dir)
+            shutil.rmtree(staging_dir)
+            self._write_cleanup_log(name, removed_files, removed_bytes)
+        staging_dir.mkdir(parents=True, exist_ok=False)
         started = time.monotonic()
         configure = [
             cmake,
             "-S",
             str(self.source_dir),
             "-B",
-            str(build_dir),
+            str(staging_dir),
             *self._generator_args(),
             "-DCMAKE_BUILD_TYPE=Release",
             "-DWHISPER_BUILD_TESTS=OFF",
@@ -618,22 +632,126 @@ class NativeBuilder:
             "-DWHISPER_BUILD_SERVER=OFF",
             *flags,
         ]
-        result = self.runner.run(configure, timeout=600)
+        try:
+            result = self.runner.run(configure, timeout=600)
+        except subprocess.TimeoutExpired as exc:
+            log_path = self._write_timeout_log(name, "configure", configure, exc)
+            removed_files, removed_bytes = _tree_size(staging_dir)
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            raise NativeBuildError(
+                f"whisper.cpp {name}版のCMake構成が600秒でタイムアウトしました。"
+                f"ログ: {log_path}。部分成果物 {removed_files}個 / "
+                f"{removed_bytes} bytes を削除しました。"
+            ) from exc
         if result.returncode != 0:
+            log_path = self._write_failure_log(name, "configure", configure, result)
+            removed_files, removed_bytes = _tree_size(staging_dir)
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            detail = _configure_failure_detail(result.stderr or result.stdout)
             raise NativeBuildError(
-                f"whisper.cpp {name}版のCMake構成に失敗しました: {_tail(result.stderr)}"
+                f"whisper.cpp {name}版のCMake構成に失敗しました。"
+                f"ログ: {log_path}。部分成果物 {removed_files}個 / "
+                f"{removed_bytes} bytes を削除しました: "
+                f"{detail}"
             )
-        build = self.runner.run(
-            [cmake, "--build", str(build_dir), "--config", "Release", "--target", "whisper-cli"],
-            timeout=3600,
-        )
+        build_command = [
+            cmake,
+            "--build",
+            str(staging_dir),
+            "--config",
+            "Release",
+            "--target",
+            "whisper-cli",
+        ]
+        try:
+            build = self.runner.run(build_command, timeout=3600)
+        except subprocess.TimeoutExpired as exc:
+            log_path = self._write_timeout_log(name, "build", build_command, exc)
+            removed_files, removed_bytes = _tree_size(staging_dir)
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            raise NativeBuildError(
+                f"whisper.cpp {name}版のビルドが3600秒でタイムアウトしました。"
+                f"ログ: {log_path}。部分成果物 {removed_files}個 / "
+                f"{removed_bytes} bytes を削除しました。"
+            ) from exc
         if build.returncode != 0:
+            log_path = self._write_failure_log(name, "build", build_command, build)
+            removed_files, removed_bytes = _tree_size(staging_dir)
+            shutil.rmtree(staging_dir, ignore_errors=True)
             raise NativeBuildError(
-                f"whisper.cpp {name}版のビルドに失敗しました: {_tail(build.stderr)}"
+                f"whisper.cpp {name}版のビルドに失敗しました。"
+                f"ログ: {log_path}。部分成果物 {removed_files}個 / "
+                f"{removed_bytes} bytes を削除しました: "
+                f"{_tail(build.stderr or build.stdout)}"
             )
-        executable = self._find_whisper_cli(build_dir)
+        try:
+            self._find_whisper_cli(staging_dir)
+        except NativeBuildError as exc:
+            missing_result = subprocess.CompletedProcess(
+                build_command, 1, stdout=build.stdout, stderr=str(exc)
+            )
+            log_path = self._write_failure_log(name, "verify", build_command, missing_result)
+            removed_files, removed_bytes = _tree_size(staging_dir)
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            raise NativeBuildError(
+                f"whisper.cpp {name}版の成果物検証に失敗しました。"
+                f"ログ: {log_path}。部分成果物 {removed_files}個 / "
+                f"{removed_bytes} bytes を削除しました: {exc}"
+            ) from exc
+        try:
+            if build_dir.is_dir():
+                shutil.rmtree(build_dir)
+            staging_dir.replace(build_dir)
+            executable = self._find_whisper_cli(build_dir)
+        except Exception:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            raise
         elapsed = time.monotonic() - started
         return BuildResult(name, executable, flags, requires, build_seconds=elapsed)
+
+    def _write_failure_log(
+        self,
+        variant: str,
+        step: str,
+        command: Sequence[str],
+        result: subprocess.CompletedProcess[str],
+    ) -> Path:
+        """Persist complete subprocess diagnostics outside disposable partial output."""
+        log_dir = self.platform_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / f"native-build-{variant}-{step}-{int(time.time())}.log"
+        path.write_text(
+            "command: " + subprocess.list2cmdline(list(command)) + "\n\n"
+            "stdout:\n" + result.stdout + "\n\nstderr:\n" + result.stderr + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def _write_timeout_log(
+        self,
+        variant: str,
+        step: str,
+        command: Sequence[str],
+        error: subprocess.TimeoutExpired,
+    ) -> Path:
+        result = subprocess.CompletedProcess(
+            command,
+            -1,
+            stdout=_subprocess_text(error.stdout),
+            stderr=_subprocess_text(error.stderr),
+        )
+        return self._write_failure_log(variant, f"{step}-timeout", command, result)
+
+    def _write_cleanup_log(self, variant: str, files: int, size: int) -> Path:
+        """Record recovery cleanup left by an interrupted prior build."""
+        log_dir = self.platform_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / f"native-build-{variant}-recovery-{int(time.time())}.log"
+        path.write_text(
+            f"前回中断時の部分成果物 {files}個 / {size} bytes を削除しました。\n",
+            encoding="utf-8",
+        )
+        return path
 
     def _generator_args(self) -> tuple[str, ...]:
         """Prefer a generator that needs no pre-sourced compiler environment."""
@@ -674,6 +792,42 @@ def _now() -> str:
     from datetime import datetime
 
     return datetime.now().astimezone().isoformat()
+
+
+def _tree_size(path: Path) -> tuple[int, int]:
+    """Return the number and total bytes of regular files below ``path``."""
+    files = 0
+    size = 0
+    try:
+        for candidate in path.rglob("*"):
+            if candidate.is_file():
+                files += 1
+                size += candidate.stat().st_size
+    except OSError:
+        # Cleanup still proceeds; the report is explicitly the measurable lower bound.
+        pass
+    return files, size
+
+
+def _subprocess_text(value: str | bytes | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
+
+
+def _configure_failure_detail(output: str) -> str:
+    """Add an actionable MSVC prerequisite message to CMake's diagnostic tail."""
+    folded = output.casefold()
+    if platform.system() == "Windows" and (
+        "could not find any instance of visual studio" in folded
+        or "is not able to compile a simple test program" in folded
+        or "no c compiler could be found" in folded
+    ):
+        return (
+            "MSVC C++ Build Toolsが利用できません。Visual Studio Installerで"
+            "「C++によるデスクトップ開発」を導入してください。 " + _tail(output)
+        )
+    return _tail(output)
 
 
 def _tail(text: str, lines: int = 20) -> str:
