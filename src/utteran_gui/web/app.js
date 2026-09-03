@@ -129,6 +129,41 @@
   const showConfirm = (message, options = {}) =>
     showDialog(message, { ...options, confirm: true });
 
+  const supportedDropExtensions = new Set([
+    ".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".wma",
+    ".mp4", ".mkv", ".mov", ".avi", ".webm", ".ts",
+  ]);
+
+  async function handleDroppedInput(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      await showAlert(t("dropPathUnavailable"));
+      return;
+    }
+    if (items.length !== 1) {
+      await showAlert(t("dropMultipleRejected"));
+      return;
+    }
+    const item = items[0];
+    if (!item || typeof item.path !== "string" || !["file", "folder"].includes(item.kind)) {
+      await showAlert(t("dropPathUnavailable"));
+      return;
+    }
+    if (item.kind === "file") {
+      const match = item.path.toLowerCase().match(/\.[^.\\/]+$/);
+      if (!match || !supportedDropExtensions.has(match[0])) {
+        await showAlert(
+          t("dropUnsupported").replace("{formats}", [...supportedDropExtensions].join(", ")),
+        );
+        return;
+      }
+    }
+    $("input-path").value = item.path;
+    $("drop-status").textContent = t(
+      item.kind === "folder" ? "dropAcceptedFolder" : "dropAcceptedFile",
+    );
+    $("input-path").focus();
+  }
+
   async function api(path, options = {}) {
     const response = await fetch(path, {
       credentials: "same-origin",
@@ -1786,6 +1821,9 @@
   }
 
   function bind() {
+    window.addEventListener("utteran-input-dropped", (event) => {
+      void handleDroppedInput(event.detail);
+    });
     document.querySelectorAll(".nav-item").forEach((button) =>
       button.addEventListener("click", async () => {
         if (state.detail) closeViewer();
