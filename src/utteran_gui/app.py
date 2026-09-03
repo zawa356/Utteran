@@ -22,6 +22,58 @@ from utteran_gui.settings import TokenStore
 WINDOWS_APP_USER_MODEL_ID = "Utteran.Utteran"
 
 
+def _dropped_input_items(event: object) -> list[dict[str, str]]:
+    """Extract ephemeral full paths added by pywebview's native drop bridge."""
+
+    if not isinstance(event, dict):
+        return []
+    transfer = event.get("dataTransfer")
+    if not isinstance(transfer, dict):
+        return []
+    files = transfer.get("files")
+    if not isinstance(files, list):
+        return []
+    items: list[dict[str, str]] = []
+    for file in files:
+        if not isinstance(file, dict):
+            continue
+        value = file.get("pywebviewFullPath")
+        if not isinstance(value, str) or not value:
+            continue
+        path = Path(value)
+        kind = "folder" if path.is_dir() else "file" if path.is_file() else "unknown"
+        items.append({"path": value, "kind": kind})
+    return items
+
+
+def _bind_input_drop(window: Any) -> None:
+    """Bind native file drop handling after the WebView2 document is ready."""
+
+    from webview.dom import DOMEventHandler
+
+    target = window.dom.get_element("#input-drop-zone")
+    if target is None:
+        logging.getLogger(__name__).warning("Input drop target was not found")
+        return
+
+    def on_drop(event: object) -> None:
+        # Paths remain in process memory and are sent only to the input field.
+        # Never log this payload: file names can contain personal information.
+        payload = json.dumps(_dropped_input_items(event), ensure_ascii=False)
+        window.evaluate_js(
+            "window.dispatchEvent(new CustomEvent('utteran-input-dropped', "
+            f"{{detail: {payload}}}));"
+        )
+
+    def ignore_drag(_event: object) -> None:
+        return
+
+    target.events.dragenter += DOMEventHandler(ignore_drag, True, True)
+    target.events.dragover += DOMEventHandler(ignore_drag, True, True, debounce=100)
+    target.events.drop += DOMEventHandler(on_drop, True, True)
+    log_stage("input_drop_bound")
+
+
 class NativeDialogApi:
     """Small pywebview bridge with no publicly traversable native objects."""
 
@@ -179,7 +231,11 @@ def main() -> None:
         # sequence and /api/environment), which this stage log cannot see;
         # those stages log through utteran_gui.api instead.
         log_stage("webview_start_blocking")
-        webview.start(icon=str(icon_path) if icon_path.is_file() else None)
+        webview.start(
+            _bind_input_drop,
+            window,
+            icon=str(icon_path) if icon_path.is_file() else None,
+        )
         log_stage("webview_closed")
     finally:
         server.should_exit = True

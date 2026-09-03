@@ -49,7 +49,7 @@
             <div><span class="step-number">01</span><h2 data-i18n="sourceOutput">入力と出力</h2></div>
           </div>
           <div class="field-grid two">
-            <label><span data-i18n="inputPath">入力ファイル／フォルダ</span><span class="path-picker"><input id="input-path" required autocomplete="off" placeholder="C:\Media\meeting.mp4"><button id="pick-input-file" class="button secondary" type="button" data-i18n="chooseFile">ファイル</button><button id="pick-input-folder" class="button secondary" type="button" data-i18n="chooseFolder">フォルダ</button></span></label>
+            <label id="input-drop-zone" class="input-drop-zone"><span data-i18n="inputPath">入力ファイル／フォルダ</span><span class="path-picker"><input id="input-path" required autocomplete="off" placeholder="C:\Media\meeting.mp4"><button id="pick-input-file" class="button secondary" type="button" data-i18n="chooseFile">ファイル</button><button id="pick-input-folder" class="button secondary" type="button" data-i18n="chooseFolder">フォルダ</button></span><small id="drop-status" class="drop-hint" role="status" data-i18n="dropHint">ここへファイルまたはフォルダをドロップできます（1件のみ）</small></label>
             <label><span data-i18n="outputDir">出力先</span><span class="path-picker"><input id="output-dir" required autocomplete="off" placeholder="C:\Transcripts"><button id="pick-output-folder" class="button secondary" type="button" data-i18n="chooseFolder">フォルダ</button></span></label>
           </div>
           <div class="field-grid three batch-options">
