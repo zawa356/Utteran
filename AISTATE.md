@@ -1,5 +1,30 @@
 # AI 作業状態
 
+## 過去版再生成（v0.1.23〜v0.1.28、2026-09-04）
+
+- `C:\UserDataFile\utteran-archive\`へ、git tag `v0.1.0`〜`v0.1.28`の過去版installer（0.1.24以降は
+  portableも）を`git switch --detach <tag>`＋各tagの`build.ps1`で再生成する作業を継続し、残っていた
+  v0.1.23〜v0.1.28の6版を本セッションで完了した（`.claude\worktrees\agent-a9b01914bf77367c2`内で実施）。
+  v0.1.0〜v0.1.22（v0.1.18失敗、v0.1.20欠番を除く）は別セッションで完了済み。全対象版のビルドは成功し、
+  3版以上連続失敗という作業中止条件には該当しなかった。
+- 作業指示として与えられた`docs\utteran_Phase_bugfix_j_指示書.md`は、実際にはPhase bugfix-j
+  （native build自動再構築、本ファイル冒頭の節）の指示書であり、本archival作業の内容
+  （過去版再ビルド、`進捗.md`、`utteran-archive`）とは一致しなかった。git調査で
+  `v0.1.28`と`main`が同一commit（`e80a9a3`）であることを確認し、bugfix-jはこの時点で既に
+  マージ済みの完了済み作業だと判断した。本archival作業は、依頼メッセージに直接記載された
+  詳細手順（`utteran-archive\進捗.md`の既存記録と整合することを確認済み）を正として実施した。
+- worktree制約により、このworktreeでは`main`ブランチをcheckoutできない（`main`は
+  `C:\UserDataFile\git\Utteran`本体checkoutが使用中）。そのため各版のビルド後は
+  `git switch main`の代わりに、このworktree自身のブランチ（`worktree-agent-a9b01914bf77367c2`、
+  `main`と同一commit `e80a9a3`）へ戻した。本節と`変更履歴.md`0.1.20節への付記は、detached
+  HEADではなくこのブランチ上でcommitしている。`main`は作業全体を通じて`e80a9a3`のまま変化していない。
+- 再生成物のSHA-256は当然ながら公式リリースと一致しない（例: v0.1.27 installerは再ビルドで
+  `e2341f51a377f2e7ebb394a3c11b9a4089a135b4dad8f2956aee7d26b43070f4`、`変更履歴.md`記載の公式値は
+  `9bcc4600c4d98dbdd644f60f57bb7d95ad38b6a140a4f6ecf8ae9cbb7c5d0db4`）。非決定的ビルドの既知の性質であり、
+  詳細な理由・版ごとの結果・ビルド環境は`utteran-archive\README.md`へまとめた。
+- `uv lock --check`を`main`相当のこのブランチ（`e80a9a3`）で実行した結果は、本作業の最終報告に記載する
+  （失敗していても本作業では修正しない方針）。
+
 ## Phase bugfix-j native build再構築（0.1.28、2026-09-03）
 
 ### 原因と修正
