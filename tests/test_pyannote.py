@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -182,3 +183,33 @@ def test_xpu_out_of_memory_mentions_shared_system_ram() -> None:
 def test_cpu_bad_allocation_mentions_system_ram() -> None:
     with pytest.raises(VramExhaustedError, match="システムRAM"):
         _raise_backend_error("話者分離", RuntimeError("bad allocation"), device="cpu")
+
+
+@pytest.mark.parametrize(
+    ("detail", "device", "expected"),
+    [
+        ("CUDA error: out of memory", "cuda:0", VramExhaustedError),
+        ("cuDNN error: CUDNN_STATUS_NOT_INITIALIZED", "cuda:0", BackendUnavailableError),
+        ("unexpected tensor shape", "cpu", BackendUnavailableError),
+    ],
+)
+def test_backend_errors_keep_classification_and_record_cause(
+    caplog: pytest.LogCaptureFixture, detail: str, device: str, expected: type[Exception]
+) -> None:
+    """bugfix-k: classification is unchanged, but the original exception is now
+    logged and chained, and the user message carries its summary."""
+    original = RuntimeError(detail)
+    with (
+        caplog.at_level(logging.ERROR, logger="utteran.diagnostics"),
+        pytest.raises(expected) as raised,
+    ):
+        _raise_backend_error("話者分離", original, device=device)
+
+    assert f"原因: RuntimeError: {detail}" in str(raised.value)
+    assert raised.value.__cause__ is original
+    [record] = [r for r in caplog.records if getattr(r, "utteran_diagnostic", False)]
+    assert record.utteran_fields == {  # type: ignore[attr-defined]
+        "backend": "pyannote",
+        "phase": "話者分離",
+        "error_class": "RuntimeError",
+    }

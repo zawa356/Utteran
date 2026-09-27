@@ -25,7 +25,7 @@ from utteran.errors import (
     ModelNotFoundError,
     VramExhaustedError,
 )
-from utteran.logging import structured_event
+from utteran.logging import record_backend_failure, structured_event
 from utteran.models.manager import find_runtime_model
 from utteran.types import (
     CancelToken,
@@ -121,12 +121,16 @@ class PyannoteBackend(DiarizationBackend):
                 raise ModelNotFoundError(f"話者分離モデル '{model_id}' の設定を読み込めません。")
             try:
                 pipeline.to(torch.device(selected_device))
-            except Exception:
+            except Exception as move_error:
                 if device == "auto" and selected_device.startswith(("cuda", "xpu")):
                     accelerator = "XPU" if selected_device.startswith("xpu") else "CUDA"
+                    failure = record_backend_failure(
+                        self.name, f"{accelerator} 初期化", move_error, level=logging.WARNING
+                    )
                     logging.getLogger(__name__).warning(
-                        "%s で pyannote を初期化できないため CPU へフォールバックします。",
+                        "%s で pyannote を初期化できないため CPU へフォールバックします。%s",
                         accelerator,
+                        failure.user_hint(),
                     )
                     selected_device = "cpu"
                     pipeline.to(torch.device(selected_device))
@@ -423,7 +427,12 @@ def _annotation_to_turns(annotation: Any) -> list[SpeakerTurn]:
 
 
 def _raise_backend_error(operation: str, error: Exception, *, device: str = "") -> None:
-    """Translate pyannote/Torch errors into stable public exceptions."""
+    """Translate pyannote/Torch errors into stable public exceptions.
+
+    The original exception is logged first and chained, and its short cause plus
+    the log location are appended so users can report what failed (bugfix-k).
+    """
+    hint = record_backend_failure(PyannoteBackend.name, operation, error).user_hint()
     detail = str(error).casefold()
     if isinstance(error, MemoryError) or any(
         marker in detail
@@ -442,27 +451,28 @@ def _raise_backend_error(operation: str, error: Exception, *, device: str = "") 
         ):
             raise VramExhaustedError(
                 f"{operation}中に XPU の共有メモリが不足しました。Arc内蔵GPUはシステムRAMを"
-                "共有します。CPUを指定するか、他のプロセスのRAM使用量を減らしてください。"
-            ) from None
+                f"共有します。CPUを指定するか、他のプロセスのRAM使用量を減らしてください。{hint}"
+            ) from error
         if device.startswith("cpu"):
             raise VramExhaustedError(
                 f"{operation}中にシステムRAMが不足しました。"
-                "他のアプリを終了するか、話者分離を省略してください。"
-            ) from None
+                f"他のアプリを終了するか、話者分離を省略してください。{hint}"
+            ) from error
         raise VramExhaustedError(
             f"{operation}中に VRAM が不足しました。"
-            "CPU を指定するか、他の GPU 使用量を減らしてください。"
-        ) from None
+            f"CPU を指定するか、他の GPU 使用量を減らしてください。{hint}"
+        ) from error
     if any(name in detail for name in ("cuda", "cudnn", "cublas")):
         raise BackendUnavailableError(
             f"{operation}で CUDA を初期化できません。"
-            "PyTorch、CUDA、NVIDIA ドライバーを確認してください。"
-        ) from None
+            f"PyTorch、CUDA、NVIDIA ドライバーを確認してください。{hint}"
+        ) from error
     if any(name in detail for name in ("xpu", "sycl", "level zero")):
         raise BackendUnavailableError(
             f"{operation}で XPU を初期化できません。intelプロファイル、PyTorch XPU、"
-            "Intel GPUドライバーを確認してください。"
-        ) from None
+            f"Intel GPUドライバーを確認してください。{hint}"
+        ) from error
     raise BackendUnavailableError(
-        f"pyannote の{operation}に失敗しました。モデル、入力音声、実行デバイスを確認してください。"
-    ) from None
+        f"pyannote の{operation}に失敗しました。"
+        f"モデル、入力音声、実行デバイスを確認してください。{hint}"
+    ) from error
