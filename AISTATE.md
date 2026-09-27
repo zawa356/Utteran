@@ -1,5 +1,132 @@
 # AI 作業状態
 
+## Phase bugfix-k 推論エラーの原因消失とCUDA推論失敗（0.1.29、2026-09-28）
+
+### Step 0 発生環境
+
+- 利用者への確認結果: **CUDA機、`cuda` profile、Smart App Control無効**。版は指示書記載の0.1.26ではなく
+  **0.1.28**（利用者訂正）。
+- 開発機自体がその機体であることをログで確定した。`%LOCALAPPDATA%\utteran\utteran\Logs\app.log`に
+  2026-09-27 12:06／13:15（UTC）の`stage_error`（stage `asr`、`BackendUnavailableError`、同じ文面）があり、
+  installer版（`%LOCALAPPDATA%\Programs\utteran`、`version = "0.1.28"`、`.venvs\win-cuda`）で発生していた。
+  GPUはGeForce GTX 1070 Ti（Pascal、8 GiB、driver 582.28）。確認はイベント名・日時・分類だけで、本文は見ていない。
+
+### Step 1 診断能力の回復
+
+- `utteran.logging.record_backend_failure()`を追加した。元の例外について、型、1行要約（200文字以内）、
+  sanitize済みのtraceback全体を、logger `utteran.diagnostics`のevent `backend_exception`として記録する。
+  fieldsは`backend`、`phase`、`error_class`。記録先は`app.log`、ジョブの`utteran.log`、CLI JSONL。
+  consoleにはdebug（`--verbose`）の場合だけ出す（非debugのconsole handlerへ`_HideDiagnosticDetail`
+  filterを付与）。
+- 戻り値`BackendFailureRecord.user_hint()`は「原因: <型>: <要約> (詳細ログ: <app.log>)」を返す。
+  runtime loggingがない場合は`--verbose`を案内する。faster-whisperの`_raise_load_error`と
+  `_raise_inference_error`は従来の文面・分類を保ち、この文字列を末尾に付けて`from error`で送出する。
+- **中間設計**: 画面には型と1行要約とログ場所だけを出す。tracebackはファイルに記録し、画面では
+  `--verbose`の場合だけ表示する。利用者向けメッセージは1段落で、改行とtracebackを含まない
+  （テストで固定）。
+- `UtteranError`系の扱い: `cli.py`の受け口は変更していない。送出側で記録する方式を選んだ。
+  理由は、pipelineやCLIで一律にtracebackを記録すると、export等の本文を扱うstageの例外まで
+  記録対象になり得るため。代わりに`stage_error`へ`cause_class`（型名のみ）を追加した。
+- auto device時にCUDAからCPUへフォールバックする場合も、切り替えの原因をwarningとして記録するようにした。
+  従来はこの原因も捨てていた。
+- **機密**: 記録・要約の前に、ホームdirectoryを`~`へ（大文字小文字と`/`・`\`の違いを無視）、
+  ASR初期プロンプト全体とその各語（2文字以上、空白・句読点で分割）を`<redacted>`へ置換する。
+  その後`mask_secrets`を適用する。さらに出力時に`RedactingFormatter`／`JsonFormatter`が再度マスクする。
+  全handlerが`RedactingFormatter`系であること、登録済みの秘密とHFトークンが3つのsinkのどこにも
+  残らないことをテストで実際に検証した。ジョブの音声は`jobs.py:243`の`<job>/audio.wav`で、
+  元のファイル名を含まない。文字起こし本文や話者名はbackend例外の記録経路へ渡していない。
+
+### Step 2 再現と判定: **A（utteran側の不具合）**
+
+- Step 1適用後にCLIで再現した（合成TTS音声、`input/`不使用、`--device cuda --no-diarization`、
+  large-v3-turbo）。記録された原因は
+  `RuntimeError: Library cublas64_12.dll is not found or cannot be loaded`で、発生箇所は
+  `WhisperModel.encode`（`generate_segments`内の初回encode）。ログには
+  「VAD filter removed 00:00.000 of audio」があり、VADは正常に完了していた。
+- 切り分け:
+  1. Silero VAD（`silero_vad_v6.onnx`）をonnxruntime 1.28.0 CPU providerで単体ロード → 成功。
+     **VAD仮説は否定**
+  2. 実際の失敗はVAD通過後のencodeで起きており、VADの有無は無関係
+  3. 音声デコードはbugfix-k指示書の時点で否定済み（PyAVは再調査していない）
+  4. 版: faster-whisper 1.2.1、ctranslate2 4.8.1、av 18.0.0、onnxruntime 1.28.0、numpy 2.4.6。
+     `uv.lock`と一致
+- cuBLASの読み込み条件を変えた実測（encodeのみ、int8_float32）:
+
+  | 条件 | 結果 |
+  |---|---|
+  | 現行（`register_cuda_dll_directories` + torch import抑止） | 失敗（cublas64_12.dll） |
+  | `torch/lib/cublas64_12.dll`をfull pathで事前ロード | 成功 |
+  | 同directoryをPATHへ追加 | 成功 |
+  | torchを通常import | 成功 |
+
+  installer版0.1.28の`.venvs\win-cuda`でも「現行＝失敗、事前ロード＝成功」を確認した。
+- **根本原因**: CTranslate2 4.xはcuDNNを同梱するが、cuBLASは初回GEMM時に名前指定の`LoadLibrary`で
+  遅延ロードする。この読み込みは`os.add_dll_directory`で登録したdirectoryを参照しない。profile内の
+  cuBLASは`torch/lib`にしかない。以前はCTranslate2がimport時にtorchをimportする副作用でcuBLASが
+  既にprocessへ読み込まれていた。0.1.10（`e5e3e94`）でCPU推論の停止を避けるためにtorch importを
+  抑止した結果、CUDA推論が暗黙に依存していたこの事前ロードがなくなった。
+  ASRより前にtorchをimportする経路はない（diarization preflightはtoken確認だけで、stageはasrが先）。
+- 影響範囲: 0.1.10～0.1.28で、faster-whisperをCUDAで実行し、CUDA Toolkit 12の`bin`がPATHにない環境。
+  モデルのloadは成功するため、`_raise_load_error`ではなく推論側の汎用文面になっていた。
+
+### Step 3 対処
+
+- `devices.preload_ctranslate2_cuda_libraries()`を追加した。Windowsでは`_cuda_dependency_directories()`から
+  `cublasLt64_12.dll`→`cublas64_12.dll`の順にfull pathで`ctypes.WinDLL`し、handleを保持して
+  2回目以降は読み込まない。見つからない場合は何もしない（system CUDAがPATHにあればそれが使われる）。
+- `FasterWhisperBackend.load()`は、選択deviceが`cuda`の場合だけ、モデル生成前にこれを呼ぶ。
+  結果を`asr_cuda_libraries_preloaded` eventに記録する。CPUの場合は呼ばない。torchはimportしない。
+- 修正後、同じCLI再現が完走した（ASR 10.6秒）。VADのCLI/GUI切替は今回の原因ではないため追加していない。
+
+### Step 4 握りつぶしの点検（backend読み込み・推論経路）
+
+| 箇所 | 判断 |
+|---|---|
+| faster_whisper `_raise_load_error`／`_raise_inference_error` | **修正**（記録・要約・連鎖） |
+| faster_whisper auto CUDA→CPU fallback | **修正**（原因をwarningで記録） |
+| faster_whisper `available_devices`の`except: pass` | 維持。device列挙の失敗時にCPUだけを返す仕様で、推論失敗の診断には関与しない |
+| openvino_genai load（`WhisperPipeline`生成）／`generate` | **修正**。型名しか残っていなかった |
+| openvino_genai カタログ照会`from None` | 維持。model IDがメッセージにあり、catalog missが診断そのもの |
+| openvino_genai `_read_normalized_wav` | 維持。自前で正規化したWAVで、型名で十分。記録しない側に倒す |
+| whisper_cpp カタログ照会`from None` | 維持（同上） |
+| whisper_cpp subprocess失敗 | 維持。`summarize_subprocess_error(stderr)`を既にメッセージへ含めている。raw stderrは本文を含み得るためopt-inのまま |
+| pyannote `_raise_backend_error`（load／diarize） | **修正**（分類はそのまま、記録・要約・連鎖） |
+| pyannote auto CUDA/XPU→CPU fallback | **修正**（原因をwarningで記録） |
+| pyannote HF gated／401／403 `from None` | 維持。HTTP statusによる分類が診断そのもの |
+| pyannote `model_info`の`except: pass` | 維持。offline時にローカル不在の案内へ進む想定動作 |
+| pyannote `_select_device`の不正指定 | 維持。指定値がメッセージにある |
+| pyannote `_load_pcm_waveform` | 維持。例外文字列を既にメッセージに含めている |
+
+CLIの`typer.Exit`系`from None`は対象外（指示どおり）。
+
+### Step 5 B-6: 依存の版ずれ（記録のみ・未実装）
+
+**B-6: `uv.lock`の依存更新方針。** faster-whisper 1.2.1（2025-10-31）に対し、その依存であるav（PyAV）が
+18.0.0（2026-07-02）で解決されている。faster-whisper側の制約が`av>=11`で上限がないため、8か月新しく
+メジャー版が3つ先の版が入る。今回は正常に動作することを実測で確認したが、上流がテストしていない組み合わせが
+lockに入り得る構造である。同様の構造はctranslate2、onnxruntime、tokenizersにも存在する。
+今回のcuBLAS問題も、依存（CTranslate2の遅延ロード）とutteranの工夫（torch import抑止）の組み合わせを
+CUDA実機で通していなかったことで起きた。どの単位で依存を上げるか、上げた後に何を
+（profile別のCPU／CUDA／XPU実推論smokeを含む）確認するかを別phaseで検討する。**番号はB-5の次に
+空いていたB-6を使った。** 本phaseでは`uv.lock`の依存を更新していない（自パッケージのversion行のみ）。
+
+### Step 6 テストと確認事項
+
+- 追加した回帰テスト（すべてモデル不要、例外を注入）:
+  - 推論例外が記録され、画面にtracebackが出ないこと
+  - 要約とlog場所が付くこと、`__cause__`が元の例外であること
+  - `--verbose`でのみconsoleにtracebackが出ること
+  - VRAM不足・モデル未取得の分類が維持されること
+  - load失敗が記録されること
+  - CUDA→CPU fallbackが動作し、原因を記録すること
+  - プロンプト語・ホーム・トークンが残らないこと
+  - 3つのsinkすべてが`RedactingFormatter`を通ること
+  - cuBLAS事前ロードの順序と冪等性、見つからない場合の無動作、CUDAの場合だけ呼ばれること
+  - OpenVINO GenAI推論失敗の記録
+  - pyannote 3分類の維持と記録
+- `ユーザー確認事項.md`に実行環境軸の新章「E. NVIDIA CUDA機」を追加した。
+  E-1（installer版GUIでのCUDA完走）とE-2（失敗時の原因表示。cuBLASを一時改名して再現し、必ず戻す）。
+
 ## 過去版再生成（v0.1.23〜v0.1.28、2026-09-04）
 
 - `C:\UserDataFile\utteran-archive\`へ、git tag `v0.1.0`〜`v0.1.28`の過去版installer（0.1.24以降は
@@ -379,6 +506,11 @@ C-1 は install directory／`.venvs` 内の executable や DLL を掴む経路�
 `reset-env.ps1`とuninstallで全削除はできるが、古い blob だけを選択的に削除する手段がない。
 利用者が気づかないうちに蓄積するため「環境を汚さない」方針の穴である。使用中でない blob の検出と
 削除、または`models genai-cache --prune`を別phaseで検討する。ac-2では剪定を実装しない。
+
+**B-6: `uv.lock`の依存更新方針（bugfix-k、0.1.29で追加）。** 上限のない制約によって、上流が
+テストしていない新しいメジャー版がlockに入る構造がある。例: faster-whisper 1.2.1に対してav 18.0.0。
+ctranslate2、onnxruntime、tokenizersも同様。依存を上げる単位と、上げた後に行うprofile別の実推論確認を
+別phaseで検討する。詳細は冒頭の「Phase bugfix-k」節Step 5を参照。未実装。
 
 ### Step 2 C-1 実装
 

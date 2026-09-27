@@ -6,7 +6,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.28`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.29`（未release）。API・設定は1.0まで変更されます。
 
 ## 主な機能
 
@@ -594,6 +594,15 @@ torchを必要としないため、`utteran.devices.suppress_torch_import()`で
 モデル取得／IR生成、エラー分類だけを記録し、文字起こし本文を含みません。保存先と保持量は
 `[general]`の`log_dir`、`log_retention_days`、`log_max_mib`、`raw_log_max_mib`、または対応する
 `UTTERAN_GENERAL__...`環境変数で変更できます。
+
+### 文字起こし・話者分離が失敗したとき
+
+失敗メッセージの末尾には、`原因: RuntimeError: ...`のような元の例外の型と1行要約、
+`詳細ログ: ...\app.log`の場所が表示されます（0.1.29以降）。不具合を報告する際は、この2つを
+そのまま添えてください。完全なtracebackは`app.log`とジョブ内の`utteran.log`に
+`backend_exception`イベントとして記録されます。CLIで`--verbose`を付けると画面にも表示されます。
+記録前にホームディレクトリは`~`へ、初期プロンプト（用語集）の語は`<redacted>`へ置換され、
+トークンはマスクされます。文字起こし本文は含まれません。
 
 `raw_subprocess_logs = true`（環境変数は`UTTERAN_GENERAL__RAW_SUBPROCESS_LOGS=true`）を明示すると、
 秘密値をマスクしたサブプロセスstderrを`raw/<job_id>/`へ保存します。**ここには文字起こし本文が含まれる
