@@ -169,3 +169,33 @@ def test_english_diarization_and_japanese_without_diarization_are_allowed() -> N
     assert isinstance(
         create_asr_backend("openvino-genai", japanese_no_diarization), OpenVINOGenAIBackend
     )
+
+
+def test_generation_failure_is_logged_and_summarized(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """bugfix-k: only the exception class used to survive; the message is now
+    logged with its traceback, summarized for the user, and chained."""
+    from utteran.errors import BackendUnavailableError
+
+    def explode(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("GPU plugin: kernel compilation failed near 固有名詞テスト")
+
+    backend = _loaded_backend(None)
+    backend._pipeline = SimpleNamespace(generate=explode)
+    audio = tmp_path / "audio.wav"
+    _wav(audio)
+
+    with (
+        caplog.at_level(logging.ERROR, logger="utteran.diagnostics"),
+        pytest.raises(BackendUnavailableError) as raised,
+    ):
+        backend.transcribe(audio, ASROptions(initial_prompt="固有名詞テスト"))
+
+    message = str(raised.value)
+    assert "原因: RuntimeError: GPU plugin: kernel compilation failed" in message
+    assert isinstance(raised.value.__cause__, RuntimeError)
+    assert "固有名詞テスト" not in message
+    [record] = [r for r in caplog.records if getattr(r, "utteran_diagnostic", False)]
+    assert "Traceback" in record.getMessage()
+    assert "固有名詞テスト" not in record.getMessage()

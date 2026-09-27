@@ -10,7 +10,7 @@ from typing import Any, ClassVar
 
 from utteran.asr.base import ASRBackend
 from utteran.errors import BackendUnavailableError, ModelNotFoundError
-from utteran.logging import structured_event
+from utteran.logging import record_backend_failure, structured_event
 from utteran.models.catalog import ModelEntry, get_model
 from utteran.models.manager import ModelManager
 from utteran.types import (
@@ -149,9 +149,10 @@ class OpenVINOGenAIBackend(ASRBackend):
                 directory, selected.upper(), **properties
             )
         except Exception as exc:
+            failure = record_backend_failure(self.name, "初期化", exc)
             raise BackendUnavailableError(
-                f"OpenVINO GenAIの初期化に失敗しました ({selected}): {type(exc).__name__}"
-            ) from None
+                f"OpenVINO GenAIの初期化に失敗しました ({selected})。{failure.user_hint()}"
+            ) from exc
         self._entry = entry
         self._device = selected
         structured_event(
@@ -188,9 +189,12 @@ class OpenVINOGenAIBackend(ASRBackend):
         try:
             result = self._pipeline.generate(samples, **generation)
         except Exception as exc:
+            failure = record_backend_failure(
+                self.name, "推論", exc, sensitive=(options.initial_prompt,)
+            )
             raise BackendUnavailableError(
-                f"OpenVINO GenAIの文字起こしに失敗しました: {type(exc).__name__}"
-            ) from None
+                f"OpenVINO GenAIの文字起こしに失敗しました。{failure.user_hint()}"
+            ) from exc
         if cancel is not None:
             cancel.raise_if_cancelled()
         converted = _convert_result(result, duration, self._entry, self._device)
