@@ -129,3 +129,38 @@ def test_cleanup_applies_age_and_separate_capacity_limits(tmp_path: Path) -> Non
     assert not old.exists()
     assert not raw_old.exists()
     assert raw_new.exists()
+
+
+def test_backend_failure_detail_passes_redacting_formatters_everywhere(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """bugfix-k: every sink that receives the backend traceback must redact, and
+    the non-verbose console must not receive it at all."""
+    from utteran.logging import RedactingFormatter, record_backend_failure
+
+    register_secret("registered-diag-secret")
+    runtime = configure_runtime_logging(log_dir=tmp_path / "logs", command="run")
+    job_path = tmp_path / "job" / "utteran.log"
+    try:
+        with job_log(job_path):
+            assert all(
+                isinstance(handler.formatter, RedactingFormatter)
+                for handler in logging.getLogger().handlers
+            )
+            try:
+                raise RuntimeError("failed near registered-diag-secret hf_diagtoken123")
+            except RuntimeError as error:
+                record = record_backend_failure("demo", "推論", error)
+        assert runtime.cli_log is not None
+        sinks = [runtime.log_dir / "app.log", runtime.cli_log, job_path]
+    finally:
+        close_runtime_logging()
+
+    assert record.summary == "RuntimeError: failed near **** hf_****"
+    for sink in sinks:
+        content = sink.read_text(encoding="utf-8")
+        assert "backend_exception" in content
+        assert "Traceback" in content
+        assert "registered-diag-secret" not in content
+        assert "hf_diagtoken123" not in content
+    assert "Traceback" not in capsys.readouterr().err
