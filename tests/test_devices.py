@@ -346,3 +346,41 @@ def test_detect_native_report_reflects_manifest_state(tmp_path: Path) -> None:
     assert never_built.built is False
     assert never_built.whisper_cpp_tag is None
     assert all(value is False for value in never_built.variants.values())
+
+
+def test_preload_loads_package_local_cublas_by_full_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bugfix-k: CTranslate2 loads cuBLAS lazily *by name*, which ignores
+    os.add_dll_directory. With torch's import suppressed nothing else loads it,
+    so faster-whisper CUDA inference failed after a successful model load.
+    The fix must load both cuBLAS DLLs by full path, Lt first, exactly once."""
+    torch_lib = tmp_path / "torch" / "lib"
+    torch_lib.mkdir(parents=True)
+    for name in ("cublasLt64_12.dll", "cublas64_12.dll"):
+        (torch_lib / name).write_bytes(b"")
+    loads: list[str] = []
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(device_module, "_PRELOADED_CUDA_LIBRARIES", {})
+    monkeypatch.setattr(
+        device_module, "_cuda_dependency_directories", lambda: (tmp_path / "absent", torch_lib)
+    )
+    monkeypatch.setattr(
+        device_module.ctypes, "WinDLL", lambda path: loads.append(path) or object(), raising=False
+    )
+
+    first = device_module.preload_ctranslate2_cuda_libraries()
+    second = device_module.preload_ctranslate2_cuda_libraries()
+
+    assert first == second == ("cublasLt64_12.dll", "cublas64_12.dll")
+    assert loads == [str(torch_lib / "cublasLt64_12.dll"), str(torch_lib / "cublas64_12.dll")]
+
+
+def test_preload_without_package_local_cublas_defers_to_system_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(device_module, "_PRELOADED_CUDA_LIBRARIES", {})
+    monkeypatch.setattr(device_module, "_cuda_dependency_directories", lambda: (tmp_path,))
+
+    assert device_module.preload_ctranslate2_cuda_libraries() == ()
