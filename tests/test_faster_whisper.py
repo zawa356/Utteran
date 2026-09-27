@@ -340,3 +340,31 @@ def test_cuda_fallback_records_why_cuda_failed(
     assert detail[0]["level"] == "warning"
     assert "CUDA driver version is insufficient" in detail[0]["message"]
     assert backend._device == "cpu"
+
+
+@pytest.mark.parametrize(("device", "expected_calls"), [("cuda", 1), ("cpu", 0)])
+def test_load_preloads_cublas_only_for_cuda(
+    monkeypatch: pytest.MonkeyPatch, device: str, expected_calls: int
+) -> None:
+    """bugfix-k root cause: CUDA inference needs cuBLAS already in the process."""
+    calls: list[str] = []
+
+    class FakeLoader:
+        def __init__(self, _model_id: str, **_kwargs: object) -> None:
+            pass
+
+    def fake_select(requested: str, _compute_type: str) -> FasterWhisperSelection:
+        if requested == "cuda":
+            return FasterWhisperSelection("cuda", 0, "int8_float32")
+        return FasterWhisperSelection("cpu", 0, "int8")
+
+    monkeypatch.setattr("faster_whisper.WhisperModel", FakeLoader)
+    monkeypatch.setattr("utteran.asr.faster_whisper.select_faster_whisper_device", fake_select)
+    monkeypatch.setattr(
+        "utteran.asr.faster_whisper.preload_ctranslate2_cuda_libraries",
+        lambda: calls.append("preload") or ("cublas64_12.dll",),
+    )
+
+    FasterWhisperBackend().load("tiny", device, "auto")
+
+    assert len(calls) == expected_calls

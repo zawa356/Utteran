@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import ctypes.util
 import hashlib
 import importlib.metadata
@@ -29,6 +30,9 @@ from utteran.logging import structured_event
 from utteran_paths import resolve_data_paths
 
 _DLL_DIRECTORY_HANDLES: list[Any] = []
+# cublasLt first: cublas64_12 depends on it and both live in the same directory.
+_CTRANSLATE2_LAZY_CUDA_LIBRARIES = ("cublasLt64_12.dll", "cublas64_12.dll")
+_PRELOADED_CUDA_LIBRARIES: dict[str, Any] = {}
 DEFAULT_PROBE_TIMEOUT_SECONDS = 20.0
 _PROBE_CACHE_SCHEMA = 1
 _LOGGER = logging.getLogger(__name__)
@@ -1504,6 +1508,40 @@ def register_cuda_dll_directories() -> tuple[Path, ...]:
         except OSError:
             continue
     return directories
+
+
+def preload_ctranslate2_cuda_libraries() -> tuple[str, ...]:
+    """Load cuBLAS by full path so CTranslate2's lazy by-name load can find it.
+
+    CTranslate2 bundles cuDNN but resolves cuBLAS on the first GEMM with a
+    by-name ``LoadLibrary``, which ignores ``os.add_dll_directory``. The only
+    package-local cuBLAS is usually torch's ``lib`` directory, and it used to
+    be loaded as a side effect of CTranslate2 importing torch; since
+    ``suppress_torch_import`` (0.1.10) nothing loaded it, so CUDA inference
+    failed with "Library cublas64_12.dll is not found" after the model had
+    loaded fine (Phase bugfix-k). A DLL already in the process is found by
+    name, so loading it here restores inference without importing torch.
+    When no package-local copy exists, a system CUDA on PATH still applies.
+    """
+    if sys.platform != "win32":
+        return ()
+    loaded: list[str] = []
+    directories = _cuda_dependency_directories()
+    for name in _CTRANSLATE2_LAZY_CUDA_LIBRARIES:
+        if name in _PRELOADED_CUDA_LIBRARIES:
+            loaded.append(name)
+            continue
+        for directory in directories:
+            candidate = directory / name
+            if not candidate.is_file():
+                continue
+            try:
+                _PRELOADED_CUDA_LIBRARIES[name] = ctypes.WinDLL(str(candidate))
+            except OSError:
+                continue
+            loaded.append(name)
+            break
+    return tuple(loaded)
 
 
 def _cuda_dependency_directories() -> tuple[Path, ...]:

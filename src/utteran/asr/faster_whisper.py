@@ -11,6 +11,7 @@ from typing import Any, ClassVar
 
 from utteran.asr.base import ASRBackend
 from utteran.devices import (
+    preload_ctranslate2_cuda_libraries,
     register_cuda_dll_directories,
     select_faster_whisper_device,
     suppress_torch_import,
@@ -97,6 +98,11 @@ class FasterWhisperBackend(ASRBackend):
         num_workers = 1
         if selection.note:
             logging.getLogger(__name__).info(selection.note)
+        if selected_device == "cuda":
+            preloaded = preload_ctranslate2_cuda_libraries()
+            structured_event(
+                "asr_cuda_libraries_preloaded", backend=self.name, libraries=list(preloaded)
+            )
         load_started = time.perf_counter()
         try:
             self._model = WhisperModel(
