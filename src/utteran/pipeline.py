@@ -450,6 +450,7 @@ def _execute_stage(
             level=logging.ERROR,
             stage=stage,
             error_class=type(exc).__name__,
+            cause_class=type(exc.__cause__).__name__ if exc.__cause__ is not None else None,
         )
         raise
 

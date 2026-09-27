@@ -21,7 +21,7 @@ from utteran.errors import (
     ModelNotFoundError,
     VramExhaustedError,
 )
-from utteran.logging import structured_event
+from utteran.logging import BackendFailureRecord, record_backend_failure, structured_event
 from utteran.models.manager import find_runtime_model
 from utteran.types import (
     ASROptions,
@@ -110,8 +110,12 @@ class FasterWhisperBackend(ASRBackend):
             )
         except Exception as exc:
             if device == "auto" and selected_device == "cuda" and not _is_model_error(exc):
+                cuda_failure = record_backend_failure(
+                    self.name, "CUDA 初期化", exc, level=logging.WARNING
+                )
                 logging.getLogger(__name__).warning(
-                    "CUDA でモデルを初期化できないため CPU へフォールバックします。"
+                    "CUDA でモデルを初期化できないため CPU へフォールバックします。%s",
+                    cuda_failure.user_hint(),
                 )
                 fallback = select_faster_whisper_device("cpu", compute_type)
                 selected_device = fallback.device
@@ -128,9 +132,19 @@ class FasterWhisperBackend(ASRBackend):
                         local_files_only=not Path(model_source).exists(),
                     )
                 except Exception as fallback_error:
-                    _raise_load_error(model_id, selected_device, fallback_error)
+                    _raise_load_error(
+                        model_id,
+                        selected_device,
+                        fallback_error,
+                        record_backend_failure(self.name, "モデル読み込み", fallback_error),
+                    )
             else:
-                _raise_load_error(model_id, selected_device, exc)
+                _raise_load_error(
+                    model_id,
+                    selected_device,
+                    exc,
+                    record_backend_failure(self.name, "モデル読み込み", exc),
+                )
         load_duration = time.perf_counter() - load_started
         self._model_id = model_id
         self._device = f"cuda:{device_index}" if selected_device == "cuda" else selected_device
@@ -209,7 +223,10 @@ class FasterWhisperBackend(ASRBackend):
         except CancelledError:
             raise
         except Exception as exc:
-            _raise_inference_error(exc)
+            _raise_inference_error(
+                exc,
+                record_backend_failure(self.name, "推論", exc, sensitive=(options.initial_prompt,)),
+            )
 
         transcribe_duration = time.perf_counter() - transcribe_started
         structured_event(
@@ -241,29 +258,37 @@ class FasterWhisperBackend(ASRBackend):
         gc.collect()
 
 
-def _raise_load_error(model_id: str, device: str, error: Exception) -> None:
-    """Translate expected model, CUDA library, and memory failures."""
+def _raise_load_error(
+    model_id: str, device: str, error: Exception, record: BackendFailureRecord
+) -> None:
+    """Translate expected model, CUDA library, and memory failures.
+
+    ``record`` is the already-logged original exception; its short cause and log
+    location are appended so users can report what actually failed.
+    """
     detail = str(error).casefold()
+    hint = record.user_hint()
     if _is_model_error(error):
         raise ModelNotFoundError(
             f"ASR モデル '{model_id}' をローカルで読み込めません。"
             "モデルは暗黙にダウンロードしません。"
             "`utteran models download faster-whisper:<モデルID>` で取得するか、"
-            "ローカルモデルパスを指定してください。"
-        ) from None
+            f"ローカルモデルパスを指定してください。{hint}"
+        ) from error
     if "out of memory" in detail or "cuda_error_out_of_memory" in detail:
         raise VramExhaustedError(
             "モデル読み込み中に VRAM が不足しました。CPU または小さいモデルを指定してください。"
-        ) from None
+            f"{hint}"
+        ) from error
     if device == "cuda":
         raise BackendUnavailableError(
             "CUDA バックエンドを初期化できません。CUDA 12、cuDNN 9、cuBLAS と "
-            "NVIDIA ドライバーを確認してください。"
-        ) from None
+            f"NVIDIA ドライバーを確認してください。{hint}"
+        ) from error
     raise BackendUnavailableError(
         "faster-whisper モデルを初期化できません。"
-        "モデル形式、compute_type、実行デバイスを確認してください。"
-    ) from None
+        f"モデル形式、compute_type、実行デバイスを確認してください。{hint}"
+    ) from error
 
 
 def _is_model_error(error: Exception) -> bool:
@@ -282,13 +307,15 @@ def _is_model_error(error: Exception) -> bool:
     )
 
 
-def _raise_inference_error(error: Exception) -> None:
-    """Translate expected runtime failures without leaking backend tracebacks."""
+def _raise_inference_error(error: Exception, record: BackendFailureRecord) -> None:
+    """Translate runtime failures, keeping the logged cause visible and chained."""
     detail = str(error).casefold()
+    hint = record.user_hint()
     if "out of memory" in detail or "cuda_error_out_of_memory" in detail:
         raise VramExhaustedError(
-            "文字起こし中に VRAM が不足しました。CPU または小さいモデルを指定してください。"
-        ) from None
+            f"文字起こし中に VRAM が不足しました。CPU または小さいモデルを指定してください。{hint}"
+        ) from error
     raise BackendUnavailableError(
         "faster-whisper の推論に失敗しました。入力音声、モデル、実行デバイスを確認してください。"
-    ) from None
+        f"{hint}"
+    ) from error

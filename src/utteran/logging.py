@@ -8,7 +8,8 @@ import os
 import re
 import shutil
 import sys
-from collections.abc import Callable, Iterator
+import traceback
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -143,6 +144,8 @@ def configure_logging(level: str = "info", log_file: Path | None = None) -> None
     console = logging.StreamHandler()
     console.setLevel(level.upper())
     console.setFormatter(RedactingFormatter("%(levelname)s: %(message)s"))
+    if level.upper() != "DEBUG":
+        console.addFilter(_HideDiagnosticDetail())
     root.addHandler(console)
     if log_file is not None:
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -230,6 +233,100 @@ def structured_event(event: str, *, level: int = logging.INFO, **fields: object)
         event,
         extra={"utteran_event": event, "utteran_fields": safe_fields},
     )
+
+
+_DIAGNOSTIC_SUMMARY_LIMIT = 200
+# Whitespace, ASCII/Japanese punctuation, and their full-width ASCII forms.
+_TERM_SEPARATORS = re.compile("[\\s、。,.:;，．：；]+")  # noqa: RUF001
+
+
+@dataclass(frozen=True)
+class BackendFailureRecord:
+    """User-reportable facts about a backend exception that was also logged."""
+
+    error_class: str
+    summary: str
+    log_path: Path | None
+
+    def user_hint(self) -> str:
+        """Short cause + log location appended to a user-facing message."""
+        hint = f"原因: {self.summary}"
+        if self.log_path is not None:
+            return f"{hint} (詳細ログ: {self.log_path})"
+        return f"{hint} (詳細は --verbose で表示できます)"
+
+
+def record_backend_failure(
+    backend: str,
+    phase: str,
+    error: BaseException,
+    *,
+    level: int = logging.ERROR,
+    sensitive: Iterable[str | None] = (),
+) -> BackendFailureRecord:
+    """Log a backend exception's full, sanitized traceback before it is translated.
+
+    The record goes to every file handler (app.log, the job log, the CLI JSONL)
+    and reaches the console only at debug level (``--verbose``); see
+    ``_HideDiagnosticDetail``. ``sensitive`` values such as the ASR initial
+    prompt are replaced before anything is written.
+    """
+    secrets = _sensitive_terms(sensitive)
+    error_class = type(error).__name__
+    first_line = next((line.strip() for line in str(error).splitlines() if line.strip()), "")
+    detail = _sanitize_diagnostic(first_line, secrets)
+    if len(detail) > _DIAGNOSTIC_SUMMARY_LIMIT:
+        detail = detail[: _DIAGNOSTIC_SUMMARY_LIMIT - 1] + "…"
+    summary = f"{error_class}: {detail}" if detail else error_class
+    rendered = _sanitize_diagnostic("".join(traceback.format_exception(error)).rstrip(), secrets)
+    logging.getLogger("utteran.diagnostics").log(
+        level,
+        "%s %sの例外: %s\n%s",
+        backend,
+        phase,
+        summary,
+        rendered,
+        extra={
+            "utteran_event": "backend_exception",
+            "utteran_fields": {
+                "backend": backend,
+                "phase": phase,
+                "error_class": error_class,
+            },
+            "utteran_diagnostic": True,
+        },
+    )
+    runtime = _RUNTIME
+    log_path = runtime.log_dir / "app.log" if runtime is not None else None
+    return BackendFailureRecord(error_class, summary, log_path)
+
+
+def _sensitive_terms(values: Iterable[str | None]) -> list[str]:
+    terms: set[str] = set()
+    for value in values:
+        if not value or not value.strip():
+            continue
+        terms.add(value.strip())
+        # Glossary prompts are term lists; an exception may quote one term alone.
+        terms.update(part for part in _TERM_SEPARATORS.split(value) if len(part) >= 2)
+    return sorted(terms, key=len, reverse=True)
+
+
+def _sanitize_diagnostic(text: str, secrets: list[str]) -> str:
+    for secret in secrets:
+        text = text.replace(secret, "<redacted>")
+    home = str(Path.home())
+    if len(home) > 3:
+        for variant in {home, home.replace("\\", "/")}:
+            text = re.sub(re.escape(variant), "~", text, flags=re.IGNORECASE)
+    return mask_secrets(text)
+
+
+class _HideDiagnosticDetail(logging.Filter):
+    """Keep backend tracebacks off the non-verbose console; files still get them."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not getattr(record, "utteran_diagnostic", False)
 
 
 @contextmanager
