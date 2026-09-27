@@ -127,6 +127,26 @@ CUDA実機で通していなかったことで起きた。どの単位で依存�
 - `ユーザー確認事項.md`に実行環境軸の新章「E. NVIDIA CUDA機」を追加した。
   E-1（installer版GUIでのCUDA完走）とE-2（失敗時の原因表示。cuBLASを一時改名して再現し、必ず戻す）。
 
+### 検証・配布
+
+- `.venv-windows`でのモデル不要testは419 passed。失敗3件は変更前にも同じ結果になることを
+  `git stash`で確認済み: Ctrl+C harness、Sudachi境界test、venv metadataが0.1.0のままのversion test。
+  GUI testは`.venvs\win-gui`で63 passed（ac-1状態表示／ac-2 process終了を含む）。
+  ruff check／formatも合格。mypyの40件は変更前と同数で、`utteran_gui`の未導入依存に由来する。
+  `align.py`、Viterbi、`utteran_gui`は無変更。
+- 検証手段: 検証用のTTS合成音声（`input/`不使用）
+- 配布版の確認:
+  1. portable ZIPを検証directoryへ展開した。GUIは`Responding=True`で起動し、閉じた後にWebView2の子
+     processは残らなかった。ProductVersion／FileVersionは0.1.29
+  2. installer版0.1.28の`.venvs\win-cuda`（利用者の実環境）で、展開したportableの`src`をPYTHONPATHに
+     指定し、CUDA文字起こしが完走した（ASR 9.9秒）。`asr_cuda_libraries_preloaded`に2件あり、
+     `device: cuda:0`、`backend_exception`はなかった
+- installer上書き後のGUI end-to-endは、利用者の導入先を書き換えるため実施していない。E-1／E-2へ残した。
+- installer: `dist/release/utteran-setup-0.1.29.exe`、19,668,429 bytes、SHA-256
+  `195e5979ee2e1e0845b4c07329f5174f7b925185d084b9106bda41592568f28c`
+- portable: `dist/release/utteran-portable-0.1.29.zip`、22,457,229 bytes、SHA-256
+  `d450a5d2614e5cf1b7a9c9ba238bd9b01072bc24b7849ab6dd2659fc0384107a`
+
 ## 過去版再生成（v0.1.23〜v0.1.28、2026-09-04）
 
 - `C:\UserDataFile\utteran-archive\`へ、git tag `v0.1.0`〜`v0.1.28`の過去版installer（0.1.24以降は
