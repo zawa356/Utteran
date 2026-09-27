@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -8,8 +9,9 @@ import pytest
 
 import utteran.devices as device_module
 from utteran.asr.faster_whisper import FasterWhisperBackend
-from utteran.devices import LibraryReport
-from utteran.errors import ModelNotFoundError
+from utteran.devices import FasterWhisperSelection, LibraryReport
+from utteran.errors import BackendUnavailableError, ModelNotFoundError, VramExhaustedError
+from utteran.logging import close_runtime_logging, configure_runtime_logging
 from utteran.types import ASROptions, ProgressEvent
 
 
@@ -148,4 +150,193 @@ def test_auto_device_falls_back_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
     backend.load("tiny", "auto", "auto")
 
     assert attempts == [("cuda", "float16"), ("cpu", "int8")]
+
+
+# Phase bugfix-k: translated errors used to be raised `from None` with nothing
+# logged, so no one could tell *why* faster-whisper inference failed. These tests
+# pin the diagnostic contract with injected exceptions - no real model needed.
+
+
+class ExplodingWhisperModel:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def transcribe(self, _path: str, **_options: object) -> tuple[list[Any], Any]:
+        raise self._error
+
+
+def _loaded_backend(error: Exception) -> FasterWhisperBackend:
+    backend = FasterWhisperBackend()
+    backend._model = ExplodingWhisperModel(error)
+    backend._model_id = "fake-model"
+    backend._device = "cuda:0"
+    return backend
+
+
+def _runtime_app_log(tmp_path: Path, level: str = "info") -> Path:
+    runtime = configure_runtime_logging(level=level, log_dir=tmp_path / "logs", command="run")
+    return runtime.log_dir / "app.log"
+
+
+def _diagnostic_records(app_log: Path) -> list[dict[str, Any]]:
+    records = [json.loads(line) for line in app_log.read_text(encoding="utf-8").splitlines()]
+    return [record for record in records if record.get("event") == "backend_exception"]
+
+
+def test_inference_failure_logs_original_exception_and_tells_user_where(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    app_log = _runtime_app_log(tmp_path)
+    original = RuntimeError("cuDNN failed with status CUDNN_STATUS_EXECUTION_FAILED")
+    try:
+        with pytest.raises(BackendUnavailableError) as raised:
+            _loaded_backend(original).transcribe(tmp_path / "audio.wav", ASROptions())
+    finally:
+        close_runtime_logging()
+
+    message = str(raised.value)
+    assert message.startswith("faster-whisper の推論に失敗しました。")
+    assert "原因: RuntimeError: cuDNN failed with status CUDNN_STATUS_EXECUTION_FAILED" in message
+    assert str(app_log) in message
+    assert raised.value.__cause__ is original
+    # The user-facing text stays one short paragraph, never a traceback.
+    assert "Traceback" not in message
+    assert "\n" not in message
+
+    detail = _diagnostic_records(app_log)
+    assert len(detail) == 1
+    assert detail[0]["level"] == "error"
+    assert detail[0]["backend"] == "faster-whisper"
+    assert detail[0]["phase"] == "推論"
+    assert detail[0]["error_class"] == "RuntimeError"
+    assert "Traceback (most recent call last)" in detail[0]["message"]
+    assert "CUDNN_STATUS_EXECUTION_FAILED" in detail[0]["message"]
+    # Not verbose: the traceback must not reach the console.
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_inference_failure_traceback_reaches_console_only_with_verbose(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _runtime_app_log(tmp_path, level="debug")
+    try:
+        with pytest.raises(BackendUnavailableError):
+            _loaded_backend(RuntimeError("boom")).transcribe(tmp_path / "a.wav", ASROptions())
+    finally:
+        close_runtime_logging()
+
+    err = capsys.readouterr().err
+    assert "faster-whisper 推論の例外: RuntimeError: boom" in err
+    assert "Traceback (most recent call last)" in err
+
+
+def test_inference_vram_exhaustion_is_still_classified(tmp_path: Path) -> None:
+    _runtime_app_log(tmp_path)
+    try:
+        with pytest.raises(VramExhaustedError, match="VRAM が不足しました") as raised:
+            _loaded_backend(RuntimeError("CUDA failed with error out of memory")).transcribe(
+                tmp_path / "audio.wav", ASROptions()
+            )
+    finally:
+        close_runtime_logging()
+    assert "原因: RuntimeError: CUDA failed with error out of memory" in str(raised.value)
+
+
+def test_inference_diagnostics_never_record_prompt_terms_home_or_tokens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Glossary terms (proper nouns) in the initial prompt, the user's home
+    directory, and token-shaped values must not survive into the log or the
+    user message, even when the backend exception quotes them."""
+    fake_home = tmp_path / "Users" / "山田太郎"
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: fake_home))
+    app_log = _runtime_app_log(tmp_path)
+    leaked_path = fake_home / "x.onnx"
+    error = ValueError(f"cannot tokenize 前澤研究所 near {leaked_path} token hf_abcdefghijkl")
+    try:
+        with pytest.raises(BackendUnavailableError) as raised:
+            _loaded_backend(error).transcribe(
+                tmp_path / "audio.wav",
+                ASROptions(initial_prompt="前澤研究所、ウッテラン"),
+            )
+    finally:
+        close_runtime_logging()
+
+    for text in (str(raised.value), app_log.read_text(encoding="utf-8")):
+        assert "前澤研究所" not in text
+        assert "山田太郎" not in text
+        assert "hf_abcdefghijkl" not in text
+    assert "<redacted>" in str(raised.value)
+    assert "~" in str(raised.value)
+
+
+def test_model_load_failure_logs_original_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BrokenLoader:
+        def __init__(self, _model_id: str, **_kwargs: object) -> None:
+            raise RuntimeError("Unsupported compute type int8 for this model")
+
+    monkeypatch.setattr("faster_whisper.WhisperModel", BrokenLoader)
+    app_log = _runtime_app_log(tmp_path)
+    try:
+        with pytest.raises(BackendUnavailableError, match="モデルを初期化できません") as raised:
+            FasterWhisperBackend().load("tiny", "cpu", "int8")
+    finally:
+        close_runtime_logging()
+
+    assert "原因: RuntimeError: Unsupported compute type int8" in str(raised.value)
+    assert isinstance(raised.value.__cause__, RuntimeError)
+    detail = _diagnostic_records(app_log)
+    assert [record["phase"] for record in detail] == ["モデル読み込み"]
+    assert "Unsupported compute type int8" in detail[0]["message"]
+
+
+def test_model_missing_is_still_classified_and_keeps_cause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FailingLoader:
+        def __init__(self, _model_id: str, **_kwargs: object) -> None:
+            raise ValueError("not cached")
+
+    monkeypatch.setattr("faster_whisper.WhisperModel", FailingLoader)
+    _runtime_app_log(tmp_path)
+    try:
+        with pytest.raises(ModelNotFoundError, match="暗黙にダウンロードしません") as raised:
+            FasterWhisperBackend().load("missing-model", "cpu", "int8")
+    finally:
+        close_runtime_logging()
+    assert "原因: ValueError: not cached" in str(raised.value)
+
+
+def test_cuda_fallback_records_why_cuda_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The auto-device CUDA->CPU fallback must keep working, and the CUDA
+    exception that triggered it is now logged instead of discarded."""
+
+    class CudaFailingLoader:
+        def __init__(self, _model_id: str, **kwargs: object) -> None:
+            if kwargs["device"] == "cuda":
+                raise RuntimeError("CUDA driver version is insufficient")
+
+    def fake_select(device: str, _compute_type: str) -> FasterWhisperSelection:
+        if device == "auto":
+            return FasterWhisperSelection("cuda", 0, "float16")
+        return FasterWhisperSelection("cpu", 0, "int8")
+
+    monkeypatch.setattr("faster_whisper.WhisperModel", CudaFailingLoader)
+    monkeypatch.setattr("utteran.asr.faster_whisper.select_faster_whisper_device", fake_select)
+    app_log = _runtime_app_log(tmp_path)
+    backend = FasterWhisperBackend()
+    try:
+        backend.load("tiny", "auto", "auto")
+    finally:
+        close_runtime_logging()
+
+    assert backend._device == "cpu"
+    detail = _diagnostic_records(app_log)
+    assert [record["phase"] for record in detail] == ["CUDA 初期化"]
+    assert detail[0]["level"] == "warning"
+    assert "CUDA driver version is insufficient" in detail[0]["message"]
     assert backend._device == "cpu"
