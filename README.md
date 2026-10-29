@@ -667,6 +667,19 @@ uv run python tools/private_history_match.py scan \
 CIはpatternを必要としない汎用のemail形式、user絶対path、media拡張子検査だけを
 現在treeに対して行います。固有値照合はpatternを持つ利用者がローカルで実行してください。
 
+## 開発ロードマップとIssue運用
+
+未実装・未解決の残タスクはGitHub Issuesを正本として管理します。
+全体の入口は [Issue #17: Utteran post-0.1.29 改善バックログ](https://github.com/zawa356/Utteran/issues/17) です。
+
+- 未実装・未解決: GitHub Issues
+- 実装・検証の履歴: `AISTATE.md`
+- 確定仕様: `要件定義.md`
+- リリース済み変更: `変更履歴.md`
+- 実機でしか確認できない受入項目: Issue #15 を中心に追跡
+
+新しい課題を後回しにする場合はIssue化し、PRでは `Refs #N`、完了時は `Closes #N` で関連付けます。
+
 ## Documentation
 
 - [要件定義・設計](要件定義.md)
