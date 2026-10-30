@@ -1,5 +1,17 @@
 # AI 作業状態
 
+## 次期UI/UX刷新の開始準備（2026-10-30、計画・Issue整理のみ）
+
+- **開発方針確定**: CLI/coreは処理基盤として維持し、GUIを一般利用者の主導線（GUI-first）とする。見た目の刷新より操作の安定性、クリック後の反応、非同期状態更新の保証を優先する。
+- **作業環境**: GPU実推論を必要としないUI/UX改修はWindows VM主体。CPU/GPU・SAC/WDACなど対象実機でしか検証できないものは専用受入段階へ分離する。
+- **現行コード確認**: FastAPI + pywebview / Edge WebView2（Electronではない）。`src/utteran_gui/web/app.js` は約1,985行でUIイベント・状態・API処理を同居させている。無反応/更新漏れの報告はあるが**原因未確定**。
+- **UIライブラリ方針**: Bootstrap等のUI kit、React/Vue/Svelte等のfrontend framework、pywebview継続/Electron移行を個別評価。UI技術はまだ選定していない。
+- **GitHub管理**: 親Epic [#18](https://github.com/zawa356/Utteran/issues/18)、UI-1 [#19](https://github.com/zawa356/Utteran/issues/19)、UI-2 [#20](https://github.com/zawa356/Utteran/issues/20)、UI-3 [#21](https://github.com/zawa356/Utteran/issues/21)、UI-4 [#22](https://github.com/zawa356/Utteran/issues/22)、全体 [#17](https://github.com/zawa356/Utteran/issues/17)。
+- **次チャットへの正本**: [docs/UI_UX_刷新計画.md](docs/UI_UX_刷新計画.md)。専用チャットはUI-1 / #19の既存実装監査・再現・技術選定ADRから開始する。
+- **現時点の未完了**: UI改修、バグ原因の再現・確定、選定ADR、GUI自動E2E、実機受入、version更新・release。今回の記録は**ドキュメントとIssueのみ**であり、コードの修正や受入成功を意味しない。
+- **開発記録の運用**: 未完了タスクはIssueを正本とし、本書は作業が実際に行われた結果と検証証跡だけを記録する。実装完了後は要件定義・変更履歴・release手順に従って更新する。
+
+
 ## Phase bugfix-k 推論エラーの原因消失とCUDA推論失敗（0.1.29、2026-09-28）
 
 ### Step 0 発生環境
