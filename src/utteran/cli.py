@@ -20,6 +20,13 @@ from rich.console import Console
 from rich.progress import Progress, TaskID
 from rich.table import Table
 
+from utteran.application import (
+    execute_batch,
+    execute_single,
+    preflight_dependencies,
+    prepare_request,
+    validate_input_path,
+)
 from utteran.asr.registry import validate_asr_configuration
 from utteran.audio import find_ffmpeg
 from utteran.batch import BatchSummary, discover_inputs, run_batch
@@ -722,14 +729,9 @@ def transcribe(
         )
         token_provider = default_token_provider()
         register_secret(token_provider.get_token())
-        _validate_transcribe_path(input_path)
         includes = tuple(include or ())
         excludes = tuple(exclude or ())
-
-        if input_path.is_file() and (recursive or includes or excludes):
-            raise ConfigurationError(
-                "--recursive / --include / --exclude はフォルダ入力でのみ指定できます。"
-            )
+        prepare_request(input_path, config, recursive=recursive, include=includes, exclude=excludes)
         if dry_run:
             _show_dry_run(input_path, config, recursive, includes, excludes)
             if json_progress is not None:
@@ -746,13 +748,12 @@ def transcribe(
                 json_progress.done(0)
             return
 
-        if config.diarization.enabled:
-            preflight_diarization_backend(
-                config.diarization.backend,
-                config.diarization.model,
-                token_provider,
-            )
-        find_ffmpeg(config.ffmpeg.path)
+        preflight_dependencies(
+            config,
+            token_provider,
+            ffmpeg_finder=find_ffmpeg,
+            diarization_preflight=preflight_diarization_backend,
+        )
         _ensure_configured_models(config, token_provider, yes=yes, quiet=quiet)
 
         if input_path.is_dir():
@@ -1620,9 +1621,10 @@ def _run_with_progress(
 
     def operation(cancel: CancelToken) -> PipelineOutcome:
         if quiet:
-            return run_pipeline(
+            return execute_single(
                 input_path,
                 config,
+                runner=run_pipeline,
                 progress=json_progress,
                 cancel=cancel,
                 token_provider=token_provider,
@@ -1631,9 +1633,10 @@ def _run_with_progress(
                 force_unlock=force_unlock,
             )
         with Progress(console=console) as progress:
-            return run_pipeline(
+            return execute_single(
                 input_path,
                 config,
+                runner=run_pipeline,
                 progress=combine_progress(RichProgressReporter(progress), json_progress),
                 cancel=cancel,
                 token_provider=token_provider,
@@ -1667,9 +1670,10 @@ def _run_batch_with_progress(
 
     def operation(cancel: CancelToken) -> BatchSummary:
         if quiet:
-            return run_batch(
+            return execute_batch(
                 input_path,
                 config,
+                runner=run_batch,
                 progress=json_progress,
                 cancel=cancel,
                 token_provider=token_provider,
@@ -1681,9 +1685,10 @@ def _run_batch_with_progress(
                 force_unlock=force_unlock,
             )
         with Progress(console=console) as progress:
-            return run_batch(
+            return execute_batch(
                 input_path,
                 config,
+                runner=run_batch,
                 token_provider=token_provider,
                 progress=combine_progress(RichProgressReporter(progress), json_progress),
                 cancel=cancel,
@@ -2263,15 +2268,8 @@ def _resolve_export_output_dir(
 
 
 def _validate_transcribe_path(path: Path) -> None:
-    """Validate file-or-directory input before any dependency preflight."""
-    if not path.exists():
-        from utteran.errors import InputFileNotFoundError
-
-        raise InputFileNotFoundError(f"入力ファイルが見つかりません: {path}")
-    if not path.is_file() and not path.is_dir():
-        from utteran.errors import UnsupportedInputError
-
-        raise UnsupportedInputError(f"通常ファイルまたはフォルダを指定してください: {path}")
+    """Compatibility alias for callers of the original CLI helper."""
+    validate_input_path(path)
 
 
 def _cli_overrides(
