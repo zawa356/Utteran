@@ -69,3 +69,17 @@ Python3.11は独立venvへ0.1.31 wheelを導入し、同じ最終sourceのcontra
 ## B3への引継ぎ
 
 profile processのversion付きIPCからadapter/serviceを呼ぶ際は、実行contextの全選択を明示し、base_configにambient Config.loadを使用しない。token/SDK/model cache/native library等のruntime environmentは現行coreにも参照箇所があるため、launcher側で拘束・検証する必要がある。CLIのmodel承認関数やexit処理をworkerへimportしない。未対応adapter fieldはerrorとして返し、CLI argvへ迂回して黙って実行しない。新規DTO/APIのerror projection、worker timeout/cancel/protocolは別PR。
+
+## 提出結果
+
+B1修正とB2 branchのpushは成功。B2は修正済みB1 `0f80d17`をbaseとする独立stackで、mainへ直接pushしていない。
+`gh pr create --draft --base feat/b1-contracts`は`https://api.github.com/graphql`への通信がForbiddenとなり失敗し、**Draft PR未作成**。
+Gitのread/pushは成功しているためtoken不足とは断定せず、GitHub APIのネットワークアクセス反映が必要。
+PR本文は現作業環境の`/workspace/scratch/utteran-b2-pr.md`に保存した（Git管理外）。API復旧後、同headのPR有無を確認して再実行する。
+
+```console
+gh pr create --repo zawa356/Utteran --base feat/b1-contracts --head feat/b2-core-application-service --draft --title 'feat: Phase B2 Core Application Service・Config Adapter' --body-file /workspace/scratch/utteran-b2-pr.md
+```
+
+[stacked比較ページ](https://github.com/zawa356/Utteran/compare/feat/b1-contracts...feat/b2-core-application-service)はB2差分のレビュー用であり、PRそのものではない。
+Ready化・merge・B3実装はしていない。
