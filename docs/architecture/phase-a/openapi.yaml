@@ -1,0 +1,3988 @@
+openapi: 3.1.0
+info:
+  title: Utteran Phase A proposed local control API
+  version: 1.0.0-draft
+  description: 'DESIGN ONLY. Not implemented routes; existing /api/* remains compatible. Normative semantics:
+    contracts.md and lifecycles.md. Local authenticated session only; runtime OpenAPI endpoint remains
+    disabled.'
+security:
+- LocalSessionCookie: []
+- LocalSessionHeader: []
+paths:
+  /api/v1/capabilities:
+    get:
+      operationId: getCapabilities
+      tags:
+      - capabilities
+      summary: getCapabilities
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /api/v1/environments:
+    get:
+      operationId: listEnvironments
+      tags:
+      - environments
+      summary: listEnvironments
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentList'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+  /api/v1/environments/{environment_id}:
+    get:
+      operationId: getEnvironment
+      tags:
+      - environments
+      summary: getEnvironment
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Environment'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: environment_id
+        in: path
+        required: true
+        schema: &id001
+          type: string
+          minLength: 1
+          maxLength: 200
+  /api/v1/environment-refreshes:
+    post:
+      operationId: refreshEnvironments
+      tags:
+      - environment-refreshes
+      summary: refreshEnvironments
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshOperation'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+  /api/v1/environment-refreshes/{operation_id}:
+    get:
+      operationId: getRefresh
+      tags:
+      - environment-refreshes
+      summary: getRefresh
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshOperation'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema: *id001
+  /api/v1/presets:
+    get:
+      operationId: listPreset
+      tags:
+      - presets
+      summary: listPreset
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresetList'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+    post:
+      operationId: createPreset
+      tags:
+      - presets
+      summary: createPreset
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preset'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresetWrite'
+  /api/v1/presets/{resource_id}:
+    get:
+      operationId: getPreset
+      tags:
+      - presets
+      summary: getPreset
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preset'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: resource_id
+        in: path
+        required: true
+        schema: *id001
+      - name: revision
+        in: query
+        required: false
+        schema: &id002
+          type: integer
+          minimum: 1
+        description: Get immutable historical revision; omitted returns current.
+    put:
+      operationId: replacePreset
+      tags:
+      - presets
+      summary: replacePreset
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preset'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: resource_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresetWrite'
+    delete:
+      operationId: deletePreset
+      tags:
+      - presets
+      summary: deletePreset
+      responses:
+        '204':
+          description: Success
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: resource_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IfMatch'
+  /api/v1/execution-policies:
+    get:
+      operationId: listPolicy
+      tags:
+      - execution-policies
+      summary: listPolicy
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyList'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+    post:
+      operationId: createPolicy
+      tags:
+      - execution-policies
+      summary: createPolicy
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyWrite'
+  /api/v1/execution-policies/{resource_id}:
+    get:
+      operationId: getPolicy
+      tags:
+      - execution-policies
+      summary: getPolicy
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: resource_id
+        in: path
+        required: true
+        schema: *id001
+      - name: revision
+        in: query
+        required: false
+        schema: *id002
+        description: Get immutable historical revision; omitted returns current.
+    put:
+      operationId: replacePolicy
+      tags:
+      - execution-policies
+      summary: replacePolicy
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: resource_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyWrite'
+    delete:
+      operationId: deletePolicy
+      tags:
+      - execution-policies
+      summary: deletePolicy
+      responses:
+        '204':
+          description: Success
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: resource_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IfMatch'
+  /api/v1/validations:
+    post:
+      operationId: validateEditingSession
+      tags:
+      - validations
+      summary: validateEditingSession
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditingSession'
+  /api/v1/execution-resolutions:
+    post:
+      operationId: resolveExecution
+      tags:
+      - execution-resolutions
+      summary: resolveExecution
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resolution'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditingSession'
+  /api/v1/jobs:
+    post:
+      operationId: submitJobs
+      tags:
+      - jobs
+      summary: submitJobs
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobBatch'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobSubmit'
+    get:
+      operationId: listJobs
+      tags:
+      - jobs
+      summary: listJobs
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobList'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+  /api/v1/jobs/{job_id}:
+    get:
+      operationId: getJob
+      tags:
+      - jobs
+      summary: getJob
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: *id001
+  /api/v1/jobs/{job_id}/cancel:
+    post:
+      operationId: cancelJob
+      tags:
+      - jobs
+      summary: cancelJob
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '200':
+          description: Already terminal; current snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelRequest'
+  /api/v1/jobs/{job_id}/retry:
+    post:
+      operationId: retryJob
+      tags:
+      - jobs
+      summary: retryJob
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryRequest'
+  /api/v1/jobs/{job_id}/rerun:
+    post:
+      operationId: rerunJob
+      tags:
+      - jobs
+      summary: rerunJob
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobBatch'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerunRequest'
+  /api/v1/jobs/{job_id}/diagnostics:
+    get:
+      operationId: getJobDiagnostics
+      tags:
+      - jobs
+      summary: getJobDiagnostics
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticEntryList'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/Cursor'
+  /api/v1/queue:
+    get:
+      operationId: getQueue
+      tags:
+      - queue
+      summary: getQueue
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queue'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /api/v1/queue/order:
+    put:
+      operationId: reorderQueue
+      tags:
+      - queue
+      summary: reorderQueue
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queue'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueOrder'
+  /api/v1/queue/control:
+    patch:
+      operationId: setQueueDispatch
+      tags:
+      - queue
+      summary: setQueueDispatch
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queue'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueControl'
+  /api/v1/queue/items/{item_id}:
+    patch:
+      operationId: holdQueueItem
+      tags:
+      - queue
+      summary: holdQueueItem
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queue'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueItemPatch'
+      description: If-Match refers to the queue revision, not a separate item revision. Hold metadata
+        applies to all waiting items. Job status changes to held; setup status stays queued while held.
+  /api/v1/setup-plans:
+    post:
+      operationId: createSetupPlan
+      tags:
+      - setup-plans
+      summary: createSetupPlan
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupPlan'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetupPlanRequest'
+  /api/v1/setup-plans/{plan_id}:
+    get:
+      operationId: getSetupPlan
+      tags:
+      - setup-plans
+      summary: getSetupPlan
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupPlan'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema: *id001
+    delete:
+      operationId: discardSetupPlan
+      tags:
+      - setup-plans
+      summary: discardSetupPlan
+      responses:
+        '204':
+          description: Success
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IfMatch'
+  /api/v1/setup-plans/{plan_id}/approve:
+    post:
+      operationId: approveSetupPlan
+      tags:
+      - setup-plans
+      summary: approveSetupPlan
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalRequest'
+  /api/v1/setup-operations:
+    post:
+      operationId: startSetupOperation
+      tags:
+      - setup-operations
+      summary: startSetupOperation
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupOperation'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetupStart'
+    get:
+      operationId: listSetupOperations
+      tags:
+      - setup-operations
+      summary: listSetupOperations
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupOperationList'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+  /api/v1/setup-operations/{operation_id}:
+    get:
+      operationId: getSetupOperation
+      tags:
+      - setup-operations
+      summary: getSetupOperation
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupOperation'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema: *id001
+  /api/v1/setup-operations/{operation_id}/retry:
+    post:
+      operationId: retrySetupOperation
+      tags:
+      - setup-operations
+      summary: retrySetupOperation
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupOperation'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryRequest'
+  /api/v1/setup-operations/{operation_id}/resume:
+    post:
+      operationId: resumeSetupOperation
+      tags:
+      - setup-operations
+      summary: resumeSetupOperation
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupOperation'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryRequest'
+  /api/v1/setup-operations/{operation_id}/cancel:
+    post:
+      operationId: cancelSetupOperation
+      tags:
+      - setup-operations
+      summary: cancelSetupOperation
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupOperation'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelRequest'
+  /api/v1/sync:
+    get:
+      operationId: getSyncSnapshot
+      tags:
+      - sync
+      summary: getSyncSnapshot
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncSnapshot'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - name: snapshot_token
+        in: query
+        required: false
+        schema: *id001
+  /api/v1/events:
+    get:
+      operationId: streamEvents
+      tags:
+      - events
+      summary: streamEvents
+      responses:
+        '200':
+          description: SSE; each data JSON is EventEnvelope. IDs are epoch:seq, see contracts.md.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              x-event-schema:
+                $ref: '#/components/schemas/EventEnvelope'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '410':
+          $ref: '#/components/responses/Error410'
+      parameters:
+      - name: after
+        in: query
+        required: false
+        schema: *id001
+      - name: resource_id
+        in: query
+        required: false
+        schema: *id001
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema: *id001
+  /api/v1/jobs/{job_id}/revalidate:
+    post:
+      operationId: revalidateBlockedJob
+      tags:
+      - jobs
+      summary: revalidateBlockedJob
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Revision ETag on resource GET/mutation; collection has its own revision
+            Location:
+              schema:
+                type: string
+              description: Canonical created/accepted resource or job collection; no secret query parameters
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '412':
+          $ref: '#/components/responses/Error412'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: *id001
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryRequest'
+      description: Only blocked jobs; rechecks identical frozen snapshot. Does not resolve a new candidate
+        or update snapshot.
+components:
+  securitySchemes:
+    LocalSessionCookie:
+      type: apiKey
+      in: cookie
+      name: utteran_gui_session
+    LocalSessionHeader:
+      type: apiKey
+      in: header
+      name: x-utteran-session
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+      description: Persisted key; replay before If-Match checks. See contracts.md.
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: ^"[0-9]+"$
+      description: Exact resource ETag, wildcard forbidden.
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: *id001
+  responses:
+    Error400:
+      description: Malformed request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error401:
+      description: Session required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error403:
+      description: Origin or Host rejected
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error404:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error409:
+      description: State/idempotency/resolution conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error410:
+      description: Event cursor expired; use sync
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error412:
+      description: Revision mismatch
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error413:
+      description: Payload too large
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error422:
+      description: Schema or semantic validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error428:
+      description: If-Match required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error503:
+      description: Storage/runtime unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Issue:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        code: *id001
+        message_key: *id001
+      required:
+      - path
+      - code
+      - message_key
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      properties:
+        code: *id001
+        message_key: *id001
+        request_id: *id001
+        retryable: &id003
+          type: boolean
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+        resource_id: *id001
+      required:
+      - code
+      - message_key
+      - request_id
+      - retryable
+      - issues
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: &id004
+          type: integer
+          const: 1
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      required:
+      - schema_version
+      - error
+    Ref:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id001
+        revision: *id002
+      required:
+      - id
+      - revision
+    Observation:
+      type: object
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum:
+          - passed
+          - failed
+          - unknown
+          - not_applicable
+        observed_at:
+          anyOf:
+          - &id015
+            type: string
+            format: date-time
+          - type: 'null'
+        fingerprint:
+          anyOf:
+          - *id001
+          - type: 'null'
+        reason_code: *id001
+      required:
+      - state
+      - observed_at
+      - fingerprint
+      - reason_code
+    Route:
+      type: object
+      additionalProperties: false
+      properties:
+        native_variant:
+          anyOf:
+          - type: string
+            enum:
+            - cpu
+            - vulkan
+            - openvino
+            - openvino_vulkan
+          - type: 'null'
+        encoder:
+          type: string
+        decoder:
+          type: string
+      required:
+      - native_variant
+      - encoder
+      - decoder
+    RouteObservation:
+      type: object
+      additionalProperties: false
+      properties:
+        requested:
+          $ref: '#/components/schemas/Route'
+        initialized:
+          anyOf:
+          - $ref: '#/components/schemas/Route'
+          - type: 'null'
+        encoder_observed:
+          type: string
+          description: unknown when not verified
+        decoder_observed:
+          type: string
+          description: unknown when not verified
+        fallback_occurred: *id003
+        fallback_reason:
+          anyOf:
+          - *id001
+          - type: 'null'
+      required:
+      - requested
+      - initialized
+      - encoder_observed
+      - decoder_observed
+      - fallback_occurred
+      - fallback_reason
+    ParameterCapability:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+          pattern: ^/
+        type:
+          type: string
+          enum:
+          - string
+          - number
+          - integer
+          - boolean
+          - array
+          - 'null'
+        status:
+          type: string
+          enum:
+          - supported
+          - unsupported
+          - unverified
+        reason_code: *id001
+        enum_values:
+          type: array
+          items:
+            type: string
+        minimum:
+          type: number
+        maximum:
+          type: number
+        sensitive: *id003
+      required:
+      - path
+      - type
+      - status
+      - reason_code
+      - sensitive
+    ArgumentCapability:
+      type: object
+      additionalProperties: false
+      properties:
+        name: *id001
+        aliases:
+          type: array
+          items:
+            type: string
+        arity:
+          type: integer
+          minimum: 0
+          maximum: 1
+        status:
+          type: string
+          enum:
+          - known_supported
+          - known_invalid
+          - reserved
+        value_type:
+          type: string
+          enum:
+          - string
+          - number
+          - integer
+          - boolean
+        native_version: *id001
+        typed_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - name
+      - aliases
+      - arity
+      - status
+      - value_type
+      - native_version
+      - typed_path
+    Candidate:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id001
+        recipe_id: *id001
+        profile_ref:
+          $ref: '#/components/schemas/Ref'
+        backend:
+          type: string
+          enum:
+          - faster-whisper
+          - whisper-cpp
+          - openvino-genai
+        model_ref: *id001
+        model_revision: *id001
+        requested_route:
+          $ref: '#/components/schemas/Route'
+        software_support:
+          type: string
+          enum:
+          - supported
+          - unsupported
+        hardware:
+          $ref: '#/components/schemas/Observation'
+        runtime:
+          $ref: '#/components/schemas/Observation'
+        venv:
+          $ref: '#/components/schemas/Observation'
+        model:
+          $ref: '#/components/schemas/Observation'
+        native:
+          $ref: '#/components/schemas/Observation'
+        smoke:
+          $ref: '#/components/schemas/Observation'
+        runnable:
+          type: string
+          enum:
+          - ready
+          - blocked
+          - unknown
+        blockers:
+          type: array
+          items: *id001
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParameterCapability'
+        arguments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArgumentCapability'
+        interruptibility:
+          type: string
+          enum:
+          - cooperative
+          - delayed
+          - process_boundary_only
+          - unknown
+        cancel_latency_seconds:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        pause_supported:
+          const: false
+          type: boolean
+      required:
+      - id
+      - recipe_id
+      - profile_ref
+      - backend
+      - model_ref
+      - model_revision
+      - requested_route
+      - software_support
+      - hardware
+      - runtime
+      - venv
+      - model
+      - native
+      - smoke
+      - runnable
+      - blockers
+      - parameters
+      - arguments
+      - interruptibility
+      - cancel_latency_seconds
+      - pause_supported
+    Capabilities:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        revision: *id002
+        inventory_revision: *id002
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/Candidate'
+      required:
+      - schema_version
+      - revision
+      - inventory_revision
+      - candidates
+    Environment:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        id: *id001
+        revision: *id002
+        profile_kind:
+          type: string
+          enum:
+          - cpu
+          - cuda
+          - intel
+          - vulkan
+        generation: *id001
+        state:
+          type: string
+          enum:
+          - not_installed
+          - building
+          - verifying
+          - ready
+          - degraded
+          - incompatible
+          - failed
+          - interrupted
+        lock_fingerprint:
+          anyOf:
+          - *id001
+          - type: 'null'
+        extras:
+          type: array
+          items:
+            type: string
+        hardware:
+          $ref: '#/components/schemas/Observation'
+        runtime:
+          $ref: '#/components/schemas/Observation'
+        smoke:
+          $ref: '#/components/schemas/Observation'
+        blockers:
+          type: array
+          items: *id001
+        preserved_generation_ids:
+          type: array
+          items: *id001
+      required:
+      - schema_version
+      - id
+      - revision
+      - profile_kind
+      - generation
+      - state
+      - lock_fingerprint
+      - extras
+      - hardware
+      - runtime
+      - smoke
+      - blockers
+      - preserved_generation_ids
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        profile_ids:
+          type: array
+          items: *id001
+      required:
+      - schema_version
+      - profile_ids
+    RefreshOperation:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        id: *id001
+        revision: *id002
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - succeeded
+          - failed
+          - interrupted
+        inventory_revision:
+          anyOf:
+          - *id002
+          - type: 'null'
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/ErrorDetail'
+          - type: 'null'
+      required:
+      - schema_version
+      - id
+      - revision
+      - status
+      - inventory_revision
+      - error
+    VadSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: *id003
+        threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+      required:
+      - enabled
+    FasterWhisperSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        compute_type:
+          type: string
+          enum:
+          - auto
+          - int8
+          - int8_float32
+          - int8_float16
+          - float16
+          - float32
+      required: []
+    WhisperCppSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 1
+        temperature_increment:
+          type: number
+          minimum: 0
+          maximum: 1
+        no_context: *id003
+        dtw:
+          type: string
+        threads:
+          type: integer
+          minimum: 0
+        entropy_threshold:
+          type: number
+        logprob_threshold:
+          type: number
+        no_speech_threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        vad: *id003
+        vad_model:
+          anyOf:
+          - &id014
+            type: string
+            minLength: 1
+            maxLength: 32768
+          - type: 'null'
+        vad_threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        repetition_limit:
+          type: integer
+          minimum: 0
+        max_word_duration_seconds:
+          type: number
+          exclusiveMinimum: 0
+      required: []
+    GenAISettings:
+      type: object
+      additionalProperties: false
+      properties:
+        max_new_tokens:
+          type: integer
+          minimum: 1
+      required: []
+      description: Proposed registry-gated extension; support must be returned by core capability before
+        accepting it.
+    ExtraArguments:
+      type: object
+      additionalProperties: false
+      properties:
+        backend:
+          const: whisper-cpp
+          type: string
+        tokens:
+          type: array
+          items:
+            type: string
+            maxLength: 4096
+          maxItems: 64
+        allow_unverified: *id003
+      required:
+      - backend
+      - tokens
+      - allow_unverified
+    ASRSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        backend:
+          type: string
+          enum:
+          - auto
+          - faster-whisper
+          - whisper-cpp
+          - openvino-genai
+        model: *id001
+        language:
+          type: string
+          description: auto is explicit automatic detection, not null
+        initial_prompt:
+          anyOf:
+          - type: string
+            maxLength: 32768
+          - type: 'null'
+        glossary:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+          maxItems: 1000
+        beam_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        vad:
+          $ref: '#/components/schemas/VadSettings'
+        word_timestamps:
+          type: string
+          enum:
+          - auto
+          - always
+          - never
+        condition_on_previous_text: *id003
+        faster_whisper:
+          $ref: '#/components/schemas/FasterWhisperSettings'
+        whisper_cpp:
+          $ref: '#/components/schemas/WhisperCppSettings'
+        openvino_genai:
+          $ref: '#/components/schemas/GenAISettings'
+        extra_arguments:
+          $ref: '#/components/schemas/ExtraArguments'
+      required:
+      - backend
+      - model
+      - language
+      - initial_prompt
+      - glossary
+      - beam_size
+      - vad
+      - word_timestamps
+      - condition_on_previous_text
+    DiarizationSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: *id003
+        backend:
+          type: string
+          const: pyannote
+        model: *id001
+        device_preference:
+          type: string
+          enum:
+          - auto
+          - cpu
+          - cuda
+          - xpu
+        num_speakers:
+          anyOf:
+          - type: integer
+            minimum: 1
+            maximum: 100
+          - type: 'null'
+        min_speakers:
+          anyOf:
+          - type: integer
+            minimum: 1
+            maximum: 100
+          - type: 'null'
+        max_speakers:
+          anyOf:
+          - type: integer
+            minimum: 1
+            maximum: 100
+          - type: 'null'
+        memory_guard:
+          type: string
+          enum:
+          - auto
+          - warn
+          - 'off'
+        memory_safety_margin:
+          type: number
+          minimum: 0
+          exclusiveMaximum: 1
+      required:
+      - enabled
+      - backend
+      - model
+      - device_preference
+      - num_speakers
+      - min_speakers
+      - max_speakers
+      - memory_guard
+    PostprocessingSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        boundary_snap_enabled: *id003
+        boundary_snap_unit:
+          type: string
+          enum:
+          - A
+          - B
+        merge_gap:
+          type: number
+          minimum: 0
+        speaker_switch_penalty:
+          type: number
+          minimum: 0
+        max_nearest_distance:
+          type: number
+          minimum: 0
+        min_segment_duration:
+          type: number
+          minimum: 0
+        min_segment_words:
+          type: integer
+          minimum: 0
+        silence_switch_threshold:
+          type: number
+          minimum: 0
+        min_clear_turn_duration:
+          type: number
+          minimum: 0
+        max_same_speaker_bridge_gap:
+          type: number
+          minimum: 0
+        unknown_emission_score:
+          type: number
+          minimum: 0
+        min_unknown_duration:
+          type: number
+          minimum: 0
+        min_unknown_characters:
+          type: integer
+          minimum: 0
+        max_unsupported_fragment_duration:
+          type: number
+          minimum: 0
+        max_unsupported_fragment_characters:
+          type: integer
+          minimum: 0
+        min_fragment_speaker_overlap:
+          type: number
+          minimum: 0
+        renumber_speakers: *id003
+        boundary_snap_max_characters:
+          type: integer
+          minimum: 0
+        boundary_snap_max_gap:
+          type: number
+          minimum: 0
+        fallback_characters_per_second:
+          type: number
+          minimum: 0
+        fallback_duration_padding:
+          type: number
+          minimum: 0
+        fallback_min_duration:
+          type: number
+          minimum: 0
+      required:
+      - boundary_snap_enabled
+      - boundary_snap_unit
+      - merge_gap
+      - speaker_switch_penalty
+    OutputSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        formats:
+          type: array
+          items:
+            type: string
+            enum:
+            - srt
+            - vtt
+            - json
+            - txt
+            - md
+          minItems: 1
+          uniqueItems: true
+        newline:
+          type: string
+          enum:
+          - lf
+          - crlf
+        srt_bom: *id003
+        show_speaker: *id003
+        speaker_labels:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 256
+      required:
+      - formats
+      - newline
+      - srt_bom
+      - show_speaker
+      - speaker_labels
+    ProcessingSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        asr:
+          $ref: '#/components/schemas/ASRSettings'
+        diarization:
+          $ref: '#/components/schemas/DiarizationSettings'
+        postprocessing:
+          $ref: '#/components/schemas/PostprocessingSettings'
+        output:
+          $ref: '#/components/schemas/OutputSettings'
+      required:
+      - schema_version
+      - asr
+      - diarization
+      - postprocessing
+      - output
+    PresetWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        settings:
+          $ref: '#/components/schemas/ProcessingSettings'
+      required:
+      - schema_version
+      - name
+      - settings
+    Preset:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        id: *id001
+        revision: *id002
+        name:
+          type: string
+        settings:
+          $ref: '#/components/schemas/ProcessingSettings'
+      required:
+      - schema_version
+      - id
+      - revision
+      - name
+      - settings
+    PolicyWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        name: &id005
+          type: string
+          minLength: 1
+          maxLength: 120
+        mode: &id006
+          type: string
+          enum:
+          - auto
+          - fixed
+        fixed_candidate_id: &id007
+          anyOf:
+          - *id001
+          - type: 'null'
+        allowed_profile_ids: &id008
+          type: array
+          items: *id001
+        objective: &id009
+          type: string
+          enum:
+          - quality
+          - speed
+          - balanced
+        max_memory_bytes: &id010
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+        fallback: &id011
+          type: string
+          enum:
+          - none
+          - preapproved
+        execution_deadline_seconds: &id012
+          anyOf:
+          - type: number
+            minimum: 1
+          - type: 'null'
+      required:
+      - schema_version
+      - name
+      - mode
+      - fixed_candidate_id
+      - allowed_profile_ids
+      - objective
+      - max_memory_bytes
+      - fallback
+      - execution_deadline_seconds
+      allOf: &id013
+      - if:
+          properties:
+            mode:
+              const: fixed
+        then:
+          properties:
+            fixed_candidate_id: *id001
+            fallback:
+              const: none
+    Policy:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id001
+        revision: *id002
+        schema_version: *id004
+        name: *id005
+        mode: *id006
+        fixed_candidate_id: *id007
+        allowed_profile_ids: *id008
+        objective: *id009
+        max_memory_bytes: *id010
+        fallback: *id011
+        execution_deadline_seconds: *id012
+      required:
+      - id
+      - revision
+      - schema_version
+      - name
+      - mode
+      - fixed_candidate_id
+      - allowed_profile_ids
+      - objective
+      - max_memory_bytes
+      - fallback
+      - execution_deadline_seconds
+      allOf: *id013
+    SettingOverride:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+          pattern: ^/(asr|diarization|postprocessing|output)/
+          description: Registered leaf only; unique/non-overlapping paths; see contracts.md
+        value:
+          description: Explicit JSON value, including null only for nullable registered fields. Validated
+            against target leaf schema.
+      required:
+      - path
+      - value
+    FileInput:
+      type: object
+      additionalProperties: false
+      properties:
+        client_file_id: *id001
+        input_path: *id014
+        output_dir: *id014
+        overrides:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettingOverride'
+      required:
+      - client_file_id
+      - input_path
+      - output_dir
+      - overrides
+    EditingSession:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        preset_ref:
+          $ref: '#/components/schemas/Ref'
+        policy_ref:
+          $ref: '#/components/schemas/Ref'
+        common_overrides:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettingOverride'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileInput'
+          minItems: 1
+          maxItems: 1000
+      required:
+      - schema_version
+      - preset_ref
+      - policy_ref
+      - common_overrides
+      - files
+    Provenance:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        source:
+          type: string
+          enum:
+          - preset
+          - common
+          - file
+          - normalization
+      required:
+      - path
+      - source
+    ValidatedFile:
+      type: object
+      additionalProperties: false
+      properties:
+        client_file_id: *id001
+        valid: *id003
+        effective_settings:
+          anyOf:
+          - $ref: '#/components/schemas/ProcessingSettings'
+          - type: 'null'
+        provenance:
+          type: array
+          items:
+            $ref: '#/components/schemas/Provenance'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+      required:
+      - client_file_id
+      - valid
+      - effective_settings
+      - provenance
+      - issues
+    ValidationResult:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        valid: *id003
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidatedFile'
+      required:
+      - schema_version
+      - valid
+      - files
+    Evidence:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum:
+          - smoke
+          - benchmark
+          - history
+          - static_rule
+        id: *id001
+        comparability_key:
+          anyOf:
+          - *id001
+          - type: 'null'
+        confidence:
+          type: string
+          enum:
+          - low
+          - medium
+          - high
+        reason_code: *id001
+      required:
+      - kind
+      - id
+      - comparability_key
+      - confidence
+      - reason_code
+    SelectionAlternative:
+      type: object
+      additionalProperties: false
+      properties:
+        candidate_id: *id001
+        eligible: *id003
+        reason_codes:
+          type: array
+          items: *id001
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/Evidence'
+      required:
+      - candidate_id
+      - eligible
+      - reason_codes
+      - evidence
+    ResolvedSpec:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        candidate_id: *id001
+        profile_ref:
+          $ref: '#/components/schemas/Ref'
+        profile_generation: *id001
+        model_revision: *id001
+        backend:
+          type: string
+          enum:
+          - faster-whisper
+          - whisper-cpp
+          - openvino-genai
+        requested_route:
+          $ref: '#/components/schemas/Route'
+        diarization_device:
+          anyOf:
+          - type: string
+          - type: 'null'
+        settings:
+          $ref: '#/components/schemas/ProcessingSettings'
+        adapter_version: *id001
+        prompt_compiler_version: *id001
+        inventory_revision: *id002
+        policy_ref:
+          $ref: '#/components/schemas/Ref'
+        reason_codes:
+          type: array
+          items: *id001
+        confidence:
+          type: string
+          enum:
+          - low
+          - medium
+          - high
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/Evidence'
+        alternatives:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectionAlternative'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+        fallback_specs:
+          type: array
+          items:
+            $ref: '#/components/schemas/FallbackSpec'
+        runtime_fingerprint: *id001
+      required:
+      - schema_version
+      - candidate_id
+      - profile_ref
+      - profile_generation
+      - model_revision
+      - backend
+      - requested_route
+      - diarization_device
+      - settings
+      - adapter_version
+      - prompt_compiler_version
+      - inventory_revision
+      - policy_ref
+      - reason_codes
+      - confidence
+      - evidence
+      - alternatives
+      - warnings
+      - fallback_specs
+      - runtime_fingerprint
+    ResolvedFile:
+      type: object
+      additionalProperties: false
+      properties:
+        client_file_id: *id001
+        input_identity: *id001
+        spec:
+          $ref: '#/components/schemas/ResolvedSpec'
+        provenance:
+          type: array
+          items:
+            $ref: '#/components/schemas/Provenance'
+      required:
+      - client_file_id
+      - input_identity
+      - spec
+      - provenance
+    Resolution:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        id: *id001
+        token: *id001
+        expires_at: *id015
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedFile'
+          minItems: 1
+      required:
+      - schema_version
+      - id
+      - token
+      - expires_at
+      - files
+    JobSubmit:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        resolution_token: *id001
+        editing_session:
+          $ref: '#/components/schemas/EditingSession'
+        resume_mode:
+          type: string
+          enum:
+          - resume
+          - fresh
+          - force
+      required:
+      - schema_version
+      - resolution_token
+      - editing_session
+      - resume_mode
+    JobSnapshot:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        created_at: *id015
+        preset_ref:
+          $ref: '#/components/schemas/Ref'
+        policy_ref:
+          $ref: '#/components/schemas/Ref'
+        common_overrides:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettingOverride'
+        file:
+          $ref: '#/components/schemas/FileInput'
+        input_identity: *id001
+        resolved:
+          $ref: '#/components/schemas/ResolvedSpec'
+        resume_mode:
+          type: string
+          enum:
+          - resume
+          - fresh
+          - force
+      required:
+      - schema_version
+      - created_at
+      - preset_ref
+      - policy_ref
+      - common_overrides
+      - file
+      - input_identity
+      - resolved
+      - resume_mode
+    Attempt:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id001
+        status:
+          type: string
+          enum:
+          - starting
+          - running
+          - succeeded
+          - failed
+          - cancelled
+          - interrupted
+        route:
+          $ref: '#/components/schemas/RouteObservation'
+        runtime_fingerprint:
+          anyOf:
+          - *id001
+          - type: 'null'
+        legacy_core_job_id:
+          anyOf:
+          - *id001
+          - type: 'null'
+        fallback_from_attempt_id:
+          anyOf:
+          - *id001
+          - type: 'null'
+        reason_code:
+          anyOf:
+          - *id001
+          - type: 'null'
+      required:
+      - id
+      - status
+      - route
+      - runtime_fingerprint
+      - legacy_core_job_id
+      - fallback_from_attempt_id
+      - reason_code
+    Job:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        id: *id001
+        revision: *id002
+        status:
+          type: string
+          enum:
+          - queued
+          - held
+          - blocked
+          - running
+          - cancelling
+          - succeeded
+          - failed
+          - cancelled
+          - interrupted
+        snapshot:
+          $ref: '#/components/schemas/JobSnapshot'
+        attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attempt'
+        retry_of:
+          anyOf:
+          - *id001
+          - type: 'null'
+        rerun_of:
+          anyOf:
+          - *id001
+          - type: 'null'
+        blockers:
+          type: array
+          items: *id001
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/ErrorDetail'
+          - type: 'null'
+      required:
+      - schema_version
+      - id
+      - revision
+      - status
+      - snapshot
+      - attempts
+      - retry_of
+      - rerun_of
+      - blockers
+      - error
+    JobBatch:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+          minItems: 1
+        queue_revision: *id002
+      required:
+      - schema_version
+      - jobs
+      - queue_revision
+    RetryRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+      required:
+      - schema_version
+    RerunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        submission:
+          $ref: '#/components/schemas/JobSubmit'
+      required:
+      - schema_version
+      - submission
+    QueueItem:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id001
+        resource_id: *id001
+        resource_kind:
+          type: string
+          enum:
+          - job
+          - setup_operation
+        position:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+        held: *id003
+        blockers:
+          type: array
+          items: *id001
+      required:
+      - id
+      - resource_id
+      - resource_kind
+      - position
+      - held
+      - blockers
+    Queue:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        revision: *id002
+        dispatch:
+          type: string
+          enum:
+          - running
+          - paused
+        active_item_id:
+          anyOf:
+          - *id001
+          - type: 'null'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueueItem'
+      required:
+      - schema_version
+      - revision
+      - dispatch
+      - active_item_id
+      - items
+    QueueOrder:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        waiting_item_ids:
+          type: array
+          items: *id001
+          uniqueItems: true
+      required:
+      - schema_version
+      - waiting_item_ids
+    QueueControl:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        dispatch:
+          type: string
+          enum:
+          - running
+          - paused
+      required:
+      - schema_version
+      - dispatch
+    QueueItemPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        held: *id003
+      required:
+      - schema_version
+      - held
+    Estimate:
+      type: object
+      additionalProperties: false
+      properties:
+        download_bytes:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        disk_bytes:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        duration_seconds:
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+        confidence:
+          type: string
+          enum:
+          - low
+          - medium
+          - high
+      required:
+      - download_bytes
+      - disk_bytes
+      - duration_seconds
+      - confidence
+    SetupChange:
+      type: object
+      additionalProperties: false
+      properties:
+        resource_kind:
+          type: string
+          enum:
+          - profile
+          - model
+          - native
+          - ir
+        resource_id: *id001
+        action:
+          type: string
+          enum:
+          - create
+          - reuse
+          - rebuild
+          - verify
+        reason_code: *id001
+      required:
+      - resource_kind
+      - resource_id
+      - action
+      - reason_code
+    SetupStep:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id001
+        kind:
+          type: string
+          enum:
+          - hardware
+          - venv_sync
+          - credential_preflight
+          - model_download
+          - native_build
+          - ir_build
+          - smoke
+          - register
+        depends_on:
+          type: array
+          items: *id001
+        required: *id003
+        recovery:
+          type: string
+          enum:
+          - rerun
+          - verified_reuse
+          - manager_resume
+      required:
+      - id
+      - kind
+      - depends_on
+      - required
+      - recovery
+    SetupPlanRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        profile_kind:
+          type: string
+          enum:
+          - cpu
+          - cuda
+          - intel
+          - vulkan
+        model_refs:
+          type: array
+          items: *id001
+        diarization_enabled: *id003
+      required:
+      - schema_version
+      - profile_kind
+      - model_refs
+      - diarization_enabled
+    SetupPlan:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        id: *id001
+        revision: *id002
+        state:
+          type: string
+          enum:
+          - proposed
+          - approved
+          - consumed
+          - expired
+        profile_kind:
+          type: string
+          enum:
+          - cpu
+          - cuda
+          - intel
+          - vulkan
+        inventory_revision: *id002
+        plan_hash: *id001
+        expires_at: *id015
+        estimate:
+          $ref: '#/components/schemas/Estimate'
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SetupChange'
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/SetupStep'
+        preserved_environment_ids:
+          type: array
+          items: *id001
+        required_agreements:
+          type: array
+          items: *id001
+        missing_credentials:
+          type: array
+          items: *id001
+      required:
+      - schema_version
+      - id
+      - revision
+      - state
+      - profile_kind
+      - inventory_revision
+      - plan_hash
+      - expires_at
+      - estimate
+      - changes
+      - steps
+      - preserved_environment_ids
+      - required_agreements
+      - missing_credentials
+    ApprovalRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        plan_hash: *id001
+        accepted_agreement_ids:
+          type: array
+          items: *id001
+      required:
+      - schema_version
+      - plan_hash
+      - accepted_agreement_ids
+    Approval:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        id: *id001
+        plan_id: *id001
+        plan_revision: *id002
+        plan_hash: *id001
+        expires_at: *id015
+      required:
+      - schema_version
+      - id
+      - plan_id
+      - plan_revision
+      - plan_hash
+      - expires_at
+    SetupStart:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        plan_ref:
+          $ref: '#/components/schemas/Ref'
+        approval_id: *id001
+      required:
+      - schema_version
+      - plan_ref
+      - approval_id
+    StepProgress:
+      type: object
+      additionalProperties: false
+      properties:
+        step_id: *id001
+        status:
+          type: string
+          enum:
+          - pending
+          - running
+          - succeeded
+          - failed
+          - interrupted
+          - skipped
+        reason_code:
+          anyOf:
+          - *id001
+          - type: 'null'
+        evidence:
+          anyOf:
+          - $ref: '#/components/schemas/Observation'
+          - type: 'null'
+      required:
+      - step_id
+      - status
+      - reason_code
+      - evidence
+    SetupOperation:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        id: *id001
+        revision: *id002
+        plan_ref:
+          $ref: '#/components/schemas/Ref'
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - waiting_user
+          - cancelling
+          - succeeded
+          - failed
+          - cancelled
+          - interrupted
+        attempt_number:
+          type: integer
+          minimum: 1
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/StepProgress'
+        retry_of:
+          anyOf:
+          - *id001
+          - type: 'null'
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/ErrorDetail'
+          - type: 'null'
+      required:
+      - schema_version
+      - id
+      - revision
+      - plan_ref
+      - status
+      - attempt_number
+      - steps
+      - retry_of
+      - error
+    CancelRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        mode:
+          type: string
+          enum:
+          - cooperative
+          - force
+      required:
+      - schema_version
+      - mode
+    DiagnosticEntry:
+      type: object
+      additionalProperties: false
+      properties:
+        timestamp: *id015
+        code: *id001
+        message_key: *id001
+        stage:
+          anyOf:
+          - *id001
+          - type: 'null'
+        attempt_id:
+          anyOf:
+          - *id001
+          - type: 'null'
+      required:
+      - timestamp
+      - code
+      - message_key
+      - stage
+      - attempt_id
+    EventPayload:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+        stage:
+          type: string
+        fraction:
+          anyOf:
+          - type: number
+            minimum: 0
+            maximum: 1
+          - type: 'null'
+        reason_code: *id001
+        attempt_id: *id001
+      required: []
+    EventEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        id:
+          type: string
+          pattern: ^[^:]+:[0-9]+$
+        resource_id: *id001
+        resource_kind:
+          type: string
+          enum:
+          - job
+          - setup_operation
+          - queue
+          - inventory
+          - refresh_operation
+        resource_revision: *id002
+        timestamp: *id015
+        type:
+          type: string
+          enum:
+          - state_changed
+          - progress
+          - inventory_changed
+          - queue_changed
+          - fallback
+          - resync_required
+        payload:
+          $ref: '#/components/schemas/EventPayload'
+      required:
+      - schema_version
+      - id
+      - resource_id
+      - resource_kind
+      - resource_revision
+      - timestamp
+      - type
+      - payload
+    SyncResource:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id001
+        kind:
+          type: string
+          enum:
+          - job
+          - setup_operation
+          - refresh_operation
+        revision: *id002
+        status: *id001
+      required:
+      - id
+      - kind
+      - revision
+      - status
+    SyncSnapshot:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        snapshot_token: *id001
+        event_cursor: *id001
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncResource'
+        next_cursor:
+          anyOf:
+          - *id001
+          - type: 'null'
+        queue:
+          $ref: '#/components/schemas/Queue'
+        inventory_revision: *id002
+      required:
+      - schema_version
+      - snapshot_token
+      - event_cursor
+      - resources
+      - next_cursor
+      - queue
+      - inventory_revision
+    EnvironmentList:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        revision: *id002
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Environment'
+        next_cursor:
+          anyOf:
+          - *id001
+          - type: 'null'
+      required:
+      - schema_version
+      - revision
+      - items
+      - next_cursor
+    PresetList:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        revision: *id002
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Preset'
+        next_cursor:
+          anyOf:
+          - *id001
+          - type: 'null'
+      required:
+      - schema_version
+      - revision
+      - items
+      - next_cursor
+    PolicyList:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        revision: *id002
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Policy'
+        next_cursor:
+          anyOf:
+          - *id001
+          - type: 'null'
+      required:
+      - schema_version
+      - revision
+      - items
+      - next_cursor
+    JobList:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        revision: *id002
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        next_cursor:
+          anyOf:
+          - *id001
+          - type: 'null'
+      required:
+      - schema_version
+      - revision
+      - items
+      - next_cursor
+    SetupOperationList:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        revision: *id002
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SetupOperation'
+        next_cursor:
+          anyOf:
+          - *id001
+          - type: 'null'
+      required:
+      - schema_version
+      - revision
+      - items
+      - next_cursor
+    DiagnosticEntryList:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_version: *id004
+        revision: *id002
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiagnosticEntry'
+        next_cursor:
+          anyOf:
+          - *id001
+          - type: 'null'
+      required:
+      - schema_version
+      - revision
+      - items
+      - next_cursor
+    FallbackSpec:
+      type: object
+      additionalProperties: false
+      properties:
+        candidate_id: *id001
+        profile_ref:
+          $ref: '#/components/schemas/Ref'
+        profile_generation: *id001
+        model_revision: *id001
+        backend:
+          type: string
+          enum:
+          - faster-whisper
+          - whisper-cpp
+          - openvino-genai
+        requested_route:
+          $ref: '#/components/schemas/Route'
+        settings:
+          $ref: '#/components/schemas/ProcessingSettings'
+        adapter_version: *id001
+        runtime_fingerprint: *id001
+      required:
+      - candidate_id
+      - profile_ref
+      - profile_generation
+      - model_revision
+      - backend
+      - requested_route
+      - settings
+      - adapter_version
+      - runtime_fingerprint

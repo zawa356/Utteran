@@ -124,3 +124,11 @@ UI-1では技術を**先に決め打ちしない**。現行課題の再現、依
 - **完了**: Issue分割、刷新方針のドキュメント化、次チャットへの引継ぎ整備。
 - **未実施**: UI kit/framework選定、原因再現、UI変更、VM test、GPU実機検証、releaseビルド。
 - 旧版のGUI bugfix履歴は完了済みのものもあるため、古いAISTATEの記述をすべて現在の不具合とみなさない。
+
+## Phase A設計レビューへの参照（2026-10-30）
+
+共通実行設定・profile隔離・API/イベント契約・永続queue・setup管理の次期設計案は
+[Phase A成果物](architecture/phase-a/README.md) と [ADR-002](adr/ADR-002-structured-execution-contract.md) を参照。
+**提案・レビュー待ちであり、実装済み仕様ではない。** frontend framework/UI kitは未決定。
+Draft PR #23のADR-001候補とは比較のみを行い、無断取り込みや技術採択はしていない。
+後続順序は契約/worker/backend基盤を先行する案を追加したもので、本計画の既存Issueを完了にしない。
