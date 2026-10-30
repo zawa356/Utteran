@@ -204,3 +204,11 @@ def test_unordered_inputs_cannot_be_silently_serialized(examples: dict[str, Any]
     settings["asr"]["glossary"] = {"synthetic"}
     with pytest.raises(ValidationError):
         ProcessingSettings.model_validate(settings)
+
+
+@pytest.mark.parametrize(
+    "value", [[{"invalid": "srt"}], [["srt"]], [{"invalid": "srt"}, {"invalid": "srt"}]]
+)
+def test_unhashable_override_values_raise_validation_error(value: Any) -> None:
+    with pytest.raises(ValidationError):
+        SettingOverride(path="/output/formats", value=value)

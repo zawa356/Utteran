@@ -75,3 +75,12 @@ gh pr create --repo zawa356/Utteran --base docs/phase-a-architecture --head feat
 
 [stacked比較ページ](https://github.com/zawa356/Utteran/compare/docs/phase-a-architecture...feat/b1-contracts)でB1差分だけを確認できる。
 比較ページはPRではなく、DoDのDraft PR項目は外部通信制限により未完了。mainへの直接push、Ready化・merge・B2実装はしていない。
+
+
+## B2着手前のB1レビュー修正
+
+P2: SettingOverrideはleaf型検証後の値でunique検査を行う。不正なobject/nested arrayを渡しても
+生TypeErrorではなくValidationErrorとなる回帰3例を追加。P3: 全schemaのallOfを一律に捨てる比較をやめ、
+Policy/PolicyWriteの意図的な追加auto条件だけを明示分離し、Phase Aの条件を4ケースで意味比較する。
+修正後の契約テストはPython3.12.14/3.11.17双方で52件成功。生成schema変更なし。
+lock/profileの既知影響は[調査記録](profile-lock-impact.md)を参照。pending B1のレビュー修正として独立コミットし、B2へ積む。
