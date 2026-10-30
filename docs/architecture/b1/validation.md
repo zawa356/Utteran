@@ -62,3 +62,16 @@ Phase A文書・既存core/GUI/packagingの処理コードに差分がないこ�
 ## PR提出
 
 GitHub APIへの通信は開始時にForbidden、Git fetch/Web Issue取得は成功。関連Issue #18〜#22はOPENでbodyを確認。公開PR検索にPhase Aの同head PRリンクはなかったが、APIによる有無確認はできていない。Phase A PR未mergeを前提に、B1はbase=`docs/phase-a-architecture`として提出する。最終作成結果は最終報告に記載し、失敗ならPR URLを捏造しない。
+
+最終結果: `feat/b1-contracts`のpush成功。`gh pr create --draft --base docs/phase-a-architecture`は
+`https://api.github.com/graphql`への通信がForbiddenとなり失敗し、**B1 Draft PRは未作成**。
+GitHub HTTPS Gitのread/pushは成功しているため、token未設定が原因とは断定しない。
+実行環境のネットワーク設定で`api.github.com`へのアクセスを反映後、PR有無を再確認して作成する。
+PR本文はこの作業環境の`/workspace/scratch/utteran-b1-pr.md`へ保存した（Git管理外）。再実行:
+
+```console
+gh pr create --repo zawa356/Utteran --base docs/phase-a-architecture --head feat/b1-contracts --draft --title 'feat: Phase B1 共通DTO・オフラインSchema Export基盤' --body-file /workspace/scratch/utteran-b1-pr.md
+```
+
+[stacked比較ページ](https://github.com/zawa356/Utteran/compare/docs/phase-a-architecture...feat/b1-contracts)でB1差分だけを確認できる。
+比較ページはPRではなく、DoDのDraft PR項目は外部通信制限により未完了。mainへの直接push、Ready化・merge・B2実装はしていない。
