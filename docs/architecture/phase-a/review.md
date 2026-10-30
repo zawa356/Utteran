@@ -68,3 +68,15 @@ python -m openapi_spec_validator docs/architecture/phase-a/openapi.yaml
 ```
 
 examples.jsonのキーとschemaの対応は上記の通り。JSON Schema Draft 2020-12でOpenAPI全体を基底resourceとして登録し、`#/components/schemas/<name>`へ各例を検証する。文書リンクとoperationId一意性も検査済み。
+
+### 提出状態・外部ブロッカー
+
+`docs/phase-a-architecture`をoriginへpush済み。`gh pr create --draft`は`https://api.github.com/graphql`への通信がForbiddenとなり失敗し、**Draft PR未作成**。GitHub HTTPS Git read/pushとWeb Issue readは成功しており、GitHub tokenが欠けているとは断定しない。API destinationへのCONNECTも403を確認した。環境設定draftへ`api.github.com`を追加保存したが、実行環境のallowlistへの反映は未確認。環境設定で追加を保存・反映後、API到達性を確認してPR作成を再実行する必要がある。
+
+PR本文は現在の作業環境の`/workspace/.utteran-cloud/phase-a-pr.md`にも保存済み（リポジトリ管理外）。復旧後の操作:
+
+```console
+gh pr create --repo zawa356/Utteran --base main --head docs/phase-a-architecture --draft --title 'docs: Phase A アーキテクチャ再設計・API契約案' --body-file /workspace/.utteran-cloud/phase-a-pr.md
+```
+
+先に同headのPR有無を確認し、重複作成を避ける。通信制限の解消までは指示書DoDのDraft PR項目を未完了とする。ブランチ比較ページはPRそのものではない。mainへのpush、既存Issue/PRのclose、PR #23の変更、Ready化・mergeは行っていない。
