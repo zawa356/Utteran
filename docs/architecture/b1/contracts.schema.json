@@ -1,0 +1,2537 @@
+{
+  "$defs": {
+    "ASRSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "enum": [
+            "auto",
+            "faster-whisper",
+            "whisper-cpp",
+            "openvino-genai"
+          ],
+          "title": "Backend",
+          "type": "string"
+        },
+        "beam_size": {
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Beam Size",
+          "type": "integer"
+        },
+        "condition_on_previous_text": {
+          "title": "Condition On Previous Text",
+          "type": "boolean"
+        },
+        "extra_arguments": {
+          "$ref": "#/$defs/ExtraArguments"
+        },
+        "faster_whisper": {
+          "$ref": "#/$defs/FasterWhisperSettings"
+        },
+        "glossary": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "title": "Glossary",
+          "type": "array"
+        },
+        "initial_prompt": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Initial Prompt"
+        },
+        "language": {
+          "title": "Language",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "openvino_genai": {
+          "$ref": "#/$defs/GenAISettings"
+        },
+        "vad": {
+          "$ref": "#/$defs/VadSettings"
+        },
+        "whisper_cpp": {
+          "$ref": "#/$defs/WhisperCppSettings"
+        },
+        "word_timestamps": {
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "title": "Word Timestamps",
+          "type": "string"
+        }
+      },
+      "required": [
+        "backend",
+        "model",
+        "language",
+        "initial_prompt",
+        "glossary",
+        "beam_size",
+        "vad",
+        "word_timestamps",
+        "condition_on_previous_text"
+      ],
+      "title": "ASRSettings",
+      "type": "object"
+    },
+    "DiarizationSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "const": "pyannote",
+          "title": "Backend",
+          "type": "string"
+        },
+        "device_preference": {
+          "enum": [
+            "auto",
+            "cpu",
+            "cuda",
+            "xpu"
+          ],
+          "title": "Device Preference",
+          "type": "string"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "max_speakers": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Speakers"
+        },
+        "memory_guard": {
+          "enum": [
+            "auto",
+            "warn",
+            "off"
+          ],
+          "title": "Memory Guard",
+          "type": "string"
+        },
+        "memory_safety_margin": {
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "Memory Safety Margin",
+          "type": "number"
+        },
+        "min_speakers": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Min Speakers"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "num_speakers": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Num Speakers"
+        }
+      },
+      "required": [
+        "enabled",
+        "backend",
+        "model",
+        "device_preference",
+        "num_speakers",
+        "min_speakers",
+        "max_speakers",
+        "memory_guard"
+      ],
+      "title": "DiarizationSettings",
+      "type": "object"
+    },
+    "EditingSession": {
+      "additionalProperties": false,
+      "properties": {
+        "common_overrides": {
+          "items": {
+            "$ref": "#/$defs/SettingOverride"
+          },
+          "title": "Common Overrides",
+          "type": "array"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/FileInput"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Files",
+          "type": "array"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "preset_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "preset_ref",
+        "policy_ref",
+        "common_overrides",
+        "files"
+      ],
+      "title": "EditingSession",
+      "type": "object"
+    },
+    "Error": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ErrorDetail"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "error"
+      ],
+      "title": "Error",
+      "type": "object"
+    },
+    "ErrorDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "title": "Issues",
+          "type": "array"
+        },
+        "message_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Message Key",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "resource_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message_key",
+        "request_id",
+        "retryable",
+        "issues"
+      ],
+      "title": "ErrorDetail",
+      "type": "object"
+    },
+    "ExtraArguments": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_unverified": {
+          "title": "Allow Unverified",
+          "type": "boolean"
+        },
+        "backend": {
+          "const": "whisper-cpp",
+          "title": "Backend",
+          "type": "string"
+        },
+        "tokens": {
+          "items": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Tokens",
+          "type": "array"
+        }
+      },
+      "required": [
+        "backend",
+        "tokens",
+        "allow_unverified"
+      ],
+      "title": "ExtraArguments",
+      "type": "object"
+    },
+    "FasterWhisperSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "compute_type": {
+          "enum": [
+            "auto",
+            "int8",
+            "int8_float32",
+            "int8_float16",
+            "float16",
+            "float32"
+          ],
+          "title": "Compute Type",
+          "type": "string"
+        }
+      },
+      "title": "FasterWhisperSettings",
+      "type": "object"
+    },
+    "FileInput": {
+      "additionalProperties": false,
+      "properties": {
+        "client_file_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Client File Id",
+          "type": "string"
+        },
+        "input_path": {
+          "maxLength": 32768,
+          "minLength": 1,
+          "title": "Input Path",
+          "type": "string"
+        },
+        "output_dir": {
+          "maxLength": 32768,
+          "minLength": 1,
+          "title": "Output Dir",
+          "type": "string"
+        },
+        "overrides": {
+          "items": {
+            "$ref": "#/$defs/SettingOverride"
+          },
+          "title": "Overrides",
+          "type": "array"
+        }
+      },
+      "required": [
+        "client_file_id",
+        "input_path",
+        "output_dir",
+        "overrides"
+      ],
+      "title": "FileInput",
+      "type": "object"
+    },
+    "GenAISettings": {
+      "additionalProperties": false,
+      "properties": {
+        "max_new_tokens": {
+          "minimum": 1,
+          "title": "Max New Tokens",
+          "type": "integer"
+        }
+      },
+      "title": "GenAISettings",
+      "type": "object"
+    },
+    "Issue": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Message Key",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "code",
+        "message_key"
+      ],
+      "title": "Issue",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "OutputSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "formats": {
+          "items": {
+            "enum": [
+              "srt",
+              "vtt",
+              "json",
+              "txt",
+              "md"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Formats",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "newline": {
+          "enum": [
+            "lf",
+            "crlf"
+          ],
+          "title": "Newline",
+          "type": "string"
+        },
+        "show_speaker": {
+          "title": "Show Speaker",
+          "type": "boolean"
+        },
+        "speaker_labels": {
+          "additionalProperties": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "title": "Speaker Labels",
+          "type": "object"
+        },
+        "srt_bom": {
+          "title": "Srt Bom",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "formats",
+        "newline",
+        "srt_bom",
+        "show_speaker",
+        "speaker_labels"
+      ],
+      "title": "OutputSettings",
+      "type": "object"
+    },
+    "Policy": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "fixed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fallback": {
+                "const": "none"
+              },
+              "fixed_candidate_id": {
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "auto"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fixed_candidate_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "allowed_profile_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Allowed Profile Ids",
+          "type": "array"
+        },
+        "execution_deadline_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Execution Deadline Seconds"
+        },
+        "fallback": {
+          "enum": [
+            "none",
+            "preapproved"
+          ],
+          "title": "Fallback",
+          "type": "string"
+        },
+        "fixed_candidate_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Fixed Candidate Id"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "max_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Memory Bytes"
+        },
+        "mode": {
+          "enum": [
+            "auto",
+            "fixed"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "objective": {
+          "enum": [
+            "quality",
+            "speed",
+            "balanced"
+          ],
+          "title": "Objective",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "name",
+        "mode",
+        "fixed_candidate_id",
+        "allowed_profile_ids",
+        "objective",
+        "max_memory_bytes",
+        "fallback",
+        "execution_deadline_seconds",
+        "id",
+        "revision"
+      ],
+      "title": "Policy",
+      "type": "object"
+    },
+    "PolicyWrite": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "fixed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fallback": {
+                "const": "none"
+              },
+              "fixed_candidate_id": {
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "auto"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fixed_candidate_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "allowed_profile_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Allowed Profile Ids",
+          "type": "array"
+        },
+        "execution_deadline_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Execution Deadline Seconds"
+        },
+        "fallback": {
+          "enum": [
+            "none",
+            "preapproved"
+          ],
+          "title": "Fallback",
+          "type": "string"
+        },
+        "fixed_candidate_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Fixed Candidate Id"
+        },
+        "max_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Memory Bytes"
+        },
+        "mode": {
+          "enum": [
+            "auto",
+            "fixed"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "objective": {
+          "enum": [
+            "quality",
+            "speed",
+            "balanced"
+          ],
+          "title": "Objective",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "name",
+        "mode",
+        "fixed_candidate_id",
+        "allowed_profile_ids",
+        "objective",
+        "max_memory_bytes",
+        "fallback",
+        "execution_deadline_seconds"
+      ],
+      "title": "PolicyWrite",
+      "type": "object"
+    },
+    "PostprocessingSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "boundary_snap_enabled": {
+          "title": "Boundary Snap Enabled",
+          "type": "boolean"
+        },
+        "boundary_snap_max_characters": {
+          "minimum": 0,
+          "title": "Boundary Snap Max Characters",
+          "type": "integer"
+        },
+        "boundary_snap_max_gap": {
+          "minimum": 0,
+          "title": "Boundary Snap Max Gap",
+          "type": "number"
+        },
+        "boundary_snap_unit": {
+          "enum": [
+            "A",
+            "B"
+          ],
+          "title": "Boundary Snap Unit",
+          "type": "string"
+        },
+        "fallback_characters_per_second": {
+          "minimum": 0,
+          "title": "Fallback Characters Per Second",
+          "type": "number"
+        },
+        "fallback_duration_padding": {
+          "minimum": 0,
+          "title": "Fallback Duration Padding",
+          "type": "number"
+        },
+        "fallback_min_duration": {
+          "minimum": 0,
+          "title": "Fallback Min Duration",
+          "type": "number"
+        },
+        "max_nearest_distance": {
+          "minimum": 0,
+          "title": "Max Nearest Distance",
+          "type": "number"
+        },
+        "max_same_speaker_bridge_gap": {
+          "minimum": 0,
+          "title": "Max Same Speaker Bridge Gap",
+          "type": "number"
+        },
+        "max_unsupported_fragment_characters": {
+          "minimum": 0,
+          "title": "Max Unsupported Fragment Characters",
+          "type": "integer"
+        },
+        "max_unsupported_fragment_duration": {
+          "minimum": 0,
+          "title": "Max Unsupported Fragment Duration",
+          "type": "number"
+        },
+        "merge_gap": {
+          "minimum": 0,
+          "title": "Merge Gap",
+          "type": "number"
+        },
+        "min_clear_turn_duration": {
+          "minimum": 0,
+          "title": "Min Clear Turn Duration",
+          "type": "number"
+        },
+        "min_fragment_speaker_overlap": {
+          "minimum": 0,
+          "title": "Min Fragment Speaker Overlap",
+          "type": "number"
+        },
+        "min_segment_duration": {
+          "minimum": 0,
+          "title": "Min Segment Duration",
+          "type": "number"
+        },
+        "min_segment_words": {
+          "minimum": 0,
+          "title": "Min Segment Words",
+          "type": "integer"
+        },
+        "min_unknown_characters": {
+          "minimum": 0,
+          "title": "Min Unknown Characters",
+          "type": "integer"
+        },
+        "min_unknown_duration": {
+          "minimum": 0,
+          "title": "Min Unknown Duration",
+          "type": "number"
+        },
+        "renumber_speakers": {
+          "title": "Renumber Speakers",
+          "type": "boolean"
+        },
+        "silence_switch_threshold": {
+          "minimum": 0,
+          "title": "Silence Switch Threshold",
+          "type": "number"
+        },
+        "speaker_switch_penalty": {
+          "minimum": 0,
+          "title": "Speaker Switch Penalty",
+          "type": "number"
+        },
+        "unknown_emission_score": {
+          "minimum": 0,
+          "title": "Unknown Emission Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "boundary_snap_enabled",
+        "boundary_snap_unit",
+        "merge_gap",
+        "speaker_switch_penalty"
+      ],
+      "title": "PostprocessingSettings",
+      "type": "object"
+    },
+    "Preset": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProcessingSettings"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "revision",
+        "name",
+        "settings"
+      ],
+      "title": "Preset",
+      "type": "object"
+    },
+    "PresetWrite": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProcessingSettings"
+        }
+      },
+      "required": [
+        "schema_version",
+        "name",
+        "settings"
+      ],
+      "title": "PresetWrite",
+      "type": "object"
+    },
+    "ProcessingSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/ASRSettings"
+        },
+        "diarization": {
+          "$ref": "#/$defs/DiarizationSettings"
+        },
+        "output": {
+          "$ref": "#/$defs/OutputSettings"
+        },
+        "postprocessing": {
+          "$ref": "#/$defs/PostprocessingSettings"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "asr",
+        "diarization",
+        "postprocessing",
+        "output"
+      ],
+      "title": "ProcessingSettings",
+      "type": "object"
+    },
+    "Ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "revision"
+      ],
+      "title": "Ref",
+      "type": "object"
+    },
+    "SettingOverride": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/backend"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "enum": [
+                  "auto",
+                  "faster-whisper",
+                  "whisper-cpp",
+                  "openvino-genai"
+                ],
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/beam_size"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/condition_on_previous_text"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/extra_arguments/allow_unverified"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/extra_arguments/backend"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "const": "whisper-cpp",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/extra_arguments/tokens"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "items": {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "maxItems": 64,
+                "type": "array"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/faster_whisper/compute_type"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "auto",
+                      "int8",
+                      "int8_float32",
+                      "int8_float16",
+                      "float16",
+                      "float32"
+                    ],
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/glossary"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "items": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/initial_prompt"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 32768,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/language"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/model"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/openvino_genai/max_new_tokens"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/vad/enabled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/vad/threshold"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/dtw"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/entropy_threshold"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/logprob_threshold"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/max_word_duration_seconds"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/no_context"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/no_speech_threshold"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/repetition_limit"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/temperature"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/temperature_increment"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/threads"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/vad"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/vad_model"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 32768,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/whisper_cpp/vad_threshold"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/asr/word_timestamps"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "enum": [
+                  "auto",
+                  "always",
+                  "never"
+                ],
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/diarization/backend"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "const": "pyannote",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/diarization/device_preference"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "enum": [
+                  "auto",
+                  "cpu",
+                  "cuda",
+                  "xpu"
+                ],
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/diarization/enabled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/diarization/max_speakers"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maximum": 100,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/diarization/memory_guard"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "enum": [
+                  "auto",
+                  "warn",
+                  "off"
+                ],
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/diarization/memory_safety_margin"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/diarization/min_speakers"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maximum": 100,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/diarization/model"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/diarization/num_speakers"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "maximum": 100,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/output/formats"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "items": {
+                  "enum": [
+                    "srt",
+                    "vtt",
+                    "json",
+                    "txt",
+                    "md"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/output/newline"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "enum": [
+                  "lf",
+                  "crlf"
+                ],
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/output/show_speaker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/output/speaker_labels"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "additionalProperties": {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/output/srt_bom"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/boundary_snap_enabled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/boundary_snap_max_characters"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/boundary_snap_max_gap"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/boundary_snap_unit"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "enum": [
+                  "A",
+                  "B"
+                ],
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/fallback_characters_per_second"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/fallback_duration_padding"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/fallback_min_duration"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/max_nearest_distance"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/max_same_speaker_bridge_gap"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/max_unsupported_fragment_characters"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/max_unsupported_fragment_duration"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/merge_gap"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "minimum": 0,
+                "type": "number"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/min_clear_turn_duration"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/min_fragment_speaker_overlap"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/min_segment_duration"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/min_segment_words"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/min_unknown_characters"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/min_unknown_duration"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/renumber_speakers"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/silence_switch_threshold"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/speaker_switch_penalty"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "minimum": 0,
+                "type": "number"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
+                "const": "/postprocessing/unknown_emission_score"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "path": {
+          "enum": [
+            "/asr/backend",
+            "/asr/beam_size",
+            "/asr/condition_on_previous_text",
+            "/asr/extra_arguments/allow_unverified",
+            "/asr/extra_arguments/backend",
+            "/asr/extra_arguments/tokens",
+            "/asr/faster_whisper/compute_type",
+            "/asr/glossary",
+            "/asr/initial_prompt",
+            "/asr/language",
+            "/asr/model",
+            "/asr/openvino_genai/max_new_tokens",
+            "/asr/vad/enabled",
+            "/asr/vad/threshold",
+            "/asr/whisper_cpp/dtw",
+            "/asr/whisper_cpp/entropy_threshold",
+            "/asr/whisper_cpp/logprob_threshold",
+            "/asr/whisper_cpp/max_word_duration_seconds",
+            "/asr/whisper_cpp/no_context",
+            "/asr/whisper_cpp/no_speech_threshold",
+            "/asr/whisper_cpp/repetition_limit",
+            "/asr/whisper_cpp/temperature",
+            "/asr/whisper_cpp/temperature_increment",
+            "/asr/whisper_cpp/threads",
+            "/asr/whisper_cpp/vad",
+            "/asr/whisper_cpp/vad_model",
+            "/asr/whisper_cpp/vad_threshold",
+            "/asr/word_timestamps",
+            "/diarization/backend",
+            "/diarization/device_preference",
+            "/diarization/enabled",
+            "/diarization/max_speakers",
+            "/diarization/memory_guard",
+            "/diarization/memory_safety_margin",
+            "/diarization/min_speakers",
+            "/diarization/model",
+            "/diarization/num_speakers",
+            "/output/formats",
+            "/output/newline",
+            "/output/show_speaker",
+            "/output/speaker_labels",
+            "/output/srt_bom",
+            "/postprocessing/boundary_snap_enabled",
+            "/postprocessing/boundary_snap_max_characters",
+            "/postprocessing/boundary_snap_max_gap",
+            "/postprocessing/boundary_snap_unit",
+            "/postprocessing/fallback_characters_per_second",
+            "/postprocessing/fallback_duration_padding",
+            "/postprocessing/fallback_min_duration",
+            "/postprocessing/max_nearest_distance",
+            "/postprocessing/max_same_speaker_bridge_gap",
+            "/postprocessing/max_unsupported_fragment_characters",
+            "/postprocessing/max_unsupported_fragment_duration",
+            "/postprocessing/merge_gap",
+            "/postprocessing/min_clear_turn_duration",
+            "/postprocessing/min_fragment_speaker_overlap",
+            "/postprocessing/min_segment_duration",
+            "/postprocessing/min_segment_words",
+            "/postprocessing/min_unknown_characters",
+            "/postprocessing/min_unknown_duration",
+            "/postprocessing/renumber_speakers",
+            "/postprocessing/silence_switch_threshold",
+            "/postprocessing/speaker_switch_penalty",
+            "/postprocessing/unknown_emission_score"
+          ],
+          "title": "Path",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "path",
+        "value"
+      ],
+      "title": "SettingOverride",
+      "type": "object"
+    },
+    "VadSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Threshold",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "VadSettings",
+      "type": "object"
+    },
+    "WhisperCppSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "dtw": {
+          "title": "Dtw",
+          "type": "string"
+        },
+        "entropy_threshold": {
+          "title": "Entropy Threshold",
+          "type": "number"
+        },
+        "logprob_threshold": {
+          "title": "Logprob Threshold",
+          "type": "number"
+        },
+        "max_word_duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Max Word Duration Seconds",
+          "type": "number"
+        },
+        "no_context": {
+          "title": "No Context",
+          "type": "boolean"
+        },
+        "no_speech_threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "No Speech Threshold",
+          "type": "number"
+        },
+        "repetition_limit": {
+          "minimum": 0,
+          "title": "Repetition Limit",
+          "type": "integer"
+        },
+        "temperature": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "temperature_increment": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Temperature Increment",
+          "type": "number"
+        },
+        "threads": {
+          "minimum": 0,
+          "title": "Threads",
+          "type": "integer"
+        },
+        "vad": {
+          "title": "Vad",
+          "type": "boolean"
+        },
+        "vad_model": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vad Model"
+        },
+        "vad_threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Vad Threshold",
+          "type": "number"
+        }
+      },
+      "title": "WhisperCppSettings",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Error"
+    },
+    {
+      "$ref": "#/$defs/ProcessingSettings"
+    },
+    {
+      "$ref": "#/$defs/PresetWrite"
+    },
+    {
+      "$ref": "#/$defs/Preset"
+    },
+    {
+      "$ref": "#/$defs/PolicyWrite"
+    },
+    {
+      "$ref": "#/$defs/Policy"
+    },
+    {
+      "$ref": "#/$defs/EditingSession"
+    }
+  ],
+  "title": "Utteran B1 contracts (schema version 1)"
+}

@@ -1,5 +1,18 @@
 # AI 作業状態
 
+## Phase B1 共通DTO・Schema Export（0.1.30、2026-10-30、レビュー待ち）
+
+- 基点: Phase A `docs/phase-a-architecture` / `60d9bdd6006551149c6dde5a735dee17c16cc15d`。
+  B1は`feat/b1-contracts`として分離。mainへの直接push・mergeはしない。
+- `utteran_contracts`を同distribution内に追加。21個のPhase A DTOと補助基底、immutable表現、
+  strict version/unknown field/leaf検証、private/public projection、offline schema exportを実装。
+- 現行CLI/API/GUIの処理経路は変更せず、新しい実行・UI・worker・永続store・migrationは未実装。
+- [B1資料](docs/architecture/b1/README.md)、[schema coverage](docs/architecture/b1/coverage.md)、
+  [検証記録](docs/architecture/b1/validation.md)を参照。未実装schemaは53個で引き続きProposed。
+- 新規契約テスト45件はLinux Python 3.11/3.12で成功。Windows VM・PyInstaller配布は未検証。
+  既存テスト失敗・型検査失敗はbaseline比較を検証記録へ残し、B1で無関係な修正はしない。
+- 次はB1レビュー。Phase B2へは進んでいない。関連 #18〜#22は完了扱いにしない。
+
 ## 次期UI/UX刷新の開始準備（2026-10-30、計画・Issue整理のみ）
 
 - **開発方針確定**: CLI/coreは処理基盤として維持し、GUIを一般利用者の主導線（GUI-first）とする。見た目の刷新より操作の安定性、クリック後の反応、非同期状態更新の保証を優先する。

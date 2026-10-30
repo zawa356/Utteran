@@ -1,0 +1,57 @@
+"""Lightweight data contracts. No core, GUI, inference, or execution dependency."""
+
+from utteran_contracts.base import (
+    SCHEMA_VERSION,
+    Contract,
+    SchemaVersion,
+    validation_error_projection,
+)
+from utteran_contracts.editing import EditingSession, FileInput, SettingOverride
+from utteran_contracts.settings import (
+    ASRSettings,
+    DiarizationSettings,
+    Error,
+    ErrorDetail,
+    ExtraArguments,
+    FasterWhisperSettings,
+    GenAISettings,
+    Issue,
+    OutputSettings,
+    Policy,
+    PolicyWrite,
+    PostprocessingSettings,
+    Preset,
+    PresetWrite,
+    ProcessingSettings,
+    Ref,
+    VadSettings,
+    WhisperCppSettings,
+)
+
+__all__ = [
+    "SCHEMA_VERSION",
+    "ASRSettings",
+    "Contract",
+    "DiarizationSettings",
+    "EditingSession",
+    "Error",
+    "ErrorDetail",
+    "ExtraArguments",
+    "FasterWhisperSettings",
+    "FileInput",
+    "GenAISettings",
+    "Issue",
+    "OutputSettings",
+    "Policy",
+    "PolicyWrite",
+    "PostprocessingSettings",
+    "Preset",
+    "PresetWrite",
+    "ProcessingSettings",
+    "Ref",
+    "SchemaVersion",
+    "SettingOverride",
+    "VadSettings",
+    "WhisperCppSettings",
+    "validation_error_projection",
+]
