@@ -24,6 +24,8 @@ jobs:
         run: uv sync --extra dev --extra gui --locked
       - name: Check lockfile
         run: uv lock --check
+      - name: Check offline contract schema
+        run: uv run --no-sync python -m utteran_contracts.schema --output docs/architecture/b1/contracts.schema.json --check
       - name: Lint
         run: uv run --no-sync ruff check src tests tools
       - name: Check formatting
@@ -96,3 +98,19 @@ jobs:
               exit 1
             }
           }
+
+  contracts-python-compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - run: uv sync --extra dev --extra gui --locked
+      - name: Contract, schema, and import boundary tests (no models)
+        run: uv run --no-sync pytest tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py
+      - run: uv run --no-sync python -m utteran_contracts.schema --output docs/architecture/b1/contracts.schema.json --check
