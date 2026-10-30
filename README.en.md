@@ -14,7 +14,7 @@ transcription API.
 - Windows 10/11 (primary), Python 3.11 or 3.12
 - Linux (secondary; model-free tests and imports run in CI)
 - faster-whisper on CPU or NVIDIA CUDA
-- whisper.cpp v1.9.1 on CPU, OpenVINO, Vulkan, or OpenVINO+Vulkan
+- whisper.cpp v1.9.2 on CPU, OpenVINO, Vulkan, or OpenVINO+Vulkan
 - pyannote.audio 4.x diarization on CPU, NVIDIA CUDA, or Intel XPU
 
 GPU, native-build, real-model, and long-audio behavior is verified by the acceptance harness on
@@ -138,7 +138,17 @@ uv run utteran benchmark --audio long-sample.wav \
 Short measurements include a warning in both console and JSON output. Benchmarking does not retain
 recognized text or pipeline jobs.
 
-## Development
+## GUI/UX modernization roadmap
+
+The next development focus is GUI reliability and a GUI-first workflow, while keeping the
+existing core and CLI as the execution foundation. The current desktop shell is
+**FastAPI + pywebview / Edge WebView2, not Electron**. Bootstrap and other UI kits,
+frontend frameworks, and host alternatives are candidates to evaluate, not decisions.
+
+This is **planned work, not implemented yet**. See the [UI/UX modernization plan and
+handoff (Japanese)](docs/UI_UX_刷新計画.md), [Epic #18](https://github.com/zawa356/Utteran/issues/18),
+and the first phase [#19 (audit and technology selection)](https://github.com/zawa356/Utteran/issues/19).
+
 
 ```console
 uv sync --extra dev --extra gui
