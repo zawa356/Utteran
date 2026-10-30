@@ -669,6 +669,17 @@ CIはpatternを必要としない汎用のemail形式、user絶対path、media�
 
 ## 開発ロードマップとIssue運用
 
+**次期の集中開発テーマはGUI/UX刷新**です。現行CLI/coreの機能を維持しつつ、
+通常操作の入口をGUIに集約し、ボタンの無反応・画面更新漏れなどの操作信頼性を改善します。
+[UI/UX刷新計画・次チャット引継ぎ](docs/UI_UX_刷新計画.md) を作業方針とし、
+[Issue #18（親Epic）](https://github.com/zawa356/Utteran/issues/18)と
+[UI-1: #19](https://github.com/zawa356/Utteran/issues/19)から
+[UI-4: #22](https://github.com/zawa356/Utteran/issues/22)までを順に進めます。
+
+**2026-10-30時点は計画段階です。** UIフレームワークは未選定で、刷新実装・検証は未完了です。
+現行GUIはElectronではなくFastAPI + pywebview / WebView2です。
+
+
 未実装・未解決の残タスクはGitHub Issuesを正本として管理します。
 全体の入口は [Issue #17: Utteran post-0.1.29 改善バックログ](https://github.com/zawa356/Utteran/issues/17) です。
 
@@ -683,6 +694,7 @@ CIはpatternを必要としない汎用のemail形式、user絶対path、media�
 ## Documentation
 
 - [要件定義・設計](要件定義.md)
+- [UI/UX刷新計画・引継ぎ](docs/UI_UX_刷新計画.md)
 - [Release手順](docs/リリース手順.md)
 - [Phase 3d統合受入結果](docs/受入試験統合結果_Phase3d.md)
 - [Phase 4a公開履歴監査](docs/公開履歴監査_Phase4a.md)
