@@ -22,7 +22,7 @@ def normalize(schema: Any) -> Any:
         return schema
     result = {}
     for key, value in schema.items():
-        if key in {"title", "description", "default", "allOf"}:
+        if key in {"title", "description", "default"}:
             continue
         if key == "$ref":
             result[key] = value.rsplit("/", 1)[-1]
@@ -45,7 +45,13 @@ def test_phase_a_wire_shape_matches_implemented_subset() -> None:
             assert generated[name]["additionalProperties"] is False
             assert sorted(generated[name]["required"]) == ["path", "value"]
             continue
-        assert normalize(generated[name]) == normalize(source[name]), name
+        actual, expected = copy.deepcopy(generated[name]), copy.deepcopy(source[name])
+        if name in {"Policy", "PolicyWrite"}:
+            # These two schemas intentionally add the prose-only auto-policy rule.
+            # Compare their conditional semantics separately, never globally drop allOf.
+            actual.pop("allOf")
+            expected.pop("allOf")
+        assert normalize(actual) == normalize(expected), name
 
 
 def test_schema_valid_examples_and_negative_inputs() -> None:
@@ -108,3 +114,30 @@ def test_override_leaf_constraints_are_exported() -> None:
         assert list(target.iter_errors(data))
     target.validate({"path": "/asr/initial_prompt", "value": None})
     target.validate({"path": "/diarization/enabled", "value": False})
+
+
+@pytest.mark.parametrize(
+    "mode,candidate,fallback,expected",
+    [
+        ("fixed", None, "none", False),
+        ("fixed", "synthetic", "preapproved", False),
+        ("fixed", "synthetic", "none", True),
+        ("auto", None, "preapproved", True),
+    ],
+)
+def test_phase_a_allof_policy_rules_are_preserved(
+    mode: str, candidate: Any, fallback: str, expected: bool
+) -> None:
+    source = yaml.safe_load((ROOT / "docs/architecture/phase-a/openapi.yaml").read_text())[
+        "components"
+    ]["schemas"]
+    payload = {"mode": mode, "fixed_candidate_id": candidate, "fallback": fallback}
+    for name in ("Policy", "PolicyWrite"):
+        actual = contract_schema()["$defs"][name]
+        for schema in (source[name], actual):
+            assert (
+                not list(Draft202012Validator({"allOf": schema["allOf"]}).iter_errors(payload))
+            ) is expected
+    # The B1-only auto restriction is explicit and tested, not normalized away.
+    wrong_auto = {**payload, "mode": "auto", "fixed_candidate_id": "synthetic"}
+    assert list(Draft202012Validator({"allOf": actual["allOf"]}).iter_errors(wrong_auto))

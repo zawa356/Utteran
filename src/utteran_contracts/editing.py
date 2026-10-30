@@ -87,13 +87,13 @@ class SettingOverride(Contract):
             raise ValueError("explicit null is not allowed for this leaf")
         # JSON validation accepts JSON arrays for immutable tuple fields, without
         # accepting Python-only coercions such as an integer string or bool-as-int.
+        validated = adapter.validate_json(json.dumps(_thaw(self.value)), strict=True)
         if (
             unique
-            and isinstance(self.value, (list, tuple))
-            and len(set(self.value)) != len(self.value)
+            and isinstance(validated, (list, tuple))
+            and len(set(validated)) != len(validated)
         ):
             raise ValueError("duplicate values in unique array leaf")
-        adapter.validate_json(json.dumps(_thaw(self.value)), strict=True)
         object.__setattr__(self, "value", cast(JsonValue, _freeze(_thaw(self.value))))
         return self
 
