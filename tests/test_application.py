@@ -145,7 +145,10 @@ def test_actual_pipeline_resume_force_hash_invalidation_and_outputs(
     assert asr.calls == 4
     job = JobStore(cfg.effective_job_dir).get(first.job_id or "")
     assert job.manifest.version == 1 and job.manifest.status == "done"
-    assert json.loads(job.intermediate_path("merge").read_text())["schema_version"] == 1
+    assert (
+        json.loads(job.intermediate_path("merge").read_text(encoding="utf-8"))["schema_version"]
+        == 1
+    )
     restored = PipelineResult.from_dict(job.read_merged_payload())
     regenerated = export_all(restored, tmp_path / "reexport", ["txt"], ExportOptions())
     assert regenerated[0].is_file() and asr.calls == 4
@@ -228,7 +231,9 @@ def export_result() -> PipelineResult:
 
 
 def test_all_export_formats_match_unchanged_pre_b2_exporters(tmp_path: Path) -> None:
-    fixture = json.loads((Path(__file__).parent / "fixtures/b2/exports.json").read_text())
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures/b2/exports.json").read_text(encoding="utf-8")
+    )
     output = export_all(
         export_result(),
         tmp_path / "output",
@@ -241,7 +246,7 @@ def test_all_export_formats_match_unchanged_pre_b2_exporters(tmp_path: Path) -> 
 def test_core_service_dependency_direction() -> None:
     root = Path(__file__).parents[1] / "src/utteran"
     for name in ("application.py", "config_adapter.py"):
-        tree = ast.parse((root / name).read_text())
+        tree = ast.parse((root / name).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             names = (
                 [node.module or ""]
@@ -269,7 +274,7 @@ def test_structured_adapter_and_legacy_share_identical_job(
     cfg = base_config(tmp_path)
     cfg.asr.initial_prompt = None
     source = Path(__file__).parents[1] / "docs/architecture/phase-a/examples.json"
-    data = json.loads(source.read_text())["preset"]["settings"]
+    data = json.loads(source.read_text(encoding="utf-8"))["preset"]["settings"]
     data["asr"]["language"] = "en"
     data["output"]["formats"] = cfg.output.formats
     converted = adapt_settings(
