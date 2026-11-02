@@ -6,10 +6,22 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.36`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.37`（未release）。API・設定は1.0まで変更されます。
 
 
-### Phase B7 不変Job投入・永続Queue制御・安全dispatch（Draft・未マージ・未リリース）
+### Phase B8 Setup Plan・承認・永続Setup実行（Draft・未マージ・未リリース）
+
+0.1.37では、セットアップを「計画（read-only）→ 利用者の承認 → 承認内容だけを実行」する実験的v1 Setup APIを追加。
+計画には対象profile・モデル・保持される既存環境・工程DAG・容量見積（不明はnull）・必要な同意とtokenが含まれ、
+承認はplan hash・環境観測fingerprint・期限・実際に選択された同意IDに束縛されます。実行はB7と同じ単一heavy slotで、
+工程ごとにintent→子process→PID記録→終了→検証の順に記録し、検証できない成功は記録しません。
+**既定のGUI/CLIと旧Setup wizardは変わりません**。`create_app(..., enable_v1_jobs=True, enable_v1_setup=True, ...)`
+を明示した場合のみ有効です。実行できるのはfaster-whisper/pyannoteモデルと（Windowsの）新規profile作成のみで、
+whisper.cpp・OpenVINO・既存venvの再構築は拒否します。setupの成功はB4のready証拠にはなりません。
+実機・GPU・実ダウンロードでの受入は未実施です。詳細は[Phase B8](docs/architecture/b8/README.md)。
+
+
+### Phase B7 不変Job投入・永続Queue制御・安全dispatch（main統合済み・未リリース）
 
 0.1.36では、検証済みの設定・入力identity（内容SHA-256）・B4解決結果をJobごとの不変private snapshotとして
 保存し、複数fileを1 transactionでall-or-nothing受理する実験的v1 Job/Queue APIを追加。

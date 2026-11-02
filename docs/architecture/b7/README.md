@@ -1,6 +1,10 @@
 # Phase B7 — Immutable Job Submission / Durable Queue Controls / Safe Dispatch
 
 2026-11-02 JST、開発版 **0.1.36（未リリース）**、**Draft・未マージ**。
+
+> **現況追補（2026-11-02）**: B7は[PR #32](https://github.com/zawa356/Utteran/pull/32)でmainへ統合済み
+> （merge `4fbb4d1`）。本ページ以下の「Draft・未マージ」と検証記録は提出当時の証拠として改変しない。
+> 後続: [B8 Setup](../b8/README.md)（Draft）がlayout v4・共有heavy slotを追加。
 基点: `main` `3fd187dff64e83291253bd0d0bf4ba74f043664a`（着手時にremote再確認、以後のcommitなし）。
 
 B1〜B6の契約・Worker・Resolver・Preset/Policy・SQLite control storeを、**実行前に完全検証された

@@ -1,6 +1,6 @@
 # 段階移行・実装PR・受入計画
 
-> **現況更新（2026-11-02）：Phase A〜B6はmainへ統合済み**です（[統合記録](../integration-2026-11-02.md)）。下記の「次はB1」やDraftに関する記述は策定/PR提出時の履歴です。B7はopt-in実装がDraft（[B7](../b7/README.md)、T10〜T13/T16/T18/T19のunit検証）、B8〜B9とGUI刷新、CI #27・実機受入は未完了です。
+> **現況更新（2026-11-02）：Phase A〜B6はmainへ統合済み**です（[統合記録](../integration-2026-11-02.md)）。下記の「次はB1」やDraftに関する記述は策定/PR提出時の履歴です。B7はopt-in実装がmain統合済み（[B7](../b7/README.md)）、B8はopt-in Setup実装がDraft（[B8](../b8/README.md)、fake child runnerでのunit検証のみ）、B9とGUI刷新、CI #27・実機受入は未完了です。
 
 設計承認前に下記実装へ進まない。各PRは小さな独立レビュー単位とし、共有schema変更・core adapter・GUI切替を一括PRへまとめない。
 
