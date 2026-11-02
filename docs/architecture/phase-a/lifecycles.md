@@ -1,5 +1,8 @@
 # 状態遷移・ライフサイクル案
 
+2026-11-02 B8追補（Draft）: §2のSetup Plan/Operation・工程stateを[B8](../b8/execution-recovery.md)で実装。
+setupの`waiting_user→cancelled`・`interrupted→cancelled`を追加（待機/中断中の明示破棄）。
+
 全stateはbackendで保持しAPIへ返す。UIのspinner/通信reconnectingはtransport stateであり、jobの実行状態を推測して上書きしない。以下にない遷移は409 `invalid_transition`。終端からの再実行は元resourceを巻き戻さず、新resource/attemptを作る。
 
 2026-11-02 B6追補: §2〜§5の遷移・queue・復旧規則の**保存側**を[B6](../b6/recovery.md)で
