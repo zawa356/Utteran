@@ -13,7 +13,7 @@ Install Node.js 24 or later, then run:
 
 ```sh
 cd site
-npm install
+npm ci
 npm run dev
 ```
 
