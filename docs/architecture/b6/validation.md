@@ -57,8 +57,18 @@ BOM欠落とpublic scanのrc=1はlinux-quality jobではmypy失敗後の後続st
 
 ## CI（GitHub Actions）
 
-Draft PR作成後の実測はPR本文と下記に追記する。workflow全体が既知課題で赤の場合は
-「CI緑」とは記載しない。
+[Draft PR #28](https://github.com/zawa356/Utteran/pull/28)、HEAD `802ba04`、
+[run 41390499258](https://github.com/zawa356/Utteran/actions/runs/41390499258)（pull_request）。
+**workflow全体は赤**（既知課題のみ）。「CI緑」ではない。
+
+| job | 結果 | 内容 |
+|---|---|---|
+| windows-tests | failure | pytest **1011 passed / 4 skipped**（B5時点951/3 + B6 60 passed、POSIX権限test 1件skip）。PowerShell parse成功。headless起動stepが既知のInno Setup（ISCC.exe）不在で失敗 |
+| contracts-python-compatibility (3.11) | success | 契約・境界・B5・B6 411 passed、B1/B4/B5/B6 schema `--check`成功 |
+| contracts-python-compatibility (3.12) | success | 同411 passed |
+| linux-quality | failure | lock・B1〜B6 schema・ruff・format成功。mypyが既知9件（`processes.py`）で停止し、後続のLinux pytest/BOM/public scanは未実行 |
+
+linux-qualityで未実行となったLinux全体pytest・BOM・public scanは、ローカル実測（上表）で代替確認した。
 
 ## 未検証（明示）
 

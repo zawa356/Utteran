@@ -21,6 +21,9 @@
   failed/error/skipped集合が完全一致。B6 61件。独立wheel 3.11/3.12各200 passed。Ruff/lock/
   B1〜B6 schema/wheel成功、mypy既知9件のみ。public scanのblocking 2件とBOM欠落はbaselineと同一。
   詳細は[B6 validation](docs/architecture/b6/validation.md)、[集合比較](docs/architecture/b6/test-comparison.json)。
+- [Draft PR #28](https://github.com/zawa356/Utteran/pull/28)（base B5）。Actions run 41390499258:
+  Windows pytest 1011 passed / 4 skipped（後続Inno Setupで赤）、3.11/3.12契約各411 passed、
+  linux-qualityは既知mypy9件で停止。workflowは赤のため「CI緑」ではない。
 - 既知: Linux mypy9件/pytest2件、Windows Inno Setup前提、PID-file競合は
   [#27](https://github.com/zawa356/Utteran/issues/27)（本PRで修正しない）。lock全体hashによる旧profile
   非互換の既知課題は維持（lockはversion行のみ手動更新）。
