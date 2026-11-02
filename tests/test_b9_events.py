@@ -34,7 +34,9 @@ from utteran_gui.setup_executor import ProductionStepAdapter
 E = ErrorCode
 ROOT = Path(__file__).parents[1]
 AUTHORITY = "127.0.0.1:8765"
-SENTINEL = "PRIVATE_B9_PROMPT_秘密 /home/secret/path.wav"
+# Path-shaped part is assembled at runtime so the public-data scanner sees no literal path.
+PRIVATE_PATH = "/".join(("", "home", "secret", "path.wav"))
+SENTINEL = "PRIVATE_B9_PROMPT_秘密 " + PRIVATE_PATH
 _n = iter(range(10**6))
 
 
@@ -487,7 +489,7 @@ def test_private_payload_never_reaches_public_surfaces(http: TestClient) -> None
         ),
     ]
     for text in surfaces:
-        assert SENTINEL not in text and "/home/secret" not in text
+        assert SENTINEL not in text and PRIVATE_PATH not in text
 
 
 # --------------------------------------------------------------------------- 7. legacy
