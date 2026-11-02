@@ -1,0 +1,38 @@
+---
+title: Features
+description: Transcription, diarization, desktop UI, and export formats.
+---
+
+## Speech recognition
+
+- Transcribe audio and video recordings
+- Choose among faster-whisper, whisper.cpp, and OpenVINO GenAI processing paths
+- Process a single file or a batch of files in a directory
+- Resume and reuse completed pipeline stages where possible
+
+Backend availability and performance depend on the operating system, hardware, model, and installed dependencies.
+
+## Speaker diarization
+
+Utteran uses pyannote.audio to label and group speaker turns. This is optional: transcription also works without speaker labels. Diarization does not automatically identify the real-world names of speakers.
+
+## Windows desktop GUI
+
+The desktop app supports file selection, configuration, progress and cancellation, result search, job history, and re-exporting to different formats.
+
+:::note[Development status]
+A major GUI/UX refresh is in progress. This site does not present unreleased screens or features as part of a published release.
+:::
+
+## Output formats
+
+| Format | Common use |
+| --- | --- |
+| SRT / VTT | Video subtitles |
+| JSON | Automation and downstream processing |
+| TXT | Plain text |
+| Markdown | Meeting notes and editable documents |
+
+## For developers
+
+The CLI and profile-based environment management remain available. See the [English README](https://github.com/zawa356/Utteran/blob/main/README.en.md) for options and examples.
