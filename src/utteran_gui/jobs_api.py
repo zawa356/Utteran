@@ -20,7 +20,7 @@ from starlette.responses import JSONResponse, Response
 from utteran_contracts.jobs import CancelRequest, QueueControl, QueueItemPatch, QueueOrder
 from utteran_control.errors import ControlError
 from utteran_control.store import IdempotencyScope
-from utteran_gui.job_admission import AdmissionError
+from utteran_gui.job_admission import AdmissionError, ResolutionTokens
 from utteran_gui.job_runtime import JobRuntime, RuntimeStateError
 from utteran_gui.settings_api import _body, _key, _match
 from utteran_settings.errors import SettingsError
@@ -115,7 +115,8 @@ def register_job_routes(app: FastAPI, runtime: JobRuntime) -> None:
     @app.get("/jobs")
     async def list_jobs(request: Request) -> Response:
         cursor = request.query_params.get("cursor")
-        result = await call(lambda: parts()[0].list_jobs(cursor))
+        viewer = ResolutionTokens.binding(_session(request))  # cursor bound to session
+        result = await call(lambda: parts()[0].list_jobs(cursor, scope=viewer))
         return json(200, result.to_wire(), {"ETag": f'"{result.revision}"'})
 
     @app.post("/jobs")
