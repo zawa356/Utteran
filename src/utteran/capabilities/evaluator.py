@@ -142,7 +142,7 @@ def _settings_issues(
         codes.append("unsupported_setting")
     if settings.diarization.enabled:
         diar = settings.diarization
-        if identity.diarization_device == "xpu" and identity.platform != "Windows":
+        if identity.diarization_device == "xpu" and identity.platform == "Linux":
             codes.append("diarization_platform_unsupported")
         if asr.word_timestamps == "never":
             codes.append("unsupported_setting")
@@ -209,7 +209,9 @@ def evaluate_candidate(
 
     support_codes: list[ReasonCode] = []
     if identity.platform not in recipe.platforms:
-        support_codes.append("unsupported_platform")
+        support_codes.append(
+            "not_observed" if identity.platform == "unknown" else "unsupported_platform"
+        )
     if identity.compute_type not in recipe.compute_types:
         support_codes.append("unsupported_compute")
     if identity.device not in recipe.devices or (
@@ -218,13 +220,14 @@ def evaluate_candidate(
         support_codes.append("unsupported_device")
     if identity.model_family != recipe.model_family:
         support_codes.append("model_family_mismatch")
+    support_failed = any(code != "not_observed" for code in support_codes)
     generated(
         "software_support",
         support_codes[0] if support_codes else "supported",
-        "failed" if support_codes else "passed",
+        "failed" if support_failed else "unknown" if support_codes else "passed",
     )
     issues.extend(SelectionIssue(kind="software_support", code=code) for code in support_codes)
-    blocked |= bool(support_codes)
+    blocked |= support_failed
 
     transport_codes: list[ReasonCode] = []
     if identity.execution_path != execution_path:
