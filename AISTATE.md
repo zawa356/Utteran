@@ -1,5 +1,31 @@
 # AI 作業状態
 
+## Phase B2 Core Application Service / Config Adapter（0.1.31、2026-10-30、レビュー待ち）
+
+- B1レビューP2（unhashable追加値でTypeError）を`feat/b1-contracts`の独立commit `0f80d17`で修正。
+  P3 allOfの比較漏れも改善。契約52件をPython3.11/3.12で確認後、B2 branchを作成した。
+- `utteran.application`へprepare/preflight/single/batch入口を抽出し、CLI表示・引数・exit・logging・
+  model承認はCLIに維持。`utteran.config_adapter`はProcessingSettings+明示contextから純粋にConfig変換する。
+- 変更前CLI19ケース/旧hash4構成のgolden、5形式byte出力、resume/force/再出力、adapter拒否・決定性を検証。
+- [B2資料](docs/architecture/b2/README.md)、[対応表](docs/architecture/b2/mapping.md)、
+  [互換性](docs/architecture/b2/compatibility.md)、[検証](docs/architecture/b2/validation.md)を参照。
+- lock全体hashで既存profileが非互換扱いとなり得る件は[別PR対象](docs/architecture/b1/profile-lock-impact.md)。
+  venv/manifestの書換え・無断再構築は行わない。
+- 新API/UI/worker/永続queue/自動選択engine・実モデル/GPU最適化・migrationは未実装。B3へ進まずレビュー待ち。
+
+## Phase B1 共通DTO・Schema Export（0.1.30、2026-10-30、レビュー待ち）
+
+- 基点: Phase A `docs/phase-a-architecture` / `60d9bdd6006551149c6dde5a735dee17c16cc15d`。
+  B1は`feat/b1-contracts`として分離。mainへの直接push・mergeはしない。
+- `utteran_contracts`を同distribution内に追加。21個のPhase A DTOと補助基底、immutable表現、
+  strict version/unknown field/leaf検証、private/public projection、offline schema exportを実装。
+- 現行CLI/API/GUIの処理経路は変更せず、新しい実行・UI・worker・永続store・migrationは未実装。
+- [B1資料](docs/architecture/b1/README.md)、[schema coverage](docs/architecture/b1/coverage.md)、
+  [検証記録](docs/architecture/b1/validation.md)を参照。未実装schemaは53個で引き続きProposed。
+- 新規契約テスト45件はLinux Python 3.11/3.12で成功。Windows VM・PyInstaller配布は未検証。
+  既存テスト失敗・型検査失敗はbaseline比較を検証記録へ残し、B1で無関係な修正はしない。
+- 次はB1レビュー。Phase B2へは進んでいない。関連 #18〜#22は完了扱いにしない。
+
 ## 次期UI/UX刷新の開始準備（2026-10-30、計画・Issue整理のみ）
 
 - **開発方針確定**: CLI/coreは処理基盤として維持し、GUIを一般利用者の主導線（GUI-first）とする。見た目の刷新より操作の安定性、クリック後の反応、非同期状態更新の保証を優先する。

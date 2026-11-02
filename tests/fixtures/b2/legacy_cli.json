@@ -1,0 +1,2393 @@
+{
+  "source_commit": "0f80d17",
+  "normalization": "timestamp and done wall clock only; no text/config/exit/event removal",
+  "cases": {
+    "defaults": {
+      "exit_code": 0,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "run_summary",
+          "job_id": "0123456789abcdef",
+          "asr_backend": "synthetic",
+          "asr_model": "synthetic",
+          "asr_device": "cpu",
+          "executed_stages": [
+            "audio",
+            "asr",
+            "merge",
+            "export"
+          ],
+          "reused_stages": [
+            "diarization"
+          ]
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "ジョブ: 0123456789abcdef\nASR: synthetic / synthetic / cpu\nステージ: 実行 audio, asr, merge, export / 再利用 diarization\n出力: output/sample.srt\nフェーズ別処理時間: 今回実行したフェーズはありません。"
+    },
+    "toml": {
+      "exit_code": 0,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "faster-whisper",
+              "model": "large-v3",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "en",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 7,
+              "initial_prompt": "synthetic prompt",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "run_summary",
+          "job_id": "0123456789abcdef",
+          "asr_backend": "synthetic",
+          "asr_model": "synthetic",
+          "asr_device": "cpu",
+          "executed_stages": [
+            "audio",
+            "asr",
+            "merge",
+            "export"
+          ],
+          "reused_stages": [
+            "diarization"
+          ]
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "ジョブ: 0123456789abcdef\nASR: synthetic / synthetic / cpu\nステージ: 実行 audio, asr, merge, export / 再利用 diarization\n出力: output/sample.srt\nフェーズ別処理時間: 今回実行したフェーズはありません。"
+    },
+    "environment": {
+      "exit_code": 0,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "fr",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 8,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "run_summary",
+          "job_id": "0123456789abcdef",
+          "asr_backend": "synthetic",
+          "asr_model": "synthetic",
+          "asr_device": "cpu",
+          "executed_stages": [
+            "audio",
+            "asr",
+            "merge",
+            "export"
+          ],
+          "reused_stages": [
+            "diarization"
+          ]
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "ジョブ: 0123456789abcdef\nASR: synthetic / synthetic / cpu\nステージ: 実行 audio, asr, merge, export / 再利用 diarization\n出力: output/sample.srt\nフェーズ別処理時間: 今回実行したフェーズはありません。"
+    },
+    "dotenv": {
+      "exit_code": 0,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "de",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "run_summary",
+          "job_id": "0123456789abcdef",
+          "asr_backend": "synthetic",
+          "asr_model": "synthetic",
+          "asr_device": "cpu",
+          "executed_stages": [
+            "audio",
+            "asr",
+            "merge",
+            "export"
+          ],
+          "reused_stages": [
+            "diarization"
+          ]
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "ジョブ: 0123456789abcdef\nASR: synthetic / synthetic / cpu\nステージ: 実行 audio, asr, merge, export / 再利用 diarization\n出力: output/sample.srt\nフェーズ別処理時間: 今回実行したフェーズはありません。"
+    },
+    "cli_precedence": {
+      "exit_code": 0,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "faster-whisper",
+              "model": "large-v3",
+              "device": "cpu",
+              "compute_type": "auto",
+              "language": null,
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "cuda",
+              "num_speakers": 3,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "run_summary",
+          "job_id": "0123456789abcdef",
+          "asr_backend": "synthetic",
+          "asr_model": "synthetic",
+          "asr_device": "cpu",
+          "executed_stages": [
+            "audio",
+            "asr",
+            "merge",
+            "export"
+          ],
+          "reused_stages": [
+            "diarization"
+          ]
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "ジョブ: 0123456789abcdef\nASR: synthetic / synthetic / cpu\nステージ: 実行 audio, asr, merge, export / 再利用 diarization\n出力: output/sample.srt\nフェーズ別処理時間: 今回実行したフェーズはありません。"
+    },
+    "formats": {
+      "exit_code": 0,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": false,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "md",
+                "srt",
+                "vtt",
+                "json",
+                "txt"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "run_summary",
+          "job_id": "0123456789abcdef",
+          "asr_backend": "synthetic",
+          "asr_model": "synthetic",
+          "asr_device": "cpu",
+          "executed_stages": [
+            "audio",
+            "asr",
+            "merge",
+            "export"
+          ],
+          "reused_stages": [
+            "diarization"
+          ]
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "ジョブ: 0123456789abcdef\nASR: synthetic / synthetic / cpu\nステージ: 実行 audio, asr, merge, export / 再利用 diarization\n出力: output/sample.srt\nフェーズ別処理時間: 今回実行したフェーズはありません。"
+    },
+    "no_resume": {
+      "exit_code": 0,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": false,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "run_summary",
+          "job_id": "0123456789abcdef",
+          "asr_backend": "synthetic",
+          "asr_model": "synthetic",
+          "asr_device": "cpu",
+          "executed_stages": [
+            "audio",
+            "asr",
+            "merge",
+            "export"
+          ],
+          "reused_stages": [
+            "diarization"
+          ]
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "ジョブ: 0123456789abcdef\nASR: synthetic / synthetic / cpu\nステージ: 実行 audio, asr, merge, export / 再利用 diarization\n出力: output/sample.srt\nフェーズ別処理時間: 今回実行したフェーズはありません。"
+    },
+    "force": {
+      "exit_code": 0,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": true,
+            "force_unlock": true
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "run_summary",
+          "job_id": "0123456789abcdef",
+          "asr_backend": "synthetic",
+          "asr_model": "synthetic",
+          "asr_device": "cpu",
+          "executed_stages": [
+            "audio",
+            "asr",
+            "merge",
+            "export"
+          ],
+          "reused_stages": [
+            "diarization"
+          ]
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "ジョブ: 0123456789abcdef\nASR: synthetic / synthetic / cpu\nステージ: 実行 audio, asr, merge, export / 再利用 diarization\n出力: output/sample.srt\nフェーズ別処理時間: 今回実行したフェーズはありません。"
+    },
+    "batch": {
+      "exit_code": 0,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          },
+          "batch": {
+            "recursive": true,
+            "include": [
+              "*.wav"
+            ],
+            "exclude": [
+              "skip*"
+            ]
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "集計: 成功 1 / スキップ 1 / 失敗 0\nskipped: folder/other.wav: synthetic\nフェーズ別処理時間 (一括合計): 今回実行したフェーズはありません。"
+    },
+    "batch_partial": {
+      "exit_code": 5,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          },
+          "batch": {
+            "recursive": false,
+            "include": [],
+            "exclude": []
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "stage_start",
+          "stage": "asr"
+        },
+        {
+          "schema_version": 1,
+          "event": "stage_done",
+          "stage": "asr",
+          "duration_seconds": 1.25,
+          "skipped": false
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 5
+        }
+      ],
+      "console": "集計: 成功 1 / スキップ 0 / 失敗 1\nfailed: folder/other.wav: synthetic\nフェーズ別処理時間 (一括合計): 今回実行したフェーズはありません。"
+    },
+    "dry_run": {
+      "exit_code": 0,
+      "calls": [],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "処理対象: sample.wav\n合計: 1件 / 出力先: output"
+    },
+    "folder_dry_run": {
+      "exit_code": 0,
+      "calls": [],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 0
+        }
+      ],
+      "console": "処理対象: folder/sample.wav\n合計: 1件 / 出力先: output"
+    },
+    "invalid_file_filter": {
+      "exit_code": 2,
+      "calls": [],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "error",
+          "error_type": "ConfigurationError",
+          "message": "--recursive / --include / --exclude はフォルダ入力でのみ指定できます。",
+          "exit_code": 2
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 2
+        }
+      ],
+      "console": "エラー: --recursive / --include / --exclude はフォルダ入力でのみ指定できます。"
+    },
+    "missing": {
+      "exit_code": 4,
+      "calls": [],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "error",
+          "error_type": "InputFileNotFoundError",
+          "message": "入力ファイルが見つかりません: missing.wav",
+          "exit_code": 4
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 4
+        }
+      ],
+      "console": "エラー: 入力ファイルが見つかりません: missing.wav"
+    },
+    "invalid_config": {
+      "exit_code": 2,
+      "calls": [],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "error",
+          "error_type": "ConfigurationError",
+          "message": "設定が不正です: 1 validation error for Config\nasr.beam_size\n  Input should be greater than or equal to 1 [type=greater_than_equal, input_value=0, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/greater_than_equal",
+          "exit_code": 2
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 2
+        }
+      ],
+      "console": "エラー: 設定が不正です: 1 validation error for Config\nasr.beam_size\n  Input should be greater than or equal to 1 \n    For further information visit \nhttps://errors.pydantic.dev/2.13/v/greater_than_equal"
+    },
+    "model_error": {
+      "exit_code": 3,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "error",
+          "error_type": "ModelNotFoundError",
+          "message": "synthetic model missing",
+          "exit_code": 3
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 3
+        }
+      ],
+      "console": "エラー: synthetic model missing"
+    },
+    "cancel": {
+      "exit_code": 130,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "error",
+          "error_type": "CancelledError",
+          "message": "処理はユーザーにより中断されました。",
+          "exit_code": 130
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 130
+        }
+      ],
+      "console": "エラー: 処理はユーザーにより中断されました。"
+    },
+    "keyboard_interrupt": {
+      "exit_code": 130,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "error",
+          "error_type": "CancelledError",
+          "message": "処理はユーザーにより中断されました。",
+          "exit_code": 130
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 130
+        }
+      ],
+      "console": "エラー: 処理はユーザーにより中断されました。"
+    },
+    "unexpected": {
+      "exit_code": 1,
+      "calls": [
+        {
+          "config": {
+            "general": {
+              "output_dir": "output",
+              "job_dir": null,
+              "log_level": "error",
+              "log_dir": null,
+              "raw_subprocess_logs": false,
+              "log_retention_days": 30,
+              "log_max_mib": 100,
+              "raw_log_max_mib": 1024,
+              "venv_dir": null,
+              "native_dir": null,
+              "default_profile": null,
+              "device_probe_timeout_seconds": 20.0
+            },
+            "asr": {
+              "backend": "auto",
+              "model": "large-v3-turbo",
+              "device": "auto",
+              "compute_type": "auto",
+              "language": "ja",
+              "vad_filter": true,
+              "condition_on_previous_text": false,
+              "beam_size": 5,
+              "initial_prompt": "",
+              "word_timestamps": "auto",
+              "whisper_cpp": {
+                "variant": "auto",
+                "dtw": "auto",
+                "threads": 0,
+                "no_context": true,
+                "vad": true,
+                "vad_model": null,
+                "vad_threshold": 0.5,
+                "entropy_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                "no_speech_threshold": 0.6,
+                "temperature": 0.0,
+                "temperature_increment": 0.2,
+                "repetition_limit": 10,
+                "max_word_duration_seconds": 3.0
+              }
+            },
+            "diarization": {
+              "enabled": true,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device": "auto",
+              "num_speakers": 0,
+              "min_speakers": 0,
+              "max_speakers": 0,
+              "memory_guard": "auto",
+              "memory_safety_margin": 0.0
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "srt_bom": false,
+              "newline": "lf",
+              "show_speaker": true,
+              "speaker_labels": {}
+            },
+            "ffmpeg": {
+              "path": null
+            },
+            "alignment": {
+              "max_nearest_distance": 2.0,
+              "min_segment_duration": 0.3,
+              "min_segment_words": 2,
+              "speaker_switch_penalty": 0.75,
+              "silence_switch_threshold": 0.3,
+              "min_clear_turn_duration": 0.5,
+              "max_same_speaker_bridge_gap": 0.3,
+              "unknown_emission_score": 0.35,
+              "min_unknown_duration": 1.0,
+              "min_unknown_characters": 2,
+              "max_unsupported_fragment_duration": 0.5,
+              "max_unsupported_fragment_characters": 3,
+              "min_fragment_speaker_overlap": 0.05,
+              "merge_gap": 0.5,
+              "renumber_speakers": true,
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "boundary_snap_max_characters": 4,
+              "boundary_snap_max_gap": 0.1,
+              "fallback_characters_per_second": 4.0,
+              "fallback_duration_padding": 1.0,
+              "fallback_min_duration": 1.0
+            }
+          },
+          "flags": {
+            "resume": true,
+            "force": false,
+            "force_unlock": false
+          }
+        }
+      ],
+      "events": [
+        {
+          "schema_version": 1,
+          "event": "error",
+          "error_type": "RuntimeError",
+          "message": "synthetic failure",
+          "exit_code": 1
+        },
+        {
+          "schema_version": 1,
+          "event": "done",
+          "duration_seconds": "<elapsed>",
+          "exit_code": 1
+        }
+      ],
+      "console": "予期しないエラー: synthetic failure"
+    }
+  },
+  "hashes": [
+    {
+      "config": {
+        "general": {
+          "output_dir": "output",
+          "job_dir": null,
+          "log_level": "info",
+          "log_dir": null,
+          "raw_subprocess_logs": false,
+          "log_retention_days": 30,
+          "log_max_mib": 100,
+          "raw_log_max_mib": 1024,
+          "venv_dir": null,
+          "native_dir": null,
+          "default_profile": null,
+          "device_probe_timeout_seconds": 20.0
+        },
+        "asr": {
+          "backend": "auto",
+          "model": "large-v3-turbo",
+          "device": "auto",
+          "compute_type": "auto",
+          "language": "ja",
+          "vad_filter": true,
+          "condition_on_previous_text": false,
+          "beam_size": 5,
+          "initial_prompt": "",
+          "word_timestamps": "auto",
+          "whisper_cpp": {
+            "variant": "auto",
+            "dtw": "auto",
+            "threads": 0,
+            "no_context": true,
+            "vad": true,
+            "vad_model": null,
+            "vad_threshold": 0.5,
+            "entropy_threshold": 2.4,
+            "logprob_threshold": -1.0,
+            "no_speech_threshold": 0.6,
+            "temperature": 0.0,
+            "temperature_increment": 0.2,
+            "repetition_limit": 10,
+            "max_word_duration_seconds": 3.0
+          }
+        },
+        "diarization": {
+          "enabled": true,
+          "backend": "pyannote",
+          "model": "pyannote/speaker-diarization-community-1",
+          "device": "auto",
+          "num_speakers": 0,
+          "min_speakers": 0,
+          "max_speakers": 0,
+          "memory_guard": "auto",
+          "memory_safety_margin": 0.0
+        },
+        "output": {
+          "formats": [
+            "srt",
+            "json",
+            "md"
+          ],
+          "srt_bom": false,
+          "newline": "lf",
+          "show_speaker": true,
+          "speaker_labels": {}
+        },
+        "ffmpeg": {
+          "path": null
+        },
+        "alignment": {
+          "max_nearest_distance": 2.0,
+          "min_segment_duration": 0.3,
+          "min_segment_words": 2,
+          "speaker_switch_penalty": 0.75,
+          "silence_switch_threshold": 0.3,
+          "min_clear_turn_duration": 0.5,
+          "max_same_speaker_bridge_gap": 0.3,
+          "unknown_emission_score": 0.35,
+          "min_unknown_duration": 1.0,
+          "min_unknown_characters": 2,
+          "max_unsupported_fragment_duration": 0.5,
+          "max_unsupported_fragment_characters": 3,
+          "min_fragment_speaker_overlap": 0.05,
+          "merge_gap": 0.5,
+          "renumber_speakers": true,
+          "boundary_snap_enabled": true,
+          "boundary_snap_unit": "A",
+          "boundary_snap_max_characters": 4,
+          "boundary_snap_max_gap": 0.1,
+          "fallback_characters_per_second": 4.0,
+          "fallback_duration_padding": 1.0,
+          "fallback_min_duration": 1.0
+        }
+      },
+      "hashes": {
+        "audio": "06c53f8d0a015bb9c74b4e9b9485d99826d25d629b233afa2a7a50b2f807a869",
+        "asr": "ae7c7ebf80b1cfef8d9d1869b95936985d9e9e6472cce49872c39577974cc03d",
+        "diarization": "d581861c47190bccf5f6660f0ea6cc08a4ad50db24fd64d3afc1ab516146ea83",
+        "merge": "1b8f8454b68ed6a9319f105ca4475ae11b64fb43d004e5b71c49542c768d3444"
+      }
+    },
+    {
+      "config": {
+        "general": {
+          "output_dir": "output",
+          "job_dir": null,
+          "log_level": "info",
+          "log_dir": null,
+          "raw_subprocess_logs": false,
+          "log_retention_days": 30,
+          "log_max_mib": 100,
+          "raw_log_max_mib": 1024,
+          "venv_dir": null,
+          "native_dir": null,
+          "default_profile": null,
+          "device_probe_timeout_seconds": 20.0
+        },
+        "asr": {
+          "backend": "auto",
+          "model": "large-v3-turbo",
+          "device": "auto",
+          "compute_type": "auto",
+          "language": "ja",
+          "vad_filter": true,
+          "condition_on_previous_text": false,
+          "beam_size": 5,
+          "initial_prompt": "synthetic prompt",
+          "word_timestamps": "auto",
+          "whisper_cpp": {
+            "variant": "auto",
+            "dtw": "auto",
+            "threads": 0,
+            "no_context": true,
+            "vad": true,
+            "vad_model": null,
+            "vad_threshold": 0.5,
+            "entropy_threshold": 2.4,
+            "logprob_threshold": -1.0,
+            "no_speech_threshold": 0.6,
+            "temperature": 0.0,
+            "temperature_increment": 0.2,
+            "repetition_limit": 10,
+            "max_word_duration_seconds": 3.0
+          }
+        },
+        "diarization": {
+          "enabled": true,
+          "backend": "pyannote",
+          "model": "pyannote/speaker-diarization-community-1",
+          "device": "auto",
+          "num_speakers": 0,
+          "min_speakers": 0,
+          "max_speakers": 0,
+          "memory_guard": "auto",
+          "memory_safety_margin": 0.0
+        },
+        "output": {
+          "formats": [
+            "srt",
+            "json",
+            "md"
+          ],
+          "srt_bom": false,
+          "newline": "lf",
+          "show_speaker": true,
+          "speaker_labels": {}
+        },
+        "ffmpeg": {
+          "path": null
+        },
+        "alignment": {
+          "max_nearest_distance": 2.0,
+          "min_segment_duration": 0.3,
+          "min_segment_words": 2,
+          "speaker_switch_penalty": 0.75,
+          "silence_switch_threshold": 0.3,
+          "min_clear_turn_duration": 0.5,
+          "max_same_speaker_bridge_gap": 0.3,
+          "unknown_emission_score": 0.35,
+          "min_unknown_duration": 1.0,
+          "min_unknown_characters": 2,
+          "max_unsupported_fragment_duration": 0.5,
+          "max_unsupported_fragment_characters": 3,
+          "min_fragment_speaker_overlap": 0.05,
+          "merge_gap": 0.5,
+          "renumber_speakers": true,
+          "boundary_snap_enabled": true,
+          "boundary_snap_unit": "A",
+          "boundary_snap_max_characters": 4,
+          "boundary_snap_max_gap": 0.1,
+          "fallback_characters_per_second": 4.0,
+          "fallback_duration_padding": 1.0,
+          "fallback_min_duration": 1.0
+        }
+      },
+      "hashes": {
+        "audio": "06c53f8d0a015bb9c74b4e9b9485d99826d25d629b233afa2a7a50b2f807a869",
+        "asr": "dda82e7bc5ed302e547fe36df6a114f894e821e600931f1076f88cf60ef6cb71",
+        "diarization": "d581861c47190bccf5f6660f0ea6cc08a4ad50db24fd64d3afc1ab516146ea83",
+        "merge": "e47c09fb6d54d4963df6b0ddefda9ff25bd89707cbc32e42be3da3e1944914d5"
+      }
+    },
+    {
+      "config": {
+        "general": {
+          "output_dir": "output",
+          "job_dir": null,
+          "log_level": "info",
+          "log_dir": null,
+          "raw_subprocess_logs": false,
+          "log_retention_days": 30,
+          "log_max_mib": 100,
+          "raw_log_max_mib": 1024,
+          "venv_dir": null,
+          "native_dir": null,
+          "default_profile": null,
+          "device_probe_timeout_seconds": 20.0
+        },
+        "asr": {
+          "backend": "auto",
+          "model": "large-v3-turbo",
+          "device": "auto",
+          "compute_type": "auto",
+          "language": "ja",
+          "vad_filter": true,
+          "condition_on_previous_text": false,
+          "beam_size": 5,
+          "initial_prompt": "",
+          "word_timestamps": "auto",
+          "whisper_cpp": {
+            "variant": "auto",
+            "dtw": "auto",
+            "threads": 0,
+            "no_context": true,
+            "vad": true,
+            "vad_model": null,
+            "vad_threshold": 0.5,
+            "entropy_threshold": 2.4,
+            "logprob_threshold": -1.0,
+            "no_speech_threshold": 0.6,
+            "temperature": 0.0,
+            "temperature_increment": 0.2,
+            "repetition_limit": 10,
+            "max_word_duration_seconds": 3.0
+          }
+        },
+        "diarization": {
+          "enabled": true,
+          "backend": "pyannote",
+          "model": "pyannote/speaker-diarization-community-1",
+          "device": "auto",
+          "num_speakers": 0,
+          "min_speakers": 0,
+          "max_speakers": 0,
+          "memory_guard": "auto",
+          "memory_safety_margin": 0.0
+        },
+        "output": {
+          "formats": [
+            "srt",
+            "json",
+            "md"
+          ],
+          "srt_bom": false,
+          "newline": "lf",
+          "show_speaker": true,
+          "speaker_labels": {}
+        },
+        "ffmpeg": {
+          "path": null
+        },
+        "alignment": {
+          "max_nearest_distance": 2.0,
+          "min_segment_duration": 0.3,
+          "min_segment_words": 2,
+          "speaker_switch_penalty": 0.75,
+          "silence_switch_threshold": 0.3,
+          "min_clear_turn_duration": 0.5,
+          "max_same_speaker_bridge_gap": 0.3,
+          "unknown_emission_score": 0.35,
+          "min_unknown_duration": 1.0,
+          "min_unknown_characters": 2,
+          "max_unsupported_fragment_duration": 0.5,
+          "max_unsupported_fragment_characters": 3,
+          "min_fragment_speaker_overlap": 0.05,
+          "merge_gap": 0.75,
+          "renumber_speakers": true,
+          "boundary_snap_enabled": true,
+          "boundary_snap_unit": "A",
+          "boundary_snap_max_characters": 4,
+          "boundary_snap_max_gap": 0.1,
+          "fallback_characters_per_second": 4.0,
+          "fallback_duration_padding": 1.0,
+          "fallback_min_duration": 1.0
+        }
+      },
+      "hashes": {
+        "audio": "06c53f8d0a015bb9c74b4e9b9485d99826d25d629b233afa2a7a50b2f807a869",
+        "asr": "ae7c7ebf80b1cfef8d9d1869b95936985d9e9e6472cce49872c39577974cc03d",
+        "diarization": "d581861c47190bccf5f6660f0ea6cc08a4ad50db24fd64d3afc1ab516146ea83",
+        "merge": "e8a6ffa9c05efad3cd55ef743b5462c719d8fb17dea54b8cec6257c46e96ba92"
+      }
+    },
+    {
+      "config": {
+        "general": {
+          "output_dir": "output",
+          "job_dir": null,
+          "log_level": "info",
+          "log_dir": null,
+          "raw_subprocess_logs": false,
+          "log_retention_days": 30,
+          "log_max_mib": 100,
+          "raw_log_max_mib": 1024,
+          "venv_dir": null,
+          "native_dir": null,
+          "default_profile": null,
+          "device_probe_timeout_seconds": 20.0
+        },
+        "asr": {
+          "backend": "auto",
+          "model": "large-v3-turbo",
+          "device": "auto",
+          "compute_type": "auto",
+          "language": "ja",
+          "vad_filter": true,
+          "condition_on_previous_text": false,
+          "beam_size": 5,
+          "initial_prompt": "",
+          "word_timestamps": "auto",
+          "whisper_cpp": {
+            "variant": "auto",
+            "dtw": "auto",
+            "threads": 0,
+            "no_context": true,
+            "vad": true,
+            "vad_model": null,
+            "vad_threshold": 0.5,
+            "entropy_threshold": 2.4,
+            "logprob_threshold": -1.0,
+            "no_speech_threshold": 0.6,
+            "temperature": 0.0,
+            "temperature_increment": 0.2,
+            "repetition_limit": 10,
+            "max_word_duration_seconds": 3.0
+          }
+        },
+        "diarization": {
+          "enabled": true,
+          "backend": "pyannote",
+          "model": "pyannote/speaker-diarization-community-1",
+          "device": "auto",
+          "num_speakers": 0,
+          "min_speakers": 0,
+          "max_speakers": 0,
+          "memory_guard": "auto",
+          "memory_safety_margin": 0.0
+        },
+        "output": {
+          "formats": [
+            "txt",
+            "srt"
+          ],
+          "srt_bom": false,
+          "newline": "lf",
+          "show_speaker": true,
+          "speaker_labels": {}
+        },
+        "ffmpeg": {
+          "path": null
+        },
+        "alignment": {
+          "max_nearest_distance": 2.0,
+          "min_segment_duration": 0.3,
+          "min_segment_words": 2,
+          "speaker_switch_penalty": 0.75,
+          "silence_switch_threshold": 0.3,
+          "min_clear_turn_duration": 0.5,
+          "max_same_speaker_bridge_gap": 0.3,
+          "unknown_emission_score": 0.35,
+          "min_unknown_duration": 1.0,
+          "min_unknown_characters": 2,
+          "max_unsupported_fragment_duration": 0.5,
+          "max_unsupported_fragment_characters": 3,
+          "min_fragment_speaker_overlap": 0.05,
+          "merge_gap": 0.5,
+          "renumber_speakers": true,
+          "boundary_snap_enabled": true,
+          "boundary_snap_unit": "A",
+          "boundary_snap_max_characters": 4,
+          "boundary_snap_max_gap": 0.1,
+          "fallback_characters_per_second": 4.0,
+          "fallback_duration_padding": 1.0,
+          "fallback_min_duration": 1.0
+        }
+      },
+      "hashes": {
+        "audio": "06c53f8d0a015bb9c74b4e9b9485d99826d25d629b233afa2a7a50b2f807a869",
+        "asr": "ae7c7ebf80b1cfef8d9d1869b95936985d9e9e6472cce49872c39577974cc03d",
+        "diarization": "d581861c47190bccf5f6660f0ea6cc08a4ad50db24fd64d3afc1ab516146ea83",
+        "merge": "1b8f8454b68ed6a9319f105ca4475ae11b64fb43d004e5b71c49542c768d3444"
+      }
+    }
+  ]
+}
