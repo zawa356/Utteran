@@ -36,6 +36,11 @@ private payload、path、Prompt、用語集、transcript、argv、例外、trace
 snapshot以前のeventを重複して新状態と誤認しない（並行writer下で、snapshotの全revisionが
 境界以下のevent再生結果と一致することを25回検証）。
 
+rollback journal方式では、書込みが途切れずに続くと読取transactionがbusy timeout（2秒）を超えて待たされ、
+`store_busy`（再試行可能）になり得る。Windows CIで、休みなく書込むテストthreadの下で観測した
+（run 41392999739）。B9のsync/eventsは`store_busy`を再試行可能として扱う必要がある。
+WAL化は常駐sidecarを生むため、B6では採用していない。
+
 ページングは未実装（全件返却）。大量化した場合のsnapshot token付きpaginationはB9で設計する。
 
 ## retention / compaction
