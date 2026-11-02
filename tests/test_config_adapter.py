@@ -16,9 +16,9 @@ from utteran_contracts import ProcessingSettings
 @pytest.fixture
 def settings_data() -> dict[str, Any]:
     root = Path(__file__).parents[1]
-    return json.loads((root / "docs/architecture/phase-a/examples.json").read_text())["preset"][
-        "settings"
-    ]
+    return json.loads(
+        (root / "docs/architecture/phase-a/examples.json").read_text(encoding="utf-8")
+    )["preset"]["settings"]
 
 
 def context(**changes: Any) -> ExecutionContext:

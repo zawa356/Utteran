@@ -67,7 +67,7 @@ def test_real_pipeline_adapter_resume_force_and_artifact_compatibility(
     assert backend.calls == 2
     execute(change(req, resume=False), CancelToken(), emit)
     assert backend.calls == 3
-    Path(done.artifacts[0].path).write_text("tampered")
+    Path(done.artifacts[0].path).write_text("tampered", encoding="utf-8")
     with pytest.raises(ProtocolError, match="artifact_invalid"):
         verify_result(req, done)
 
@@ -119,13 +119,13 @@ def test_local_tokenizer_required_before_core_preflight(
     model = tmp_path / "model"
     model.mkdir()
     for name in ("model.bin", "config.json", "preprocessor_config.json"):
-        (model / name).write_text("synthetic")
+        (model / name).write_text("synthetic", encoding="utf-8")
     cfg = explicit_config(worker_request)
     cfg.asr.model = str(model)
     monkeypatch.setattr(application, "preflight_dependencies", lambda *a: pytest.fail("too early"))
     with pytest.raises(ProtocolError, match="model_missing"):
         offline_preflight(cfg)
-    (model / "tokenizer.json").write_text("synthetic")
+    (model / "tokenizer.json").write_text("synthetic", encoding="utf-8")
     calls: list[Any] = []
     monkeypatch.setattr(application, "preflight_dependencies", lambda *a: calls.append(a))
     offline_preflight(cfg)

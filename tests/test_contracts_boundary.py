@@ -92,7 +92,7 @@ assert not any(name in sys.modules for name in (
 
 
 def test_distribution_includes_contract_package() -> None:
-    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert (
         "src/utteran_contracts" in config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     )
