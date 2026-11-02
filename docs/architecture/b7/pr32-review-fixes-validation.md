@@ -120,6 +120,12 @@ rebase・force push・Ready化・merge・tagは行っていない。
 
 ## GitHub Actions（最終HEAD）
 
+途中HEAD `c5eb7b9`の契約matrix（3.11、run 41402575674）で`test_list_jobs_cursor_is_stable_and_signed`が1件失敗した。
+原因はテストの改ざん方法で、cursor末尾を常に`"0"`へ置き換えていたため、MAC末尾がもともと`"0"`だと
+（確率1/16）改ざんにならなかった。新しい`j2`形式で末尾が64桁hexのMACになり、この偶然が表面化した。
+末尾を必ず別の文字へ変えるよう修正し（検査は弱めていない）、ローカルで30回連続で通過を確認した。
+同じ形のテストは他にない（`grep`で確認）。
+
 CI結果は本文書のcommit後の最終HEADで採取し、PR #32本文の「Review fixes」節に記録する（最終HEADより前の
 成功を最終HEADの合格とはみなさない）。既知の#27（mypy 9件・Inno Setup前提）により、`linux-quality`と
 `windows-tests` jobは引き続き赤になる見込みであり、**緑とは表現しない**。
