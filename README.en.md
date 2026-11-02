@@ -10,7 +10,7 @@ transcription API.
 > APIs and configuration may change before 1.0.
 
 
-### Phase B6 durable control store (unmerged, unreleased)
+### Phase B6 durable control store (merged into main, unreleased)
 
 0.1.35 adds an independent SQLite control store (`utteran_control`) for future Job/Setup/Refresh
 operations. State, revisions, queue metadata, idempotency records, and a public outbox commit in one
@@ -21,7 +21,7 @@ and HTTP exposure such as `/api/v1/events` or `/sync` are not provided (B7-B9). 
 execution of external processes is not guaranteed. Private payloads are stored unencrypted. See
 [Phase B6](docs/architecture/b6/README.md).
 
-### Phase B5 development API (unmerged, unreleased)
+### Phase B5 development API (merged into main, unreleased)
 
 0.1.34 adds independent Preset/Policy revision storage and a private settings inheritance preview.
 Developers must opt in with `create_app(..., enable_v1_settings=True,
