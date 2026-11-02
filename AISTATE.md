@@ -1,10 +1,24 @@
 # AI 作業状態
 
+## Phase B7 Immutable Job Submission / Durable Queue / Safe Dispatch（0.1.36、2026-11-02、Draft）
+
+- 基点main `3fd187d`（fetchで再確認、新commitなし）。作業ブランチは環境固定の`claude/affectionate-galileo-4dhfpo`、
+  Draft PR（base main）。Ready化・merge・release・B8/B9・UI刷新には着手しない。
+- 実装: opt-in v1 Job/Queue API（B5と同じsub-app）、private不変snapshot、短命HMAC token、layout v3の
+  all-or-nothing batch・batch/job replay・queue revision CAS、単一slot dispatcher・launch journal・
+  OS process verifier、cutover/rollback（旧queue排他）、bridge `resolve`。詳細[B7](docs/architecture/b7/README.md)。
+- 実行可能はB3 worker限定構成＋B4 ready証拠のみ。標準collectorにsmokeがないため実環境では通常受理されない。
+  fallbackは記録のみ、force cancel・diagnostics未実装。
+- 検証（Linux）: 1100 passed / 2 failed（既知同一）/ 8 skipped、契約matrix 3.11で506、mypy既知9のみ、
+  schema/lock/Ruff成功。Windows・GPU・実モデル・実機ACL/portable/installerは未検証。
+- 残るゲート: #27、private DB保持・消去、Windows実機の process verifier / reparse 判定、実smoke provider。
+- GitHub Pages: run 41394884715 success、日英トップHTTP 200、favicon.svg 404（別件）。
+
 ## Phase A〜B6 / GitHub Pages main統合の確定記録（2026-11-02）
 
 - 依存関係とHEADを検証し、merge commit方式でmainへ順次統合: Phase A/B1/B2 [PR #30](https://github.com/zawa356/Utteran/pull/30) `7318a2f`、B3 [#24](https://github.com/zawa356/Utteran/pull/24) `cf84f33`、B4 [#25](https://github.com/zawa356/Utteran/pull/25) `417e3be`、B5 [#26](https://github.com/zawa356/Utteran/pull/26) `8a3f175`、B6 [#28](https://github.com/zawa356/Utteran/pull/28) `c636555`。
 - 日英Astro/Starlight Pagesは[PR #29](https://github.com/zawa356/Utteran/pull/29) `c79de4a`でmain統合。Actions 41394333383はbuild/artifact成功、deployはPages未有効でHTTP404。Settings→PagesのSource=GitHub Actions設定と再実行・公開ブラウザ検証が必要。
-- 最新開発版0.1.35は**未リリース**。既定GUI/CLIは従来経路、B5 opt-in、B6 store未使用。B7〜B9/U0〜U3、GPU/配布/Windows実機、private DBの保持・消去方針は未完了。
+- （統合時点）開発版0.1.35は**未リリース**。現在はB7 Draftで0.1.36（未リリース）。既定GUI/CLIは従来経路、B5 opt-in、B6 store未使用。B7〜B9/U0〜U3、GPU/配布/Windows実機、private DBの保持・消去方針は未完了。
 - 既知のCI mypy9件・Inno Setup・PID-file競合・BOMは[Issue #27](https://github.com/zawa356/Utteran/issues/27)で未解決。mainへ統合した事実をCI緑・release合格とみなさない。
 - 現在の状態とGitHub Pages公開保留は[統合記録](docs/architecture/integration-2026-11-02.md)を正本とする。以下の旧Draft/未マージ記載はPR提出当時の履歴であり、最新状態ではない。
 - 次のPhase B7はmainの最新HEADから開始する。UI監査PR #23は今回は未マージ。

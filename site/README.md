@@ -1,6 +1,8 @@
 # Utteran website
 
-> **Deployment status (2026-11-02):** PR #29 has merged into main, and the 12-page build and Pages artifact upload passed. Initial deployment [run #41394333383](https://github.com/zawa356/Utteran/actions/runs/41394333383) failed with HTTP 404 because Pages has not been enabled. An administrator must select **Settings → Pages → Source: GitHub Actions**, rerun the failed deployment, and verify the Japanese/English public URLs. The site is **not yet confirmed public**.
+> **Deployment status (updated 2026-11-02):** Pages is enabled and [run #41394884715](https://github.com/zawa356/Utteran/actions/runs/41394884715) deployed successfully from main `3fd187d`; `/Utteran/` and `/Utteran/en/` return HTTP 200. `/Utteran/favicon.svg` returns 404 (tracked separately as a minor site defect).
+>
+> History: PR #29 merged into main, and the 12-page build and Pages artifact upload passed. Initial deployment [run #41394333383](https://github.com/zawa356/Utteran/actions/runs/41394333383) failed with HTTP 404 because Pages has not been enabled. An administrator must select **Settings → Pages → Source: GitHub Actions**, rerun the failed deployment, and verify the Japanese/English public URLs. At that time the site was not yet public.
 
 Official static website and user documentation for [Utteran](https://github.com/zawa356/Utteran).
 
