@@ -344,7 +344,6 @@ def test_incomplete_identity_cannot_pass_even_with_matching_smoke(settings, fiel
         dict(compute_type="float16"),
         dict(model_family="ggml"),
         dict(device_index=1),
-        dict(platform="unknown"),
     ],
 )
 def test_unsupported_recipe_configurations_block(settings, updates) -> None:
@@ -913,3 +912,11 @@ def test_genai_explicit_device_route_observation(settings, device):
         d, "smoke", initialized_route=actual, encoder_observed=device, decoder_observed=device
     )
     assert evaluate(d, settings).runnable == "ready"
+
+
+def test_unknown_platform_is_not_an_observed_failure(settings):
+    candidate = evaluate(deployment(settings, platform="unknown"), settings)
+    assert candidate.runnable == "unknown"
+    assert (
+        next(o for o in candidate.observations if o.kind == "software_support").state == "unknown"
+    )
