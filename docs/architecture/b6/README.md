@@ -1,5 +1,7 @@
 # Phase B6 — Durable Operation Store / Transactional Outbox
 
+> **現在の状態（2026-11-02）：[PR #28](https://github.com/zawa356/Utteran/pull/28)でmainへ統合済み（merge commit `c636555`）、未リリースです。** 以下のDraft/baseに関する記載は提出時点の履歴です。新control storeは既定未使用で、B7以降のdispatch・公開APIは未実装です。[統合記録](../integration-2026-11-02.md)を参照。
+
 2026-11-02 JST、開発版0.1.35、**Draft・未マージ・未リリース**。
 B5 [Draft PR #26](https://github.com/zawa356/Utteran/pull/26)（OPEN/Draft、base B4）のHEAD
 `5abb23d62f5fd061c8f5d88ea25d0c761fb133d2`を再確認し、そこから分岐した。PR baseは
