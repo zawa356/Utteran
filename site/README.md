@@ -1,5 +1,7 @@
 # Utteran website
 
+> **Deployment status (2026-11-02):** PR #29 has merged into main, and the 12-page build and Pages artifact upload passed. Initial deployment [run #41394333383](https://github.com/zawa356/Utteran/actions/runs/41394333383) failed with HTTP 404 because Pages has not been enabled. An administrator must select **Settings → Pages → Source: GitHub Actions**, rerun the failed deployment, and verify the Japanese/English public URLs. The site is **not yet confirmed public**.
+
 Official static website and user documentation for [Utteran](https://github.com/zawa356/Utteran).
 
 - Framework: Astro 7 and the **Starlight** documentation theme.
