@@ -29,3 +29,31 @@
 
 - 実ブラウザEventSource・proxy越しのbuffering、長時間（1時間）stream、10万件超の実データでのcompaction時間。
 - Windows Actionsの結果はpush後に記録。
+
+## PR #33レビュー修正の検証（2026-11-02追補、基準HEAD `8264ab1`）
+
+提出時の上記記録は当時の事実として保持する（diagnosticsのcompaction後変化・offset pagingは検出していなかった）。
+
+### 修正前の再現（`8264ab1`のコード、スクリプト実行）
+
+- B9-P2-2: refresh operationの診断`attempt_id`が`[null, att_…, att_…]` → 8日後に`compact_events(keep_latest=0)`（3件削除）
+  → `[null, null, null]`（CHANGED）。
+- B9-P2-3: 時計固定で1ページ目（limit 2）取得後にhold/releaseを1回追加 → 1ページ目revision 4・2ページ目revision 5（混在）。
+
+### 追加テスト（`tests/test_b9_review_fixes.py`、11件、修正後すべて成功）
+
+| 区分 | 内容 |
+|---|---|
+| P2-2 | B7 Job（実dispatch、attempt有）・B8 Setup（attempt＋step journal）・attemptなしJobの診断が圧縮前後で全field一致（outbox行数の減少を確認）、同一setupの2 attempt・他resourceと混同しない（sidecar 1:1）、v5→v6 backfill（現存はbackfilled、圧縮済みはlost/NULL、operation_history不変）、migration故障でv5維持・4並列open・旧4クラスの拒否、v1→v6・sidecar/historyのimmutable、retention/floor/epoch不変 |
+| P2-3 | 固定時計＋時計巻戻り＋ページ間追加でも重複/欠落なし・revision固定、compaction・setup journalを跨いでも固定、別resource/kind/session・署名/offset/limit改ざん・`d1`/`j2`転用は400、再起動/TTL/evictは409、上限超過503、HTTP（200件超の2ページ・revision固定・401/403/400） |
+
+### 実測（Linux container、修正後HEAD）
+
+| 項目 | 修正前HEAD `8264ab1` | 修正後 |
+|---|---|---|
+| pytest `-m "not requires_model"`（3.11.18） | 1184 passed / 2 failed / 9 skipped | **1211 passed / 2 failed（同一node） / 9 skipped** |
+| 契約matrix（16ファイル）3.11.18 / 3.12.3 | 590 / 590 | **617 passed・1 skipped / 617 passed・1 skipped** |
+| Ruff / format / mypy | 成功 / 成功 / 既知9 | 成功 / 成功（200 files） / 既知9のみ |
+| schema `--check` 8種、`uv lock --check` | 成功 | 成功（events.schema.jsonは`next_cursor`最大長のみ再生成） |
+
+wheel・public scan・GitHub Actionsの結果はPR本文「Review fixes」に記録する。

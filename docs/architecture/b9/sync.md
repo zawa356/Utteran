@@ -22,3 +22,6 @@ counter、Outbox watermark（`epoch:seq`）を読む（テストでtransaction 1
    正常、別epochや`resync_required`/410なら1へ戻る。必要な場合だけresource GETで調停。
 
 純粋reducer `utteran_contracts.events.EventReducer`がこの規則を実装する（UIへの接続はU1以降）。
+
+> PR #33レビュー修正追補: `/sync`の実装・cursor（`y1`）は不変。diagnosticsの固定snapshot paging（`d2`）は
+> 同じ設計（[diagnostics-legacy](diagnostics-legacy.md)）で、protocolは別。

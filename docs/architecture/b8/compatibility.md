@@ -28,3 +28,10 @@ B8最終commit（version 0.1.37）とB9最終commit（0.1.38）はPR本文に記
 - profile単位のread lease（現在はheavy slot全体排他）。
 - 実Windows・GPU・実ダウンロード・実smokeでの受入（ユーザー承認が必要）。
 - private DBの保持期間・完全削除、Windows ACL。
+
+## PR #33レビュー修正の互換性（2026-11-02追補）
+
+- 同じDraft PR・同じブランチへ通常push（force push・rebaseなし）。version 0.1.38・`uv.lock`は不変。
+- DB layout: v5→v6（追加表のみ、既存表・triggerは不変）。一方向: v6はB9提出時のv5コードでは開けない。
+- `ProcessChildRunner`の公開振る舞い（`ChildResult`、`shell=False`、`on_spawn`、process supervisorの
+  popen_factory）は維持。新しい例外`ChildOutputError`は終了確認済みのreader失敗を表す。

@@ -19,6 +19,10 @@ activate時のbackup（`operations-pre-v1-*.sqlite3`、v3のまま）から戻�
 > B9追補: `JobRuntime(setup=...)`はB9からlayout v5（[retention](../b9/retention.md)、v4＋outbox compaction guard）を開く。
 > v4ファイルは1 transactionでv5へ移行し、v4のクラス（`SetupControlStore`）はv5を拒否する。
 
+> PR #33レビュー修正追補: Runtimeが開くlayoutは**v6**（v5＋診断用attempt sidecar、[B9 retention](../b9/retention.md)）。
+> v1〜v5は1 transactionでv6へ移行し、v5を開いていた旧クラス（`EventsControlStore`）・B6/B7/B8クラスはv6を拒否する。
+> 移行前のDBはactivate時のbackup（`operations-pre-v1-*.sqlite3`）で保全され、DBの削除・初期化・downgradeはしない。
+
 ## 表（追加分）
 
 | 表 | 用途 | 不変性 |
