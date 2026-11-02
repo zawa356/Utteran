@@ -24,8 +24,13 @@
 | setup held | lifecycleにheld状態なし | statusはqueued、itemのheld flag | [contracts](../phase-a/contracts.md) §9の交差制約どおり（差異ではなく確認事項） |
 | Idempotency-Key | 16〜128文字 | 加えて可視ASCIIのみ | header安全性。緩和はB9で再検討 |
 | 冪等性保持 | 最低7日 | 無期限（GCなし） | 勝手なGCを作らない |
+| Queue更新の冪等性 | 全POSTとQueue更新はIdempotency-Key必須 | `set_dispatch`は任意（B6内部）、`queue_replays`へ保存 | PR #28レビューP2。HTTP境界（B7）では必須化する |
+| SQLite layout | — | `user_version=2`、v1→v2追加migration | Operation replay（`replays`）の書式・意味論は不変。旧v1 replayはmigration後も同一応答 |
 
 ## B7/B8/B9への拡張点
+
+- B7: queue hold/reorder/dispatchのHTTP化ではIdempotency-Keyを必須にし、`set_dispatch`/`set_hold`の
+  scope引数へ渡す。queue reorder APIを追加する場合も`queue_replays`（QueueView応答）を使い、`replays`へ混ぜない。
 
 - B7: OS別`ProcessVerifier`、dispatcher（held/blockedをskipする最初のeligible選択）、
   Job DTO・private snapshot・stage hash統合、queue hold/reorder/cancel HTTP、recovery_required解除、

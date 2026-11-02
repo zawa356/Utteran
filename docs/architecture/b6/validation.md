@@ -32,6 +32,9 @@
 BOM欠落とpublic scanのrc=1はlinux-quality jobではmypy失敗後の後続stepのため従来から未到達と見られる。
 いずれも[Issue #27](https://github.com/zawa356/Utteran/issues/27)の範囲として扱い、本PRで修正しない。
 
+PR #28レビュー修正後の実測（B6 80件、全体1024 passed / 2 failed / 8 skipped、wheel各220件）は
+[pr28-review-fixes-validation](pr28-review-fixes-validation.md)を参照。上表は修正前（`a037857`）の記録値。
+
 ## テスト観点（`tests/test_b6_control.py`）
 
 1. Schema/DTO: 決定的生成・`--check` CLI・store出力/例のschema適合、unknown field・schema_version・

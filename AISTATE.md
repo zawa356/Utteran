@@ -1,5 +1,23 @@
 # AI 作業状態
 
+## PR #28 B6レビュー修正（0.1.35、2026-11-02）
+
+- 開始時にPR #28のOPEN/Draft、head `a037857`、base B5 `5abb23d`を再確認（他者の追加commitなし）。
+  同じブランチへ追加push。rebase・force push・base変更・Ready化はしない。
+- レビュー判定は「B6主要実装は概ね妥当、P2完了後に最終承認」。
+- P2: `set_dispatch`に`IdempotencyScope`を追加し、型を分けた`AcceptedQueue`を返す。Queue応答専用の
+  `queue_replays`表（方式A）に初回のstatus/ETag/QueueViewを同一transactionで保存し、replay照合は
+  入力検証・CASより先。no-opはrevision/eventを増やさない。`replays`との間でscopeは共有しない。
+  SQLite `user_version`を2へ上げ、v1→v2の追加migrationを検証付きで1 transaction実施（失敗時はv1のまま）。
+- P3: package descriptionを更新（version 0.1.35・lockは不変）。Issue #27へBOM検査の既知失敗と
+  mypy停止による未到達stepをコメントで追補。
+- 検証（Linux 3.11.18）: B6 61→80件、全体1024 passed / 2 failed / 8 skipped。failed/error/skipped
+  集合は修正前とB5基点の両方と一致。wheel 3.11/3.12各220件、mypy既知9件のみ、Ruff/schema/lock/
+  wheel成功、public scanの新規blocking 0。[検証記録](docs/architecture/b6/pr28-review-fixes-validation.md)。
+- 残るゲート: #27、Windows ACL/配布/GPU、実process recovery、private DBの保持・消去方針。
+- 次の統合判断: P2の再レビュー。B7（HTTP queue操作ではIdempotency-Key必須）とmain統合は未着手。
+  Draft維持でレビュー待ち。
+
 ## Phase B6 Durable Operation Store / Transactional Outbox（0.1.35、2026-11-02）
 
 - 着手時にGitHubを再確認: B3 PR #24 head `5ef7bab`、B4 PR #25 head `f6c2a95`、B5 PR #26

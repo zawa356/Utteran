@@ -38,3 +38,33 @@
 | 全体品質gate（Linux mypy9/pytest2、Windows Inno Setup、PID競合、BOM、既存fixture scan） | blocked | baselineから存在する既知課題、#27の範囲。B6新規回帰なし |
 | Windows ACL/実配布/実process recovery | blocked | 未検証。B7（実process）・U3（配布/VM）で確認 |
 | 保持期限・完全消去・暗号化 | blocked | 方針未決（レビュー事項）。B6はGCせず既存private履歴を削除しない |
+
+## PR #28レビュー修正時の再監査（2026-11-02）
+
+修正前HEAD `a037857`。P2（Queue dispatchの永続冪等性、`user_version` 1→2）とP3（description、Issue #27追補）を反映。
+
+| 対象 | 状態 | 確認・理由 |
+|---|---|---|
+| README.md / README.en.md | reviewed-no-change | 冒頭の製品説明（desktop app/CLI）は新descriptionと一致。B6節の「既定未使用・B7〜B9未実装・exactly-once非保証・非暗号化」は修正後も正確。version 0.1.35不変 |
+| 変更履歴.md | updated | 0.1.35開発版内に「修正（PR #28レビュー）」を追記。リリース済みとは書かない |
+| AISTATE.md | updated | 修正HEAD、結果、残るゲート、次の統合判断 |
+| 要件定義.md | reviewed-no-change | 31.4（キュー非永続）は既定動作として現行のまま。B6は既定未使用 |
+| docs/リリース手順.md / docs/UI_UX_刷新計画.md | reviewed-no-change | version・手順・現在地に変化なし |
+| Phase A contracts.md | updated | B6追補にQueue dispatch replayを含むことを追記 |
+| Phase A lifecycles.md / migration.md / openapi.yaml / examples.json | reviewed-no-change | 状態遷移・移行計画・HTTP仕様に変更なし |
+| B6 transactions.md | updated | Queue replayのscope・判定順・原子性・no-op・scope非共有・B7でのkey必須 |
+| B6 storage.md | updated | `queue_replays`、`user_version=2`、方式Aの選定理由、migration/失敗/rollback/退避条件 |
+| B6 compatibility.md | updated | Operation replay互換、Queue更新の冪等性、SQLite layout、B7拡張点 |
+| B6 validation.md | updated | 修正後実測への参照（上表は修正前の記録値と明記） |
+| B6 pr28-review-fixes-validation.md / pr28-review-test-comparison.json | updated | 新規。実測・追加テスト・未検証 |
+| B6 README.md | updated | 資料一覧と冪等性の範囲 |
+| B6 control.schema.json / examples.json | reviewed-no-change | `AcceptedQueue`はDTOではなくschemaのbytes不変（`--check`成功）。例は引き続き適合 |
+| B1〜B5 schema/資料 | reviewed-no-change | bytes不変、変更なし |
+| pyproject.toml | updated | descriptionのみ。version 0.1.35維持 |
+| uv.lock | reviewed-no-change | descriptionはlockに含まれず差分なし。`uv lock --check`成功 |
+| tests/fixtures/b6/store_v1.py | updated | 新規。v1 store作成用に`a037857`のstoreを凍結したtest専用copy。wheelには含まれない |
+| PR #28本文 | updated | 「Review fixes」節 |
+| Issue #27 | updated | BOM検査の既知失敗と未到達stepをコメントで追補（issuecomment-6569607027）。本文・チェック・closeは変更なし |
+| Issue #17 / #18 | updated | 修正内容とレビュー待ちをコメントで追記（差分のみ） |
+| 全体品質gate（#27の各項目） | blocked | 基点から存在する既知課題。本修正で新規失敗なし |
+| Windows ACL/実配布/実process recovery/保持・消去方針 | blocked | 未検証・未決のまま |

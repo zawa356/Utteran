@@ -18,7 +18,7 @@ B6は**安全に状態を残す基盤**であり、ジョブ制御（B7）、セ
 | 独立`utteran_control` package、`DataPaths.control_store` | 旧`OperationQueue`置換、旧queueからの移行（B7） |
 | operation受理、kind別遷移表、CAS revision | 実Job投入、batch submission、reorder API、dispatch（B7） |
 | queue metadata（順序、held/blocked、単一active slotのDB制約） | scheduler、worker割当、retry/rerun/fallback（B7） |
-| HMAC冪等性replay（再起動後も同一結果） | Setup plan/実行、venv/model/native（B8） |
+| HMAC冪等性replay（Operation・Queue dispatch、再起動後も同一結果） | Setup plan/実行、venv/model/native（B8） |
 | 公開Outbox、`<epoch>:<seq>` cursor、snapshot+watermark | `/api/v1/events` SSE、`/api/v1/sync`、互換API（B9） |
 | owner lease、fencing token、attempt journal、launch evidence | 子process起動・kill・OS生存確認の実装（B7） |
 | 注入Verifierによる保守的recovery（明示呼出し） | 自動recovery、lost leaseからの再dispatch |
@@ -50,6 +50,7 @@ B6は**安全に状態を残す基盤**であり、ジョブ制御（B7）、セ
 - [互換性・意図的差異・後続への拡張点](compatibility.md)
 - [検証結果と未検証事項](validation.md)
 - [文書監査](docs-audit.md)
+- [PR #28レビュー修正の検証](pr28-review-fixes-validation.md)
 - offline schema: [control.schema.json](control.schema.json)、合成例: [examples.json](examples.json)
 
 ## DoD / 文書ゲート（後続Phaseへ継承）
