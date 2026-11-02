@@ -918,6 +918,10 @@ def test_snapshot_is_consistent_under_concurrent_writes(store, path):
                         writer.set_hold(op.id, current.revision, held=False)
                 except ControlError:
                     pass
+                # Pace the writer: an unbroken write loop can starve rollback-journal readers
+                # past the 2 s busy timeout on Windows (seen in CI as store_busy, a documented
+                # retryable code). The consistency assertions below are unchanged.
+                stop.wait(0.001)
 
     thread = threading.Thread(target=churn)
     thread.start()

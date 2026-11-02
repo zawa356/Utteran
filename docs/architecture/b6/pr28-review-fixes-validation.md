@@ -57,6 +57,25 @@
 
 ## GitHub Actions
 
+### 1回目（HEAD `d657a30`）
+
+| run | job | 結果 |
+|---|---|---|
+| [41392999739](https://github.com/zawa356/Utteran/actions/runs/41392999739)（pull_request） | windows-tests | **failure**: `test_b6_control.py::test_snapshot_is_consistent_under_concurrent_writes`が読取の`store_busy`で失敗（1 failed / 1029 passed / 4 skipped） |
+| 同上 | contracts 3.11 / 3.12 | success |
+| 同上 | linux-quality | failure: 既知mypy 9件 |
+| [41392994324](https://github.com/zawa356/Utteran/actions/runs/41392994324)（push） | windows-tests | failure: 既知 #27のPID-file競合`test_supervisor_job_closes_after_forced_parent_exit`（`int('')`）。B6テストは成功 |
+| 同上 | contracts / linux-quality | success / 既知mypy 9件 |
+
+B6テストの失敗はreader starvationと判断した。テスト内のchurn threadが休みなく書込むため、Windowsでは読取側がbusy timeout（2秒）を超えて待たされる。
+本修正の変更点（`set_dispatch`、migration）が通る経路ではなく、修正前のrun 41390499258では成功していた。
+ただし、B6のテストであるため#27へ回さず、ここで対処した。churn threadの書込み間に1msの間隔を入れ、
+整合性のassertionは変更していない。この性質は[outbox](outbox.md)にも記録した。
+
+### 2回目（最終HEAD）
+
+結果は下記とPR本文に記録する。
+
 最終HEADの結果は[validation](validation.md)のCI節とPR本文に記録する。以前のWindows 1011 passed / 4 skipped、
 契約3.11/3.12各411 passedは**修正前の記録値**。
 
