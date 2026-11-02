@@ -12,6 +12,9 @@
   store digest対象は256 KiB上限（413）。batch 100 file上限。
 - Idempotency-Key: `[A-Za-z0-9_.-]{16,128}`必須（B6の可視ASCII制約の部分集合）。
 - B9 `/api/v1/events`・`/sync`は未登録（404維持）。
+- 一覧cursorは閲覧session credentialのSHA-256・snapshot・位置・page sizeにHMAC束縛し、private値を含まない。
+  materialized snapshotは公開Job DTOのみ（プロセス内、TTL/容量上限あり）。
+- `503 submission_in_progress`・`cursor_expired`等のbodyは固定codeのみ（token・path・本文なし）。
 
 ## Private dataの所在
 

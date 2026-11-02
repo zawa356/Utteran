@@ -56,3 +56,20 @@ DB上で直列化される。先頭がB7以外（B6 operation等）の場合はd
 - rerun: terminal/interruptedのみ、単一file、新token・新snapshot。
 - revalidate: blockedのみ。同じsnapshotを再検査し、成功ならqueued（hold中ならheld）、失敗は409
   `revalidation_failed`（状態不変、replay記録なし）。
+
+## 同一keyの並行送信（PR #32 P2-2）
+
+`POST /jobs`・`/rerun`はscope（endpoint+key）＋HMAC digestで識別し、永続replay → プロセス内in-flight表
+（leader 1件）の順に処理する。同key・同bodyのfollowerはleaderの完了を有界待機（既定10秒）し、
+永続replayを再照会して同一のJobBatch/status/ETag/Locationを返す。期限を過ぎた場合は再試行可能な
+`503 submission_in_progress`を返す（先行結果は偽装しない。後の再送ではreplayが返る）。leaderが
+rollbackした場合はfollowerが1回だけcommitする。同key・別bodyは409。tokenのconsumeはcommit成功後に限る。
+schema変更はない。
+
+## 一覧pagination（PR #32 P2-3）
+
+`GET /jobs`の1ページ目で、公開Job DTO・順序・revisionを1 read transactionからmaterializeする
+（プロセス内、TTL 300秒・16件・1件あたり10,000 Job・合計50,000 Job）。後続ページはそのsnapshotだけを返す。
+cursor `j2.*`はsnapshot・位置・page size・閲覧session・filter（現行は全Jobのみ）にHMACで束縛する。
+期限切れ・再起動・evictは409 `cursor_expired`、改ざん・転用は400 `cursor_invalid`、上限超過は
+503 `list_snapshot_too_large`（末尾を黙って欠落させない）。DB layoutは不変。

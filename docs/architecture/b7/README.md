@@ -28,6 +28,8 @@ enable_v1_jobs=True, v1_authority=...)`を明示した場合のみ有効（`app.
 [dispatch-recovery](dispatch-recovery.md) / [compatibility](compatibility.md) /
 [security](security.md) / [validation](validation.md) / [docs-audit](docs-audit.md) /
 offline schema [`jobs.schema.json`](jobs.schema.json)。
+PR #32レビュー修正（Runtime排他token、同key single-flight、snapshot paging、Win32宣言）は
+[pr32-review-fixes-validation](pr32-review-fixes-validation.md)。
 
 ## 実装したもの / 意図的に実装しないもの
 

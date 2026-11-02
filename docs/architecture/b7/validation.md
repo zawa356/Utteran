@@ -45,3 +45,9 @@ Windows Actions・契約3.12 matrixはPRのCIで計測し、PR本文に追記す
 ## 合成evidenceの注意
 
 テストのready候補はB4 pure evaluator/resolverに**合成observation**を与えたもの。実推論・実smokeではない。
+
+## PR #32レビュー修正後（2026-11-02）
+
+修正commit `edf3f5a`: Linux `1122 passed / 2 failed / 9 skipped`。failedは上記の既知2件と同一で、skipの+1はWindows専用テスト。
+B7の3ファイルで98 passed / 1 skipped。wheelは3.11/3.12の独立venvでそれぞれ299 passed / 1 skipped。
+再現テスト（修正前は19 failed）、CIのrunは[pr32-review-fixes-validation](pr32-review-fixes-validation.md)を参照。

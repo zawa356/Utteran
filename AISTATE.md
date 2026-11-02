@@ -13,6 +13,13 @@
   schema/lock/Ruff成功。Windows・GPU・実モデル・実機ACL/portable/installerは未検証。
 - 残るゲート: #27、private DB保持・消去、Windows実機の process verifier / reparse 判定、実smoke provider。
 - GitHub Pages: run 41394884715 success、日英トップHTTP 200、favicon.svg 404（別件）。
+- PR #32レビュー修正（基準HEAD `dd30a8b`、他者差分なし、同じブランチへ追加push、Draft維持）:
+  - P2-1: Runtimeごとの排他token・非再入・失敗時は自分の取得分だけ解放。
+  - P2-2: 同key・同bodyのsingle-flight（有界待機と、期限超過時の503 `submission_in_progress`）。
+  - P2-3: 一覧のmaterialized snapshot paging（TTL 300秒・容量上限、`cursor_expired` 409）。
+  - P3: Win32 ctypes宣言。
+  - Linux 1122 passed / 2 failed（既知同一）/ 9 skipped、wheel 3.11/3.12各299 passed。
+    記録は[pr32-review-fixes-validation](docs/architecture/b7/pr32-review-fixes-validation.md)。
 
 ## Phase A〜B6 / GitHub Pages main統合の確定記録（2026-11-02）
 

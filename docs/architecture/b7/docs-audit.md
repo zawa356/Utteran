@@ -28,6 +28,34 @@
 | GitHub Issue #17 / #18 | updated（コメント） | B7進捗・未検証事項を事実ベースで追記。closeしない |
 | GitHub Issue #27 | reviewed-no-change | CI改善トラックとして維持。B7で新規失敗なし |
 
-## 2回目（レビュー修正後）
+## 2回目（PR #32レビュー修正後、2026-11-02）
 
-未実施（レビュー待ち）。修正時に同表を再監査して追記する。
+修正対象: P2-1/P2-2/P2-3/P3。version 0.1.36・依存・lock・DB layout・contract schemaは不変。
+
+| ファイル | 判定 | 理由 |
+|---|---|---|
+| docs/architecture/b7/pr32-review-fixes-validation.md | updated（新規） | 根本原因・修正方式・契約変化（503/409/TTL/容量）・再現テスト・実測・CI |
+| docs/architecture/b7/README.md | updated | レビュー修正記録へのリンク |
+| docs/architecture/b7/compatibility.md | updated | Runtimeごとのtoken・非再入・失敗時の解放範囲・`ownership_lost`、プロセス内/プロセス間の保証範囲 |
+| docs/architecture/b7/queue-and-transaction.md | updated | 同key single-flight、snapshot pagination仕様 |
+| docs/architecture/b7/admission-resolution.md | updated | token予約者、並行再送の扱い、別プロセスの扱い |
+| docs/architecture/b7/dispatch-recovery.md | updated | Win32宣言、close失敗方針 |
+| docs/architecture/b7/security.md | updated | cursorの束縛、snapshotは公開DTOのみ、503 bodyの非公開性 |
+| docs/architecture/b7/validation.md | updated | 修正後の実測を追記（旧記録は保持） |
+| docs/architecture/b7/baseline-and-scope.md / job-snapshot.md | reviewed-no-change | 公開型・snapshot保存方式に変更なし |
+| docs/architecture/b7/jobs.schema.json | reviewed-no-change | `JobList`等のcontract不変（`--check`成功） |
+| 変更履歴.md | updated | 0.1.36内に「修正（PR #32レビュー）」節 |
+| AISTATE.md | updated | B7節にレビュー修正の要約 |
+| 要件定義.md | updated | B7節に並行送信・pagination・排他の規則 |
+| docs/architecture/phase-a/contracts.md | updated | list snapshot paging（期限切れ409）への準拠と503の扱いを追補 |
+| docs/architecture/phase-a/openapi.yaml | reviewed-no-change | 全routeに409/503が既に定義されている。cursorはopaque文字列のまま |
+| docs/architecture/phase-a/migration.md / lifecycles.md / examples.json | reviewed-no-change | 状態遷移・テスト項目の対応は不変 |
+| README.md / README.en.md | reviewed-no-change | B7節（opt-in・限定構成・fail closed・非暗号化・Draft）は修正後も正確。細部は設計文書へ委ねる |
+| docs/UI_UX_刷新計画.md | reviewed-no-change | B7はDraft・frontend未接続の記述が正確 |
+| docs/リリース手順.md | reviewed-no-change | version 0.1.36のまま |
+| docs/architecture/b6/README.md / compatibility.md | reviewed-no-change | B6 store・`ControlStore`(v2)は不変。`ErrorCode`の追加2値はB7専用でHTTP_STATUSに明示 |
+| docs/architecture/b3〜b5 | reviewed-no-change | worker・resolver・settingsの契約は不変 |
+| docs/architecture/integration-2026-11-02.md / site/README.md | reviewed-no-change | Pages記録は1回目で更新済み、今回の変更なし |
+| .github/workflows/ci.yml | updated | 契約matrixに`tests/test_b7_review_fixes.py`を追加 |
+| Issue #17 / #18 | updated（コメント） | レビュー修正の進捗。close・完了扱いはしない |
+| Issue #27 | reviewed-no-change | 本文は変更しない。既知CIは継続 |

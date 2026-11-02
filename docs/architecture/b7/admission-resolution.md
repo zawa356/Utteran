@@ -28,7 +28,10 @@
 - TTL **5分**。期限切れ`resolution_expired`、再利用`resolution_consumed`、改ざん・任意文字列・
   base64 JSON は`resolution_invalid`（409）またはschema違反422。
 - 記録はメモリのみ（最大256件）。**GUI再起動で全token失効**（明示仕様）。
-- tokenは単一使用。提出中はreserve、commit成功でconsume、失敗でrelease（並行再送で二重受理しない）。
+- tokenは単一使用。提出中はreserve（予約者=要求scope+digestのHMACを記録）、commit成功でconsume、
+  失敗でrelease。同key・同bodyの並行再送は409にせずleaderの結果を待つ（有界、期限で503
+  `submission_in_progress`）。別keyでの再利用は`resolution_consumed`、別sessionは`resolution_invalid`。
+  tokenはプロセス内のため、別OSプロセスからは`resolution_invalid`になる（二重登録は起きない）。
 
 ## 提出時のfreeze proof（`POST /api/v1/jobs`）
 
