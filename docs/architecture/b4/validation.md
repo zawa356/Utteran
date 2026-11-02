@@ -8,10 +8,10 @@ GPU/modelを取得せず、profile/manifest/jobを変更しない開発用.venv�
 
 | 検査 | B3変更前 | B4最終コード | 増分 |
 |---|---|---|---|
-| Linux Python3.12.14 モデル不要pytest | 715 passed / 3 failed / 8 skipped | 821 passed / 3 failed / 8 skipped、25.20秒 | 新規106成功、失敗0増 |
+| Linux Python3.12.14 モデル不要pytest | 715 passed / 3 failed / 8 skipped | 821 passed / 3 failed / 8 skipped、25.87秒 | 新規106成功、失敗0増 |
 | mypy strict全体 | 9 errors、76 source files | 同じ9 errors、85 source files | 新規0 |
 | Ruff lint / format | B3記録で成功 | 成功、155 files | 新規違反0 |
-| Python3.11.17 独立wheel環境、B1/B2/B3/B4関連 | B3記録は一部subset | 348 passed、11.73秒 | B4 106を含む |
+| Python3.11.17 独立wheel環境、B1/B2/B3/B4関連 | B3記録は一部subset | 348 passed、11.80秒 | B4 106を含む |
 | B1/B3 offline schema --check | 成功 | 成功、artifact差分なし | 0 |
 | B4 schema --check | 未実装 | 3.11/3.12成功、import順にも再現 | 追加 |
 | uv lock --check --offline | 成功 | 成功 | root版0.1.33のみ、依存版更新なし |
@@ -81,7 +81,25 @@ B1/B2のCLI golden/hash/resume、B3 protocol/runtime/clientは全回帰と3.11�
 ## Windows・CI・未検証
 
 B3のWindows基準は723 passed / 3 skipped。
-B4のWindows CI結果はPRのActions確認後に追記する。
+初回コード `8179e8d6c69bec4a2c463c963f8fa637104bf63b` の
+[PR Actions run 41373746804](https://github.com/zawa356/Utteran/actions/runs/41373746804)で確認:
+
+| CI段階 | 結果 |
+|---|---|
+| Windowsモデル不要pytest | **829 passed / 0 failed / 0 errors / 3 skipped**、45.91秒 |
+| Windows PowerShell構文検査 | 成功 |
+| Windows汎用PowerShell起動検査 | 既存verify_uninstaller.ps1のInno Setup compiler未配置で失敗 |
+| contracts-python-compatibility 3.11 / 3.12 | 各228 passed、schema check含め成功 |
+| linux-quality | schema/lock/Ruffは成功、mypy既知9件で停止。後続pytestはskip |
+
+push側run [41373716807](https://github.com/zawa356/Utteran/actions/runs/41373716807)も
+同じ結果（Windows829 passed、44.98秒）。**Windows pytest合格とworkflow全体の赤を区別する。**
+その後、OS未観測をblockedでなくunknownとする境界修正を追加。Linux/3.11の上表は修正後に再実行。
+最終コード `6a915a6ef6f1a0e595415eb081903b0c1697579b` の
+[PR Actions run 41374008866](https://github.com/zawa356/Utteran/actions/runs/41374008866)でも
+**Windows 829 passed / 3 skipped**（44.58秒）、3.11/3.12各228 passedを確認。
+Linuxの既知mypy 9件、Windowsの既知Inno Setup起動検査だけが失敗しており、新規pytest失敗なし。
+この後のcommitは検証記録のみで、実装コードは同じ。
 Linux Actionsは既存mypy 9件で止まり得るため、上記独立pytest結果も併記する。
 既存Windows workflowにはpytest後のverify_uninstaller/Inno Setup前提で失敗する問題があり、
 B4に無関係な修正を混ぜない。
@@ -89,3 +107,11 @@ B4に無関係な修正を混ぜない。
 Windows VM、WebView2/PyInstaller/installer、実GPU/native推論、driver実probe、モデル内容のchecksum検証、
 性能/quality、B3未対応backendの実行は未検証。標準collectorでreadyゼロは正常な結果。
 profile dependency closure fingerprint、mypy既知9件、PowerShell CI分割は独立PR対象。
+
+標準collectorをこの開発環境でも明示実行し、147候補 / ready 0 / blocked 147を確認。
+profile manifest/model等の欠落を理由に保守的な結果となり、実機成功を偽装しない。
+
+## 提出
+
+[Draft PR #25](https://github.com/zawa356/Utteran/pull/25)、base `feat/b3-profile-worker`。
+B3 PR #24はOPEN/Draftのまま。Ready化・merge・B5着手は行わない。

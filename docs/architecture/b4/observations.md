@@ -5,6 +5,7 @@ memory / diarizationを別Observationとして保持する。sourceとreasonは�
 stateはpassed/failed/unknown/not_applicable。native不要、話者分離無効だけnot_applicableをcoreが生成。
 必須Observationのnot_applicableはunknown判定となり、passedに読み替えない。
 software_supportとexecution_pathはrecipe/settingsからpureに判定し、それ以外は取得証拠に基づく。
+OS自体が未観測の場合もunknownであり、既知の不適合と混同しない。
 
 ## 判定と証拠の条件
 
