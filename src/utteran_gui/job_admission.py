@@ -15,6 +15,7 @@ import os
 import secrets
 import stat
 import threading
+import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -58,6 +59,9 @@ from utteran_settings.inheritance import preview, safe_contract_issues
 from utteran_settings.repository import Repository
 
 TOKEN_TTL = timedelta(minutes=5)
+# Bounded wait for an in-flight request with the same Idempotency-Key and body.
+INFLIGHT_WAIT = 10.0
+INFLIGHT_POLL = 0.05
 MAX_LIVE_TOKENS = 256
 HASH_BLOCK = 1024 * 1024
 # Recipes whose execution the B3 worker implements (faster-whisper, local model, no
@@ -364,6 +368,21 @@ class _Record:
     policy: Policy
     files: tuple[_File, ...]
     state: Literal["issued", "reserved", "consumed"] = "issued"
+    # HMAC-derived identity of the idempotent request holding/using the token.
+    holder: str | None = None
+
+
+class _HeldBySameRequest(AdmissionError):
+    """Token is reserved/consumed by this very request (same scope + digest) elsewhere."""
+
+    def __init__(self) -> None:
+        super().__init__("submission_in_progress", 503)
+
+
+@dataclass
+class _Flight:
+    digest: str
+    done: threading.Event = field(default_factory=threading.Event)
 
 
 class ResolutionTokens:
@@ -399,7 +418,9 @@ class ResolutionTokens:
         token = f"v1.{record.resolution_id[4:]}.{expiry:013d}.{mac}"
         return token, expires
 
-    def reserve(self, token: str, binding: str, session_digest: str) -> _Record:
+    def reserve(
+        self, token: str, binding: str, session_digest: str, holder: str | None = None
+    ) -> _Record:
         parts = token.split(".")
         if len(parts) != 4 or parts[0] != "v1" or not parts[2].isdigit():
             raise AdmissionError("resolution_invalid", 409)
@@ -414,18 +435,26 @@ class ResolutionTokens:
                 del self._records[resolution_id]
                 raise AdmissionError("resolution_expired", 409)
             if record.state != "issued":
+                if (
+                    holder is not None
+                    and record.holder is not None
+                    and hmac.compare_digest(record.holder, holder)
+                ):
+                    raise _HeldBySameRequest  # same key + body: wait for that outcome
                 raise AdmissionError("resolution_consumed", 409)
             if not hmac.compare_digest(record.session_digest, session_digest):
                 raise AdmissionError(
                     "resolution_stale", 409, [_issue("/editing_session", "editing_changed")]
                 )
             record.state = "reserved"
+            record.holder = holder
             return record
 
     def release(self, record: _Record) -> None:
         with self._lock:
             if record.state == "reserved":
                 record.state = "issued"
+                record.holder = None
 
     def consume(self, record: _Record) -> None:
         with self._lock:
@@ -445,8 +474,13 @@ class JobAdmission:
         tokens: ResolutionTokens | None = None,
         clock: Clock | None = None,
         max_files: int = MAX_BATCH,
+        inflight_wait: float = INFLIGHT_WAIT,
     ) -> None:
         self.store = store
+        self.inflight_wait = inflight_wait
+        self._flights: dict[tuple[str, str], _Flight] = {}
+        self._flight_lock = threading.Lock()
+        self._idle = threading.Event()  # never set: bounded waits without a busy loop
         self.settings_path = settings_path
         self.provider = provider
         self.clock = clock or _system_clock
@@ -638,10 +672,15 @@ class JobAdmission:
 
     # -------------------------------------------------------------- freeze
 
-    def _freeze(self, submit: JobSubmit, session: str) -> tuple[list[JobSnapshot], _Record]:
+    def _freeze(
+        self, submit: JobSubmit, session: str, holder: str
+    ) -> tuple[list[JobSnapshot], _Record]:
         editing = submit.editing_session
         record = self.tokens.reserve(
-            submit.resolution_token, ResolutionTokens.binding(session), _sha(editing.to_wire())
+            submit.resolution_token,
+            ResolutionTokens.binding(session),
+            _sha(editing.to_wire()),
+            holder,
         )
         try:
             stale: list[Issue] = []
@@ -699,25 +738,84 @@ class JobAdmission:
             self.tokens.release(record)
             raise
 
+    def _single_flight(
+        self, scope: IdempotencyScope, digest: str, attempt: Callable[[str], AcceptedBatch]
+    ) -> AcceptedBatch:
+        """Same key + same body: one leader commits, everyone else gets its response.
+
+        The persistent replay is consulted first and again after every wait, so a commit
+        (here, in another connection or before a restart) is always replayed verbatim.
+        Followers wait (bounded) for the leader; on a leader failure they retry, on the
+        deadline they get a retryable 503 and never a fabricated result. Same key with a
+        different body is 409. Cross-instance holders are polled at a bounded interval.
+        """
+        deadline = time.monotonic() + self.inflight_wait
+        flight_key = (scope.endpoint, scope.key)
+        holder = hmac.new(
+            digest.encode(), f"{scope.endpoint}\n{scope.key}".encode(), hashlib.sha256
+        ).hexdigest()
+        while True:
+            replay = self.store.lookup_batch(scope, digest)
+            if replay is not None:
+                return replay
+            with self._flight_lock:
+                flight = self._flights.get(flight_key)
+                leader = flight is None
+                if flight is None:
+                    flight = self._flights[flight_key] = _Flight(digest)
+            if not leader:
+                if not hmac.compare_digest(flight.digest, digest):
+                    raise AdmissionError("idempotency_conflict", 409)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not flight.done.wait(remaining):
+                    raise AdmissionError("submission_in_progress", 503)
+                continue
+            elsewhere = False
+            try:
+                return attempt(holder)
+            except _HeldBySameRequest:
+                elsewhere = True  # another admission instance holds this exact request
+            finally:
+                with self._flight_lock:
+                    self._flights.pop(flight_key, None)
+                flight.done.set()
+            if elsewhere:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise AdmissionError("submission_in_progress", 503)
+                self._idle.wait(min(INFLIGHT_POLL, remaining))
+
+    def _commit(
+        self,
+        submit: JobSubmit,
+        session: str,
+        holder: str,
+        scope: IdempotencyScope,
+        digest: str,
+        rerun_of: str | None = None,
+    ) -> AcceptedBatch:
+        snapshots, record = self._freeze(submit, session, holder)
+        try:
+            accepted = self.store.accept_batch(scope, digest, snapshots, rerun_of=rerun_of)
+        except BaseException:
+            self.tokens.release(record)  # rolled back (or unknown): never consumed
+            raise
+        self.tokens.consume(record)  # only after a committed batch
+        return accepted
+
     def submit(self, scope: IdempotencyScope, body: Any, *, session: str) -> AcceptedBatch:
         digest = self.store.request_digest(body)
-        replay = self.store.lookup_batch(scope, digest)  # replay precedes every other check
-        if replay is not None:
-            return replay
-        try:
-            submit = JobSubmit.model_validate(body)
-        except ValidationError as exc:
-            raise AdmissionError(
-                "contract_validation_failed", 422, safe_contract_issues(exc)
-            ) from None
-        snapshots, record = self._freeze(submit, session)
-        try:
-            accepted = self.store.accept_batch(scope, digest, snapshots)
-        except BaseException:
-            self.tokens.release(record)
-            raise
-        self.tokens.consume(record)
-        return accepted
+
+        def attempt(holder: str) -> AcceptedBatch:
+            try:
+                submit = JobSubmit.model_validate(body)
+            except ValidationError as exc:
+                raise AdmissionError(
+                    "contract_validation_failed", 422, safe_contract_issues(exc)
+                ) from None
+            return self._commit(submit, session, holder, scope, digest)
+
+        return self._single_flight(scope, digest, attempt)
 
     def rerun(
         self,
@@ -731,32 +829,26 @@ class JobAdmission:
         digest = self.store.request_digest(
             {"rerun": job_id, "expected": expected_revision, "body": body}
         )
-        replay = self.store.lookup_batch(scope, digest)
-        if replay is not None:
-            return replay
-        try:
-            request = RerunRequest.model_validate(body)
-        except ValidationError as exc:
-            raise AdmissionError(
-                "contract_validation_failed", 422, safe_contract_issues(exc)
-            ) from None
-        source = self.store.get_job(job_id)
-        if source.revision != expected_revision:
-            raise ControlError(ErrorCode.REVISION_CONFLICT)
-        if len(request.submission.editing_session.files) != 1:
-            raise AdmissionError(
-                "admission_invalid",
-                422,
-                [_issue("/submission/editing_session/files", "rerun_single_file")],
-            )
-        snapshots, record = self._freeze(request.submission, session)
-        try:
-            accepted = self.store.accept_batch(scope, digest, snapshots, rerun_of=job_id)
-        except BaseException:
-            self.tokens.release(record)
-            raise
-        self.tokens.consume(record)
-        return accepted
+
+        def attempt(holder: str) -> AcceptedBatch:
+            try:
+                request = RerunRequest.model_validate(body)
+            except ValidationError as exc:
+                raise AdmissionError(
+                    "contract_validation_failed", 422, safe_contract_issues(exc)
+                ) from None
+            source = self.store.get_job(job_id)
+            if source.revision != expected_revision:
+                raise ControlError(ErrorCode.REVISION_CONFLICT)
+            if len(request.submission.editing_session.files) != 1:
+                raise AdmissionError(
+                    "admission_invalid",
+                    422,
+                    [_issue("/submission/editing_session/files", "rerun_single_file")],
+                )
+            return self._commit(request.submission, session, holder, scope, digest, rerun_of=job_id)
+
+        return self._single_flight(scope, digest, attempt)
 
     # -------------------------------------------------------------- existing snapshots
 

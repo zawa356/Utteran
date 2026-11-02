@@ -12,9 +12,14 @@ import hashlib
 import hmac
 import json
 import re
+import secrets
 import sqlite3
-from collections.abc import Mapping, Sequence
+import threading
+import time
+from collections import OrderedDict
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, ClassVar, Final, Literal
 
@@ -50,7 +55,11 @@ E = ErrorCode
 JOB_SCHEMA_VERSION: Final = 3
 MAX_BATCH: Final = 100
 MAX_LIST: Final = 100
-_CURSOR = re.compile(r"j1\.(0|[1-9][0-9]{0,18})\.([0-9a-f]{32})")
+_CURSOR = re.compile(r"j2\.([0-9a-f]{32})\.([1-9][0-9]{0,8})\.([1-9][0-9]{0,2})\.([0-9a-f]{64})")
+LIST_TTL: Final = 300.0
+LIST_CAPACITY: Final = 16
+LIST_MAX_ITEMS: Final = 10_000
+LIST_TOTAL_ITEMS: Final = 50_000
 
 _DDL_V3: Final = (
     # One immutable private snapshot per B7 job. Retries copy the body verbatim.
@@ -122,6 +131,64 @@ class CompletionEvidence:
     manifest_digest: str
 
 
+@dataclass(frozen=True)
+class _ListSnapshot:
+    id: str
+    scope: str
+    revision: int
+    items: tuple[Job, ...]
+
+
+class _ListSnapshots:
+    """Process-local, TTL- and capacity-bounded registry of immutable public listings.
+
+    Holds only allowlisted public ``Job`` views (no private snapshot, prompt or path).
+    Lost on restart by design; the oldest entry is evicted explicitly when full.
+    """
+
+    def __init__(
+        self,
+        *,
+        clock: Callable[[], float] | None,
+        ttl: float,
+        capacity: int,
+        max_items: int,
+        total_items: int,
+    ) -> None:
+        self.clock = clock or time.monotonic
+        self.ttl, self.capacity = ttl, capacity
+        self.max_items, self.total_items = max_items, total_items
+        self._entries: OrderedDict[str, tuple[float, _ListSnapshot]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _purge(self, now: float) -> None:
+        for key in [k for k, (t, _) in self._entries.items() if now - t >= self.ttl]:
+            del self._entries[key]
+
+    def put(self, snapshot: _ListSnapshot) -> None:
+        with self._lock:
+            now = self.clock()
+            self._purge(now)
+            while self._entries and (
+                len(self._entries) >= self.capacity
+                or sum(len(s.items) for _, s in self._entries.values()) + len(snapshot.items)
+                > self.total_items
+            ):
+                self._entries.popitem(last=False)  # its cursors become cursor_expired
+            self._entries[snapshot.id] = (now, snapshot)
+
+    def get(self, snapshot_id: str, scope: str) -> _ListSnapshot:
+        with self._lock:
+            now = self.clock()
+            self._purge(now)
+            entry = self._entries.get(snapshot_id)
+            if entry is None:
+                raise ControlError(E.LIST_CURSOR_EXPIRED)
+            if not hmac.compare_digest(entry[1].scope, scope):
+                raise ControlError(E.CURSOR_INVALID)
+            return entry[1]
+
+
 class JobControlStore(ControlStore):
     """B6 store opened at layout v3. Migrates v1/v2 explicitly; v3 is unreadable to B6."""
 
@@ -132,6 +199,26 @@ class JobControlStore(ControlStore):
         "batch_replays",
         "job_replays",
     )
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        list_clock: Callable[[], float] | None = None,
+        list_ttl: float = LIST_TTL,
+        list_capacity: int = LIST_CAPACITY,
+        list_max_items: int = LIST_MAX_ITEMS,
+        list_total_items: int = LIST_TOTAL_ITEMS,
+        **kwargs: Any,
+    ) -> None:
+        self._lists = _ListSnapshots(
+            clock=list_clock,
+            ttl=list_ttl,
+            capacity=list_capacity,
+            max_items=list_max_items,
+            total_items=list_total_items,
+        )
+        super().__init__(path, **kwargs)
 
     @classmethod
     def _layout(cls, version: int) -> tuple[tuple[str, ...], frozenset[str]]:
@@ -249,38 +336,64 @@ class JobControlStore(ControlStore):
             self._row(db, job_id)
             return self._snapshot(db, job_id)
 
-    def _list_cursor(self, rowid: int) -> str:
-        mac = hmac.new(self._secret, f"jobs:{rowid}".encode(), hashlib.sha256).hexdigest()
-        return f"j1.{rowid}.{mac[:32]}"
+    def _list_mac(self, snapshot_id: str, offset: int, limit: int, scope: str) -> str:
+        # Bound to the snapshot, position, page size, viewer scope and the (only) filter.
+        message = f"jobs:v2:{snapshot_id}:{offset}:{limit}:filter=all:{scope}".encode()
+        return hmac.new(self._secret, message, hashlib.sha256).hexdigest()
 
-    def list_jobs(self, cursor: str | None = None, *, limit: int = MAX_LIST) -> JobList:
-        if type(limit) is not int or not 1 <= limit <= MAX_LIST:
+    def _list_page(self, snapshot: _ListSnapshot, offset: int, limit: int, scope: str) -> JobList:
+        end = offset + limit
+        next_cursor = None
+        if end < len(snapshot.items):
+            mac = self._list_mac(snapshot.id, end, limit, scope)
+            next_cursor = f"j2.{snapshot.id}.{end}.{limit}.{mac}"
+        return JobList(
+            schema_version=1,
+            revision=snapshot.revision,
+            items=snapshot.items[offset:end],
+            next_cursor=next_cursor,
+        )
+
+    def list_jobs(
+        self, cursor: str | None = None, *, limit: int = MAX_LIST, scope: str = ""
+    ) -> JobList:
+        """Point-in-time paging over allowlisted public Job views.
+
+        The first page materializes every public Job, the order and the collection
+        revision from one read transaction; later pages slice that immutable snapshot,
+        so state changes or new jobs never leak into an existing cursor. Snapshots are
+        process-local, TTL- and capacity-bounded: a lost/expired one is 409
+        ``cursor_expired``; a tampered or re-scoped cursor is ``cursor_invalid``.
+        """
+        if type(limit) is not int or not 1 <= limit <= MAX_LIST or not isinstance(scope, str):
             raise ControlError(E.REQUEST_INVALID)
-        after = 0
         if cursor is not None:
             match = _CURSOR.fullmatch(cursor) if isinstance(cursor, str) else None
-            if match is None or not hmac.compare_digest(
-                self._list_cursor(int(match.group(1))), cursor
-            ):
+            if match is None:
                 raise ControlError(E.CURSOR_INVALID)
-            after = int(match.group(1))
+            snapshot_id, offset, page = match.group(1), int(match.group(2)), int(match.group(3))
+            expected = self._list_mac(snapshot_id, offset, page, scope)
+            if page != limit or not hmac.compare_digest(match.group(4), expected):
+                raise ControlError(E.CURSOR_INVALID)
+            snapshot = self._lists.get(snapshot_id, scope)
+            return self._list_page(snapshot, offset, limit, scope)
         with self._transaction(write=False) as db:
-            rows = db.execute(
-                "SELECT rowid, operation_id FROM job_snapshots WHERE rowid > ? "
-                "ORDER BY rowid LIMIT ?",
-                (after, limit + 1),
-            ).fetchall()
+            total = db.execute("SELECT count(*) FROM job_snapshots").fetchone()[0]
+            if total > self._lists.max_items:
+                raise ControlError(E.LIST_SNAPSHOT_TOO_LARGE)  # never truncate silently
+            rows = db.execute("SELECT operation_id FROM job_snapshots ORDER BY rowid").fetchall()
             revision = db.execute(
                 "SELECT value FROM counters WHERE name = 'operations_revision'"
             ).fetchone()[0]
-            items = tuple(self._job_view(db, row[1]) for row in rows[:limit])
-            next_cursor = self._list_cursor(rows[limit - 1][0]) if len(rows) > limit else None
-            return JobList(
-                schema_version=1,
+            snapshot = _ListSnapshot(
+                id=secrets.token_hex(16),
+                scope=scope,
                 revision=max(revision, 1),
-                items=items,
-                next_cursor=next_cursor,
+                items=tuple(self._job_view(db, row[0]) for row in rows),
             )
+        if len(snapshot.items) > limit:
+            self._lists.put(snapshot)  # only multi-page listings need to be retained
+        return self._list_page(snapshot, 0, limit, scope)
 
     # ------------------------------------------------------------------ replays
 

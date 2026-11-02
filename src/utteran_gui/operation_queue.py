@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -62,20 +63,31 @@ class OperationQueue:
             self._condition.notify()
             return self._snapshot(self._items[item_id])
 
-    def close_for(self, owner: str) -> bool:
-        """Single-writer handover: close only when no item is waiting or running."""
+    def close_for(self, token: str) -> bool:
+        """Single-writer handover. Succeeds only for an unowned, idle queue.
+
+        ``token`` must be an unpredictable per-owner value. Not re-entrant: a second
+        call, even with the same token, is refused, so ownership is never shared.
+        Ownership and item state are checked and updated under the same lock.
+        """
+        if not isinstance(token, str) or len(token) < 32:
+            raise ValueError("ownership token must be an unpredictable string")
         with self._condition:
             if self._closed_by is not None:
-                return self._closed_by == owner
+                return False
             if any(item.status not in TERMINAL_QUEUE_STATUSES for item in self._items.values()):
                 return False
-            self._closed_by = owner
+            self._closed_by = token
             return True
 
-    def reopen(self, owner: str) -> None:
+    def reopen(self, token: str) -> bool:
+        """Release ownership. Only the exact owning token can reopen the queue."""
         with self._condition:
-            if self._closed_by == owner:
-                self._closed_by = None
+            if self._closed_by is None or not secrets.compare_digest(self._closed_by, token):
+                return False
+            self._closed_by = None
+            self._condition.notify_all()
+            return True
 
     @property
     def closed(self) -> bool:

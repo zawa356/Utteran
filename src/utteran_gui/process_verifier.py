@@ -11,6 +11,7 @@ import os
 import secrets
 import sys
 from pathlib import Path
+from typing import Protocol
 
 from utteran_contracts.control import OwnerIdentity, ProcessIdentity
 from utteran_control.recovery import Liveness
@@ -36,6 +37,40 @@ def _linux_stat(pid: int) -> tuple[str, str] | None:
     return fields[0], fields[19]
 
 
+_STILL_ACTIVE = 259
+_ERROR_INVALID_PARAMETER = 87  # OpenProcess on a PID that does not exist
+
+
+class Win32Api(Protocol):
+    """Minimal observe-only Win32 surface. Handles are opaque pointer-width integers."""
+
+    def open(self, pid: int) -> tuple[int | None, int]: ...  # (handle, last error)
+    def creation_time(self, handle: int) -> int | None: ...
+    def exit_code(self, handle: int) -> int | None: ...
+    def close(self, handle: int) -> bool: ...
+
+
+def observe_windows(api: Win32Api, pid: int) -> tuple[str, bool] | Liveness | None:
+    """(creation FILETIME, running) / None only when absence is proven / else UNKNOWN.
+
+    Any Win32 failure after opening is UNKNOWN (never GONE). The handle is always closed
+    in ``finally``; a failing CloseHandle does not change the observation.
+    """
+    handle, error = api.open(pid)
+    if not handle:
+        return None if error == _ERROR_INVALID_PARAMETER else Liveness.UNKNOWN
+    try:
+        stamp = api.creation_time(handle)
+        if stamp is None:
+            return Liveness.UNKNOWN
+        code = api.exit_code(handle)
+        if code is None:
+            return Liveness.UNKNOWN
+        return str(stamp), code == _STILL_ACTIVE
+    finally:
+        api.close(handle)
+
+
 if sys.platform == "win32":  # pragma: no cover - exercised by the Windows CI job
     import ctypes
     from ctypes import wintypes
@@ -45,19 +80,28 @@ if sys.platform == "win32":  # pragma: no cover - exercised by the Windows CI jo
     _OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     _OpenProcess.restype = wintypes.HANDLE
     _GetProcessTimes = _kernel32.GetProcessTimes
+    _GetProcessTimes.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+    ]
+    _GetProcessTimes.restype = wintypes.BOOL
     _GetExitCodeProcess = _kernel32.GetExitCodeProcess
+    _GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    _GetExitCodeProcess.restype = wintypes.BOOL
     _CloseHandle = _kernel32.CloseHandle
+    _CloseHandle.argtypes = [wintypes.HANDLE]
+    _CloseHandle.restype = wintypes.BOOL
     _QUERY_LIMITED = 0x1000
-    _STILL_ACTIVE = 259
-    _ERROR_INVALID_PARAMETER = 87
 
-    def _windows(pid: int) -> tuple[str, bool] | Liveness | None:
-        """(creation filetime, running) / None when absent / UNKNOWN when unobservable."""
-        handle = _OpenProcess(_QUERY_LIMITED, False, pid)
-        if not handle:
-            error = ctypes.get_last_error()
-            return None if error == _ERROR_INVALID_PARAMETER else Liveness.UNKNOWN
-        try:
+    class _Kernel32:
+        def open(self, pid: int) -> tuple[int | None, int]:
+            handle = _OpenProcess(_QUERY_LIMITED, False, pid)
+            return (handle or None), (0 if handle else ctypes.get_last_error())
+
+        def creation_time(self, handle: int) -> int | None:
             created, exited, kernel, user = (wintypes.FILETIME() for _ in range(4))
             if not _GetProcessTimes(
                 handle,
@@ -66,14 +110,22 @@ if sys.platform == "win32":  # pragma: no cover - exercised by the Windows CI jo
                 ctypes.byref(kernel),
                 ctypes.byref(user),
             ):
-                return Liveness.UNKNOWN
+                return None
+            return (created.dwHighDateTime << 32) | created.dwLowDateTime
+
+        def exit_code(self, handle: int) -> int | None:
             code = wintypes.DWORD()
             if not _GetExitCodeProcess(handle, ctypes.byref(code)):
-                return Liveness.UNKNOWN
-            stamp = (created.dwHighDateTime << 32) | created.dwLowDateTime
-            return str(stamp), code.value == _STILL_ACTIVE
-        finally:
-            _CloseHandle(handle)
+                return None
+            return int(code.value)
+
+        def close(self, handle: int) -> bool:
+            return bool(_CloseHandle(handle))
+
+    _API = _Kernel32()
+
+    def _windows(pid: int) -> tuple[str, bool] | Liveness | None:
+        return observe_windows(_API, pid)
 
 
 def start_identity(pid: int) -> str | None:

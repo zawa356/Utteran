@@ -12,6 +12,7 @@ reopen the legacy queue while any attempt is active or unverified.
 from __future__ import annotations
 
 import contextlib
+import secrets
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -25,8 +26,6 @@ from utteran_gui.job_admission import JobAdmission, ResolutionProvider
 from utteran_gui.job_dispatcher import JobDispatcher, WorkerRunner
 from utteran_gui.operation_queue import OperationQueue
 from utteran_gui.process_verifier import OsProcessVerifier, current_owner
-
-OWNER = "utteran-v1-jobs"
 
 
 class RuntimeStateError(Exception):
@@ -70,6 +69,8 @@ class JobRuntime:
         self.dispatcher: JobDispatcher | None = None
         self.last_backup: Path | None = None
         self._lock = threading.Lock()
+        # Unpredictable, per-runtime ownership of the legacy queue; never shared.
+        self._queue_token: str | None = None
 
     def _backup(self, store: JobControlStore, label: str) -> Path:
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
@@ -82,37 +83,44 @@ class JobRuntime:
         with self._lock:
             if self.state == "active":
                 raise RuntimeStateError("already_active")
-            if not self.legacy_queue.close_for(OWNER):
-                raise RuntimeStateError("legacy_busy")  # pending/active legacy work exists
+            if self.legacy_queue.closed:
+                raise RuntimeStateError("legacy_queue_owned")  # another runtime owns it
+            token = secrets.token_hex(32)
+            if not self.legacy_queue.close_for(token):
+                code = "legacy_queue_owned" if self.legacy_queue.closed else "legacy_busy"
+                raise RuntimeStateError(code)  # pending/active legacy work, or lost the race
+            dispatcher: JobDispatcher | None = None
             try:
                 existed = self.store_path.exists()
                 store = JobControlStore(self.store_path, clock=self.clock)
                 if existed:
                     self._backup(store, "pre-v1")
                 report = store.recover(self.verifier)
+                admission = JobAdmission(
+                    store=store,
+                    settings_path=self.settings_path,
+                    provider=self.provider,
+                    clock=self.clock,
+                )
+                dispatcher = JobDispatcher(
+                    store,
+                    prestart=admission.prestart_check,
+                    runner=self.runner,
+                    owner=current_owner(),
+                    job_dir=self.job_dir,
+                    lease_seconds=self.lease_seconds,
+                    poll_interval=self.poll_interval,
+                )
+                if self.autostart_dispatcher:
+                    dispatcher.start()
             except BaseException:
-                self.legacy_queue.reopen(OWNER)
+                if dispatcher is not None:
+                    dispatcher.stop(timeout=5)
+                self.legacy_queue.reopen(token)  # release only what this call acquired
                 raise
-            owner = current_owner()
-            admission = JobAdmission(
-                store=store,
-                settings_path=self.settings_path,
-                provider=self.provider,
-                clock=self.clock,
-            )
-            dispatcher = JobDispatcher(
-                store,
-                prestart=admission.prestart_check,
-                runner=self.runner,
-                owner=owner,
-                job_dir=self.job_dir,
-                lease_seconds=self.lease_seconds,
-                poll_interval=self.poll_interval,
-            )
+            self._queue_token = token
             self.store, self.admission, self.dispatcher = store, admission, dispatcher
             self.state = "active"
-            if self.autostart_dispatcher:
-                dispatcher.start()
             return report
 
     def deactivate(self, timeout: float = 30.0) -> Path:
@@ -124,7 +132,9 @@ class JobRuntime:
             if not stopped or self.store.active_job() is not None:
                 raise RuntimeStateError("active_attempt")  # slot kept; legacy stays closed
             backup = self._backup(self.store, "rollback")
-            self.legacy_queue.reopen(OWNER)
+            if self._queue_token is None or not self.legacy_queue.reopen(self._queue_token):
+                raise RuntimeStateError("ownership_lost")  # never reopen a queue we do not own
+            self._queue_token = None
             self.state = "inactive"
             self.store = self.admission = self.dispatcher = None
             return backup

@@ -405,12 +405,13 @@ def test_concurrent_resends_create_one_batch(env: Env) -> None:
 
     with ThreadPoolExecutor(6) as pool:
         results = list(pool.map(send, range(6)))
-    batches = [r for r in results if not isinstance(r, str)]
-    assert batches and {tuple(j.id for j in r.batch.jobs) for r in batches} == {
-        tuple(j.id for j in batches[0].batch.jobs)
+    # PR #32 review (P2-2): racing the same key + body never yields resolution_consumed.
+    assert not any(isinstance(r, str) for r in results), results
+    assert {tuple(j.id for j in r.batch.jobs) for r in results} == {
+        tuple(j.id for j in results[0].batch.jobs)
     }
-    assert all(r in {"resolution_consumed"} for r in results if isinstance(r, str))
-    assert env.count("operations") == 1
+    assert sum(1 for r in results if not r.replayed) == 1
+    assert env.count("operations") == 1 and env.count("batch_replays") == 1
     # After the commit every resend replays, independent of the consumed token.
     assert env.admission.submit(target, body, session=SESSION).replayed
 

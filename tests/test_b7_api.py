@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -355,3 +356,52 @@ def test_resolution_and_job_errors_do_not_echo_private_values(
     text = json.dumps(response.json(), ensure_ascii=False)
     assert SENTINEL not in text and str(env.tmp) not in text and SENTINEL not in caplog.text
     assert response.json()["error"]["issues"][0]["code"] == "resolver_unavailable"
+
+
+def test_http_inflight_same_key_is_retryable_503_then_replays(client: TestClient, env: Env) -> None:
+    """A client-side timeout (503 here) is neither a commit nor a rollback."""
+    runtime: JobRuntime = client.runtime  # type: ignore[attr-defined]
+    assert runtime.admission is not None and runtime.store is not None
+    runtime.admission.inflight_wait = 0.2
+    session = env.session(env.file("a.wav"))
+    resolved = client.post(
+        "/api/v1/execution-resolutions", json=session, headers=headers("inflight-res-0001")
+    )
+    submit = {
+        "schema_version": 1,
+        "resolution_token": resolved.json()["token"],
+        "editing_session": session,
+        "resume_mode": "resume",
+    }
+    entered, release = threading.Event(), threading.Event()
+
+    def hook(where: str) -> None:
+        if where == "batch_before_replay":
+            entered.set()
+            assert release.wait(10)
+
+    runtime.store._fault = hook
+    leader: list[Any] = []
+    thread = threading.Thread(
+        target=lambda: leader.append(
+            runtime.admission.submit(
+                IdempotencyScope("/api/v1/jobs", "inflight-job-0001"), submit, session=SESSION
+            )  # type: ignore[union-attr]
+        )
+    )
+    thread.start()
+    assert entered.wait(10)
+    busy = client.post("/api/v1/jobs", json=submit, headers=headers("inflight-job-0001"))
+    assert busy.status_code == 503
+    error = busy.json()["error"]
+    assert error["code"] == "submission_in_progress" and error["retryable"] is True
+    assert resolved.json()["token"] not in busy.text and str(env.tmp) not in busy.text
+    release.set()
+    thread.join(10)
+    runtime.store._fault = None
+    again = client.post("/api/v1/jobs", json=submit, headers=headers("inflight-job-0001"))
+    assert again.status_code == 202
+    assert again.json() == leader[0].batch.to_wire()
+    assert again.headers["Location"] == leader[0].headers["Location"]
+    assert again.headers["ETag"] == leader[0].headers["ETag"]
+    assert len(client.get("/api/v1/jobs").json()["items"]) == 1
