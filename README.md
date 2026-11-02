@@ -9,7 +9,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 > 現在の開発版: `0.1.35`（未release）。API・設定は1.0まで変更されます。
 
 
-### Phase B6 永続control store（未マージ・未リリース）
+### Phase B6 永続control store（main統合済み・未リリース）
 
 0.1.35では、将来のJob/Setup/Refresh用の独立SQLite control store（`utteran_control`）を追加。
 状態・revision・queue metadata・冪等性記録・公開Outboxを1 transactionで記録し、
@@ -19,7 +19,7 @@ job投入/dispatch・Setup実行・`/api/v1/events`/`/sync`等のHTTP公開は�
 外部processのexactly-once実行は保証しません。private payloadは暗号化せず保存されます。
 詳細は[Phase B6](docs/architecture/b6/README.md)を参照してください。
 
-### Phase B5 開発API（未マージ・未リリース）
+### Phase B5 開発API（main統合済み・未リリース）
 
 0.1.34では独立したPreset/Policy履歴ストアと、設定継承のprivate preview APIを追加。
 通常GUIは従来のままで、開発者が`create_app(..., enable_v1_settings=True,
