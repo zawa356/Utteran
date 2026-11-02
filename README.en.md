@@ -6,8 +6,24 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.35` (unreleased).
+> Current development version: `0.1.36` (unreleased).
 > APIs and configuration may change before 1.0.
+
+
+### Phase B7 immutable job submission, durable queue controls and safe dispatch (Draft, unmerged, unreleased)
+
+0.1.36 adds an experimental v1 Job/Queue API. Validated settings, the input identity (including a
+content SHA-256) and the B4 resolution are frozen per job as an immutable private snapshot, and a
+multi-file submission is accepted all-or-nothing in one transaction. Queue-revision CAS reorder,
+hold and dispatch pause, cancel/retry/rerun/revalidate, single-slot dispatch to the B3 worker and
+conservative recovery based on OS process identity are included. **The default GUI/CLI is
+unchanged**: the API exists only with `create_app(..., enable_v1_settings=True,
+enable_v1_jobs=True, v1_authority=...)`, which also closes the legacy queue for new work. Only the
+limited B3 worker configuration (faster-whisper, explicit local model, no diarization, single file)
+with B4 ready evidence can run; standard environments have no smoke evidence, so submissions are
+normally refused (fail closed). whisper.cpp, OpenVINO GenAI, pyannote and glossary are refused and
+never redirected to the legacy CLI. The private DB is unencrypted with no retention limit. See
+[Phase B7](docs/architecture/b7/README.md).
 
 
 ### Phase B6 durable control store (merged into main, unreleased)
@@ -16,8 +32,8 @@ transcription API.
 operations. State, revisions, queue metadata, idempotency records, and a public outbox commit in one
 transaction, and an explicitly invoked startup recovery is conservative (queue paused, waiting items
 held, unverifiable owners flagged `recovery_required`). The default GUI/CLI neither creates nor uses
-it; the existing queue and job execution are unchanged. Job submission/dispatch, setup execution,
-and HTTP exposure such as `/api/v1/events` or `/sync` are not provided (B7-B9). Exactly-once
+it; the existing queue and job execution are unchanged. Setup execution and HTTP exposure such as
+`/api/v1/events` or `/sync` are not provided (B8-B9); job submission/dispatch is the opt-in B7 above. Exactly-once
 execution of external processes is not guaranteed. Private payloads are stored unencrypted. See
 [Phase B6](docs/architecture/b6/README.md).
 

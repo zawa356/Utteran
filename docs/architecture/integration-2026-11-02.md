@@ -25,6 +25,7 @@
 
 ## GitHub Pages
 
+- **2026-11-02追補（現在地）:** Settings→Pages有効化後、[Website run 41394884715](https://github.com/zawa356/Utteran/actions/runs/41394884715)（main `3fd187d`、attempt 2）が**success**。`https://zawa356.github.io/Utteran/`・`/Utteran/en/`はHTTP 200を確認（B7作業時）。`/Utteran/favicon.svg`は404で、独立した軽微なサイト不具合として別途扱う。以下の「未有効・公開未確認」は公開前の履歴。
 - Astro/Starlight日英12ページは[site専用CI](https://github.com/zawa356/Utteran/actions/runs/41392127702)で成功。
 - mainでの[Pages build/deploy run 41394333383](https://github.com/zawa356/Utteran/actions/runs/41394333383)では**buildとartifact uploadは成功**、deployは404 `Ensure GitHub Pages has been enabled` で失敗。**公開成功は未確認**。
 - リポジトリ管理者が[Settings → Pages](https://github.com/zawa356/Utteran/settings/pages)で Sourceを`GitHub Actions`に設定し、失敗したworkflowを再実行した後、`/Utteran/`と`/Utteran/en/`の表示・リンク・言語切替を実機ブラウザで受入。
@@ -34,4 +35,4 @@
 
 - README日英はB5/B6の「main統合済み・未リリース」に訂正。過去PR提出時の検証記録や当時のDraft状態は**歴史的記録として保持**し、後から書き換えず、この統合記録で現在地を明示。
 - 変更履歴・AISTATE・Phase A/B5/B6・UI UX計画の現在地を同期。Issue #17/#18の状態を同期。文書更新も専用PRでmainへ反映する。
-- 次の機能実装はB7から**main HEAD基点**。CI改善は#27として独立し、実受入は各Issueで追跡する。
+- 次の機能実装はB7から**main HEAD基点**（2026-11-02追補: B7はmain `3fd187d`基点でDraft実装中、開発版0.1.36・未リリース。[B7](b7/README.md)）。CI改善は#27として独立し、実受入は各Issueで追跡する。

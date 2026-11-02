@@ -66,6 +66,7 @@ class ReasonCode(StrEnum):
     SUBMITTED = "submitted"
     USER_HOLD = "user_hold"
     USER_RELEASE = "user_release"
+    USER_REORDER = "user_reorder"
     USER_CANCEL = "user_cancel"
     CANCEL_ACCEPTED = "cancel_accepted"
     PRESTART_REVALIDATION_FAILED = "prestart_revalidation_failed"

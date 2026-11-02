@@ -14,6 +14,7 @@ B5 [Draft PR #26](https://github.com/zawa356/Utteran/pull/26)（OPEN/Draft、bas
 ## 範囲
 
 B6は**安全に状態を残す基盤**であり、ジョブ制御（B7）、セットアップ（B8）、公開配信（B9）ではない。
+（2026-11-02追補: B7は`JobControlStore`としてこのstoreをlayout v3へ拡張する。B6 `ControlStore`はv2のままで、v3は開かない。[B7](../b7/README.md)）
 
 | 作るもの | 作らないもの（後続） |
 |---|---|

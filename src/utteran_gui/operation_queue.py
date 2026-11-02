@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -27,6 +28,10 @@ class QueueItem:
     finished_at: str | None = None
 
 
+class QueueClosedError(RuntimeError):
+    """The legacy queue is closed because the opt-in v1 job runtime owns execution."""
+
+
 class OperationQueue:
     """Execute all resource-heavy GUI operations one at a time.
 
@@ -39,6 +44,7 @@ class OperationQueue:
         self._condition = threading.Condition(threading.RLock())
         self._items: dict[str, QueueItem] = {}
         self._order: list[str] = []
+        self._closed_by: str | None = None
         self._worker = threading.Thread(
             target=self._work, name="utteran-operation-queue", daemon=True
         )
@@ -48,12 +54,45 @@ class OperationQueue:
         self, item_id: str, *, kind: str, label: str, runner: Runner, canceller: Canceller
     ) -> dict[str, object]:
         with self._condition:
+            if self._closed_by is not None:
+                raise QueueClosedError("v1 job runtime owns the execution slot")
             if item_id in self._items:
                 raise ValueError(f"Queue item already exists: {item_id}")
             self._items[item_id] = QueueItem(item_id, kind, label, runner, canceller)
             self._order.append(item_id)
             self._condition.notify()
             return self._snapshot(self._items[item_id])
+
+    def close_for(self, token: str) -> bool:
+        """Single-writer handover. Succeeds only for an unowned, idle queue.
+
+        ``token`` must be an unpredictable per-owner value. Not re-entrant: a second
+        call, even with the same token, is refused, so ownership is never shared.
+        Ownership and item state are checked and updated under the same lock.
+        """
+        if not isinstance(token, str) or len(token) < 32:
+            raise ValueError("ownership token must be an unpredictable string")
+        with self._condition:
+            if self._closed_by is not None:
+                return False
+            if any(item.status not in TERMINAL_QUEUE_STATUSES for item in self._items.values()):
+                return False
+            self._closed_by = token
+            return True
+
+    def reopen(self, token: str) -> bool:
+        """Release ownership. Only the exact owning token can reopen the queue."""
+        with self._condition:
+            if self._closed_by is None or not secrets.compare_digest(self._closed_by, token):
+                return False
+            self._closed_by = None
+            self._condition.notify_all()
+            return True
+
+    @property
+    def closed(self) -> bool:
+        with self._condition:
+            return self._closed_by is not None
 
     def cancel(self, item_id: str) -> dict[str, object]:
         with self._condition:

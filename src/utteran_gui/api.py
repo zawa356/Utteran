@@ -10,7 +10,7 @@ import secrets
 import subprocess
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
@@ -23,7 +23,7 @@ from utteran_gui.environment import EnvironmentService
 from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
 from utteran_gui.logging_runtime import gui_logging_status
-from utteran_gui.operation_queue import OperationQueue
+from utteran_gui.operation_queue import OperationQueue, QueueClosedError
 from utteran_gui.processes import ProcessSupervisor, build_creation_kwargs
 from utteran_gui.settings import (
     GuiSettings,
@@ -43,6 +43,7 @@ from utteran_paths import is_portable_distribution, uses_session_token
 
 SESSION_COOKIE = "utteran_gui_session"
 SESSION_HEADER = "x-utteran-session"
+V1_OWNS_SLOT = "The opt-in v1 job runtime owns the execution slot"
 
 
 class SettingsPayload(BaseModel):
@@ -146,6 +147,8 @@ def create_app(
     enable_v1_settings: bool = False,
     v1_authority: str | None = None,
     v1_store_path: Path | None = None,
+    enable_v1_jobs: bool = False,
+    v1_jobs_runtime: Any = None,
 ) -> FastAPI:
     """Create one session-scoped application without importing the CLI package."""
     if not session_key:
@@ -185,16 +188,26 @@ def create_app(
 
         if v1_authority is None:
             raise ValueError("v1_authority is required when enabling v1 settings")
-        app.mount(
-            "/api/v1",
-            create_settings_app(
-                session_key,
-                authority=v1_authority,
-                store_path=v1_store_path or resolve_data_paths(repo_root).settings_resources,
-            ),
-        )
+        settings_path = v1_store_path or resolve_data_paths(repo_root).settings_resources
+        v1_app = create_settings_app(session_key, authority=v1_authority, store_path=settings_path)
+        if enable_v1_jobs:
+            # Same sub-app: one /api/v1 mount, one session/Host/Origin boundary.
+            from utteran_gui.jobs_api import register_job_routes
+
+            v1_runtime = v1_jobs_runtime or _default_job_runtime(
+                repo_root, settings_path, selected_queue, selected_cli
+            )
+            v1_runtime.activate()  # explicit opt-in cutover: refuses if legacy work exists
+            app.state.v1_jobs_runtime = v1_runtime
+            register_job_routes(v1_app, v1_runtime)
+        app.mount("/api/v1", v1_app)
+    elif enable_v1_jobs:
+        raise ValueError("v1 jobs require the v1 settings application")
 
     def shutdown_processes() -> None:
+        runtime = getattr(app.state, "v1_jobs_runtime", None)
+        if runtime is not None:
+            runtime.shutdown()
         selected_jobs.shutdown()
         selected_wizard.shutdown()
         supervisor.shutdown()
@@ -418,6 +431,8 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from None
         except WizardProfileMissingError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from None
+        except QueueClosedError:
+            raise HTTPException(status_code=409, detail=V1_OWNS_SLOT) from None
 
     @app.get("/api/wizard/jobs/{job_id}")
     def get_wizard_job(job_id: str) -> dict[str, object]:
@@ -438,6 +453,8 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from None
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
+        except QueueClosedError:
+            raise HTTPException(status_code=409, detail=V1_OWNS_SLOT) from None
 
     @app.post("/api/wizard/jobs/{job_id}/cancel", status_code=202)
     def cancel_wizard_job(job_id: str) -> dict[str, object]:
@@ -495,6 +512,8 @@ def create_app(
             return result
         except JobBusyError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from None
+        except QueueClosedError:
+            raise HTTPException(status_code=409, detail=V1_OWNS_SLOT) from None
         except CliError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
 
@@ -611,6 +630,27 @@ def create_app(
         return Response(status_code=204)
 
     return app
+
+
+def _default_job_runtime(
+    repo_root: Path, settings_path: Path, queue: OperationQueue, cli: CliAdapter
+) -> Any:
+    """Opt-in only: imported lazily so default startup never loads the control store."""
+    from utteran_gui.capability_inventory import CapabilityInventoryAdapter
+    from utteran_gui.job_admission import BridgeResolutionProvider
+    from utteran_gui.job_runtime import JobRuntime
+    from utteran_gui.worker_client import WorkerClient
+    from utteran_paths import resolve_data_paths
+
+    paths = resolve_data_paths(repo_root)
+    return JobRuntime(
+        store_path=paths.control_store,
+        settings_path=settings_path,
+        legacy_queue=queue,
+        provider=BridgeResolutionProvider(CapabilityInventoryAdapter(cli)),
+        runner=WorkerClient(repo_root),
+        job_dir=paths.jobs,
+    )
 
 
 def _logging_status(repo_root: Path) -> dict[str, object]:

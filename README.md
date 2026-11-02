@@ -6,7 +6,21 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.35`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.36`（未release）。API・設定は1.0まで変更されます。
+
+
+### Phase B7 不変Job投入・永続Queue制御・安全dispatch（Draft・未マージ・未リリース）
+
+0.1.36では、検証済みの設定・入力identity（内容SHA-256）・B4解決結果をJobごとの不変private snapshotとして
+保存し、複数fileを1 transactionでall-or-nothing受理する実験的v1 Job/Queue APIを追加。
+queue revisionのCASによる順序変更・hold・dispatch一時停止、cancel/retry/rerun/revalidate、
+単一slotのB3 worker dispatch、OS process identityによる保守的な復旧を提供します。
+**既定のGUI/CLIは変わりません**。`create_app(..., enable_v1_settings=True, enable_v1_jobs=True,
+v1_authority=...)`を明示した場合のみ有効で、その間は旧queueへの投入を止めます。
+実行できるのはB3 workerの限定構成（faster-whisper・明示ローカルモデル・話者分離なし・単一file）で、
+B4にready証拠がある場合のみです。標準環境ではsmoke証拠がないため通常は受理されません（fail closed）。
+whisper.cpp・OpenVINO GenAI・pyannote・glossary等は拒否され、旧CLIへ自動転送しません。
+private DBは暗号化なし・無期限保持です。詳細は[Phase B7](docs/architecture/b7/README.md)。
 
 
 ### Phase B6 永続control store（main統合済み・未リリース）
@@ -15,7 +29,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 状態・revision・queue metadata・冪等性記録・公開Outboxを1 transactionで記録し、
 再起動時の保守的な復旧（queue paused、待機item held、確認できないownerはrecovery_required）を
 明示呼出しで提供します。既定のGUI/CLIは作成も使用もせず、旧queue・job実行は従来のままです。
-job投入/dispatch・Setup実行・`/api/v1/events`/`/sync`等のHTTP公開はありません（B7〜B9）。
+Setup実行・`/api/v1/events`/`/sync`等は未提供（B8〜B9）。Job投入/dispatchはB7（上記、opt-in）。
 外部processのexactly-once実行は保証しません。private payloadは暗号化せず保存されます。
 詳細は[Phase B6](docs/architecture/b6/README.md)を参照してください。
 
