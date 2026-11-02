@@ -1533,3 +1533,12 @@ def test_abnormal_v1_headers_fail_closed(path, tmp_path):
     with pytest.raises(ControlError) as excinfo:
         ControlStore(broken)
     assert code(excinfo) is E.STORE_SCHEMA_UNSUPPORTED
+
+
+def test_v2_store_is_refused_by_v1_code(path):
+    ControlStore(path)
+    before = path.read_bytes()
+    old = v1_module()
+    with pytest.raises(old.ControlError) as excinfo:
+        old.ControlStore(path)
+    assert excinfo.value.code.value == "store_schema_unsupported" and path.read_bytes() == before
