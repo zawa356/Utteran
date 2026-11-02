@@ -6,8 +6,18 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.34`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.35`（未release）。API・設定は1.0まで変更されます。
 
+
+### Phase B6 永続control store（未マージ・未リリース）
+
+0.1.35では、将来のJob/Setup/Refresh用の独立SQLite control store（`utteran_control`）を追加。
+状態・revision・queue metadata・冪等性記録・公開Outboxを1 transactionで記録し、
+再起動時の保守的な復旧（queue paused、待機item held、確認できないownerはrecovery_required）を
+明示呼出しで提供します。既定のGUI/CLIは作成も使用もせず、旧queue・job実行は従来のままです。
+job投入/dispatch・Setup実行・`/api/v1/events`/`/sync`等のHTTP公開はありません（B7〜B9）。
+外部processのexactly-once実行は保証しません。private payloadは暗号化せず保存されます。
+詳細は[Phase B6](docs/architecture/b6/README.md)を参照してください。
 
 ### Phase B5 開発API（未マージ・未リリース）
 

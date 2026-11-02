@@ -6,9 +6,20 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.34` (unreleased).
+> Current development version: `0.1.35` (unreleased).
 > APIs and configuration may change before 1.0.
 
+
+### Phase B6 durable control store (unmerged, unreleased)
+
+0.1.35 adds an independent SQLite control store (`utteran_control`) for future Job/Setup/Refresh
+operations. State, revisions, queue metadata, idempotency records, and a public outbox commit in one
+transaction, and an explicitly invoked startup recovery is conservative (queue paused, waiting items
+held, unverifiable owners flagged `recovery_required`). The default GUI/CLI neither creates nor uses
+it; the existing queue and job execution are unchanged. Job submission/dispatch, setup execution,
+and HTTP exposure such as `/api/v1/events` or `/sync` are not provided (B7-B9). Exactly-once
+execution of external processes is not guaranteed. Private payloads are stored unencrypted. See
+[Phase B6](docs/architecture/b6/README.md).
 
 ### Phase B5 development API (unmerged, unreleased)
 

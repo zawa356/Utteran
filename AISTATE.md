@@ -1,5 +1,61 @@
 # AI 作業状態
 
+## PR #28 B6レビュー修正（0.1.35、2026-11-02）
+
+- 開始時にPR #28のOPEN/Draft、head `a037857`、base B5 `5abb23d`を再確認（他者の追加commitなし）。
+  同じブランチへ追加push。rebase・force push・base変更・Ready化はしない。
+- レビュー判定は「B6主要実装は概ね妥当、P2完了後に最終承認」。
+- P2: `set_dispatch`に`IdempotencyScope`を追加し、型を分けた`AcceptedQueue`を返す。Queue応答専用の
+  `queue_replays`表（方式A）に初回のstatus/ETag/QueueViewを同一transactionで保存し、replay照合は
+  入力検証・CASより先。no-opはrevision/eventを増やさない。`replays`との間でscopeは共有しない。
+  SQLite `user_version`を2へ上げ、v1→v2の追加migrationを検証付きで1 transaction実施（失敗時はv1のまま）。
+- P3: package descriptionを更新（version 0.1.35・lockは不変）。Issue #27へBOM検査の既知失敗と
+  mypy停止による未到達stepをコメントで追補。
+- 検証（Linux 3.11.18）: B6 61→80件、全体1024 passed / 2 failed / 8 skipped。failed/error/skipped
+  集合は修正前とB5基点の両方と一致。wheel 3.11/3.12各220件、mypy既知9件のみ、Ruff/schema/lock/
+  wheel成功、public scanの新規blocking 0。[検証記録](docs/architecture/b6/pr28-review-fixes-validation.md)。
+- CI（最終HEAD `a1857bc`、run 41393383380 / 41393378772）: Windows pytest 1030 passed / 4 skipped、
+  契約3.11/3.12各430 passed。workflowは既知のInno Setup前提とmypy 9件で赤（「CI緑」ではない）。
+  途中のHEAD `d657a30`では、B6の並行snapshotテストがWindowsでreader starvation（`store_busy`）を起こした。
+  writerの書込み間隔をテストで調整し、整合性のassertionは維持したうえで、この性質を文書化した。
+- 残るゲート: #27、Windows ACL/配布/GPU、実process recovery、private DBの保持・消去方針。
+- 次の統合判断: P2の再レビュー。B7（HTTP queue操作ではIdempotency-Key必須）とmain統合は未着手。
+  Draft維持でレビュー待ち。
+
+## Phase B6 Durable Operation Store / Transactional Outbox（0.1.35、2026-11-02）
+
+- 着手時にGitHubを再確認: B3 PR #24 head `5ef7bab`、B4 PR #25 head `f6c2a95`、B5 PR #26
+  head `5abb23d62f5fd061c8f5d88ea25d0c761fb133d2`（いずれもOPEN/Draft、指示書と一致）。
+- B5 HEADから分岐。branchはセッション指定の`claude/loving-noether-jroqrc`
+  （指示書推奨名`feat/b6-durable-operation-store-outbox`と異なる理由は
+  [B6 compatibility](docs/architecture/b6/compatibility.md)）。PR baseは`feat/b5-preset-policy-editing-api`。
+  B5ブランチへ直接pushしない。
+- 実装: 軽量`utteran_control`（store/transitions/recovery/errors）と`utteran_contracts.control`、
+  `DataPaths.control_store`（`control-v1/operations.sqlite3`、B5とは別DB/secret）。
+  resource・history・queue revision・replay・Outboxを単一`BEGIN IMMEDIATE`で確定。
+  kind別遷移表、CAS、HMAC冪等性（replay先行）、単一active slotのDB制約、owner lease/fencing/
+  attempt journal/launch evidence、`<epoch>:<seq>` Outbox読取、同一read transactionのsnapshot+watermark、
+  注入Verifierによる保守的recovery、online backup/epoch更新、B6 offline schema。
+- 境界: 既定GUI/CLIはDBを作らず`utteran_control`もimportしない。旧OperationQueue/jobs/setup wizard/
+  B3/B4/B5は不変。dispatch・process起動/kill・HTTP events/sync・Setup実行は未実装（B7〜B9）。
+  外部processのexactly-onceは主張しない。
+- 検証（Linux 3.11.18）: 全体1005 passed / 2 failed / 8 skipped、baseline（B5 HEAD同環境）944/2/8と
+  failed/error/skipped集合が完全一致。B6 61件。独立wheel 3.11/3.12各200 passed。Ruff/lock/
+  B1〜B6 schema/wheel成功、mypy既知9件のみ。public scanのblocking 2件とBOM欠落はbaselineと同一。
+  詳細は[B6 validation](docs/architecture/b6/validation.md)、[集合比較](docs/architecture/b6/test-comparison.json)。
+- [Draft PR #28](https://github.com/zawa356/Utteran/pull/28)（base B5）。Actions run 41390499258:
+  Windows pytest 1011 passed / 4 skipped（後続Inno Setupで赤）、3.11/3.12契約各411 passed、
+  linux-qualityは既知mypy9件で停止。workflowは赤のため「CI緑」ではない。
+- 既知: Linux mypy9件/pytest2件、Windows Inno Setup前提、PID-file競合は
+  [#27](https://github.com/zawa356/Utteran/issues/27)（本PRで修正しない）。lock全体hashによる旧profile
+  非互換の既知課題は維持（lockはversion行のみ手動更新）。
+- 未検証: 実子processでのowner/child生存確認とPID再利用判定、VM kill injection、Windows ACL/配布、
+  private payload/nonceの非暗号化・無期限保持（GCなし）の方針決定。
+- 文書: README日英、変更履歴0.1.35、Phase A contracts/lifecycles/migration追補、UI/UX計画追補、
+  リリース手順version、[B6資料一式](docs/architecture/b6/README.md)、[文書監査](docs/architecture/b6/docs-audit.md)。
+  要件定義は31.4（キュー非永続）が現行仕様のままのためreviewed-no-change。
+- 次工程: Draft PRレビュー待ちで停止。Ready化・merge・rebase・tag・release・B7着手をしない。
+
 ## PR #26 B5レビュー受理・未解決ゲート記録（2026-11-02）
 
 - PR #26のOPEN/Draft、base B4 `f6c2a95`、HEAD `410e39ad4e37876c20f630ef7036cc4ca3cff052`を再確認。

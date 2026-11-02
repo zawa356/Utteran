@@ -1,0 +1,692 @@
+{
+  "$defs": {
+    "AttemptView": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "pattern": "^att_[0-9a-f]{32}$",
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ended At"
+        },
+        "launch": {
+          "enum": [
+            "intended",
+            "confirmed",
+            "failed"
+          ],
+          "title": "Launch",
+          "type": "string"
+        },
+        "number": {
+          "minimum": 1,
+          "title": "Number",
+          "type": "integer"
+        },
+        "owner_id": {
+          "pattern": "^own_[0-9a-f]{32}$",
+          "title": "Owner Id",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "active",
+            "released",
+            "interrupted"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "number",
+        "owner_id",
+        "state",
+        "launch",
+        "started_at",
+        "ended_at"
+      ],
+      "title": "AttemptView",
+      "type": "object"
+    },
+    "ControlSnapshot": {
+      "additionalProperties": false,
+      "description": "Resources, queue and the outbox watermark read in one SQLite read transaction.",
+      "properties": {
+        "event_cursor": {
+          "maxLength": 52,
+          "pattern": "^[0-9a-f]{32}:(0|[1-9][0-9]{0,18})$",
+          "title": "Event Cursor",
+          "type": "string"
+        },
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/OperationView"
+          },
+          "title": "Operations",
+          "type": "array"
+        },
+        "operations_revision": {
+          "minimum": 1,
+          "title": "Operations Revision",
+          "type": "integer"
+        },
+        "queue": {
+          "$ref": "#/$defs/QueueView"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_cursor",
+        "operations_revision",
+        "operations",
+        "queue"
+      ],
+      "title": "ControlSnapshot",
+      "type": "object"
+    },
+    "EventEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[0-9a-f]{32}:(0|[1-9][0-9]{0,18})$",
+          "title": "Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/EventPayload"
+        },
+        "resource_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "resource_kind": {
+          "enum": [
+            "job",
+            "setup_operation",
+            "refresh_operation",
+            "queue"
+          ],
+          "title": "Resource Kind",
+          "type": "string"
+        },
+        "resource_revision": {
+          "minimum": 1,
+          "title": "Resource Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "state_changed",
+            "queue_changed"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "resource_id",
+        "resource_kind",
+        "resource_revision",
+        "timestamp",
+        "type",
+        "payload"
+      ],
+      "title": "EventEnvelope",
+      "type": "object"
+    },
+    "EventPage": {
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/EventEnvelope"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "has_more": {
+          "title": "Has More",
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "maxLength": 52,
+          "pattern": "^[0-9a-f]{32}:(0|[1-9][0-9]{0,18})$",
+          "title": "Next Cursor",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "events",
+        "next_cursor",
+        "has_more"
+      ],
+      "title": "EventPage",
+      "type": "object"
+    },
+    "EventPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "anyOf": [
+            {
+              "pattern": "^att_[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Attempt Id"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReasonCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "queued",
+                "held",
+                "blocked",
+                "running",
+                "waiting_user",
+                "cancelling",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "interrupted",
+                "paused"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Status"
+        }
+      },
+      "required": [
+        "status",
+        "reason_code",
+        "attempt_id"
+      ],
+      "title": "EventPayload",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "OperationStatus": {
+      "enum": [
+        "queued",
+        "held",
+        "blocked",
+        "running",
+        "waiting_user",
+        "cancelling",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "interrupted"
+      ],
+      "title": "OperationStatus",
+      "type": "string"
+    },
+    "OperationView": {
+      "additionalProperties": false,
+      "description": "Public metadata only. Not a complete B7 Job or B8 SetupOperation resource.",
+      "properties": {
+        "attempt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AttemptView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocked": {
+          "title": "Blocked",
+          "type": "boolean"
+        },
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/ReasonCode"
+          },
+          "title": "Blockers",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "held": {
+          "title": "Held",
+          "type": "boolean"
+        },
+        "id": {
+          "pattern": "^(job|setup|refresh)_[0-9a-f]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "job",
+            "setup_operation",
+            "refresh_operation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/ReasonCode"
+        },
+        "recovery_required": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReasonCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/OperationStatus"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "kind",
+        "status",
+        "revision",
+        "held",
+        "blocked",
+        "blockers",
+        "recovery_required",
+        "reason_code",
+        "attempt",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "OperationView",
+      "type": "object"
+    },
+    "QueueItemView": {
+      "additionalProperties": false,
+      "properties": {
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/ReasonCode"
+          },
+          "title": "Blockers",
+          "type": "array"
+        },
+        "held": {
+          "title": "Held",
+          "type": "boolean"
+        },
+        "id": {
+          "pattern": "^qi_[0-9a-f]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Position"
+        },
+        "resource_id": {
+          "pattern": "^(job|setup|refresh)_[0-9a-f]{32}$",
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "resource_kind": {
+          "enum": [
+            "job",
+            "setup_operation"
+          ],
+          "title": "Resource Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "resource_id",
+        "resource_kind",
+        "position",
+        "held",
+        "blockers"
+      ],
+      "title": "QueueItemView",
+      "type": "object"
+    },
+    "QueueView": {
+      "additionalProperties": false,
+      "properties": {
+        "active_item_id": {
+          "anyOf": [
+            {
+              "pattern": "^qi_[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Active Item Id"
+        },
+        "dispatch": {
+          "enum": [
+            "running",
+            "paused"
+          ],
+          "title": "Dispatch",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/QueueItemView"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "revision",
+        "dispatch",
+        "active_item_id",
+        "items"
+      ],
+      "title": "QueueView",
+      "type": "object"
+    },
+    "ReasonCode": {
+      "description": "Fixed reason vocabulary. Free-form caller text is never stored or echoed.",
+      "enum": [
+        "submitted",
+        "user_hold",
+        "user_release",
+        "user_cancel",
+        "cancel_accepted",
+        "prestart_revalidation_failed",
+        "resources_available",
+        "dispatch_started",
+        "launch_confirmed",
+        "launch_failed",
+        "completion_verified",
+        "classified_failure",
+        "termination_failed",
+        "exit_reconciled",
+        "credential_required",
+        "agreement_required",
+        "explicit_resume",
+        "owner_lost",
+        "recovery_held",
+        "recovery_paused",
+        "recovery_owner_unverified",
+        "recovery_pid_reused",
+        "recovery_launch_unconfirmed",
+        "recovery_child_alive",
+        "queue_paused",
+        "queue_resumed"
+      ],
+      "title": "ReasonCode",
+      "type": "string"
+    },
+    "RecoveryReport": {
+      "additionalProperties": false,
+      "properties": {
+        "changed": {
+          "title": "Changed",
+          "type": "boolean"
+        },
+        "event_cursor": {
+          "maxLength": 52,
+          "pattern": "^[0-9a-f]{32}:(0|[1-9][0-9]{0,18})$",
+          "title": "Event Cursor",
+          "type": "string"
+        },
+        "held": {
+          "items": {
+            "pattern": "^(job|setup|refresh)_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "title": "Held",
+          "type": "array"
+        },
+        "interrupted": {
+          "items": {
+            "pattern": "^(job|setup|refresh)_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "title": "Interrupted",
+          "type": "array"
+        },
+        "owner_alive": {
+          "items": {
+            "pattern": "^(job|setup|refresh)_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "title": "Owner Alive",
+          "type": "array"
+        },
+        "queue_paused": {
+          "title": "Queue Paused",
+          "type": "boolean"
+        },
+        "recovery_required": {
+          "items": {
+            "pattern": "^(job|setup|refresh)_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "title": "Recovery Required",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "queue_paused",
+        "held",
+        "interrupted",
+        "recovery_required",
+        "owner_alive",
+        "changed",
+        "event_cursor"
+      ],
+      "title": "RecoveryReport",
+      "type": "object"
+    },
+    "SubmitOperation": {
+      "additionalProperties": false,
+      "description": "Accept one operation record. ``private_payload`` is opaque and never published.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "job",
+            "setup_operation",
+            "refresh_operation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "private_payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Private Payload",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "private_payload"
+      ],
+      "title": "SubmitOperation",
+      "type": "object"
+    },
+    "TransitionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/ReasonCode"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "to_status": {
+          "$ref": "#/$defs/OperationStatus"
+        }
+      },
+      "required": [
+        "schema_version",
+        "expected_revision",
+        "to_status",
+        "reason_code"
+      ],
+      "title": "TransitionRequest",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SubmitOperation"
+    },
+    {
+      "$ref": "#/$defs/TransitionRequest"
+    },
+    {
+      "$ref": "#/$defs/AttemptView"
+    },
+    {
+      "$ref": "#/$defs/OperationView"
+    },
+    {
+      "$ref": "#/$defs/QueueItemView"
+    },
+    {
+      "$ref": "#/$defs/QueueView"
+    },
+    {
+      "$ref": "#/$defs/EventPayload"
+    },
+    {
+      "$ref": "#/$defs/EventEnvelope"
+    },
+    {
+      "$ref": "#/$defs/EventPage"
+    },
+    {
+      "$ref": "#/$defs/ControlSnapshot"
+    },
+    {
+      "$ref": "#/$defs/RecoveryReport"
+    }
+  ],
+  "title": "Utteran B6 durable control store (internal, not an HTTP API)"
+}
