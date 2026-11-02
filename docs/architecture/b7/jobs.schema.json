@@ -795,7 +795,9 @@
         "recovery_launch_unconfirmed",
         "recovery_child_alive",
         "queue_paused",
-        "queue_resumed"
+        "queue_resumed",
+        "step_progress",
+        "reapproval_required"
       ],
       "title": "ReasonCode",
       "type": "string"

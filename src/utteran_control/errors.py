@@ -32,6 +32,21 @@ class ErrorCode(StrEnum):
     # B7 job list snapshots (process-local)
     LIST_CURSOR_EXPIRED = "cursor_expired"
     LIST_SNAPSHOT_TOO_LARGE = "list_snapshot_too_large"
+    # B8 setup plan / approval / operation
+    PLAN_EXPIRED = "plan_expired"
+    PLAN_NOT_APPROVED = "plan_not_approved"
+    PLAN_ALREADY_APPROVED = "plan_already_approved"
+    PLAN_CONSUMED = "plan_consumed"
+    PLAN_HASH_MISMATCH = "plan_hash_mismatch"
+    PLAN_REVISION_MISMATCH = "plan_revision_mismatch"
+    INVENTORY_STALE = "inventory_stale"
+    AGREEMENT_REQUIRED = "agreement_required"
+    AGREEMENT_UNKNOWN = "agreement_unknown"
+    CREDENTIAL_REQUIRED = "credential_required"
+    APPROVAL_INVALID = "approval_invalid"
+    APPROVAL_EXPIRED = "approval_expired"
+    APPROVAL_CONSUMED = "approval_consumed"
+    REAPPROVAL_REQUIRED = "reapproval_required"
 
 
 # Intended HTTP mapping for B9; B6 itself serves no HTTP.
@@ -54,6 +69,20 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.STORE_EXISTS: 409,
     ErrorCode.LIST_CURSOR_EXPIRED: 409,
     ErrorCode.LIST_SNAPSHOT_TOO_LARGE: 503,
+    ErrorCode.PLAN_EXPIRED: 409,
+    ErrorCode.PLAN_NOT_APPROVED: 409,
+    ErrorCode.PLAN_ALREADY_APPROVED: 409,
+    ErrorCode.PLAN_CONSUMED: 409,
+    ErrorCode.PLAN_HASH_MISMATCH: 409,
+    ErrorCode.PLAN_REVISION_MISMATCH: 409,
+    ErrorCode.INVENTORY_STALE: 409,
+    ErrorCode.AGREEMENT_REQUIRED: 409,
+    ErrorCode.AGREEMENT_UNKNOWN: 422,
+    ErrorCode.CREDENTIAL_REQUIRED: 409,
+    ErrorCode.APPROVAL_INVALID: 409,
+    ErrorCode.APPROVAL_EXPIRED: 409,
+    ErrorCode.APPROVAL_CONSUMED: 409,
+    ErrorCode.REAPPROVAL_REQUIRED: 409,
 }
 
 
