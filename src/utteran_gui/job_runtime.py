@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from utteran_contracts.control import RecoveryReport
+from utteran_control.errors import ControlError
 from utteran_control.job_repository import JobControlStore
 from utteran_control.recovery import ProcessVerifier
 from utteran_gui.job_admission import JobAdmission, ResolutionProvider
@@ -78,6 +79,7 @@ class JobRuntime:
         # B8 opt-in: when set, the store opens at layout v4 (one-way; see b8/storage.md).
         self.setup = setup
         self.setup_executor: Any = None
+        self.last_compaction: Any = None
         self.state: Literal["inactive", "active"] = "inactive"
         self.store: JobControlStore | None = None
         self.admission: JobAdmission | None = None
@@ -109,13 +111,20 @@ class JobRuntime:
                 existed = self.store_path.exists()
                 store_type: type[JobControlStore] = JobControlStore
                 if self.setup is not None:
-                    from utteran_control.setup_repository import SetupControlStore
+                    # B8/B9: layout v5 = setup tables + guarded, bounded outbox compaction.
+                    from utteran_control.events_repository import ManagedControlStore
 
-                    store_type = SetupControlStore
+                    store_type = ManagedControlStore
                 store = store_type(self.store_path, clock=self.clock)
                 if existed:
                     self._backup(store, "pre-v1")
                 report = store.recover(self.verifier)
+                compact = getattr(store, "compact_events", None)
+                if compact is not None:
+                    # Bounded maintenance at explicit activation only (no background loop).
+                    # A busy/readonly/full store is not reported as compacted.
+                    with contextlib.suppress(ControlError):
+                        self.last_compaction = compact()
                 admission = JobAdmission(
                     store=store,
                     settings_path=self.settings_path,
