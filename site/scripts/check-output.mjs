@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 const root = new URL('../dist/', import.meta.url);
 const pages = ['index', 'getting-started', 'features', 'hardware', 'privacy', 'faq'];
