@@ -1,0 +1,2309 @@
+{
+  "$defs": {
+    "ASRSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "enum": [
+            "auto",
+            "faster-whisper",
+            "openvino-genai",
+            "whisper-cpp"
+          ],
+          "title": "Backend",
+          "type": "string"
+        },
+        "beam_size": {
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Beam Size",
+          "type": "integer"
+        },
+        "condition_on_previous_text": {
+          "title": "Condition On Previous Text",
+          "type": "boolean"
+        },
+        "extra_arguments": {
+          "$ref": "#/$defs/ExtraArguments"
+        },
+        "faster_whisper": {
+          "$ref": "#/$defs/FasterWhisperSettings"
+        },
+        "glossary": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "title": "Glossary",
+          "type": "array"
+        },
+        "initial_prompt": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Initial Prompt"
+        },
+        "language": {
+          "title": "Language",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "openvino_genai": {
+          "$ref": "#/$defs/GenAISettings"
+        },
+        "vad": {
+          "$ref": "#/$defs/VadSettings"
+        },
+        "whisper_cpp": {
+          "$ref": "#/$defs/WhisperCppSettings"
+        },
+        "word_timestamps": {
+          "enum": [
+            "always",
+            "auto",
+            "never"
+          ],
+          "title": "Word Timestamps",
+          "type": "string"
+        }
+      },
+      "required": [
+        "backend",
+        "model",
+        "language",
+        "initial_prompt",
+        "glossary",
+        "beam_size",
+        "vad",
+        "word_timestamps",
+        "condition_on_previous_text"
+      ],
+      "title": "ASRSettings",
+      "type": "object"
+    },
+    "BenchmarkEvidence": {
+      "additionalProperties": false,
+      "description": "Comparison key is generated from every listed experimental condition.",
+      "properties": {
+        "diarization": {
+          "title": "Diarization",
+          "type": "boolean"
+        },
+        "duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "elapsed_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Elapsed Seconds",
+          "type": "number"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "fingerprint": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Fingerprint",
+          "type": "string"
+        },
+        "fixture_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Fixture Sha256",
+          "type": "string"
+        },
+        "language": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Language",
+          "type": "string"
+        },
+        "model_revision": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Model Revision",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "precision": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Precision",
+          "type": "string"
+        },
+        "runtime_version": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Runtime Version",
+          "type": "string"
+        },
+        "threads": {
+          "minimum": 1,
+          "title": "Threads",
+          "type": "integer"
+        },
+        "warmup_runs": {
+          "minimum": 0,
+          "title": "Warmup Runs",
+          "type": "integer"
+        },
+        "word_timestamps": {
+          "enum": [
+            "always",
+            "never"
+          ],
+          "title": "Word Timestamps",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fingerprint",
+        "observed_at",
+        "expires_at",
+        "fixture_sha256",
+        "duration_seconds",
+        "language",
+        "model_revision",
+        "precision",
+        "word_timestamps",
+        "diarization",
+        "threads",
+        "warmup_runs",
+        "runtime_version",
+        "elapsed_seconds"
+      ],
+      "title": "BenchmarkEvidence",
+      "type": "object"
+    },
+    "CapabilityCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "deployment": {
+          "$ref": "#/$defs/DeploymentInventory"
+        },
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/SelectionIssue"
+          },
+          "title": "Issues",
+          "type": "array"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/CapabilityObservation"
+          },
+          "title": "Observations",
+          "type": "array"
+        },
+        "requested_route": {
+          "$ref": "#/$defs/RequestedRoute"
+        },
+        "revision": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "runnable": {
+          "enum": [
+            "blocked",
+            "ready",
+            "unknown"
+          ],
+          "title": "Runnable",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "revision",
+        "deployment",
+        "requested_route",
+        "observations",
+        "runnable",
+        "issues"
+      ],
+      "title": "CapabilityCandidate",
+      "type": "object"
+    },
+    "CapabilityObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "decoder_device_index_observed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decoder Device Index Observed"
+        },
+        "decoder_observed": {
+          "default": "unknown",
+          "enum": [
+            "cpu",
+            "cuda",
+            "gpu",
+            "npu",
+            "unknown",
+            "vulkan"
+          ],
+          "title": "Decoder Observed",
+          "type": "string"
+        },
+        "encoder_device_index_observed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Encoder Device Index Observed"
+        },
+        "encoder_observed": {
+          "default": "unknown",
+          "enum": [
+            "cpu",
+            "cuda",
+            "gpu",
+            "npu",
+            "openvino-gpu",
+            "unknown"
+          ],
+          "title": "Encoder Observed",
+          "type": "string"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expires At"
+        },
+        "fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Fingerprint"
+        },
+        "initialized_route": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RequestedRoute"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "enum": [
+            "diarization",
+            "execution_path",
+            "hardware",
+            "memory",
+            "model",
+            "native",
+            "runtime",
+            "smoke",
+            "software_support",
+            "venv"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Observed At"
+        },
+        "reason_code": {
+          "enum": [
+            "backend_conflict",
+            "benchmark_incomparable",
+            "benchmark_stale",
+            "bridge_invalid",
+            "bridge_io_error",
+            "bridge_stderr_limit",
+            "bridge_stdout_limit",
+            "bridge_unavailable",
+            "cache_stale",
+            "comparable_benchmark",
+            "component_missing",
+            "compute_conflict",
+            "current_lock_missing",
+            "deadline_unverified",
+            "dependency_lock_changed",
+            "diarization_device_conflict",
+            "diarization_model_conflict",
+            "diarization_platform_unsupported",
+            "evidence_scope_incomplete",
+            "expired",
+            "fingerprint_changed",
+            "fixed_candidate_unavailable",
+            "fixed_selected",
+            "genai_diarization_language",
+            "hardware_missing",
+            "inactive_backend_settings",
+            "memory_insufficient",
+            "memory_limit",
+            "memory_unknown",
+            "model_conflict",
+            "model_family_mismatch",
+            "model_language_conflict",
+            "model_missing",
+            "model_revision_unknown",
+            "native_missing",
+            "no_runnable_candidate",
+            "not_observed",
+            "not_required",
+            "observation_from_future",
+            "observation_time_missing",
+            "probe_error",
+            "probe_timeout",
+            "profile_extras_changed",
+            "profile_manifest_invalid",
+            "profile_manifest_missing",
+            "profile_missing",
+            "profile_not_allowed",
+            "profile_path_changed",
+            "profile_scope_mismatch",
+            "ready",
+            "required_not_applicable",
+            "runtime_missing",
+            "smoke_missing",
+            "smoke_route_mismatch",
+            "smoke_route_unverified",
+            "stable_id_tiebreak",
+            "static_heuristic",
+            "supported",
+            "unsupported_compute",
+            "unsupported_device",
+            "unsupported_platform",
+            "unsupported_recipe",
+            "unsupported_setting",
+            "worker_backend_unsupported",
+            "worker_diarization_unsupported",
+            "worker_model_not_local",
+            "worker_single_input_only"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "core-evaluator",
+            "core-registry",
+            "device-cache",
+            "model-files",
+            "native-manifest",
+            "profile-cli",
+            "profile-manifest",
+            "provider",
+            "smoke"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "failed",
+            "not_applicable",
+            "passed",
+            "unknown"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "state",
+        "source",
+        "observed_at",
+        "expires_at",
+        "fingerprint",
+        "reason_code"
+      ],
+      "title": "CapabilityObservation",
+      "type": "object"
+    },
+    "CapabilityRecipe": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "enum": [
+            "faster-whisper",
+            "openvino-genai",
+            "whisper-cpp"
+          ],
+          "title": "Backend",
+          "type": "string"
+        },
+        "compute_types": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+            "type": "string"
+          },
+          "title": "Compute Types",
+          "type": "array"
+        },
+        "devices": {
+          "items": {
+            "enum": [
+              "cpu",
+              "cuda",
+              "gpu",
+              "npu"
+            ],
+            "type": "string"
+          },
+          "title": "Devices",
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "model_family": {
+          "enum": [
+            "ctranslate2",
+            "ggml",
+            "openvino-genai"
+          ],
+          "title": "Model Family",
+          "type": "string"
+        },
+        "native_required": {
+          "title": "Native Required",
+          "type": "boolean"
+        },
+        "non_space_diarization": {
+          "title": "Non Space Diarization",
+          "type": "boolean"
+        },
+        "platforms": {
+          "items": {
+            "enum": [
+              "Linux",
+              "Windows"
+            ],
+            "type": "string"
+          },
+          "title": "Platforms",
+          "type": "array"
+        },
+        "requested_route": {
+          "$ref": "#/$defs/RequestedRoute"
+        },
+        "required_extras": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+            "type": "string"
+          },
+          "title": "Required Extras",
+          "type": "array"
+        },
+        "revision": {
+          "const": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "word_timestamps": {
+          "title": "Word Timestamps",
+          "type": "boolean"
+        },
+        "worker_supported": {
+          "title": "Worker Supported",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "revision",
+        "backend",
+        "model_family",
+        "requested_route",
+        "devices",
+        "compute_types",
+        "platforms",
+        "required_extras",
+        "native_required",
+        "worker_supported",
+        "word_timestamps",
+        "non_space_diarization"
+      ],
+      "title": "CapabilityRecipe",
+      "type": "object"
+    },
+    "DeploymentInventory": {
+      "additionalProperties": false,
+      "properties": {
+        "available_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Available Memory Bytes"
+        },
+        "benchmark": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BenchmarkEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "identity": {
+          "$ref": "#/$defs/ExecutionIdentity"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/CapabilityObservation"
+          },
+          "title": "Observations",
+          "type": "array"
+        },
+        "required_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Required Memory Bytes"
+        }
+      },
+      "required": [
+        "identity",
+        "observations",
+        "required_memory_bytes",
+        "available_memory_bytes"
+      ],
+      "title": "DeploymentInventory",
+      "type": "object"
+    },
+    "DiarizationSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "const": "pyannote",
+          "title": "Backend",
+          "type": "string"
+        },
+        "device_preference": {
+          "enum": [
+            "auto",
+            "cpu",
+            "cuda",
+            "xpu"
+          ],
+          "title": "Device Preference",
+          "type": "string"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "max_speakers": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Speakers"
+        },
+        "memory_guard": {
+          "enum": [
+            "auto",
+            "off",
+            "warn"
+          ],
+          "title": "Memory Guard",
+          "type": "string"
+        },
+        "memory_safety_margin": {
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "Memory Safety Margin",
+          "type": "number"
+        },
+        "min_speakers": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Min Speakers"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "num_speakers": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Num Speakers"
+        }
+      },
+      "required": [
+        "enabled",
+        "backend",
+        "model",
+        "device_preference",
+        "num_speakers",
+        "min_speakers",
+        "max_speakers",
+        "memory_guard"
+      ],
+      "title": "DiarizationSettings",
+      "type": "object"
+    },
+    "ExecutionIdentity": {
+      "additionalProperties": false,
+      "description": "Opaque identities only. Paths/executables are never part of public metadata.",
+      "properties": {
+        "adapter_version": {
+          "const": "b4.1",
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "compute_type": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Compute Type",
+          "type": "string"
+        },
+        "device": {
+          "enum": [
+            "cpu",
+            "cuda",
+            "gpu",
+            "npu"
+          ],
+          "title": "Device",
+          "type": "string"
+        },
+        "device_index": {
+          "minimum": 0,
+          "title": "Device Index",
+          "type": "integer"
+        },
+        "diarization_device": {
+          "anyOf": [
+            {
+              "enum": [
+                "cpu",
+                "cuda",
+                "xpu"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Diarization Device"
+        },
+        "diarization_device_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Diarization Device Index"
+        },
+        "diarization_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Diarization Fingerprint"
+        },
+        "diarization_model": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Diarization Model"
+        },
+        "english_only": {
+          "title": "English Only",
+          "type": "boolean"
+        },
+        "execution_path": {
+          "enum": [
+            "cli",
+            "worker"
+          ],
+          "title": "Execution Path",
+          "type": "string"
+        },
+        "hardware_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Hardware Fingerprint"
+        },
+        "input_count": {
+          "minimum": 1,
+          "title": "Input Count",
+          "type": "integer"
+        },
+        "local_complete_model": {
+          "title": "Local Complete Model",
+          "type": "boolean"
+        },
+        "model_family": {
+          "enum": [
+            "ctranslate2",
+            "ggml",
+            "openvino-genai"
+          ],
+          "title": "Model Family",
+          "type": "string"
+        },
+        "model_files_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Model Files Fingerprint"
+        },
+        "model_id": {
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)?$",
+          "title": "Model Id",
+          "type": "string"
+        },
+        "model_revision": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Model Revision",
+          "type": "string"
+        },
+        "native_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Native Fingerprint"
+        },
+        "platform": {
+          "enum": [
+            "Linux",
+            "Windows",
+            "unknown"
+          ],
+          "title": "Platform",
+          "type": "string"
+        },
+        "profile_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Profile Fingerprint"
+        },
+        "profile_generation": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Profile Generation",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "python_abi": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Python Abi",
+          "type": "string"
+        },
+        "recipe_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "title": "Recipe Id",
+          "type": "string"
+        },
+        "recipe_revision": {
+          "const": 1,
+          "title": "Recipe Revision",
+          "type": "integer"
+        },
+        "runtime_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Runtime Fingerprint"
+        },
+        "smoke_version": {
+          "const": 1,
+          "title": "Smoke Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recipe_id",
+        "recipe_revision",
+        "adapter_version",
+        "smoke_version",
+        "profile_id",
+        "profile_generation",
+        "profile_fingerprint",
+        "platform",
+        "python_abi",
+        "runtime_fingerprint",
+        "hardware_fingerprint",
+        "model_id",
+        "model_family",
+        "english_only",
+        "model_revision",
+        "model_files_fingerprint",
+        "native_fingerprint",
+        "device",
+        "device_index",
+        "compute_type",
+        "execution_path",
+        "local_complete_model",
+        "input_count",
+        "diarization_device",
+        "diarization_device_index",
+        "diarization_model",
+        "diarization_fingerprint"
+      ],
+      "title": "ExecutionIdentity",
+      "type": "object"
+    },
+    "ExtraArguments": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_unverified": {
+          "title": "Allow Unverified",
+          "type": "boolean"
+        },
+        "backend": {
+          "const": "whisper-cpp",
+          "title": "Backend",
+          "type": "string"
+        },
+        "tokens": {
+          "items": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Tokens",
+          "type": "array"
+        }
+      },
+      "required": [
+        "backend",
+        "tokens",
+        "allow_unverified"
+      ],
+      "title": "ExtraArguments",
+      "type": "object"
+    },
+    "FasterWhisperSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "compute_type": {
+          "enum": [
+            "auto",
+            "float16",
+            "float32",
+            "int8",
+            "int8_float16",
+            "int8_float32"
+          ],
+          "title": "Compute Type",
+          "type": "string"
+        }
+      },
+      "title": "FasterWhisperSettings",
+      "type": "object"
+    },
+    "GenAISettings": {
+      "additionalProperties": false,
+      "properties": {
+        "max_new_tokens": {
+          "minimum": 1,
+          "title": "Max New Tokens",
+          "type": "integer"
+        }
+      },
+      "title": "GenAISettings",
+      "type": "object"
+    },
+    "InventoryExclusion": {
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/ExecutionIdentity"
+        },
+        "reason_codes": {
+          "items": {
+            "enum": [
+              "backend_conflict",
+              "benchmark_incomparable",
+              "benchmark_stale",
+              "bridge_invalid",
+              "bridge_io_error",
+              "bridge_stderr_limit",
+              "bridge_stdout_limit",
+              "bridge_unavailable",
+              "cache_stale",
+              "comparable_benchmark",
+              "component_missing",
+              "compute_conflict",
+              "current_lock_missing",
+              "deadline_unverified",
+              "dependency_lock_changed",
+              "diarization_device_conflict",
+              "diarization_model_conflict",
+              "diarization_platform_unsupported",
+              "evidence_scope_incomplete",
+              "expired",
+              "fingerprint_changed",
+              "fixed_candidate_unavailable",
+              "fixed_selected",
+              "genai_diarization_language",
+              "hardware_missing",
+              "inactive_backend_settings",
+              "memory_insufficient",
+              "memory_limit",
+              "memory_unknown",
+              "model_conflict",
+              "model_family_mismatch",
+              "model_language_conflict",
+              "model_missing",
+              "model_revision_unknown",
+              "native_missing",
+              "no_runnable_candidate",
+              "not_observed",
+              "not_required",
+              "observation_from_future",
+              "observation_time_missing",
+              "probe_error",
+              "probe_timeout",
+              "profile_extras_changed",
+              "profile_manifest_invalid",
+              "profile_manifest_missing",
+              "profile_missing",
+              "profile_not_allowed",
+              "profile_path_changed",
+              "profile_scope_mismatch",
+              "ready",
+              "required_not_applicable",
+              "runtime_missing",
+              "smoke_missing",
+              "smoke_route_mismatch",
+              "smoke_route_unverified",
+              "stable_id_tiebreak",
+              "static_heuristic",
+              "supported",
+              "unsupported_compute",
+              "unsupported_device",
+              "unsupported_platform",
+              "unsupported_recipe",
+              "unsupported_setting",
+              "worker_backend_unsupported",
+              "worker_diarization_unsupported",
+              "worker_model_not_local",
+              "worker_single_input_only"
+            ],
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "identity",
+        "reason_codes"
+      ],
+      "title": "InventoryExclusion",
+      "type": "object"
+    },
+    "InventoryRefreshRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_path": {
+          "enum": [
+            "cli",
+            "worker"
+          ],
+          "title": "Execution Path",
+          "type": "string"
+        },
+        "profile_id": {
+          "enum": [
+            "cpu",
+            "cuda",
+            "intel",
+            "vulkan"
+          ],
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProcessingSettings"
+        }
+      },
+      "required": [
+        "schema_version",
+        "profile_id",
+        "settings",
+        "execution_path",
+        "revision"
+      ],
+      "title": "InventoryRefreshRequest",
+      "type": "object"
+    },
+    "InventoryRefreshResult": {
+      "additionalProperties": false,
+      "properties": {
+        "inventory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InventorySnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason_code": {
+          "enum": [
+            "backend_conflict",
+            "benchmark_incomparable",
+            "benchmark_stale",
+            "bridge_invalid",
+            "bridge_io_error",
+            "bridge_stderr_limit",
+            "bridge_stdout_limit",
+            "bridge_unavailable",
+            "cache_stale",
+            "comparable_benchmark",
+            "component_missing",
+            "compute_conflict",
+            "current_lock_missing",
+            "deadline_unverified",
+            "dependency_lock_changed",
+            "diarization_device_conflict",
+            "diarization_model_conflict",
+            "diarization_platform_unsupported",
+            "evidence_scope_incomplete",
+            "expired",
+            "fingerprint_changed",
+            "fixed_candidate_unavailable",
+            "fixed_selected",
+            "genai_diarization_language",
+            "hardware_missing",
+            "inactive_backend_settings",
+            "memory_insufficient",
+            "memory_limit",
+            "memory_unknown",
+            "model_conflict",
+            "model_family_mismatch",
+            "model_language_conflict",
+            "model_missing",
+            "model_revision_unknown",
+            "native_missing",
+            "no_runnable_candidate",
+            "not_observed",
+            "not_required",
+            "observation_from_future",
+            "observation_time_missing",
+            "probe_error",
+            "probe_timeout",
+            "profile_extras_changed",
+            "profile_manifest_invalid",
+            "profile_manifest_missing",
+            "profile_missing",
+            "profile_not_allowed",
+            "profile_path_changed",
+            "profile_scope_mismatch",
+            "ready",
+            "required_not_applicable",
+            "runtime_missing",
+            "smoke_missing",
+            "smoke_route_mismatch",
+            "smoke_route_unverified",
+            "stable_id_tiebreak",
+            "static_heuristic",
+            "supported",
+            "unsupported_compute",
+            "unsupported_device",
+            "unsupported_platform",
+            "unsupported_recipe",
+            "unsupported_setting",
+            "worker_backend_unsupported",
+            "worker_diarization_unsupported",
+            "worker_model_not_local",
+            "worker_single_input_only"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "inventory",
+        "reason_code"
+      ],
+      "title": "InventoryRefreshResult",
+      "type": "object"
+    },
+    "InventorySnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/CapabilityCandidate"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "exclusions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/InventoryExclusion"
+          },
+          "title": "Exclusions",
+          "type": "array"
+        },
+        "execution_path": {
+          "enum": [
+            "cli",
+            "worker"
+          ],
+          "title": "Execution Path",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProcessingSettings"
+        }
+      },
+      "required": [
+        "schema_version",
+        "revision",
+        "observed_at",
+        "settings",
+        "execution_path",
+        "candidates"
+      ],
+      "title": "InventorySnapshot",
+      "type": "object"
+    },
+    "OutputSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "formats": {
+          "items": {
+            "enum": [
+              "json",
+              "md",
+              "srt",
+              "txt",
+              "vtt"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Formats",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "newline": {
+          "enum": [
+            "crlf",
+            "lf"
+          ],
+          "title": "Newline",
+          "type": "string"
+        },
+        "show_speaker": {
+          "title": "Show Speaker",
+          "type": "boolean"
+        },
+        "speaker_labels": {
+          "additionalProperties": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "title": "Speaker Labels",
+          "type": "object"
+        },
+        "srt_bom": {
+          "title": "Srt Bom",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "formats",
+        "newline",
+        "srt_bom",
+        "show_speaker",
+        "speaker_labels"
+      ],
+      "title": "OutputSettings",
+      "type": "object"
+    },
+    "Policy": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "fixed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fallback": {
+                "const": "none"
+              },
+              "fixed_candidate_id": {
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "auto"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fixed_candidate_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "allowed_profile_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Allowed Profile Ids",
+          "type": "array"
+        },
+        "execution_deadline_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Execution Deadline Seconds"
+        },
+        "fallback": {
+          "enum": [
+            "none",
+            "preapproved"
+          ],
+          "title": "Fallback",
+          "type": "string"
+        },
+        "fixed_candidate_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Fixed Candidate Id"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "max_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Memory Bytes"
+        },
+        "mode": {
+          "enum": [
+            "auto",
+            "fixed"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "objective": {
+          "enum": [
+            "balanced",
+            "quality",
+            "speed"
+          ],
+          "title": "Objective",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "name",
+        "mode",
+        "fixed_candidate_id",
+        "allowed_profile_ids",
+        "objective",
+        "max_memory_bytes",
+        "fallback",
+        "execution_deadline_seconds",
+        "id",
+        "revision"
+      ],
+      "title": "Policy",
+      "type": "object"
+    },
+    "PostprocessingSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "boundary_snap_enabled": {
+          "title": "Boundary Snap Enabled",
+          "type": "boolean"
+        },
+        "boundary_snap_max_characters": {
+          "minimum": 0,
+          "title": "Boundary Snap Max Characters",
+          "type": "integer"
+        },
+        "boundary_snap_max_gap": {
+          "minimum": 0,
+          "title": "Boundary Snap Max Gap",
+          "type": "number"
+        },
+        "boundary_snap_unit": {
+          "enum": [
+            "A",
+            "B"
+          ],
+          "title": "Boundary Snap Unit",
+          "type": "string"
+        },
+        "fallback_characters_per_second": {
+          "minimum": 0,
+          "title": "Fallback Characters Per Second",
+          "type": "number"
+        },
+        "fallback_duration_padding": {
+          "minimum": 0,
+          "title": "Fallback Duration Padding",
+          "type": "number"
+        },
+        "fallback_min_duration": {
+          "minimum": 0,
+          "title": "Fallback Min Duration",
+          "type": "number"
+        },
+        "max_nearest_distance": {
+          "minimum": 0,
+          "title": "Max Nearest Distance",
+          "type": "number"
+        },
+        "max_same_speaker_bridge_gap": {
+          "minimum": 0,
+          "title": "Max Same Speaker Bridge Gap",
+          "type": "number"
+        },
+        "max_unsupported_fragment_characters": {
+          "minimum": 0,
+          "title": "Max Unsupported Fragment Characters",
+          "type": "integer"
+        },
+        "max_unsupported_fragment_duration": {
+          "minimum": 0,
+          "title": "Max Unsupported Fragment Duration",
+          "type": "number"
+        },
+        "merge_gap": {
+          "minimum": 0,
+          "title": "Merge Gap",
+          "type": "number"
+        },
+        "min_clear_turn_duration": {
+          "minimum": 0,
+          "title": "Min Clear Turn Duration",
+          "type": "number"
+        },
+        "min_fragment_speaker_overlap": {
+          "minimum": 0,
+          "title": "Min Fragment Speaker Overlap",
+          "type": "number"
+        },
+        "min_segment_duration": {
+          "minimum": 0,
+          "title": "Min Segment Duration",
+          "type": "number"
+        },
+        "min_segment_words": {
+          "minimum": 0,
+          "title": "Min Segment Words",
+          "type": "integer"
+        },
+        "min_unknown_characters": {
+          "minimum": 0,
+          "title": "Min Unknown Characters",
+          "type": "integer"
+        },
+        "min_unknown_duration": {
+          "minimum": 0,
+          "title": "Min Unknown Duration",
+          "type": "number"
+        },
+        "renumber_speakers": {
+          "title": "Renumber Speakers",
+          "type": "boolean"
+        },
+        "silence_switch_threshold": {
+          "minimum": 0,
+          "title": "Silence Switch Threshold",
+          "type": "number"
+        },
+        "speaker_switch_penalty": {
+          "minimum": 0,
+          "title": "Speaker Switch Penalty",
+          "type": "number"
+        },
+        "unknown_emission_score": {
+          "minimum": 0,
+          "title": "Unknown Emission Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "boundary_snap_enabled",
+        "boundary_snap_unit",
+        "merge_gap",
+        "speaker_switch_penalty"
+      ],
+      "title": "PostprocessingSettings",
+      "type": "object"
+    },
+    "ProcessingSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/ASRSettings"
+        },
+        "diarization": {
+          "$ref": "#/$defs/DiarizationSettings"
+        },
+        "output": {
+          "$ref": "#/$defs/OutputSettings"
+        },
+        "postprocessing": {
+          "$ref": "#/$defs/PostprocessingSettings"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "asr",
+        "diarization",
+        "postprocessing",
+        "output"
+      ],
+      "title": "ProcessingSettings",
+      "type": "object"
+    },
+    "RecipeCatalog": {
+      "additionalProperties": false,
+      "properties": {
+        "recipes": {
+          "items": {
+            "$ref": "#/$defs/CapabilityRecipe"
+          },
+          "title": "Recipes",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "recipes"
+      ],
+      "title": "RecipeCatalog",
+      "type": "object"
+    },
+    "RequestedRoute": {
+      "additionalProperties": false,
+      "properties": {
+        "decoder": {
+          "enum": [
+            "backend-default",
+            "cpu",
+            "cuda",
+            "gpu",
+            "npu",
+            "selected-device",
+            "vulkan"
+          ],
+          "title": "Decoder",
+          "type": "string"
+        },
+        "encoder": {
+          "enum": [
+            "backend-default",
+            "cpu",
+            "cuda",
+            "gpu",
+            "npu",
+            "openvino-gpu",
+            "selected-device"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        },
+        "native_variant": {
+          "anyOf": [
+            {
+              "enum": [
+                "cpu",
+                "openvino",
+                "openvino_vulkan",
+                "vulkan"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Native Variant"
+        }
+      },
+      "required": [
+        "native_variant",
+        "encoder",
+        "decoder"
+      ],
+      "title": "RequestedRoute",
+      "type": "object"
+    },
+    "ResolvedSelection": {
+      "additionalProperties": false,
+      "description": "Preparation result only; no job token, persistence, or fallback execution.",
+      "properties": {
+        "alternatives": {
+          "items": {
+            "$ref": "#/$defs/SelectionAlternative"
+          },
+          "title": "Alternatives",
+          "type": "array"
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "enum": [
+                "fixed_candidate_unavailable",
+                "no_runnable_candidate"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        },
+        "evidence_kinds": {
+          "items": {
+            "enum": [
+              "benchmark",
+              "smoke",
+              "static_rule"
+            ],
+            "type": "string"
+          },
+          "title": "Evidence Kinds",
+          "type": "array"
+        },
+        "exclusions": {
+          "items": {
+            "$ref": "#/$defs/InventoryExclusion"
+          },
+          "title": "Exclusions",
+          "type": "array"
+        },
+        "inventory_revision": {
+          "minimum": 1,
+          "title": "Inventory Revision",
+          "type": "integer"
+        },
+        "policy": {
+          "$ref": "#/$defs/Policy"
+        },
+        "preapproved": {
+          "items": {
+            "$ref": "#/$defs/CapabilityCandidate"
+          },
+          "title": "Preapproved",
+          "type": "array"
+        },
+        "reason_codes": {
+          "items": {
+            "enum": [
+              "backend_conflict",
+              "benchmark_incomparable",
+              "benchmark_stale",
+              "bridge_invalid",
+              "bridge_io_error",
+              "bridge_stderr_limit",
+              "bridge_stdout_limit",
+              "bridge_unavailable",
+              "cache_stale",
+              "comparable_benchmark",
+              "component_missing",
+              "compute_conflict",
+              "current_lock_missing",
+              "deadline_unverified",
+              "dependency_lock_changed",
+              "diarization_device_conflict",
+              "diarization_model_conflict",
+              "diarization_platform_unsupported",
+              "evidence_scope_incomplete",
+              "expired",
+              "fingerprint_changed",
+              "fixed_candidate_unavailable",
+              "fixed_selected",
+              "genai_diarization_language",
+              "hardware_missing",
+              "inactive_backend_settings",
+              "memory_insufficient",
+              "memory_limit",
+              "memory_unknown",
+              "model_conflict",
+              "model_family_mismatch",
+              "model_language_conflict",
+              "model_missing",
+              "model_revision_unknown",
+              "native_missing",
+              "no_runnable_candidate",
+              "not_observed",
+              "not_required",
+              "observation_from_future",
+              "observation_time_missing",
+              "probe_error",
+              "probe_timeout",
+              "profile_extras_changed",
+              "profile_manifest_invalid",
+              "profile_manifest_missing",
+              "profile_missing",
+              "profile_not_allowed",
+              "profile_path_changed",
+              "profile_scope_mismatch",
+              "ready",
+              "required_not_applicable",
+              "runtime_missing",
+              "smoke_missing",
+              "smoke_route_mismatch",
+              "smoke_route_unverified",
+              "stable_id_tiebreak",
+              "static_heuristic",
+              "supported",
+              "unsupported_compute",
+              "unsupported_device",
+              "unsupported_platform",
+              "unsupported_recipe",
+              "unsupported_setting",
+              "worker_backend_unsupported",
+              "worker_diarization_unsupported",
+              "worker_model_not_local",
+              "worker_single_input_only"
+            ],
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "requested_settings": {
+          "$ref": "#/$defs/ProcessingSettings"
+        },
+        "resolved_at": {
+          "format": "date-time",
+          "title": "Resolved At",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "selected": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CapabilityCandidate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "requested_settings",
+        "policy",
+        "inventory_revision",
+        "resolved_at",
+        "selected",
+        "preapproved",
+        "alternatives",
+        "exclusions",
+        "reason_codes",
+        "error",
+        "evidence_kinds",
+        "confidence"
+      ],
+      "title": "ResolvedSelection",
+      "type": "object"
+    },
+    "SelectionAlternative": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {
+          "$ref": "#/$defs/CapabilityCandidate"
+        },
+        "eligible": {
+          "title": "Eligible",
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "items": {
+            "enum": [
+              "backend_conflict",
+              "benchmark_incomparable",
+              "benchmark_stale",
+              "bridge_invalid",
+              "bridge_io_error",
+              "bridge_stderr_limit",
+              "bridge_stdout_limit",
+              "bridge_unavailable",
+              "cache_stale",
+              "comparable_benchmark",
+              "component_missing",
+              "compute_conflict",
+              "current_lock_missing",
+              "deadline_unverified",
+              "dependency_lock_changed",
+              "diarization_device_conflict",
+              "diarization_model_conflict",
+              "diarization_platform_unsupported",
+              "evidence_scope_incomplete",
+              "expired",
+              "fingerprint_changed",
+              "fixed_candidate_unavailable",
+              "fixed_selected",
+              "genai_diarization_language",
+              "hardware_missing",
+              "inactive_backend_settings",
+              "memory_insufficient",
+              "memory_limit",
+              "memory_unknown",
+              "model_conflict",
+              "model_family_mismatch",
+              "model_language_conflict",
+              "model_missing",
+              "model_revision_unknown",
+              "native_missing",
+              "no_runnable_candidate",
+              "not_observed",
+              "not_required",
+              "observation_from_future",
+              "observation_time_missing",
+              "probe_error",
+              "probe_timeout",
+              "profile_extras_changed",
+              "profile_manifest_invalid",
+              "profile_manifest_missing",
+              "profile_missing",
+              "profile_not_allowed",
+              "profile_path_changed",
+              "profile_scope_mismatch",
+              "ready",
+              "required_not_applicable",
+              "runtime_missing",
+              "smoke_missing",
+              "smoke_route_mismatch",
+              "smoke_route_unverified",
+              "stable_id_tiebreak",
+              "static_heuristic",
+              "supported",
+              "unsupported_compute",
+              "unsupported_device",
+              "unsupported_platform",
+              "unsupported_recipe",
+              "unsupported_setting",
+              "worker_backend_unsupported",
+              "worker_diarization_unsupported",
+              "worker_model_not_local",
+              "worker_single_input_only"
+            ],
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate",
+        "eligible",
+        "reason_codes"
+      ],
+      "title": "SelectionAlternative",
+      "type": "object"
+    },
+    "SelectionIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "backend_conflict",
+            "benchmark_incomparable",
+            "benchmark_stale",
+            "bridge_invalid",
+            "bridge_io_error",
+            "bridge_stderr_limit",
+            "bridge_stdout_limit",
+            "bridge_unavailable",
+            "cache_stale",
+            "comparable_benchmark",
+            "component_missing",
+            "compute_conflict",
+            "current_lock_missing",
+            "deadline_unverified",
+            "dependency_lock_changed",
+            "diarization_device_conflict",
+            "diarization_model_conflict",
+            "diarization_platform_unsupported",
+            "evidence_scope_incomplete",
+            "expired",
+            "fingerprint_changed",
+            "fixed_candidate_unavailable",
+            "fixed_selected",
+            "genai_diarization_language",
+            "hardware_missing",
+            "inactive_backend_settings",
+            "memory_insufficient",
+            "memory_limit",
+            "memory_unknown",
+            "model_conflict",
+            "model_family_mismatch",
+            "model_language_conflict",
+            "model_missing",
+            "model_revision_unknown",
+            "native_missing",
+            "no_runnable_candidate",
+            "not_observed",
+            "not_required",
+            "observation_from_future",
+            "observation_time_missing",
+            "probe_error",
+            "probe_timeout",
+            "profile_extras_changed",
+            "profile_manifest_invalid",
+            "profile_manifest_missing",
+            "profile_missing",
+            "profile_not_allowed",
+            "profile_path_changed",
+            "profile_scope_mismatch",
+            "ready",
+            "required_not_applicable",
+            "runtime_missing",
+            "smoke_missing",
+            "smoke_route_mismatch",
+            "smoke_route_unverified",
+            "stable_id_tiebreak",
+            "static_heuristic",
+            "supported",
+            "unsupported_compute",
+            "unsupported_device",
+            "unsupported_platform",
+            "unsupported_recipe",
+            "unsupported_setting",
+            "worker_backend_unsupported",
+            "worker_diarization_unsupported",
+            "worker_model_not_local",
+            "worker_single_input_only"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "diarization",
+                "execution_path",
+                "hardware",
+                "memory",
+                "model",
+                "native",
+                "runtime",
+                "smoke",
+                "software_support",
+                "venv"
+              ],
+              "type": "string"
+            },
+            {
+              "enum": [
+                "policy",
+                "settings"
+              ],
+              "type": "string"
+            }
+          ],
+          "title": "Kind"
+        }
+      },
+      "required": [
+        "kind",
+        "code"
+      ],
+      "title": "SelectionIssue",
+      "type": "object"
+    },
+    "VadSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Threshold",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "VadSettings",
+      "type": "object"
+    },
+    "WhisperCppSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "dtw": {
+          "title": "Dtw",
+          "type": "string"
+        },
+        "entropy_threshold": {
+          "title": "Entropy Threshold",
+          "type": "number"
+        },
+        "logprob_threshold": {
+          "title": "Logprob Threshold",
+          "type": "number"
+        },
+        "max_word_duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Max Word Duration Seconds",
+          "type": "number"
+        },
+        "no_context": {
+          "title": "No Context",
+          "type": "boolean"
+        },
+        "no_speech_threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "No Speech Threshold",
+          "type": "number"
+        },
+        "repetition_limit": {
+          "minimum": 0,
+          "title": "Repetition Limit",
+          "type": "integer"
+        },
+        "temperature": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "temperature_increment": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Temperature Increment",
+          "type": "number"
+        },
+        "threads": {
+          "minimum": 0,
+          "title": "Threads",
+          "type": "integer"
+        },
+        "vad": {
+          "title": "Vad",
+          "type": "boolean"
+        },
+        "vad_model": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vad Model"
+        },
+        "vad_threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Vad Threshold",
+          "type": "number"
+        }
+      },
+      "title": "WhisperCppSettings",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/RecipeCatalog"
+    },
+    {
+      "$ref": "#/$defs/InventorySnapshot"
+    },
+    {
+      "$ref": "#/$defs/ResolvedSelection"
+    },
+    {
+      "$ref": "#/$defs/InventoryRefreshRequest"
+    },
+    {
+      "$ref": "#/$defs/InventoryRefreshResult"
+    }
+  ],
+  "title": "Utteran B4 capability inventory / preparation result (schema 1)"
+}

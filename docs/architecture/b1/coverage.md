@@ -80,3 +80,10 @@
 | `WhisperCppSettings` | 実装 |
 
 Contract / VersionedContract / SchemaVersionはB1補助型でありPhase Aの追加APIではない。
+
+## B4追加実装との対応
+
+B1 artifactと上表はB1時点の範囲を維持する。B4はCandidate/Observation/Route/Evidence/
+SelectionAlternative/Resolutionの準備部分を追加した。型名・意図的差分・未実装APIの正本は
+[対応表](../b4/README.md#phase-aとの対応と意図的差分)、生成物は
+[capabilities.schema.json](../b4/capabilities.schema.json)。B1/B3 artifactは変更しない。

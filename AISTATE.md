@@ -1,5 +1,40 @@
 # AI 作業状態
 
+## PR #25 B4レビュー修正 P2/P3（2026-11-02）
+
+- 開始9b99a6fのPR #25（base B3、Draft）へ局所修正。P2 `eb14c6c`、P3 `e64176b`を別コミット。
+- P2: smoke routeをverified/unverified/mismatchへ分離。必須native/encoder/decoder実測と
+  acceleratorのengine別実測indexがない構成はunknown。要求値から実測を補完しない。
+- P3: 独立bridgeの読取中にstdout 8 MiB / stderr 64 KiBを制限し、既存ProcessSupervisorで
+  子孫停止・直接子wait・pipe/thread回収。専用allowlist環境からHF/cloud/session/proxy秘密値を除去。
+- Linuxモデル不要870 passed / 既知3 failed / 8 skipped。開始時とのfailed/error/skip集合は一致。
+  route134 + transport21 = 関連155件成功。Python3.11独立wheel環境の関連397件成功。
+- Ruff/Schema/lock/wheel成功、mypy既知9件のみ。B1/B3 schema、既存実行経路、uv.lock等に差分なし。
+- [レビュー検証追補](docs/architecture/b4/pr25-review-validation.md)へコマンドと証拠を記録。
+  Windows CIは878 passed / 3 skipped、3.11/3.12契約各277 passed。workflowの赤は既知9件/Inno Setupのみ。
+  実GPU/native/配布版受入は未検証。
+- 既存PR #25をDraftのまま更新。Ready化・merge・B5着手はしない。
+
+## Phase B4 Capability Inventory / Resolver（2026-11-02）
+
+- B3 PR #24のOPEN/Draftとhead `5ef7bab7ba81cab7afc1fe23b85abc8da399ec1b`をGitHubで再確認し、
+  `feat/b4-capability-inventory-resolver`へ分岐。B3をbaseとするstacked Draft PRとして提出する。
+- coreの7 recipe、immutable capability/evidence DTOとoffline schema、read-only collector、
+  scope/freshness evaluator、pure auto/fixed resolver、独立profile bridge/GUI adapterを追加。
+- 標準collectorはmanaged model/manifest/package metadataの読取だけ。smoke/runtime/GPU/memoryを
+  推測せず、未検証構成をreadyへ昇格しない。通常CLI/GUI、B3 worker、既存job/profileは変更しない。
+- Linux Python3.12: 821 passed / 既知3 failed / 8 skipped。B3基準715件から新規106成功、
+  failed/skip node集合は同一。mypyは既知Windows ctypes 9件のみで増分0。
+- Python3.11独立wheel環境のB1/B2/B3/B4関連348件成功。Ruff、3 schema --check、lock、wheel成功。
+- 要件定義24.1に従い0.1.33へ更新。lock root versionのみ変更。全体hash問題による旧profileの
+  dependency_lock_changedを隠さずblockedへ反映し、manifest/venvは変更しない。
+- [B4資料](docs/architecture/b4/README.md)と[検証](docs/architecture/b4/validation.md)を参照。
+  最終コード6a915a6のWindows CIは829 passed / 3 skipped、3.11/3.12契約各228 passed。
+  workflowは既知mypy/PowerShell問題で赤。[CI記録](docs/architecture/b4/validation.md)に分離。
+  [Draft PR #25](https://github.com/zawa356/Utteran/pull/25)、base B3。実GPU/native推論・性能・quality・配布は未検証。
+- B5/API/UI切替、setup承認/実行、job snapshot/queue/fallback実行には進まない。
+  lock closure fingerprint、既知mypy/PowerShell CIは別PR対象。Ready化・mergeを行わずレビュー待ち。
+
 ## PR #24 B3レビュー修正（2026-11-02、Draft維持）
 
 - P1 `c9e9aca`: B1/B2/B3テストのUTF-8読書きを明示。P2 `03e7782`: 受理前の限定匿名errorを
