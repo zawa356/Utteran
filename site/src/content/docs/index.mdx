@@ -1,0 +1,53 @@
+---
+title: Utteran
+description: 音声・動画をローカルで文字起こしするオープンソースのデスクトップアプリ。
+template: splash
+hero:
+  title: Utteran
+  tagline: 音声・動画をローカルで文字起こし。話者ごとの整理から字幕・テキスト出力まで、Windowsアプリで完結します。
+  actions:
+    - text: ダウンロード
+      link: https://github.com/zawa356/Utteran/releases/latest
+      icon: external
+    - text: 使い方を見る
+      link: /Utteran/getting-started/
+      variant: minimal
+      icon: right-arrow
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Utteranは、会議・インタビュー・講演などの音声・動画を文字起こしするオープンソースソフトウェアです。
+文字起こし処理のために入力音声をクラウドの文字起こしAPIへ送信しません。
+
+## 主な機能
+
+<CardGrid>
+  <Card title="ローカルで処理">
+    Whisper系エンジンを利用し、手元のPCで文字起こしします。モデルの初回取得などにはネットワーク接続が必要です。
+  </Card>
+  <Card title="話者分離">
+    対応するモデルを利用して、発話を話者ごとに整理できます。話者分離はオプションです。
+  </Card>
+  <Card title="用途に合わせた出力">
+    SRT、VTT、JSON、TXT、Markdownに出力。字幕制作や議事録の下書きに使えます。
+  </Card>
+  <Card title="GUIとCLI">
+    WindowsデスクトップGUIで操作できます。自動化や高度な操作向けのCLIも用意しています。
+  </Card>
+</CardGrid>
+
+## はじめる
+
+<CardGrid>
+  <LinkCard title="インストールと初期設定" href="/Utteran/getting-started/" description="Windows向けの推奨導入手順とセットアップについて。" />
+  <LinkCard title="機能と対応形式" href="/Utteran/features/" description="話者分離、対応バックエンド、エクスポート形式を確認します。" />
+  <LinkCard title="対応環境" href="/Utteran/hardware/" description="CPU・NVIDIA・Intel・Vulkanの対応状況。" />
+  <LinkCard title="プライバシー" href="/Utteran/privacy/" description="ローカル処理と外部通信が発生する場面について。" />
+</CardGrid>
+
+## ソースコードとリリース
+
+[ソースコード・Issue](https://github.com/zawa356/Utteran) / [公開済みリリース](https://github.com/zawa356/Utteran/releases) / [MITライセンス](https://github.com/zawa356/Utteran/blob/main/LICENSE)
+
+公開リリースと開発中の機能は異なる場合があります。最新の配布物と変更内容はGitHub Releasesを参照してください。

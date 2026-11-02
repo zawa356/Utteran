@@ -1,0 +1,40 @@
+---
+title: Installation
+description: Install Utteran on Windows and complete the initial setup.
+---
+
+Utteran is primarily a Windows 10/11 desktop application. You can get started with the installer without setting up Python manually.
+
+## 1. Choose a download
+
+Get a published build from [GitHub Releases](https://github.com/zawa356/Utteran/releases/latest).
+
+| Distribution | Recommended use |
+| --- | --- |
+| `utteran-setup-<version>.exe` | Standard Windows installation |
+| `utteran-portable-<version>.zip` | Run from an extracted directory |
+| Source code / Python launcher | Development and troubleshooting |
+
+:::caution
+Current Windows executables are not code-signed. Windows SmartScreen may warn about an unknown publisher. Before running a download, verify that it came from the official release page and that its SHA-256 hash matches the published checksum.
+:::
+
+## 2. Install and launch
+
+1. Run the installer, then launch "utteran" from the Start menu.
+2. For the portable build, extract the ZIP and run `utteran-gui.exe`.
+3. During the first-run wizard, choose your device configuration and models. Speaker diarization is optional.
+4. Once dependencies and models have been downloaded, choose an audio or video file and start a transcription job.
+
+The initial setup requires internet access and several gigabytes of available storage. The time needed varies by configuration and download speed.
+
+## 3. Review and export results
+
+Use the GUI to inspect progress, read results, and export SRT, VTT, JSON, TXT, or Markdown. Where cached artifacts are available, changing only the export format does not require running recognition again.
+
+## Troubleshooting
+
+- If the GUI does not appear on Windows 10, verify that [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) is installed.
+- Speaker diarization requires accepting the relevant Hugging Face model terms and supplying a read token.
+- See the [English README](https://github.com/zawa356/Utteran/blob/main/README.en.md) for detailed setup and checksum verification.
+- Report issues via [GitHub Issues](https://github.com/zawa356/Utteran/issues).

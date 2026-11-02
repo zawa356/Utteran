@@ -1,0 +1,40 @@
+---
+title: インストール
+description: UtteranをWindowsに導入する手順。
+---
+
+UtteranはWindows 10/11向けのデスクトップアプリとして利用できます。Pythonを手動で構築しなくても、インストーラーから開始できます。
+
+## 1. 配布ファイルを取得する
+
+[GitHub Releases](https://github.com/zawa356/Utteran/releases/latest)から、お使いの環境に応じて選んでください。
+
+| 配布形式 | 用途 |
+| --- | --- |
+| `utteran-setup-<version>.exe` | 通常のWindows利用に推奨 |
+| `utteran-portable-<version>.zip` | インストールせずに展開先から起動 |
+| ソースコード・Python起動 | 開発やトラブルシュート向け |
+
+:::caution
+配布されるWindows実行ファイルは現時点でコード署名されていません。SmartScreenの警告が出る場合があります。実行前に配布ページのSHA-256とダウンロードしたファイルのハッシュを照合し、配布元を確認してください。
+:::
+
+## 2. インストール・起動する
+
+1. 通常版はインストーラーを実行し、スタートメニューの「utteran」から起動します。
+2. ポータブル版はZIPを展開し、`utteran-gui.exe`を起動します。
+3. 初回セットアップでは、デバイスとモデルを選択します。話者分離を使うかどうかも設定します。
+4. 依存ライブラリとモデルの取得が完了したら、音声または動画を指定して文字起こしを開始します。
+
+初回セットアップではインターネット接続と数GB程度の空き容量が必要です。処理時間は構成と回線速度によって異なります。
+
+## 3. 結果を確認する
+
+GUIで処理状況や結果を確認し、SRT / VTT / JSON / TXT / Markdownなどの形式で出力できます。形式を変えた再出力は、保存済みデータが利用できる場合、認識処理をやり直さずに実行できます。
+
+## 困ったときは
+
+- Windows 10でGUIが表示されない場合は、[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)の導入状況を確認してください。
+- 話者分離を有効にする場合は、対象のHugging Faceモデル利用条件への同意と読み取り用トークンが必要です。
+- 詳細なインストール手順、ハッシュ照合、既知の制限は[README（日本語）](https://github.com/zawa356/Utteran/blob/main/README.md)にあります。
+- 不具合や改善提案は[GitHub Issues](https://github.com/zawa356/Utteran/issues)で受け付けています。

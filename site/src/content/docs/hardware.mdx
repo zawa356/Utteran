@@ -1,0 +1,30 @@
+---
+title: 対応環境
+description: UtteranのOS、CPU、GPU、推論プロファイル。
+---
+
+**主な対象OSはWindows 10/11です。** Linuxは副対象としてCLIなどの動作を確認していますが、Windowsデスクトップ版と同じ受入範囲ではありません。
+
+## 実行プロファイル
+
+| プロファイル | 主な対象 | ASR高速化 | 話者分離のGPU利用 |
+| --- | --- | --- | --- |
+| `cpu` | GPUを使わない構成 | CPU実行 | なし |
+| `cuda` | NVIDIA GPU | CUDA | CUDA |
+| `intel` | Intel GPU（内蔵GPU・Arcなど） | OpenVINO / Vulkanなど | Intel XPU |
+| `vulkan` | 対応GPU（AMDなど） | Vulkan | なし（CPU実行） |
+
+対応表は代表的な構成です。個々のGPUやドライバーでの動作を保証するものではありません。
+
+:::tip
+Intel製CPUというだけでは`intel`プロファイルを選びません。Intel GPUがない場合は`cpu`などの適切な構成を使用してください。GUIのセットアップで利用可能な構成を確認できます。
+:::
+
+## 必要な環境
+
+- インストーラーまたはポータブル版を使う場合はWindows 10/11
+- GUIにはMicrosoft Edge WebView2 Runtimeが必要（Windows 11では一般に標準搭載）
+- 初回のモデル・依存関係取得にはインターネット接続と数GB程度の空き容量が必要
+- GPU利用には対象デバイスに対応するドライバーや追加の依存関係が必要
+
+実機別の確認状況と詳細な制約は[READMEのプロファイル説明](https://github.com/zawa356/Utteran/blob/main/README.md#install-profile)を参照してください。

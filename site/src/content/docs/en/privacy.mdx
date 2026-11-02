@@ -1,0 +1,22 @@
+---
+title: Privacy
+description: What runs locally, and when Utteran needs network access.
+---
+
+Utteran is designed to perform transcription and speaker diarization on your own computer. **Input audio is not uploaded to a cloud transcription API.**
+
+Local processing does not mean that every part of setup runs without an internet connection.
+
+## When network access is needed
+
+- Installing dependencies and downloading recognition models during setup
+- Accepting diarization model terms and preparing or verifying a Hugging Face token
+- Visiting GitHub Releases and related documentation
+
+Network requirements vary between backends and installed models. If fully offline operation is essential, validate your specific environment and workflow first.
+
+## Local data
+
+The GUI keeps job history and transcription results locally. The portable distribution is designed to keep application-managed data inside its extracted directory. Token storage, retention, and deletion behavior differ by distribution and configuration.
+
+For technical and security details, consult the [English README](https://github.com/zawa356/Utteran/blob/main/README.en.md) and [source repository](https://github.com/zawa356/Utteran). This public website does not provide a feature for uploading audio or transcription results.
