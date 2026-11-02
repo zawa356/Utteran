@@ -72,9 +72,20 @@ B6テストの失敗はreader starvationと判断した。テスト内のchurn t
 ただし、B6のテストであるため#27へ回さず、ここで対処した。churn threadの書込み間に1msの間隔を入れ、
 整合性のassertionは変更していない。この性質は[outbox](outbox.md)にも記録した。
 
-### 2回目（最終HEAD）
+### 2回目（最終HEAD `a1857bc`）
 
-結果は下記とPR本文に記録する。
+**workflow全体は赤（既知課題のみ）。「CI緑」ではない。**
+
+| run | job | 結果 |
+|---|---|---|
+| [41393383380](https://github.com/zawa356/Utteran/actions/runs/41393383380)（pull_request） | windows-tests | pytest **1030 passed / 4 skipped**（成功）。後続のheadless起動stepが既知のInno Setup（ISCC.exe）不在で失敗 |
+| 同上 | contracts 3.11 / 3.12 | success、各**430 passed**、B1/B4/B5/B6 schema `--check`成功 |
+| 同上 | linux-quality | failure: 既知mypy 9件（`processes.py`）。lock・B1〜B6 schema・ruff・formatは成功。後続のLinux pytest・BOM・public scanは未到達（ローカル実測で代替。未到達は成功とみなさない） |
+| [41393378772](https://github.com/zawa356/Utteran/actions/runs/41393378772)（push） | windows-tests | pytest **1030 passed / 4 skipped**、後続stepはInno Setup不在で失敗（既知） |
+| 同上 | contracts 3.11 / 3.12 / linux-quality | 各430 passed / 各430 passed / 既知mypy 9件 |
+
+修正前の記録値（Windows 1011/4、契約各411）から、B6テストが19件増えた分だけ件数が増えている（Windows: POSIX権限テスト1件は従来どおりskip）。
+Windows PID-file競合（#27）はこの2 runでは再現しなかったが、間欠的な既知課題として残る。
 
 最終HEADの結果は[validation](validation.md)のCI節とPR本文に記録する。以前のWindows 1011 passed / 4 skipped、
 契約3.11/3.12各411 passedは**修正前の記録値**。

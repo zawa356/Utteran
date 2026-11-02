@@ -14,6 +14,10 @@
 - 検証（Linux 3.11.18）: B6 61→80件、全体1024 passed / 2 failed / 8 skipped。failed/error/skipped
   集合は修正前とB5基点の両方と一致。wheel 3.11/3.12各220件、mypy既知9件のみ、Ruff/schema/lock/
   wheel成功、public scanの新規blocking 0。[検証記録](docs/architecture/b6/pr28-review-fixes-validation.md)。
+- CI（最終HEAD `a1857bc`、run 41393383380 / 41393378772）: Windows pytest 1030 passed / 4 skipped、
+  契約3.11/3.12各430 passed。workflowは既知のInno Setup前提とmypy 9件で赤（「CI緑」ではない）。
+  途中のHEAD `d657a30`では、B6の並行snapshotテストがWindowsでreader starvation（`store_busy`）を起こした。
+  writerの書込み間隔をテストで調整し、整合性のassertionは維持したうえで、この性質を文書化した。
 - 残るゲート: #27、Windows ACL/配布/GPU、実process recovery、private DBの保持・消去方針。
 - 次の統合判断: P2の再レビュー。B7（HTTP queue操作ではIdempotency-Key必須）とmain統合は未着手。
   Draft維持でレビュー待ち。
