@@ -2,6 +2,10 @@
 
 設計承認前に下記実装へ進まない。各PRは小さな独立レビュー単位とし、共有schema変更・core adapter・GUI切替を一括PRへまとめない。
 
+2026-11-02 B5追補: [B5](../b5/README.md)はopt-inで実装・Draftレビュー対象。
+T09/T18/T19のunit/offline回帰はB5検証記録、T17の画面切替は未実装。
+新旧の設定正本と明示import方針は維持する。下表は依存計画の履歴でありmerge済み一覧ではない。
+
 ## 1. PR依存と推奨順
 
 | PR案 | 依存 | 対象module/成果 | 必須検証とrollback |

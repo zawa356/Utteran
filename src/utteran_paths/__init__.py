@@ -81,6 +81,14 @@ class DataPaths:
         return self.root / "logs" if self.root else Path(user_log_dir("utteran"))
 
     @property
+    def settings_resources(self) -> Path:
+        return (
+            self.root / "data" / "settings-v1" / "resources.sqlite3"
+            if self.root
+            else Path(user_data_dir("utteran")) / "settings-v1" / "resources.sqlite3"
+        )
+
+    @property
     def memory_calibration(self) -> Path:
         return (
             self.root / "config" / "memory-calibration.json"

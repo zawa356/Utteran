@@ -2952,59 +2952,112 @@ components:
       - common_overrides
       - files
     Provenance:
-      type: object
       additionalProperties: false
       properties:
+        input_source:
+          enum:
+          - preset
+          - common
+          - file
+          title: Input Source
+          type: string
+        input_status:
+          enum:
+          - value
+          - 'null'
+          - empty
+          - absent
+          title: Input Status
+          type: string
         path:
+          title: Path
           type: string
         source:
-          type: string
           enum:
           - preset
           - common
           - file
           - normalization
+          title: Source
+          type: string
       required:
       - path
       - source
-    ValidatedFile:
+      - input_source
+      - input_status
+      title: Provenance
       type: object
+    ValidatedFile:
       additionalProperties: false
       properties:
-        client_file_id: *id001
-        valid: *id003
+        client_file_id:
+          title: Client File Id
+          type: string
         effective_settings:
           anyOf:
           - $ref: '#/components/schemas/ProcessingSettings'
           - type: 'null'
-        provenance:
-          type: array
-          items:
-            $ref: '#/components/schemas/Provenance'
         issues:
-          type: array
           items:
             $ref: '#/components/schemas/Issue'
+          title: Issues
+          type: array
+        provenance:
+          items:
+            $ref: '#/components/schemas/Provenance'
+          title: Provenance
+          type: array
+        valid:
+          title: Valid
+          type: boolean
+        warnings:
+          items:
+            $ref: '#/components/schemas/Issue'
+          title: Warnings
+          type: array
+        worker_support:
+          enum:
+          - unsupported
+          - unverified
+          title: Worker Support
+          type: string
       required:
       - client_file_id
       - valid
       - effective_settings
       - provenance
       - issues
-    ValidationResult:
+      - warnings
+      - worker_support
+      title: ValidatedFile
       type: object
+    ValidationResult:
       additionalProperties: false
       properties:
-        schema_version: *id004
-        valid: *id003
         files:
-          type: array
           items:
             $ref: '#/components/schemas/ValidatedFile'
+          title: Files
+          type: array
+        policy_ref:
+          $ref: '#/components/schemas/Ref'
+        preset_ref:
+          $ref: '#/components/schemas/Ref'
+        schema_version:
+          const: 1
+          title: Schema Version
+          type: integer
+        valid:
+          title: Valid
+          type: boolean
       required:
       - schema_version
       - valid
+      - preset_ref
+      - policy_ref
       - files
+      title: ValidationResult
+      type: object
     Evidence:
       type: object
       additionalProperties: false
@@ -3861,43 +3914,61 @@ components:
       - items
       - next_cursor
     PresetList:
-      type: object
       additionalProperties: false
       properties:
-        schema_version: *id004
-        revision: *id002
         items:
-          type: array
           items:
             $ref: '#/components/schemas/Preset'
+          title: Items
+          type: array
         next_cursor:
           anyOf:
-          - *id001
+          - type: string
           - type: 'null'
+          title: Next Cursor
+        revision:
+          minimum: 1
+          title: Revision
+          type: integer
+        schema_version:
+          const: 1
+          title: Schema Version
+          type: integer
       required:
       - schema_version
       - revision
       - items
       - next_cursor
-    PolicyList:
+      title: PresetList
       type: object
+    PolicyList:
       additionalProperties: false
       properties:
-        schema_version: *id004
-        revision: *id002
         items:
-          type: array
           items:
             $ref: '#/components/schemas/Policy'
+          title: Items
+          type: array
         next_cursor:
           anyOf:
-          - *id001
+          - type: string
           - type: 'null'
+          title: Next Cursor
+        revision:
+          minimum: 1
+          title: Revision
+          type: integer
+        schema_version:
+          const: 1
+          title: Schema Version
+          type: integer
       required:
       - schema_version
       - revision
       - items
       - next_cursor
+      title: PolicyList
+      type: object
     JobList:
       type: object
       additionalProperties: false

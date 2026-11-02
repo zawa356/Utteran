@@ -143,6 +143,9 @@ def create_app(
     wizard_service: SetupWizardService | None = None,
     operation_queue: OperationQueue | None = None,
     process_supervisor: ProcessSupervisor | None = None,
+    enable_v1_settings: bool = False,
+    v1_authority: str | None = None,
+    v1_store_path: Path | None = None,
 ) -> FastAPI:
     """Create one session-scoped application without importing the CLI package."""
     if not session_key:
@@ -176,6 +179,20 @@ def create_app(
     web_root = Path(__file__).with_name("web")
     app = FastAPI(title="utteran GUI", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.process_supervisor = supervisor
+    if enable_v1_settings:
+        from utteran_gui.settings_api import create_settings_app
+        from utteran_paths import resolve_data_paths
+
+        if v1_authority is None:
+            raise ValueError("v1_authority is required when enabling v1 settings")
+        app.mount(
+            "/api/v1",
+            create_settings_app(
+                session_key,
+                authority=v1_authority,
+                store_path=v1_store_path or resolve_data_paths(repo_root).settings_resources,
+            ),
+        )
 
     def shutdown_processes() -> None:
         selected_jobs.shutdown()
@@ -190,7 +207,9 @@ def create_app(
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        if request.url.path.startswith("/api/"):
+        if request.url.path.startswith("/api/") and not (
+            enable_v1_settings and request.url.path.startswith("/api/v1/")
+        ):
             supplied = request.headers.get(SESSION_HEADER) or request.cookies.get(SESSION_COOKIE)
             if supplied is None or not secrets.compare_digest(supplied, session_key):
                 logging.getLogger(__name__).warning(
