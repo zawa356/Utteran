@@ -47,3 +47,11 @@ Linuxでのvenv/IPC/process group試験と、Windowsでの実受入は別であ�
 Windows CreateProcess/console非表示、Job Object親強制終了、PowerShell非経由起動、WebView2、
 pywebview、PyInstaller onedir、portable、profile wheelの実配置・再導入はWindows VM未検証。
 既存のWindows-only testもLinuxではskip。対応済み・配布合格とは報告しない。
+
+## PR #24 Windows Actions追補
+
+レビュー修正後、Windows runnerでpytest 723成功/0失敗/0エラー/3skipを確認した。
+B1/B2/B3のUTF-8読書きを修正し、日本語データ・旧golden・hash/resumeを保持する。
+protocol v1のwire/DTO形は維持し、受理前匿名拒否の状態検証だけを訂正した。
+後続のPowerShell起動検査は既存uninstaller labのInno Setup前提不足で失敗するため、
+Windows workflow/配布全体の合格とはしない。[検証追補](pr24-review-validation.md)参照。

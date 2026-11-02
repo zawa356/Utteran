@@ -1,5 +1,8 @@
 # Phase B3検証・レビュー提出
 
+**PR #24レビュー修正後の最新結果は[検証追補](pr24-review-validation.md)を参照。**
+以下の初回提出時結果と区別する。
+
 2026-11-02、Linux cloud、Python 3.12.14。実モデル・GPU・私的音声は使用していない。
 Windows VMは利用不可。Ready化・merge・B4実装は行わずレビュー待ちとする。
 

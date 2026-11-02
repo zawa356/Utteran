@@ -61,3 +61,10 @@ WindowsはJob Objectを閉じる。Linux親の強制終了時はstdin EOFから�
 応答しないnative区間の即時退出は未保証。インフラkill後のlock/成果物は自動的に整理済みと報告しない。
 EOFや非zero終了をユーザーcancelに分類せず、再開はcore既存の検査に委ねる。
 EOF/pipe切断時にも秘密値を一時ファイルへ保存しない。
+
+## PR #24受理前拒否の追補
+
+IDなしerrorはhello直後・accepted前・全ID null・入力/フレーミング系5codeだけを許す。
+実行成功/失敗やcancelledをIDなしで申告できない。accepted後はerrorにも全ID一致を要求する。
+部分nullはDTOで、ID詐称/順序/重複terminalはEventSequenceで拒否し、private値はprojectionへ出さない。
+詳細と実worker結合試験は[検証追補](pr24-review-validation.md)を参照。
