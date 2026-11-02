@@ -99,6 +99,8 @@ RESERVED_REASONS: Final = frozenset(
         R.QUEUE_RESUMED,
         R.LAUNCH_CONFIRMED,
         R.LAUNCH_FAILED,
+        R.STEP_PROGRESS,
+        R.REAPPROVAL_REQUIRED,
     }
 )
 REQUIRED_TABLES_V1: Final = frozenset(

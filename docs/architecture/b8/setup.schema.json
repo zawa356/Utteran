@@ -1,0 +1,1139 @@
+{
+  "$defs": {
+    "Approval": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_agreement_ids": {
+          "items": {
+            "pattern": "^hf-gated:[A-Za-z0-9][A-Za-z0-9_./-]{0,199}$",
+            "type": "string"
+          },
+          "title": "Accepted Agreement Ids",
+          "type": "array"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^apr_[0-9a-f]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "plan_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Plan Hash",
+          "type": "string"
+        },
+        "plan_id": {
+          "pattern": "^plan_[0-9a-f]{32}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "plan_revision": {
+          "minimum": 1,
+          "title": "Plan Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "plan_id",
+        "plan_revision",
+        "plan_hash",
+        "accepted_agreement_ids",
+        "expires_at"
+      ],
+      "title": "Approval",
+      "type": "object"
+    },
+    "ApprovalRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_agreement_ids": {
+          "items": {
+            "pattern": "^hf-gated:[A-Za-z0-9][A-Za-z0-9_./-]{0,199}$",
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Accepted Agreement Ids",
+          "type": "array"
+        },
+        "plan_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Plan Hash",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "plan_hash",
+        "accepted_agreement_ids"
+      ],
+      "title": "ApprovalRequest",
+      "type": "object"
+    },
+    "Estimate": {
+      "additionalProperties": false,
+      "description": "``null`` means unknown. Values come only from catalog sizes; nothing is guessed.",
+      "properties": {
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "disk_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Disk Bytes"
+        },
+        "download_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Download Bytes"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Duration Seconds"
+        }
+      },
+      "required": [
+        "download_bytes",
+        "disk_bytes",
+        "duration_seconds",
+        "confidence"
+      ],
+      "title": "Estimate",
+      "type": "object"
+    },
+    "OperationStatus": {
+      "enum": [
+        "queued",
+        "held",
+        "blocked",
+        "running",
+        "waiting_user",
+        "cancelling",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "interrupted"
+      ],
+      "title": "OperationStatus",
+      "type": "string"
+    },
+    "PlanContent": {
+      "additionalProperties": false,
+      "description": "Hashed plan body (``plan_hash`` = SHA-256 of its canonical JSON).",
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/SetupChange"
+          },
+          "title": "Changes",
+          "type": "array"
+        },
+        "diarization_enabled": {
+          "title": "Diarization Enabled",
+          "type": "boolean"
+        },
+        "estimate": {
+          "$ref": "#/$defs/Estimate"
+        },
+        "inventory_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Inventory Fingerprint",
+          "type": "string"
+        },
+        "missing_credentials": {
+          "items": {
+            "const": "hf_token",
+            "type": "string"
+          },
+          "title": "Missing Credentials",
+          "type": "array"
+        },
+        "model_refs": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9-]{0,31}:[A-Za-z0-9][A-Za-z0-9_./-]{0,199}$",
+            "type": "string"
+          },
+          "title": "Model Refs",
+          "type": "array"
+        },
+        "preserved_environment_ids": {
+          "items": {
+            "enum": [
+              "cpu",
+              "cuda",
+              "intel",
+              "vulkan"
+            ],
+            "type": "string"
+          },
+          "title": "Preserved Environment Ids",
+          "type": "array"
+        },
+        "profile_kind": {
+          "enum": [
+            "cpu",
+            "cuda",
+            "intel",
+            "vulkan"
+          ],
+          "title": "Profile Kind",
+          "type": "string"
+        },
+        "required_agreements": {
+          "items": {
+            "pattern": "^hf-gated:[A-Za-z0-9][A-Za-z0-9_./-]{0,199}$",
+            "type": "string"
+          },
+          "title": "Required Agreements",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/SetupStep"
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema_version",
+        "profile_kind",
+        "model_refs",
+        "diarization_enabled",
+        "inventory_fingerprint",
+        "estimate",
+        "changes",
+        "steps",
+        "preserved_environment_ids",
+        "required_agreements",
+        "missing_credentials"
+      ],
+      "title": "PlanContent",
+      "type": "object"
+    },
+    "ReasonCode": {
+      "description": "Fixed reason vocabulary. Free-form caller text is never stored or echoed.",
+      "enum": [
+        "submitted",
+        "user_hold",
+        "user_release",
+        "user_reorder",
+        "user_cancel",
+        "cancel_accepted",
+        "prestart_revalidation_failed",
+        "resources_available",
+        "dispatch_started",
+        "launch_confirmed",
+        "launch_failed",
+        "completion_verified",
+        "classified_failure",
+        "termination_failed",
+        "exit_reconciled",
+        "credential_required",
+        "agreement_required",
+        "explicit_resume",
+        "owner_lost",
+        "recovery_held",
+        "recovery_paused",
+        "recovery_owner_unverified",
+        "recovery_pid_reused",
+        "recovery_launch_unconfirmed",
+        "recovery_child_alive",
+        "queue_paused",
+        "queue_resumed",
+        "step_progress",
+        "reapproval_required"
+      ],
+      "title": "ReasonCode",
+      "type": "string"
+    },
+    "Ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "revision"
+      ],
+      "title": "Ref",
+      "type": "object"
+    },
+    "SetupAttempt": {
+      "additionalProperties": false,
+      "properties": {
+        "ended_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ended At"
+        },
+        "id": {
+          "pattern": "^att_[0-9a-f]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "launch": {
+          "enum": [
+            "intended",
+            "confirmed",
+            "failed"
+          ],
+          "title": "Launch",
+          "type": "string"
+        },
+        "number": {
+          "minimum": 1,
+          "title": "Number",
+          "type": "integer"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "active",
+            "released",
+            "interrupted"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "state",
+        "launch",
+        "started_at",
+        "ended_at"
+      ],
+      "title": "SetupAttempt",
+      "type": "object"
+    },
+    "SetupCancelRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "cooperative",
+            "force"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "mode"
+      ],
+      "title": "SetupCancelRequest",
+      "type": "object"
+    },
+    "SetupChange": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "create",
+            "reuse",
+            "rebuild",
+            "verify"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "reason_code": {
+          "enum": [
+            "profile_missing",
+            "profile_compatible",
+            "model_not_observed",
+            "model_present_unverified"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "resource_id": {
+          "maxLength": 240,
+          "minLength": 1,
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "resource_kind": {
+          "enum": [
+            "profile",
+            "model",
+            "native",
+            "ir"
+          ],
+          "title": "Resource Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_kind",
+        "resource_id",
+        "action",
+        "reason_code"
+      ],
+      "title": "SetupChange",
+      "type": "object"
+    },
+    "SetupErrorView": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "launch_failed",
+            "process_failed",
+            "verification_failed",
+            "network_error",
+            "preflight_invalid",
+            "executor_failed",
+            "unsupported_step"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Step Id"
+        }
+      },
+      "required": [
+        "code",
+        "step_id"
+      ],
+      "title": "SetupErrorView",
+      "type": "object"
+    },
+    "SetupOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_number": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Attempt Number"
+        },
+        "attempts": {
+          "items": {
+            "$ref": "#/$defs/SetupAttempt"
+          },
+          "title": "Attempts",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SetupErrorView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "held": {
+          "title": "Held",
+          "type": "boolean"
+        },
+        "id": {
+          "pattern": "^setup_[0-9a-f]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "plan_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "profile_kind": {
+          "enum": [
+            "cpu",
+            "cuda",
+            "intel",
+            "vulkan"
+          ],
+          "title": "Profile Kind",
+          "type": "string"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/ReasonCode"
+        },
+        "recovery_required": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReasonCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retry_of": {
+          "anyOf": [
+            {
+              "pattern": "^setup_[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Retry Of"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/OperationStatus"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/StepProgress"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "waiting_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "credential_required",
+                "agreement_required",
+                "inventory_changed",
+                "approval_expired"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Waiting Reason"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "revision",
+        "plan_ref",
+        "profile_kind",
+        "status",
+        "held",
+        "recovery_required",
+        "reason_code",
+        "waiting_reason",
+        "attempt_number",
+        "attempts",
+        "steps",
+        "retry_of",
+        "error",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "SetupOperation",
+      "type": "object"
+    },
+    "SetupOperationList": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SetupOperation"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Cursor"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "revision",
+        "items",
+        "next_cursor"
+      ],
+      "title": "SetupOperationList",
+      "type": "object"
+    },
+    "SetupPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/SetupChange"
+          },
+          "title": "Changes",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "diarization_enabled": {
+          "title": "Diarization Enabled",
+          "type": "boolean"
+        },
+        "estimate": {
+          "$ref": "#/$defs/Estimate"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^plan_[0-9a-f]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "inventory_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Inventory Fingerprint",
+          "type": "string"
+        },
+        "inventory_revision": {
+          "minimum": 1,
+          "title": "Inventory Revision",
+          "type": "integer"
+        },
+        "missing_credentials": {
+          "items": {
+            "const": "hf_token",
+            "type": "string"
+          },
+          "title": "Missing Credentials",
+          "type": "array"
+        },
+        "model_refs": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9-]{0,31}:[A-Za-z0-9][A-Za-z0-9_./-]{0,199}$",
+            "type": "string"
+          },
+          "title": "Model Refs",
+          "type": "array"
+        },
+        "plan_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Plan Hash",
+          "type": "string"
+        },
+        "preserved_environment_ids": {
+          "items": {
+            "enum": [
+              "cpu",
+              "cuda",
+              "intel",
+              "vulkan"
+            ],
+            "type": "string"
+          },
+          "title": "Preserved Environment Ids",
+          "type": "array"
+        },
+        "profile_kind": {
+          "enum": [
+            "cpu",
+            "cuda",
+            "intel",
+            "vulkan"
+          ],
+          "title": "Profile Kind",
+          "type": "string"
+        },
+        "required_agreements": {
+          "items": {
+            "pattern": "^hf-gated:[A-Za-z0-9][A-Za-z0-9_./-]{0,199}$",
+            "type": "string"
+          },
+          "title": "Required Agreements",
+          "type": "array"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "proposed",
+            "approved",
+            "consumed",
+            "expired"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/SetupStep"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "revision",
+        "state",
+        "profile_kind",
+        "model_refs",
+        "diarization_enabled",
+        "inventory_revision",
+        "inventory_fingerprint",
+        "plan_hash",
+        "created_at",
+        "expires_at",
+        "estimate",
+        "changes",
+        "steps",
+        "preserved_environment_ids",
+        "required_agreements",
+        "missing_credentials"
+      ],
+      "title": "SetupPlan",
+      "type": "object"
+    },
+    "SetupPlanRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "diarization_enabled": {
+          "title": "Diarization Enabled",
+          "type": "boolean"
+        },
+        "model_refs": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9-]{0,31}:[A-Za-z0-9][A-Za-z0-9_./-]{0,199}$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Model Refs",
+          "type": "array"
+        },
+        "profile_kind": {
+          "enum": [
+            "cpu",
+            "cuda",
+            "intel",
+            "vulkan"
+          ],
+          "title": "Profile Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "profile_kind",
+        "model_refs",
+        "diarization_enabled"
+      ],
+      "title": "SetupPlanRequest",
+      "type": "object"
+    },
+    "SetupRetryRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version"
+      ],
+      "title": "SetupRetryRequest",
+      "type": "object"
+    },
+    "SetupStart": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_id": {
+          "pattern": "^apr_[0-9a-f]{32}$",
+          "title": "Approval Id",
+          "type": "string"
+        },
+        "plan_ref": {
+          "$ref": "#/$defs/Ref"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "plan_ref",
+        "approval_id"
+      ],
+      "title": "SetupStart",
+      "type": "object"
+    },
+    "SetupStep": {
+      "additionalProperties": false,
+      "properties": {
+        "depends_on": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9-]{0,31}$",
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9-]{0,31}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "hardware",
+            "venv_sync",
+            "credential_preflight",
+            "model_download",
+            "native_build",
+            "ir_build",
+            "smoke",
+            "register"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "recovery": {
+          "enum": [
+            "rerun",
+            "verified_reuse",
+            "manager_resume"
+          ],
+          "title": "Recovery",
+          "type": "string"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "maxLength": 240,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Target"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "depends_on",
+        "required",
+        "recovery",
+        "target"
+      ],
+      "title": "SetupStep",
+      "type": "object"
+    },
+    "StepEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "profile_manifest_verified",
+            "manager_verified",
+            "credential_checked",
+            "smoke_output_present"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "observed_at"
+      ],
+      "title": "StepEvidence",
+      "type": "object"
+    },
+    "StepProgress": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StepEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "hardware",
+            "venv_sync",
+            "credential_preflight",
+            "model_download",
+            "native_build",
+            "ir_build",
+            "smoke",
+            "register"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "enum": [
+                "not_required",
+                "validated_reuse",
+                "verified",
+                "launch_failed",
+                "process_failed",
+                "verification_failed",
+                "credential_required",
+                "agreement_required",
+                "network_error",
+                "preflight_invalid",
+                "interrupted",
+                "cancelled",
+                "superseded"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason Code"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+            "interrupted",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "step_id": {
+          "pattern": "^[a-z][a-z0-9-]{0,31}$",
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step_id",
+        "kind",
+        "status",
+        "reason_code",
+        "evidence"
+      ],
+      "title": "StepProgress",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SetupPlanRequest"
+    },
+    {
+      "$ref": "#/$defs/ApprovalRequest"
+    },
+    {
+      "$ref": "#/$defs/SetupStart"
+    },
+    {
+      "$ref": "#/$defs/SetupRetryRequest"
+    },
+    {
+      "$ref": "#/$defs/SetupCancelRequest"
+    },
+    {
+      "$ref": "#/$defs/Estimate"
+    },
+    {
+      "$ref": "#/$defs/SetupChange"
+    },
+    {
+      "$ref": "#/$defs/SetupStep"
+    },
+    {
+      "$ref": "#/$defs/PlanContent"
+    },
+    {
+      "$ref": "#/$defs/SetupPlan"
+    },
+    {
+      "$ref": "#/$defs/Approval"
+    },
+    {
+      "$ref": "#/$defs/StepEvidence"
+    },
+    {
+      "$ref": "#/$defs/StepProgress"
+    },
+    {
+      "$ref": "#/$defs/SetupErrorView"
+    },
+    {
+      "$ref": "#/$defs/SetupAttempt"
+    },
+    {
+      "$ref": "#/$defs/SetupOperation"
+    },
+    {
+      "$ref": "#/$defs/SetupOperationList"
+    }
+  ],
+  "title": "Utteran B8 v1 setup plan and operation wire contracts (opt-in)"
+}

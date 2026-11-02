@@ -48,10 +48,11 @@ TRANSITIONS: Mapping[str, _Table] = MappingProxyType(
                     S.FAILED,
                     S.INTERRUPTED,
                 },
-                S.WAITING_USER: {S.QUEUED},
+                # B8: a waiting/interrupted setup can also be discarded (cancel) explicitly.
+                S.WAITING_USER: {S.QUEUED, S.CANCELLED},
                 S.CANCELLING: {S.CANCELLED, S.INTERRUPTED},
                 # Explicit resume appends a new attempt later; never back to running.
-                S.INTERRUPTED: {S.QUEUED},
+                S.INTERRUPTED: {S.QUEUED, S.CANCELLED},
             }
         ),
         "refresh_operation": _table(
