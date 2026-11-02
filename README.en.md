@@ -6,8 +6,19 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.37` (unreleased).
+> Current development version: `0.1.38` (unreleased).
 > APIs and configuration may change before 1.0.
+
+
+### Phase B9 events, sync and diagnostics (Draft, unmerged, unreleased)
+
+0.1.38 adds SSE `GET /api/v1/events` (committed events only, `epoch:seq` IDs, `Last-Event-ID`
+reconnect, 410 or `resync_required` when a cursor expires), `GET /api/v1/sync` (resources, queue and
+cursor from one read transaction; pages never mix revisions) and sanitized diagnostics (fixed codes,
+timestamps, stage and attempt only). The outbox is compacted only for events older than 7 days and
+beyond the newest 100,000, at explicit activation. **The default GUI/CLI and the legacy SSE are
+unchanged** (opt-in `enable_v1_events=True`); no new UI is wired yet. See
+[Phase B9](docs/architecture/b9/README.md).
 
 
 ### Phase B8 setup plan, approval and durable setup execution (Draft, unmerged, unreleased)

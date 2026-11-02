@@ -22,6 +22,9 @@ PR #32レビュー修正: §list responseの「filter付きsnapshot pagination�
 `inventory_revision`（store内observation counter）・nullable `attempt_number`等の差異は[B8 contracts](../b8/contracts.md)。
 実行subsetはfaster-whisper/pyannoteと新規profile作成のみ。
 
+2026-11-02 B9追補（Draft）: §6の`/events`・`/sync`とdiagnosticsをopt-inで実装。`progress`等の未配信type、
+`inventory_revision` nullable等の差異は[B9](../b9/README.md)。
+
 ## 1. 独立した管理概念
 
 | 概念 | 正本・内容 | 他の概念との関係 |

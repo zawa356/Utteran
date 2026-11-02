@@ -6,7 +6,17 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.37`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.38`（未release）。API・設定は1.0まで変更されます。
+
+
+### Phase B9 Events・Sync・Diagnostics（Draft・未マージ・未リリース）
+
+0.1.38では、v1 APIにSSE `GET /api/v1/events`（commit済みイベントのみ、`epoch:seq` ID、`Last-Event-ID`再接続、
+失効時は410または`resync_required`）、`GET /api/v1/sync`（resource・queue・cursorを1 read transactionで取得、
+ページ間でrevisionが混ざらない）、sanitizedなdiagnostics（固定code・時刻・工程・attemptのみ）を追加。
+Outboxは7日以上かつ最新100,000件を超えた古い部分だけを明示起動時に圧縮します。
+**既定のGUI/CLI・旧SSEは変わりません**（`enable_v1_events=True`を明示した場合のみ）。
+新UIへの接続はU1以降です。詳細は[Phase B9](docs/architecture/b9/README.md)。
 
 
 ### Phase B8 Setup Plan・承認・永続Setup実行（Draft・未マージ・未リリース）
