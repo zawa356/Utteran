@@ -74,9 +74,23 @@ worker_protocol/runtime/client、capability_inventory/bridge。wheelのimport先
 
 ## CI / 未検証
 
-GitHub Actionsの実測はDraft提出後に追記する。Linux CIは既知mypyで後続pytestがskipし得るため、
-上記Linux全体値はローカル独立実行の証拠。CI推測値として扱わない。
-Windowsは既存workflow全体がInno Setup前提で失敗する既知制約がある。
+実装HEAD `f7f0f11d164e0063e7d18bc3a94d1a0d094968e9`に対する
+[push run 41380126274](https://github.com/zawa356/Utteran/actions/runs/41380126274)と
+[PR run 41380161152](https://github.com/zawa356/Utteran/actions/runs/41380161152)を確認。
+[Draft PR #26](https://github.com/zawa356/Utteran/pull/26)、base B4。最終追補は文書のみ。
+
+| CI段階 | 実測 |
+|---|---|
+| Windowsモデル不要pytest | 951 passed / 3 skipped、54.52秒（push run） |
+| Windows PowerShell構文 | 成功 |
+| Windows汎用PowerShell起動 | 既知Inno Setup compiler未配置で失敗 |
+| contracts Python3.11 | 350 passed、11.95秒、schema checks成功（push run） |
+| contracts Python3.12 | 350 passed、14.40秒、schema checks成功（push run） |
+| linux-quality | lock/4 schema/Ruff成功、既知mypy9件で停止、後続pytestはskip |
+
+Windows基点878 passedから+73、skipは既存3件のみ。PID-file競合の新規失敗はこのrunで観測なし。
+workflow全体は既知問題で赤。Linux943 passedはローカル独立実行であり、CI後続の推測ではない。
+品質ゲートが全て緑になったとは報告しない。既知問題は別CI修正PRの対象として維持。
 Windows ACL/installer/portable/WebView2実受入、GPU/native推論、quality/Prompt compiler、
 実電源断/物理disk failureは未検証。mock成功と実機成功を混同しない。
 全DoD無条件合格・release可能とは報告しない。Draftレビュー待ちで停止する。

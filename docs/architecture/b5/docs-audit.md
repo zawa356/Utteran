@@ -34,8 +34,10 @@
 | B5 validation.md | updated | baseline/増分/実行コマンド/環境別限界/CI |
 | B5 preview.schema.json / exporter | updated | 生成元と生成物を更新、--checkとPhase A一致test |
 | .github/workflows/ci.yml | updated | B5 schema checkと3.11/3.12関連テストを追加、既知CI問題は修正しない |
-| GitHub #17 / #18 | blocked | Draft PR URL確定後に進捗追記。未mergeのため完了チェックを付けない |
-| Draft PR / Actions | blocked | 作成・CI観測後にURL/実測を追記、Ready化しない |
+| GitHub #17 / #18 | updated | Draft PR #26と実装・検証・未merge状態を追記。既存UI等の完了チェックは維持 |
+| Draft PR / Actions | updated | PR #26、base B4、Draft。実装HEADのActions実測/既知失敗/未検証を同期 |
+| 全体品質gate | blocked | 既知Linux mypy9件/pytest3件、Windows Inno Setup前提。独立CI修正対象、B5新規回帰なし |
+| Windows実配布/ACL/GPU受入 | blocked | CI上のmock/SQLite成功と実受入を区別。#15/#22等で後続確認 |
 
 Windows実配布/ACL/GPUの未検証と既知CI障害はvalidation.mdに明示する。
 保持期限/完全消去は未解決で、無断pruneを行わない。B6以降には着手しない。

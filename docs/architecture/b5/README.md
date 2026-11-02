@@ -2,7 +2,8 @@
 
 2026-11-02 JST、0.1.34、未マージ・未リリース。B4 PR #25のDraft/base B3/HEAD
 `f6c2a9546e1ee9b780f8c1a098f7bcdfc7096314`を再確認して
-`feat/b5-preset-policy-editing-api`を分岐。B4へのstacked Draft PRとし、mainへマージしない。
+`feat/b5-preset-policy-editing-api`を分岐。[Draft PR #26](https://github.com/zawa356/Utteran/pull/26)はB4へのstacked PR。mainへマージしない。
+実装HEAD `f7f0f11d164e0063e7d18bc3a94d1a0d094968e9`、最終検証追補は文書のみ。
 
 `utteran_settings`は標準libraryとB1/Pydanticのみへ依存する独立ドメイン。
 GUIからcoreをimportしない。SQLite repositoryはstorage/CAS/replay、inheritanceはコピー上の
