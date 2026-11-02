@@ -26,6 +26,8 @@ jobs:
         run: uv lock --check
       - name: Check offline contract schema
         run: uv run --no-sync python -m utteran_contracts.schema --output docs/architecture/b1/contracts.schema.json --check
+      - name: Check offline worker schema
+        run: uv run --no-sync python -m utteran_contracts.worker_schema --output docs/architecture/b3/worker.schema.json --check
       - name: Lint
         run: uv run --no-sync ruff check src tests tools
       - name: Check formatting
@@ -112,5 +114,5 @@ jobs:
           enable-cache: true
       - run: uv sync --extra dev --extra gui --locked
       - name: Contract, schema, and import boundary tests (no models)
-        run: uv run --no-sync pytest tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py
+        run: uv run --no-sync pytest tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py tests/test_worker_protocol.py
       - run: uv run --no-sync python -m utteran_contracts.schema --output docs/architecture/b1/contracts.schema.json --check

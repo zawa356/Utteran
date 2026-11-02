@@ -1,5 +1,19 @@
 # AI 作業状態
 
+## Phase B3 Profile Worker / 構造化IPC（0.1.32、2026-11-02、レビュー待ち）
+
+- B2 HEAD ff45892を確認し、diarization_deviceのP2を独立commit `294c383` でB2へpush。
+  関連104件成功後、修正済みB2から `feat/b3-profile-worker` を分岐した。
+- contractsのIPC DTO/framing/sequence、profile worker、GUIの独立WorkerClientを追加。
+  B2 adapter/serviceと既存Pipelineへ接続。CLI/GUIの通常入口は変更しない。
+- [B3概要](docs/architecture/b3/README.md)、[protocol](docs/architecture/b3/protocol.md)、
+  [security](docs/architecture/b3/security.md)、[互換性](docs/architecture/b3/compatibility.md)、
+  [検証](docs/architecture/b3/validation.md)を参照。
+- ローカル完全FW model・話者分離無効だけを許可。未監査backend、native hard cancel、
+  Windows配布の実受入を成功扱いにしない。lock/profile問題の独立計画を互換性資料へ記載。
+- 新規82件成功、全モデル不要671 passed/既知3 failed/8 skipped、mypy既存9件。
+  詳細・最終追加検証はvalidationを正本とする。Ready化・merge・B4着手はしない。
+
 ## Phase B2 Core Application Service / Config Adapter（0.1.31、2026-10-30、レビュー待ち）
 
 - B1レビューP2（unhashable追加値でTypeError）を`feat/b1-contracts`の独立commit `0f80d17`で修正。

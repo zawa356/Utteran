@@ -57,7 +57,8 @@ def audit(event, args):
 sys.addaudithook(audit)
 import utteran_contracts
 from utteran_contracts.schema import schema_bytes
-assert schema_bytes()
+from utteran_contracts.worker_schema import schema_bytes as worker_schema_bytes
+assert schema_bytes() and worker_schema_bytes()
 assert not blocked.intersection(sys.modules)
 """
     completed = subprocess.run(
@@ -76,9 +77,11 @@ def test_gui_can_import_contracts_without_core() -> None:
     code = """
 import sys
 import utteran_gui.api
+import utteran_gui.worker_client
 import utteran_contracts
 from utteran_contracts.schema import schema_bytes
-assert schema_bytes()
+from utteran_contracts.worker_schema import schema_bytes as worker_schema_bytes
+assert schema_bytes() and worker_schema_bytes()
 assert not any(name in sys.modules for name in (
  'utteran','torch','torchaudio','openvino','openvino_genai','faster_whisper','pyannote','ctranslate2'))
 """
