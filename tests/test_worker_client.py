@@ -118,10 +118,10 @@ def test_profile_checks_and_no_manifest_mutation(tmp_path: Path) -> None:
     python = info.path / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     python.touch()
     manifest = info.path / PROFILE_MANIFEST
-    manifest.write_text("{}")
+    manifest.write_text("{}", encoding="utf-8")
     with pytest.raises(ProtocolError, match="profile_incompatible"):
         client.command("cpu")
-    assert manifest.read_text() == "{}"
+    assert manifest.read_text(encoding="utf-8") == "{}"
     manifest.write_text(
         json.dumps(
             dict(
@@ -130,7 +130,8 @@ def test_profile_checks_and_no_manifest_mutation(tmp_path: Path) -> None:
                 extras=list(PROFILE_EXTRAS["cpu"]),
                 venv_path=str(info.path),
             )
-        )
+        ),
+        encoding="utf-8",
     )
     command = client.command("cpu")
     assert command == [str(python), "-I", "-m", "utteran.worker", "--protocol", "1"]
@@ -146,7 +147,7 @@ def test_actual_profile_python_runs_worker(worker_request: WorkerRequest, tmp_pa
         else f"lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
     )
     (site / "test-dependencies.pth").write_text(
-        str(sysconfig.get_path("purelib")) + "\n" + str(ROOT / "src") + "\n"
+        str(sysconfig.get_path("purelib")) + "\n" + str(ROOT / "src") + "\n", encoding="utf-8"
     )
     info = client.adapter.profile_info("cpu")
     info.executable.touch()
@@ -158,7 +159,8 @@ def test_actual_profile_python_runs_worker(worker_request: WorkerRequest, tmp_pa
                 extras=list(PROFILE_EXTRAS["cpu"]),
                 venv_path=str(profile),
             )
-        )
+        ),
+        encoding="utf-8",
     )
     Path(worker_request.input_path).write_bytes(b"synthetic")
     with pytest.raises(ProtocolError, match="model_missing"):
@@ -185,10 +187,10 @@ def test_handshake_timeout_cleans_descendants(
     client = peer(monkeypatch, mode, str(pidfile))
     with pytest.raises(ProtocolError, match="handshake_timeout"):
         client.execute(worker_request, handshake_timeout=0.5)
-    pid = int(pidfile.read_text())
+    pid = int(pidfile.read_text(encoding="utf-8"))
     # Linux containers can retain a killed orphan zombie; it is not a live child.
     stat = Path(f"/proc/{pid}/stat")
-    assert not stat.exists() or stat.read_text().split()[2] == "Z"
+    assert not stat.exists() or stat.read_text(encoding="utf-8").split()[2] == "Z"
 
 
 def test_request_secrets_only_on_stdin(

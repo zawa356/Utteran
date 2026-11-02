@@ -11,7 +11,9 @@ from utteran_contracts.worker import WorkerRequest
 @pytest.fixture
 def worker_request(tmp_path: Path) -> WorkerRequest:
     settings = json.loads(
-        (Path(__file__).parents[1] / "docs/architecture/phase-a/examples.json").read_text()
+        (Path(__file__).parents[1] / "docs/architecture/phase-a/examples.json").read_text(
+            encoding="utf-8"
+        )
     )["preset"]["settings"]
     settings["asr"]["initial_prompt"] = "PRIVATE_PROMPT_秘密\nsecond line"
     return WorkerRequest(

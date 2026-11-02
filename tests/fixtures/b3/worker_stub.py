@@ -51,7 +51,7 @@ if mode == "malformed":
     time.sleep(30)
 if mode in {"tree", "orphan"}:
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
-    Path(sys.argv[2]).write_text(str(child.pid))
+    Path(sys.argv[2]).write_text(str(child.pid), encoding="utf-8")
     if mode == "orphan":
         os._exit(0)
     time.sleep(30)
@@ -100,7 +100,7 @@ for index, fmt in enumerate(request["settings"]["output"]["formats"]):
     if mode == "wrong_formats":
         fmt = request["settings"]["output"]["formats"][0]
     path = root / (f"synthetic{index}." + fmt)
-    path.write_text("synthetic result")
+    path.write_text("synthetic result", encoding="utf-8")
     outputs.append(path)
 core_id = "0123456789abcdef"
 manifest = Path(request["context"]["base_config"]["general"]["job_dir"]) / core_id / "manifest.json"
@@ -116,7 +116,8 @@ manifest.write_text(
                 for s in ("audio", "asr", "diarization", "merge", "export")
             },
         )
-    )
+    ),
+    encoding="utf-8",
 )
 
 
