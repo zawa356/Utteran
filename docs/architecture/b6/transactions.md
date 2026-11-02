@@ -60,6 +60,23 @@ commit前の失敗はすべてrollback（部分行なし）。commit後に応答
   平文body・平文hashは保存しない。replay bodyはpublic `OperationView`のみ。
 - **replay照合はDTO検証・意味検証・CASより先**。同key同bodyは元結果、異bodyは`idempotency_conflict`。
   未受理（4xx/503）は記録しない。transition/set_holdも任意でscopeを取れる。
+
+### Queue dispatch（`set_dispatch`、PR #28レビュー修正）
+
+- `set_dispatch(expected_revision, dispatch, idempotency=IdempotencyScope)`は`AcceptedQueue(status, headers,
+  queue: QueueView, replayed)`を返す（`Accepted`はOperation専用のまま。型で区別する）。
+- scope・key/endpoint規約は他のPOSTと同じ。digestは`{"expected_revision", "dispatch"}`のcanonical JSONの
+  HMAC-SHA256で、平文要求は保存しない。
+- 判定順: scope検証 → digest → **replay照合** → 入力検証 → CAS → 状態変更。
+- 同key＋同要求: 初回commit時のstatus/ETag/QueueViewを`queue_replays`から**そのまま**返す（後でqueueが進んでも
+  作り直さない）。revision・outbox・replay行は増えない。同key＋別要求は`idempotency_conflict`（409）。
+- 未受理（不正入力、412、busy、full、readonly、rollback）は記録しない。後で同keyの正しい要求は新規受理される。
+- 状態・queue revision・`queue_changed`・replay行は同じ`BEGIN IMMEDIATE`でcommitする。
+- no-op（既に要求dispatchでCAS一致）: revision・eventは増やさず、keyありなら応答を記録する（同key再送はreplay）。
+  keyなしの既存意味論（CAS後no-op）は不変。
+- 1つのscopeは1種類の応答だけに対応する。同じ(endpoint, key)が`replays`にあれば`set_dispatch`は409、
+  `queue_replays`にあればOperation系POSTも409。
+- keyの省略はB6内部・既存テスト互換のためだけに許す。**B7以降のHTTP queue操作ではIdempotency-Key必須**。
 - 同key並行送信は1件だけ受理され、他はreplayになる（6 threadで検証）。
 - **外部processのexactly-once効果は保証しない**。B6はcommit後にsubprocess/network/downloadを起動しない。
 

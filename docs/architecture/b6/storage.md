@@ -23,13 +23,14 @@ B6はB5 DBを読まず、installation ID/HMAC secretも共有しない。統合�
   crash時に残る`.<name>.init-<random>`は無害で、最終DBとして扱わない（手動削除可）。
   hard link非対応filesystem（POSIX上のFAT等）では`store_unavailable`となり、無理に作成しない。
 - 各接続は`file:...?mode=rw` URIで開く。open後にDBが削除されても**新しい空DBを作らない**。
-- open時検証: `user_version==1`（0=空/外部file、2以上=未知はともに`store_schema_unsupported`）、
+- open時検証: `user_version==2`（0=空/外部file、3以上=未知はともに`store_schema_unsupported`。
+  1は下記の明示migrationの対象）、
   `quick_check`、必須table、installation 1行、counter集合、queue 1行。失敗時は**変更・再初期化・
   downgrade・削除をしない**（テストでbyte不変を確認）。
 
 ## SQLite設定
 
-`PRAGMA user_version=1`、`synchronous=FULL`、`foreign_keys=ON`、既定DELETE journal（WAL sidecarを
+`PRAGMA user_version=2`（storage layoutの版。wire DTOの`schema_version=1`とは別物）、`synchronous=FULL`、`foreign_keys=ON`、既定DELETE journal（WAL sidecarを
 常駐させない）。書込みは`BEGIN IMMEDIATE`、読取は`BEGIN`（同一SHARED snapshot）。
 busy timeout既定2秒。
 
@@ -58,7 +59,8 @@ busy timeout既定2秒。
 | attempt_private | owner nonce、owner/child PIDとcreation identity | **private** |
 | leases | slot（PK: `heavy`/`refresh`）、operation/attempt/fencing（各UNIQUE）、期限、最終確認 | 内部 |
 | outbox | seq、epoch、type、resource kind/id/revision、status、reason_code、attempt_id、時刻 | 公開projectionそのもの（UPDATE/DELETE禁止） |
-| replays | installation/method/endpoint/key、HMAC digest、status、headers、public body | 内部（UPDATE/DELETE禁止） |
+| replays | installation/method/endpoint/key、HMAC digest、status、headers、public `OperationView` body、operation FK | 内部（UPDATE/DELETE禁止）。Operation専用、v1から書式不変 |
+| queue_replays（v2） | installation/method/endpoint/key、HMAC digest、status、headers、public `QueueView` body、queue revision | 内部（UPDATE/DELETE禁止）。Queue応答専用、operation FKなし |
 
 単一active slotは`leases.slot` PKと`queue_items(active) WHERE active=1`の部分UNIQUE indexで二重に拒否する。
 
@@ -80,6 +82,26 @@ history・outbox・replayは無期限に増える。保持期限・完全消去�
 
 ## migration / rollback
 
-- schema migrationは未実装。`user_version!=1`は拒否のみ。将来はmigrationごとにbackup・ADR・試験を伴う。
+### v1 → v2（PR #28レビュー修正、方式A）
+
+`set_dispatch`の永続replayのため、Queue応答専用表`queue_replays`を追加した（方式A）。
+既存`replays`はOperation専用のまま（`operation_id NOT NULL REFERENCES operations(id)`、OperationView body）で、
+架空のoperation IDやQueueViewを入れない。方式B（replay表の一般化）は既存行の移行とFK再設計が必要で、
+Operation replayの書式・意味論を変えるため採らなかった。
+
+- 新規作成: 一時file上でv1 DDL＋v2 DDLを作成し`user_version=2`で公開（既存の一時file→上書きなし公開は不変）。
+- 既存v1: open時に`BEGIN IMMEDIATE`内で再度versionを確認し、v1構造（quick_check、必須table、installation、
+  counter、queue行）を検証してから`queue_replays`と不変triggerを追加し`user_version=2`へ更新する。
+  **追加のみ**で既存のoperation/history/replay/outbox/installation secretは変更しない。
+- v1 headerなのに`queue_replays`が存在する等の不整合は`store_corrupt`、v1構造の欠損は`store_corrupt`、
+  0/3以上は`store_schema_unsupported`。いずれもfileを変更しない（byte不変をテスト）。
+- 途中失敗（commit前の故障注入、SQLITE_FULL、process crash）はDDLと`user_version`ごとrollbackされ、
+  完全なv1 storeが残る。次の通常openで再migrationされる。同時openは`BEGIN IMMEDIATE`で直列化し1回だけ適用。
+- `create=False`でも既存v1はmigrationする（明示的に開いたstoreのみ）。読取専用環境ではv1のまま`store_readonly`。
+- 運用上の推奨: migrationは単一writerの状態（アプリ停止中または当該storeを開く唯一のprocess）で行い、
+  事前に退避を取る。v1 storeを`ControlStore`で開くと先にmigrationされるため、migration前の退避は
+  アプリ停止後（writerなし）のfile copy、または旧コードの`backup()`で行う。
+  B6は既定未使用のため、現時点で既存の利用者DBは想定していない。
+- v2→v1のdowngradeは提供しない。v2 storeを旧（a037857）コードで開くと`store_schema_unsupported`で拒否される。
 - 本PRのrollbackはcommit revertのみで成立する（既定経路から未参照、既存DBに触れないため）。
   作成済み`control-v1/`は旧コードから参照されず、必要なら利用者が手動で退避・削除する。
