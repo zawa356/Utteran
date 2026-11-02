@@ -24,6 +24,7 @@ fixture hash、duration、language、model revision、precision、timestamp、di
 warmup、runtime versionの比較keyが全て一致するときだけ。elapsed_seconds昇順→candidate ID順。
 異groupの勝者同士を直接比較しない。scope/time/model/precision/settingsも検査し、smokeを速度値にしない。
 quality objectiveは速度測定を品質根拠にせず静的ルールを使う。
+履歴/reliability storeは未実装であり、存在しない履歴や成功率を順位根拠にしない。
 
 比較可能な実測がなければB4静的順序
 `fw-cuda → wc-vulkan → wc-ov-vk → wc-ov → genai-ov → fw-cpu → wc-cpu`を使い、

@@ -14,7 +14,9 @@
 - 要件定義24.1に従い0.1.33へ更新。lock root versionのみ変更。全体hash問題による旧profileの
   dependency_lock_changedを隠さずblockedへ反映し、manifest/venvは変更しない。
 - [B4資料](docs/architecture/b4/README.md)と[検証](docs/architecture/b4/validation.md)を参照。
-  Windows CI結果はPR確認後に追記。実GPU/native推論・性能・quality・配布は未検証。
+  最終コード6a915a6のWindows CIは829 passed / 3 skipped、3.11/3.12契約各228 passed。
+  workflowは既知mypy/PowerShell問題で赤。[CI記録](docs/architecture/b4/validation.md)に分離。
+  [Draft PR #25](https://github.com/zawa356/Utteran/pull/25)、base B3。実GPU/native推論・性能・quality・配布は未検証。
 - B5/API/UI切替、setup承認/実行、job snapshot/queue/fallback実行には進まない。
   lock closure fingerprint、既知mypy/PowerShell CIは別PR対象。Ready化・mergeを行わずレビュー待ち。
 
