@@ -136,6 +136,7 @@ class WorkerClient:
         io_timeout: float = 10.0,
         validation_timeout: float = 30.0,
         deadline_seconds: float | None = None,
+        on_spawn: Callable[[Any], None] | None = None,
     ) -> WorkerCompleted:
         """Soft processing deadline requests cancellation; waits for core cleanup.
 
@@ -157,6 +158,7 @@ class WorkerClient:
                 io_timeout,
                 validation_timeout,
                 deadline_seconds,
+                on_spawn,
             )
         except ProtocolError as exc:
             raise WorkerClientError(exc.code) from None
@@ -172,6 +174,7 @@ class WorkerClient:
         io_timeout: float,
         validation_timeout: float,
         deadline_seconds: float | None,
+        on_spawn: Callable[[Any], None] | None = None,
     ) -> WorkerCompleted:
         # Snapshot a fresh validated wire copy; caller mutation cannot alter this run.
         try:
@@ -204,6 +207,9 @@ class WorkerClient:
                 process = supervisor.popen(command, **kwargs)
             except (OSError, RuntimeError):
                 raise WorkerClientError(WorkerErrorCode.START_FAILED) from None
+            if on_spawn is not None:
+                # B7 launch journal: a failure here stops the run before any request is sent.
+                on_spawn(process)
 
             def enqueue(item: Any) -> None:
                 while not stopped.is_set():

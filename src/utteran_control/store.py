@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Final, Literal
+from typing import Any, ClassVar, Final, Literal
 
 from pydantic import ValidationError
 
@@ -62,6 +62,8 @@ E = ErrorCode
 
 # SQLite PRAGMA user_version (storage layout), not the wire DTO ``schema_version``.
 # v1: initial B6 layout (PR #28 a037857). v2: adds ``queue_replays`` (additive migration).
+# v3 (B7 ``JobControlStore`` only) adds job snapshot / batch tables; the plain B6 store
+# keeps targeting v2 and refuses a v3 file, so B6-only code never misreads B7 jobs.
 SCHEMA_VERSION: Final = 2
 DEFAULT_TIMEOUT: Final = 2.0
 MAX_REQUEST_BYTES: Final = 256 * 1024
@@ -347,6 +349,24 @@ class _ActiveLease:
 class ControlStore:
     """Explicitly constructed store. Default GUI/CLI startup never constructs one."""
 
+    # Storage layout this class opens. Subclasses extend it with additive DDL only.
+    TARGET_VERSION: ClassVar[int] = SCHEMA_VERSION
+    # Replay tables sharing one idempotency scope namespace (one key, one response kind).
+    REPLAY_TABLES: ClassVar[tuple[str, ...]] = ("replays", "queue_replays")
+
+    @classmethod
+    def _layout(cls, version: int) -> tuple[tuple[str, ...], frozenset[str]]:
+        """DDL that upgrades ``version - 1`` to ``version`` and the tables it requires."""
+        if version == 1:
+            return _DDL_V1, REQUIRED_TABLES_V1
+        if version == 2:
+            return _DDL_V2, REQUIRED_TABLES
+        raise ControlError(E.STORE_SCHEMA_UNSUPPORTED)
+
+    @classmethod
+    def _required(cls, version: int) -> frozenset[str]:
+        return cls._layout(version)[1]
+
     def __init__(
         self,
         path: Path,
@@ -391,8 +411,9 @@ class ControlStore:
         try:
             with closing(_connect(temporary, self._timeout, None)) as db:
                 db.execute("BEGIN IMMEDIATE")
-                for statement in (*_DDL_V1, *_DDL_V2):
-                    db.execute(statement)
+                for version in range(1, self.TARGET_VERSION + 1):
+                    for statement in self._layout(version)[0]:
+                        db.execute(statement)
                 now = _ts(self._clock())
                 db.execute(
                     "INSERT INTO installation VALUES (1,?,?,?,0,?)",
@@ -400,7 +421,7 @@ class ControlStore:
                 )
                 db.executemany("INSERT INTO counters VALUES (?,0)", [(n,) for n in _COUNTERS])
                 db.execute("INSERT INTO queue VALUES (1,1,'running')")
-                db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                db.execute(f"PRAGMA user_version={self.TARGET_VERSION}")
                 db.commit()
             with open(temporary, "rb+") as handle:
                 os.fsync(handle.fileno())
@@ -418,30 +439,35 @@ class ControlStore:
                     leftover.unlink()
 
     def _migrate(self) -> None:
-        """Explicit, versioned, additive v1 -> v2 migration in one BEGIN IMMEDIATE.
+        """Explicit, versioned, additive migrations in one BEGIN IMMEDIATE.
 
-        Only a structurally valid v1 store is migrated; v2 is left alone; anything else
-        (0, unknown, newer) fails closed without touching the file. A crash or failure
-        before commit leaves the complete v1 store, since DDL and user_version roll back.
+        Only a structurally valid older store is migrated, one step at a time inside the
+        same transaction; the target version is left alone; anything else (0, unknown,
+        newer) fails closed without touching the file. A crash or failure before commit
+        leaves the complete older store, since DDL and user_version roll back.
         """
+        target = self.TARGET_VERSION
         with self._transaction(write=False) as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version == SCHEMA_VERSION:
+        if version == target:
             return
-        if version != 1:
+        if not isinstance(version, int) or not 1 <= version < target:
             raise ControlError(E.STORE_SCHEMA_UNSUPPORTED)
         with self._transaction() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version == SCHEMA_VERSION:
+            if version == target:
                 return  # a concurrent opener migrated first
-            if version != 1:
+            if not isinstance(version, int) or not 1 <= version < target:
                 raise ControlError(E.STORE_SCHEMA_UNSUPPORTED)
-            self._verify(db, version=1)
-            if "queue_replays" in self._tables(db):
-                raise ControlError(E.STORE_CORRUPT)  # v1 header with v2 layout: refuse
-            for statement in _DDL_V2:
-                db.execute(statement)
-            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            self._verify(db, version=version)
+            tables = self._tables(db)
+            for step in range(version + 1, target + 1):
+                statements, required = self._layout(step)
+                if (required - self._required(step - 1)) & tables:
+                    raise ControlError(E.STORE_CORRUPT)  # old header, newer layout: refuse
+                for statement in statements:
+                    db.execute(statement)
+            db.execute(f"PRAGMA user_version={target}")
 
     @staticmethod
     def _tables(db: sqlite3.Connection) -> set[str]:
@@ -450,16 +476,14 @@ class ControlStore:
             for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
 
-    def _verify(
-        self, db: sqlite3.Connection, *, version: int = SCHEMA_VERSION
-    ) -> tuple[str, bytes]:
+    def _verify(self, db: sqlite3.Connection, *, version: int | None = None) -> tuple[str, bytes]:
+        version = self.TARGET_VERSION if version is None else version
         if db.execute("PRAGMA user_version").fetchone()[0] != version:
             # Includes 0 (empty / foreign file). Never initialize or downgrade.
             raise ControlError(E.STORE_SCHEMA_UNSUPPORTED)
         if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise ControlError(E.STORE_CORRUPT)
-        required = REQUIRED_TABLES if version == SCHEMA_VERSION else REQUIRED_TABLES_V1
-        if not self._tables(db) >= required:
+        if not self._tables(db) >= self._required(version):
             raise ControlError(E.STORE_CORRUPT)
         identity = db.execute("SELECT id, secret FROM installation").fetchall()
         if len(identity) != 1 or not isinstance(identity[0][1], bytes):
@@ -780,8 +804,7 @@ class ControlStore:
             (self._installation, scope.endpoint, scope.key),
         ).fetchone()
         if row is None:
-            if self._scope_used(db, "queue_replays", scope):
-                raise ControlError(E.IDEMPOTENCY_CONFLICT)  # one scope, one response kind
+            self._scope_free(db, "replays", scope)  # one scope, one response kind
             return None
         if not hmac.compare_digest(row[0], digest):
             raise ControlError(E.IDEMPOTENCY_CONFLICT)
@@ -986,6 +1009,7 @@ class ControlStore:
                 ).fetchone()
                 if item is None or item[0] or item[1]:
                     raise ControlError(E.NOT_DISPATCHABLE)
+                self._dispatch_guard(db, operation_id)
             slot = transitions.SLOT[kind]
             if db.execute("SELECT 1 FROM leases WHERE slot = ?", (slot,)).fetchone():
                 raise ControlError(E.SLOT_OCCUPIED)
@@ -1028,6 +1052,9 @@ class ControlStore:
             return LeaseGrant(
                 operation=self._view(db, operation_id), attempt_id=attempt_id, fencing_token=fence
             )
+
+    def _dispatch_guard(self, db: sqlite3.Connection, operation_id: str) -> None:
+        """Extra dispatch precondition checked inside the begin_attempt transaction."""
 
     def _fenced(self, db: sqlite3.Connection, operation_id: str, fencing_token: int) -> str:
         self._row(db, operation_id)
@@ -1143,6 +1170,12 @@ class ControlStore:
                 return self._remember(db, idempotency, digest, 200, headers, view)
             return Accepted(200, MappingProxyType(headers), view, False)
 
+    def _scope_free(self, db: sqlite3.Connection, own: str, scope: IdempotencyScope) -> None:
+        """Refuse a key already used for a different response kind in this scope."""
+        for table in self.REPLAY_TABLES:
+            if table != own and self._scope_used(db, table, scope):
+                raise ControlError(E.IDEMPOTENCY_CONFLICT)
+
     def _scope_used(self, db: sqlite3.Connection, table: str, scope: IdempotencyScope) -> bool:
         return (
             db.execute(
@@ -1162,8 +1195,7 @@ class ControlStore:
             (self._installation, scope.endpoint, scope.key),
         ).fetchone()
         if row is None:
-            if self._scope_used(db, "replays", scope):
-                raise ControlError(E.IDEMPOTENCY_CONFLICT)
+            self._scope_free(db, "queue_replays", scope)
             return None
         if not hmac.compare_digest(row[0], digest):
             raise ControlError(E.IDEMPOTENCY_CONFLICT)
