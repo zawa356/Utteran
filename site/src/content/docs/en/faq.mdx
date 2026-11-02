@@ -1,0 +1,28 @@
+---
+title: FAQ
+description: Frequently asked questions about Utteran.
+---
+
+## Is Utteran free?
+
+Utteran is open-source software distributed under the MIT license. Some dependencies and third-party models have their own licenses and usage conditions.
+
+## Does Utteran work completely offline?
+
+Transcription runs locally, but setup and model downloads require internet access. Full offline functionality depends on your configuration and is not guaranteed for every workflow.
+
+## Can I transcribe without diarization?
+
+Yes. Disable speaker diarization to use transcription without a Hugging Face diarization token. Speaker labels will then be absent.
+
+## Can I use an AMD GPU?
+
+A compatible Vulkan setup is one possible option. Supported backends and actual performance depend on your GPU, drivers, and models. Diarization runs on the CPU in the Vulkan profile.
+
+## Why does Windows warn about an unknown publisher?
+
+Published Windows executables are currently unsigned. Verify the official GitHub Releases source and the SHA-256 checksum before proceeding. If you are unsure, stop and consider building from source.
+
+## Where can I report bugs?
+
+Use [Utteran GitHub Issues](https://github.com/zawa356/Utteran/issues). Please avoid including private audio content, access tokens, or other secrets in reports.
