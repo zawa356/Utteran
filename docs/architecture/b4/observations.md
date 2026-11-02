@@ -72,3 +72,27 @@ repr/strは値なし、public_projectionはcontract名/versionだけ。to_wire�
 橋渡しはstdin、固定module、shellなし、UTF-8、サイズ制限、固定エラーだけを使用する。
 model download、uv sync、venv新設、native build、manifest rewrite、cache更新、logging初期化なし。
 テストのaudit hookはimport/schema/collection/resolveの子process・network・書込みを拒否して検査する。
+
+## PR #25 P3: 読取中の上限と専用環境
+
+`capability_transport.read_bridge`はbinary/unbuffered Popenのstdout/stderrを独立threadで並行drainし、
+stdinも別threadで期限内に送る。stdoutは読取中に8 MiB、stderrは64 KiBを検査し、1 byteでも
+超過した時点で固定bridge_stdout_limit/bridge_stderr_limitを返す。stdout bufferは8 MiB以内、
+各readerの一時chunkは最大8 KiB。stderr本文は蓄積しない。最終bytes化/UTF-8 decode/JSON parseの
+追加メモリは存在するため、8 MiBはプロセス全体のRSS上限ではなく保持する生stdoutの上限。
+切詰めたJSONを成功扱いせず、正常終了・全pipe終了と厳密UTF-8を確認してからparseする。
+固定reasonは超過/timeout/異常終了/不正JSON・UTF-8/IO障害を区別し、raw出力を含めない。
+
+既存ProcessSupervisorのWindows Job ObjectとPOSIX新sessionを再利用し、終了時には子をwaitして回収。
+POSIXはleader終了後もprocess groupを停止、WindowsはJob Objectのcloseで残る子孫も停止する。
+無応答・blocked stdin・子孫がpipeを保持する場合もdeadlineで停止し、pipe/threadを回収する。
+既存B3 worker/process primitivesの実装自体は変更しない。
+
+bridge専用environmentはOS変数名のallowlistから構築し、CliAdapter.environment/session token取得を呼ばない。
+WindowsのSystemRoot/WINDIR/SystemDrive/PATH/PATHEXT/TEMP/TMP、user/application/program data roots、
+POSIX/macOSのHOME/TMPDIR、locale/TZ、XDG data/config/cache roots、LD/DYLD library探索pathを保持する。
+UTTERAN_DATA_ROOTだけはmanaged model/nativeの参照先に必要なので保持する。
+UTTERAN_PROFILE、UTF-8、HF offline/telemetry無効化の非秘密flagは固定値で追加する。
+HF token、Hugging Face token、AWS/Azure/GCP/OpenAI credentials、session token、proxy credentials、
+PYTHONPATH/PYTHONHOME、任意のUTTERAN_*や未知変数は継承しない。実装の固定allowlistを正本とする。
+`-I`だけに秘密除去を任せず、-I/-B/絶対Python/固定module・action/shell=Falseを維持する。

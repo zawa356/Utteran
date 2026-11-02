@@ -31,3 +31,12 @@ CIの変更はB4 schema checkと既存Python3.11/3.12 matrixへのB4テスト追
 B5: preset/policy/継承API。B6/B7: durable store、revision再確認、job snapshot、queue、attempt/fallback。
 B8: setup承認/構築/再検証。B9/U1: API/SSEとGUI反映。
 実GPU/native、driver検出provider、性能/quality、Windows/PyInstaller、worker追加backendの安全性は別受入。
+
+## PR #25 P3補強
+
+明示bridgeだけに専用bounded transportとenvironment allowlistを追加した。
+通常GUIの起動/API/EnvironmentServiceには接続しない。runner注入は維持し、実processのテストには
+同じsupervisor下で起動するPopen factoryも利用できる。既存のB3 worker/client/processesを変更しない。
+stdout 8 MiB / stderr 64 KiBは読取中の実効byte上限。超過・timeoutでは子孫を停止し直接子をwaitする。
+旧bridge未導入はbridge_unavailable、profile不在はprofile_missing、不正応答はbridge_invalid。
+環境の許可変数・理由と機密除去は[observations](observations.md)を参照。
