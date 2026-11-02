@@ -42,10 +42,22 @@ input/output/job directoryは絶対pathを要求する。Config.loadを呼ばな
 
 最初はsequence=0のhello、能力single/cancelとprofileを返す。要求前なのでhelloの3 IDはnull。
 親は版・profile・能力・sequenceを確認し、原則10秒以内にhelloがなければ失敗。成功後だけ要求を送る。
-以後のeventは要求の3 IDをすべて一致させ、sequenceを1ずつ増やす。
+以後のeventはsequenceを1ずつ増やし、下記の受理前拒否を除いて要求の3 IDをすべて一致させる。
 
 `accepted → progress* → completed|error` が基本。構造検証済みの拒否ではaccepted前のerrorも許す。
-未検証requestには3 ID=nullのerrorを返すが、既知requestの親はそのeventをID不一致として拒否する。
+要求検証が失敗してIDを確定できない場合、hello直後（sequence=1）・accepted前に限り、
+3 IDがすべてnullのWorkerErrorを受理する。許容codeはmalformed_message/schema_mismatch/
+protocol_mismatch/oversized_message/unexpected_eofの5種類だけ。最後は空入力・改行前EOFを含む
+framing拒否であり、キャンセルを意味しない。元のcodeを保ったterminalとして確定する。
+core_failure/cancelled等の実行結果をIDなしで申告することは許可しない。
+
+accepted後はerrorも3 IDの完全一致が必須。accepted前でもIDを指定したerrorは完全一致を要求し、
+部分的なnullはDTOで拒否、不一致IDは状態検証で拒否する。hello前のerror、sequence違反、
+terminal後の追加event・重複terminalは常に拒否する。
+WorkerEventはshape/ID組合せ、framingはbyte/JSON/version、EventSequenceは段階・順序・ID照合と
+匿名拒否codeの制約を所有する。worker emitterは未検証IDをraw requestから拾い直さず、
+検証前の拒否にnull IDを付ける。WorkerClientはterminal・退出を確認し、同じreason codeを
+値のないWorkerClientErrorへ変換する。DTO・wire形式を変えない訂正なのでprotocol v1を維持する。
 progressは固定stage(audio/asr/diarization/merge/export/job)、state(running/skipped/validated)、
 工程内fraction(0..1/null)のみ。message/details/raw logは捨てる。
 `job/validated`は実行前検証の完了を示す。完了後のevent、重複terminal、再hello、accepted重複は拒否。
