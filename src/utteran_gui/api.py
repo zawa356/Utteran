@@ -150,6 +150,8 @@ def create_app(
     enable_v1_jobs: bool = False,
     v1_jobs_runtime: Any = None,
     enable_v1_setup: bool = False,
+    enable_v1_events: bool = False,
+    v1_events_config: Any = None,
 ) -> FastAPI:
     """Create one session-scoped application without importing the CLI package."""
     if not session_key:
@@ -214,11 +216,16 @@ def create_app(
                 from utteran_gui.setup_api import register_setup_routes
 
                 register_setup_routes(v1_app, v1_runtime)
-        elif enable_v1_setup:
-            raise ValueError("v1 setup requires the v1 job runtime")
+            if enable_v1_events:
+                # B9: SSE /events, /sync and diagnostics on the same sub-app and session.
+                from utteran_gui.events_api import register_event_routes
+
+                register_event_routes(v1_app, v1_runtime, v1_events_config)
+        elif enable_v1_setup or enable_v1_events:
+            raise ValueError("v1 setup/events require the v1 job runtime")
         app.mount("/api/v1", v1_app)
-    elif enable_v1_jobs or enable_v1_setup:
-        raise ValueError("v1 jobs/setup require the v1 settings application")
+    elif enable_v1_jobs or enable_v1_setup or enable_v1_events:
+        raise ValueError("v1 jobs/setup/events require the v1 settings application")
 
     def shutdown_processes() -> None:
         runtime = getattr(app.state, "v1_jobs_runtime", None)
