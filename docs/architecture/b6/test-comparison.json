@@ -1,0 +1,46 @@
+{
+  "baseline_total": 954,
+  "final_total": 1015,
+  "failed": {
+    "baseline": [
+      "tests.test_gui_processes::test_profile_manifest_detects_current_and_stale_dependencies",
+      "tests.test_gui_processes::test_profile_manifest_detects_venv_move_without_disabling_profile"
+    ],
+    "final": [
+      "tests.test_gui_processes::test_profile_manifest_detects_current_and_stale_dependencies",
+      "tests.test_gui_processes::test_profile_manifest_detects_venv_move_without_disabling_profile"
+    ],
+    "new": [],
+    "resolved": []
+  },
+  "error": {
+    "baseline": [],
+    "final": [],
+    "new": [],
+    "resolved": []
+  },
+  "skipped": {
+    "baseline": [
+      "tests.test_acceptance_scenarios::test_ctrl_c_is_confined_to_the_child_console",
+      "tests.test_gui_processes::test_real_hidden_process_tree_can_still_be_cancelled",
+      "tests.test_gui_processes::test_supervisor_job_closes_after_forced_parent_exit",
+      "tests.test_gui_processes::test_supervisor_shutdown_terminates_a_real_child",
+      "tests.test_jobs::test_windows_process_probe_detects_live_and_finished_child",
+      "tests.test_private_history_match::test_rewrite_rules_work_with_filter_repo",
+      "tests.test_profiles::test_setup_list_writes_valid_utf8_when_stdout_is_piped",
+      "tests.test_profiles::test_start_exits_cleanly_when_no_profiles_exist"
+    ],
+    "final": [
+      "tests.test_acceptance_scenarios::test_ctrl_c_is_confined_to_the_child_console",
+      "tests.test_gui_processes::test_real_hidden_process_tree_can_still_be_cancelled",
+      "tests.test_gui_processes::test_supervisor_job_closes_after_forced_parent_exit",
+      "tests.test_gui_processes::test_supervisor_shutdown_terminates_a_real_child",
+      "tests.test_jobs::test_windows_process_probe_detects_live_and_finished_child",
+      "tests.test_private_history_match::test_rewrite_rules_work_with_filter_repo",
+      "tests.test_profiles::test_setup_list_writes_valid_utf8_when_stdout_is_piped",
+      "tests.test_profiles::test_start_exits_cleanly_when_no_profiles_exist"
+    ],
+    "new": [],
+    "resolved": []
+  }
+}

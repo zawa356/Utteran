@@ -6,6 +6,11 @@
 T09/T18/T19のunit/offline回帰はB5検証記録、T17の画面切替は未実装。
 新旧の設定正本と明示import方針は維持する。下表は依存計画の履歴でありmerge済み一覧ではない。
 
+2026-11-02 B6追補: [B6](../b6/README.md)は新control storeのみをDraft実装（既定未使用）。
+旧`gui/jobs`・`operation_queue`は変更せず、旧queueと同時dispatchする経路は存在しない
+（B6はdispatchしない）。T14/T16は合成record・fault injectionのunit検証のみで、
+browser mock/VM kill injection・実process raceは未実施（B7/B9/U3）。下記B6切替手順は未着手。
+
 ## 1. PR依存と推奨順
 
 | PR案 | 依存 | 対象module/成果 | 必須検証とrollback |

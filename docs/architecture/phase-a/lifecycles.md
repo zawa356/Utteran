@@ -2,6 +2,9 @@
 
 全stateはbackendで保持しAPIへ返す。UIのspinner/通信reconnectingはtransport stateであり、jobの実行状態を推測して上書きしない。以下にない遷移は409 `invalid_transition`。終端からの再実行は元resourceを巻き戻さず、新resource/attemptを作る。
 
+2026-11-02 B6追補: §2〜§5の遷移・queue・復旧規則の**保存側**を[B6](../b6/recovery.md)で
+kind別遷移表・合成recordとして実装（Draft）。実dispatch・cancel完了・setup step journalは未実装。
+
 ## 1. Environmentと実行可能性
 
 ```mermaid
