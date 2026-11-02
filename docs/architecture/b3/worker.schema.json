@@ -1,0 +1,1378 @@
+{
+  "$defs": {
+    "ASRSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "enum": [
+            "auto",
+            "faster-whisper",
+            "whisper-cpp",
+            "openvino-genai"
+          ],
+          "title": "Backend",
+          "type": "string"
+        },
+        "beam_size": {
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Beam Size",
+          "type": "integer"
+        },
+        "condition_on_previous_text": {
+          "title": "Condition On Previous Text",
+          "type": "boolean"
+        },
+        "extra_arguments": {
+          "$ref": "#/$defs/ExtraArguments"
+        },
+        "faster_whisper": {
+          "$ref": "#/$defs/FasterWhisperSettings"
+        },
+        "glossary": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "title": "Glossary",
+          "type": "array"
+        },
+        "initial_prompt": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Initial Prompt"
+        },
+        "language": {
+          "title": "Language",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "openvino_genai": {
+          "$ref": "#/$defs/GenAISettings"
+        },
+        "vad": {
+          "$ref": "#/$defs/VadSettings"
+        },
+        "whisper_cpp": {
+          "$ref": "#/$defs/WhisperCppSettings"
+        },
+        "word_timestamps": {
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "title": "Word Timestamps",
+          "type": "string"
+        }
+      },
+      "required": [
+        "backend",
+        "model",
+        "language",
+        "initial_prompt",
+        "glossary",
+        "beam_size",
+        "vad",
+        "word_timestamps",
+        "condition_on_previous_text"
+      ],
+      "title": "ASRSettings",
+      "type": "object"
+    },
+    "DiarizationSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "const": "pyannote",
+          "title": "Backend",
+          "type": "string"
+        },
+        "device_preference": {
+          "enum": [
+            "auto",
+            "cpu",
+            "cuda",
+            "xpu"
+          ],
+          "title": "Device Preference",
+          "type": "string"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "max_speakers": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Speakers"
+        },
+        "memory_guard": {
+          "enum": [
+            "auto",
+            "warn",
+            "off"
+          ],
+          "title": "Memory Guard",
+          "type": "string"
+        },
+        "memory_safety_margin": {
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "Memory Safety Margin",
+          "type": "number"
+        },
+        "min_speakers": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Min Speakers"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "num_speakers": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Num Speakers"
+        }
+      },
+      "required": [
+        "enabled",
+        "backend",
+        "model",
+        "device_preference",
+        "num_speakers",
+        "min_speakers",
+        "max_speakers",
+        "memory_guard"
+      ],
+      "title": "DiarizationSettings",
+      "type": "object"
+    },
+    "ExtraArguments": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_unverified": {
+          "title": "Allow Unverified",
+          "type": "boolean"
+        },
+        "backend": {
+          "const": "whisper-cpp",
+          "title": "Backend",
+          "type": "string"
+        },
+        "tokens": {
+          "items": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Tokens",
+          "type": "array"
+        }
+      },
+      "required": [
+        "backend",
+        "tokens",
+        "allow_unverified"
+      ],
+      "title": "ExtraArguments",
+      "type": "object"
+    },
+    "FasterWhisperSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "compute_type": {
+          "enum": [
+            "auto",
+            "int8",
+            "int8_float32",
+            "int8_float16",
+            "float16",
+            "float32"
+          ],
+          "title": "Compute Type",
+          "type": "string"
+        }
+      },
+      "title": "FasterWhisperSettings",
+      "type": "object"
+    },
+    "GenAISettings": {
+      "additionalProperties": false,
+      "properties": {
+        "max_new_tokens": {
+          "minimum": 1,
+          "title": "Max New Tokens",
+          "type": "integer"
+        }
+      },
+      "title": "GenAISettings",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "OutputSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "formats": {
+          "items": {
+            "enum": [
+              "srt",
+              "vtt",
+              "json",
+              "txt",
+              "md"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Formats",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "newline": {
+          "enum": [
+            "lf",
+            "crlf"
+          ],
+          "title": "Newline",
+          "type": "string"
+        },
+        "show_speaker": {
+          "title": "Show Speaker",
+          "type": "boolean"
+        },
+        "speaker_labels": {
+          "additionalProperties": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "title": "Speaker Labels",
+          "type": "object"
+        },
+        "srt_bom": {
+          "title": "Srt Bom",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "formats",
+        "newline",
+        "srt_bom",
+        "show_speaker",
+        "speaker_labels"
+      ],
+      "title": "OutputSettings",
+      "type": "object"
+    },
+    "PostprocessingSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "boundary_snap_enabled": {
+          "title": "Boundary Snap Enabled",
+          "type": "boolean"
+        },
+        "boundary_snap_max_characters": {
+          "minimum": 0,
+          "title": "Boundary Snap Max Characters",
+          "type": "integer"
+        },
+        "boundary_snap_max_gap": {
+          "minimum": 0,
+          "title": "Boundary Snap Max Gap",
+          "type": "number"
+        },
+        "boundary_snap_unit": {
+          "enum": [
+            "A",
+            "B"
+          ],
+          "title": "Boundary Snap Unit",
+          "type": "string"
+        },
+        "fallback_characters_per_second": {
+          "minimum": 0,
+          "title": "Fallback Characters Per Second",
+          "type": "number"
+        },
+        "fallback_duration_padding": {
+          "minimum": 0,
+          "title": "Fallback Duration Padding",
+          "type": "number"
+        },
+        "fallback_min_duration": {
+          "minimum": 0,
+          "title": "Fallback Min Duration",
+          "type": "number"
+        },
+        "max_nearest_distance": {
+          "minimum": 0,
+          "title": "Max Nearest Distance",
+          "type": "number"
+        },
+        "max_same_speaker_bridge_gap": {
+          "minimum": 0,
+          "title": "Max Same Speaker Bridge Gap",
+          "type": "number"
+        },
+        "max_unsupported_fragment_characters": {
+          "minimum": 0,
+          "title": "Max Unsupported Fragment Characters",
+          "type": "integer"
+        },
+        "max_unsupported_fragment_duration": {
+          "minimum": 0,
+          "title": "Max Unsupported Fragment Duration",
+          "type": "number"
+        },
+        "merge_gap": {
+          "minimum": 0,
+          "title": "Merge Gap",
+          "type": "number"
+        },
+        "min_clear_turn_duration": {
+          "minimum": 0,
+          "title": "Min Clear Turn Duration",
+          "type": "number"
+        },
+        "min_fragment_speaker_overlap": {
+          "minimum": 0,
+          "title": "Min Fragment Speaker Overlap",
+          "type": "number"
+        },
+        "min_segment_duration": {
+          "minimum": 0,
+          "title": "Min Segment Duration",
+          "type": "number"
+        },
+        "min_segment_words": {
+          "minimum": 0,
+          "title": "Min Segment Words",
+          "type": "integer"
+        },
+        "min_unknown_characters": {
+          "minimum": 0,
+          "title": "Min Unknown Characters",
+          "type": "integer"
+        },
+        "min_unknown_duration": {
+          "minimum": 0,
+          "title": "Min Unknown Duration",
+          "type": "number"
+        },
+        "renumber_speakers": {
+          "title": "Renumber Speakers",
+          "type": "boolean"
+        },
+        "silence_switch_threshold": {
+          "minimum": 0,
+          "title": "Silence Switch Threshold",
+          "type": "number"
+        },
+        "speaker_switch_penalty": {
+          "minimum": 0,
+          "title": "Speaker Switch Penalty",
+          "type": "number"
+        },
+        "unknown_emission_score": {
+          "minimum": 0,
+          "title": "Unknown Emission Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "boundary_snap_enabled",
+        "boundary_snap_unit",
+        "merge_gap",
+        "speaker_switch_penalty"
+      ],
+      "title": "PostprocessingSettings",
+      "type": "object"
+    },
+    "ProcessingSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/ASRSettings"
+        },
+        "diarization": {
+          "$ref": "#/$defs/DiarizationSettings"
+        },
+        "output": {
+          "$ref": "#/$defs/OutputSettings"
+        },
+        "postprocessing": {
+          "$ref": "#/$defs/PostprocessingSettings"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "asr",
+        "diarization",
+        "postprocessing",
+        "output"
+      ],
+      "title": "ProcessingSettings",
+      "type": "object"
+    },
+    "VadSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Threshold",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "VadSettings",
+      "type": "object"
+    },
+    "WhisperCppSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "dtw": {
+          "title": "Dtw",
+          "type": "string"
+        },
+        "entropy_threshold": {
+          "title": "Entropy Threshold",
+          "type": "number"
+        },
+        "logprob_threshold": {
+          "title": "Logprob Threshold",
+          "type": "number"
+        },
+        "max_word_duration_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Max Word Duration Seconds",
+          "type": "number"
+        },
+        "no_context": {
+          "title": "No Context",
+          "type": "boolean"
+        },
+        "no_speech_threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "No Speech Threshold",
+          "type": "number"
+        },
+        "repetition_limit": {
+          "minimum": 0,
+          "title": "Repetition Limit",
+          "type": "integer"
+        },
+        "temperature": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "temperature_increment": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Temperature Increment",
+          "type": "number"
+        },
+        "threads": {
+          "minimum": 0,
+          "title": "Threads",
+          "type": "integer"
+        },
+        "vad": {
+          "title": "Vad",
+          "type": "boolean"
+        },
+        "vad_model": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vad Model"
+        },
+        "vad_threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Vad Threshold",
+          "type": "number"
+        }
+      },
+      "title": "WhisperCppSettings",
+      "type": "object"
+    },
+    "WorkerAccepted": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt Id"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Id"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "type": {
+          "const": "accepted",
+          "default": "accepted",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "schema_version",
+        "sequence"
+      ],
+      "title": "WorkerAccepted",
+      "type": "object"
+    },
+    "WorkerArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "maxLength": 32768,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "sha256"
+      ],
+      "title": "WorkerArtifact",
+      "type": "object"
+    },
+    "WorkerCancel": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "job_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "cancel",
+          "default": "cancel",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "job_id",
+        "protocol_version",
+        "request_id",
+        "schema_version"
+      ],
+      "title": "WorkerCancel",
+      "type": "object"
+    },
+    "WorkerCancelAcknowledged": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt Id"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Id"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "type": {
+          "const": "cancel_acknowledged",
+          "default": "cancel_acknowledged",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "schema_version",
+        "sequence"
+      ],
+      "title": "WorkerCancelAcknowledged",
+      "type": "object"
+    },
+    "WorkerCompleted": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/WorkerArtifact"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "attempt_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt Id"
+        },
+        "core_job_id": {
+          "pattern": "^[0-9a-f]{16}$",
+          "title": "Core Job Id",
+          "type": "string"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Id"
+        },
+        "manifest": {
+          "$ref": "#/$defs/WorkerArtifact"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "type": {
+          "const": "completed",
+          "default": "completed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifacts",
+        "core_job_id",
+        "manifest",
+        "protocol_version",
+        "schema_version",
+        "sequence"
+      ],
+      "title": "WorkerCompleted",
+      "type": "object"
+    },
+    "WorkerError": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt Id"
+        },
+        "code": {
+          "$ref": "#/$defs/WorkerErrorCode"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Id"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "type": {
+          "const": "error",
+          "default": "error",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "protocol_version",
+        "schema_version",
+        "sequence"
+      ],
+      "title": "WorkerError",
+      "type": "object"
+    },
+    "WorkerErrorCode": {
+      "enum": [
+        "start_failed",
+        "profile_invalid",
+        "profile_unavailable",
+        "profile_incompatible",
+        "module_missing",
+        "handshake_timeout",
+        "protocol_mismatch",
+        "schema_mismatch",
+        "malformed_message",
+        "oversized_message",
+        "invalid_sequence",
+        "id_mismatch",
+        "worker_crash",
+        "unexpected_eof",
+        "io_timeout",
+        "process_timeout",
+        "validation_timeout",
+        "cancelled",
+        "core_failure",
+        "invalid_context",
+        "unsupported_setting",
+        "model_missing",
+        "dependency_missing",
+        "artifact_invalid"
+      ],
+      "title": "WorkerErrorCode",
+      "type": "string"
+    },
+    "WorkerExecutionContext": {
+      "additionalProperties": false,
+      "properties": {
+        "asr_backend": {
+          "title": "Asr Backend",
+          "type": "string"
+        },
+        "asr_device": {
+          "title": "Asr Device",
+          "type": "string"
+        },
+        "asr_model": {
+          "title": "Asr Model",
+          "type": "string"
+        },
+        "base_config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Base Config",
+          "type": "object"
+        },
+        "compute_type": {
+          "title": "Compute Type",
+          "type": "string"
+        },
+        "diarization_device": {
+          "title": "Diarization Device",
+          "type": "string"
+        },
+        "native_variant": {
+          "anyOf": [
+            {
+              "enum": [
+                "cpu",
+                "openvino",
+                "vulkan",
+                "openvino_vulkan"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Native Variant"
+        }
+      },
+      "required": [
+        "base_config",
+        "asr_backend",
+        "asr_model",
+        "asr_device",
+        "diarization_device",
+        "compute_type"
+      ],
+      "title": "WorkerExecutionContext",
+      "type": "object"
+    },
+    "WorkerHello": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt Id"
+        },
+        "capabilities": {
+          "default": [
+            "single",
+            "cancel"
+          ],
+          "items": {
+            "enum": [
+              "single",
+              "cancel"
+            ],
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Id"
+        },
+        "profile": {
+          "enum": [
+            "cpu",
+            "cuda",
+            "intel",
+            "vulkan"
+          ],
+          "title": "Profile",
+          "type": "string"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "type": {
+          "const": "hello",
+          "default": "hello",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile",
+        "protocol_version",
+        "schema_version",
+        "sequence"
+      ],
+      "title": "WorkerHello",
+      "type": "object"
+    },
+    "WorkerProgress": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt Id"
+        },
+        "fraction": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fraction"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Id"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "stage": {
+          "enum": [
+            "audio",
+            "asr",
+            "diarization",
+            "merge",
+            "export",
+            "job"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "running",
+            "skipped",
+            "validated"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "type": {
+          "const": "progress",
+          "default": "progress",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "schema_version",
+        "sequence",
+        "stage",
+        "state"
+      ],
+      "title": "WorkerProgress",
+      "type": "object"
+    },
+    "WorkerRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WorkerExecutionContext"
+        },
+        "force": {
+          "default": false,
+          "title": "Force",
+          "type": "boolean"
+        },
+        "input_path": {
+          "maxLength": 32768,
+          "minLength": 1,
+          "title": "Input Path",
+          "type": "string"
+        },
+        "job_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "mode": {
+          "const": "single",
+          "default": "single",
+          "title": "Mode",
+          "type": "string"
+        },
+        "profile": {
+          "enum": [
+            "cpu",
+            "cuda",
+            "intel",
+            "vulkan"
+          ],
+          "title": "Profile",
+          "type": "string"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "resume": {
+          "default": true,
+          "title": "Resume",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProcessingSettings"
+        },
+        "type": {
+          "const": "execute",
+          "default": "execute",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "context",
+        "input_path",
+        "job_id",
+        "profile",
+        "protocol_version",
+        "request_id",
+        "schema_version",
+        "settings"
+      ],
+      "title": "WorkerRequest",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/WorkerRequest"
+    },
+    {
+      "$ref": "#/$defs/WorkerCancel"
+    },
+    {
+      "$ref": "#/$defs/WorkerHello"
+    },
+    {
+      "$ref": "#/$defs/WorkerAccepted"
+    },
+    {
+      "$ref": "#/$defs/WorkerProgress"
+    },
+    {
+      "$ref": "#/$defs/WorkerCompleted"
+    },
+    {
+      "$ref": "#/$defs/WorkerError"
+    },
+    {
+      "$ref": "#/$defs/WorkerCancelAcknowledged"
+    }
+  ],
+  "title": "Utteran worker IPC protocol 1 / DTO schema 1"
+}
