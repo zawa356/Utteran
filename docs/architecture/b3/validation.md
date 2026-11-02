@@ -105,3 +105,12 @@ uv build --wheel --out-dir /workspace/scratch/b3-wheel
 公開worktree scanは292 tracked files、blockingは既存合成WAV 2件のみで新規blockingなし。
 wheelに新規7moduleが含まれ、差分whitespace検査も成功。
 最終wheelを独立3.11環境へ再導入した148件も成功（4.80秒）。
+
+## 提出
+
+- [Draft PR #24](https://github.com/zawa356/Utteran/pull/24)
+- base: `feat/b2-core-application-service` / `294c383b4523c75b3a002b0c6f3d9ffaba0fd692`
+- head: `feat/b3-profile-worker`。実装commit: `23b059267d73b6e6b2c7d51d3ac6326f0bb58968`。
+- [比較ページ](https://github.com/zawa356/Utteran/compare/feat/b2-core-application-service...feat/b3-profile-worker)
+- Git pushとGitHub connectorによるDraft作成は成功。以前のAPI Forbiddenは今回再現しなかった。
+  Draftのまま停止し、Ready化・merge・B4着手はしていない。

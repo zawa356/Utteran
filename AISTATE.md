@@ -11,6 +11,7 @@
   [検証](docs/architecture/b3/validation.md)を参照。
 - ローカル完全FW model・話者分離無効だけを許可。未監査backend、native hard cancel、
   Windows配布の実受入を成功扱いにしない。lock/profile問題の独立計画を互換性資料へ記載。
+- [Draft PR #24](https://github.com/zawa356/Utteran/pull/24)をB2 baseで作成・push済み。
 - 新規82件成功、全モデル不要671 passed/既知3 failed/8 skipped、mypy既存9件。
   詳細・最終追加検証はvalidationを正本とする。Ready化・merge・B4着手はしない。
 
