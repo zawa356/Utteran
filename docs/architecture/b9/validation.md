@@ -51,8 +51,8 @@
 
 | 項目 | 修正前HEAD `8264ab1` | 修正後 |
 |---|---|---|
-| pytest `-m "not requires_model"`（3.11.18） | 1184 passed / 2 failed / 9 skipped | **1211 passed / 2 failed（同一node） / 9 skipped** |
-| 契約matrix（16ファイル）3.11.18 / 3.12.3 | 590 / 590 | **617 passed・1 skipped / 617 passed・1 skipped** |
+| pytest `-m "not requires_model"`（3.11.18） | 1184 passed / 2 failed / 9 skipped | **1212 passed / 2 failed（同一node） / 9 skipped** |
+| 契約matrix（16ファイル）3.11.18 / 3.12.3 | 590 / 590 | **618 passed・1 skipped / 618 passed・1 skipped** |
 | Ruff / format / mypy | 成功 / 成功 / 既知9 | 成功 / 成功（200 files） / 既知9のみ |
 | schema `--check` 8種、`uv lock --check` | 成功 | 成功（events.schema.jsonは`next_cursor`最大長のみ再生成） |
 

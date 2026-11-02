@@ -154,6 +154,11 @@ def test_unterminated_huge_line_keeps_memory_bounded(tmp_path: Path) -> None:
             f'print(\'{{"access": "available", "pad": "\' + \'p\' * {MAX_STATUS_LINE} + \'"}}\')',
             None,
         ),
+        # an over-long *non-JSON* progress line (incl. Windows "\r\n") does not hide the status
+        (
+            f"print('x' * {MAX_STATUS_LINE + 10}); print('{{\"access\": \"available\"}}')",
+            {"access": "available"},
+        ),
         # final line without newline still counts
         ('import sys; sys.stdout.write(\'{"access": "available"}\')', {"access": "available"}),
     ],
