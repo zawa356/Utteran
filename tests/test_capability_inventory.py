@@ -144,6 +144,35 @@ def deployment(
             "diarization",
         )
     )
+    # Explicit synthetic runtime attestations, including engine-specific indices.
+    # Production providers must observe these; core never copies requested values.
+    actual = recipe.requested_route.to_wire()
+    for component in ("encoder", "decoder"):
+        if actual[component] == "selected-device":
+            actual[component] = identity.device
+    measured = {
+        key: value if value != "backend-default" else "unknown"
+        for key, value in actual.items()
+        if key != "native_variant"
+    }
+    observations = tuple(
+        o.model_copy(
+            update={
+                "initialized_route": actual,
+                "encoder_observed": measured["encoder"],
+                "decoder_observed": measured["decoder"],
+                "encoder_device_index_observed": identity.device_index
+                if measured["encoder"] not in {"unknown", "cpu"}
+                else None,
+                "decoder_device_index_observed": identity.device_index
+                if measured["decoder"] not in {"unknown", "cpu"}
+                else None,
+            }
+        )
+        if o.kind == "smoke"
+        else o
+        for o in observations
+    )
     return DeploymentInventory(
         identity=identity,
         observations=observations,
@@ -357,7 +386,18 @@ def test_worker_model_and_single_input_limits(settings, updates) -> None:
 
 
 def test_requested_route_is_never_copied_to_observed(settings) -> None:
-    c = evaluate(deployment(settings, "wc-ov-vk"), settings)
+    d = replace_observation(
+        deployment(settings, "wc-ov-vk"),
+        "smoke",
+        initialized_route=None,
+        encoder_observed="unknown",
+        decoder_observed="unknown",
+        encoder_device_index_observed=None,
+        decoder_device_index_observed=None,
+    )
+    c = evaluate(d, settings)
+    assert c.runnable == "unknown" and "smoke_route_unverified" in codes(c)
+    assert next(o for o in d.observations if o.kind == "smoke").state == "passed"
     smoke = next(o for o in c.observations if o.kind == "smoke")
     assert smoke.initialized_route is None
     assert smoke.encoder_observed == smoke.decoder_observed == "unknown"
@@ -920,3 +960,131 @@ def test_unknown_platform_is_not_an_observed_failure(settings):
     assert (
         next(o for o in candidate.observations if o.kind == "software_support").state == "unknown"
     )
+
+
+@pytest.mark.parametrize("recipe_id", [r.id for r in RECIPES])
+def test_passed_smoke_without_measured_route_is_unverified(settings, recipe_id):
+    d = replace_observation(
+        deployment(settings, recipe_id),
+        "smoke",
+        initialized_route=None,
+        encoder_observed="unknown",
+        decoder_observed="unknown",
+        encoder_device_index_observed=None,
+        decoder_device_index_observed=None,
+    )
+    before = d.to_wire()
+    c = evaluate(d, settings)
+    assert c.runnable == "unknown" and "smoke_route_unverified" in codes(c)
+    assert next(o for o in c.observations if o.kind == "smoke").state == "unknown"
+    assert d.to_wire() == before
+
+
+@pytest.mark.parametrize("component", ["encoder", "decoder"])
+def test_partial_cuda_observation_does_not_verify_route(settings, component):
+    d = replace_observation(
+        deployment(settings, "fw-cuda"), "smoke", **{component + "_observed": "unknown"}
+    )
+    assert evaluate(d, settings).runnable == "unknown"
+    # A positive CPU observation is a mismatch even if the other component is missing.
+    other = "decoder" if component == "encoder" else "encoder"
+    d = replace_observation(d, "smoke", **{other + "_observed": "cpu"})
+    assert "smoke_route_mismatch" in codes(evaluate(d, settings))
+
+
+@pytest.mark.parametrize("component", ["encoder", "decoder"])
+def test_accelerator_indices_are_observed_not_inferred(settings, component):
+    d = replace_observation(
+        deployment(settings, "fw-cuda", device_index=1),
+        "smoke",
+        **{component + "_device_index_observed": None},
+    )
+    assert "smoke_route_unverified" in codes(evaluate(d, settings))
+    d = replace_observation(d, "smoke", **{component + "_device_index_observed": 0})
+    assert "smoke_route_mismatch" in codes(evaluate(d, settings))
+    d = replace_observation(d, "smoke", **{component + "_device_index_observed": 1})
+    assert evaluate(d, settings).runnable == "ready"
+
+
+@pytest.mark.parametrize(
+    "recipe_id,component",
+    [
+        ("wc-cpu", "encoder"),
+        ("wc-cpu", "decoder"),
+        ("wc-vulkan", "decoder"),
+        ("wc-ov", "encoder"),
+        ("wc-ov-vk", "encoder"),
+        ("wc-ov-vk", "decoder"),
+    ],
+)
+def test_native_route_requires_variant_and_required_components(settings, recipe_id, component):
+    d = deployment(settings, recipe_id)
+    assert evaluate(d, settings).runnable == "ready"
+    missing = replace_observation(d, "smoke", initialized_route=None)
+    assert "smoke_route_unverified" in codes(evaluate(missing, settings))
+    missing = replace_observation(d, "smoke", **{component + "_observed": "unknown"})
+    assert "smoke_route_unverified" in codes(evaluate(missing, settings))
+    wrong = replace_observation(d, "smoke", initialized_route=get_recipe("fw-cpu").requested_route)
+    assert "smoke_route_mismatch" in codes(evaluate(wrong, settings))
+
+
+@pytest.mark.parametrize("recipe_id", ["wc-vulkan", "wc-ov"])
+def test_backend_default_is_not_a_required_component_observation(settings, recipe_id):
+    d = deployment(settings, recipe_id)
+    assert evaluate(d, settings).runnable == "ready"
+    component = "encoder" if recipe_id == "wc-vulkan" else "decoder"
+    assert (
+        getattr(next(o for o in d.observations if o.kind == "smoke"), component + "_observed")
+        == "unknown"
+    )
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu", "npu"])
+def test_genai_selected_device_is_measured_for_each_component(settings, device):
+    d = deployment(settings, "genai-ov", device=device)
+    assert evaluate(d, settings).runnable == "ready"
+    missing = replace_observation(d, "smoke", encoder_observed="unknown")
+    assert evaluate(missing, settings).runnable == "unknown"
+    wrong = replace_observation(d, "smoke", decoder_observed="cuda")
+    assert evaluate(wrong, settings).runnable == "blocked"
+
+
+@pytest.mark.parametrize(
+    "updates,now,reason",
+    [
+        (dict(expires_at=NOW + timedelta(seconds=1)), LATER, "expired"),
+        (dict(fingerprint=digest("other-scope")), NOW, "fingerprint_changed"),
+        (dict(observed_at=NOW + timedelta(seconds=1)), NOW, "observation_from_future"),
+        (dict(observed_at=None, expires_at=None), NOW, "observation_time_missing"),
+    ],
+)
+def test_verified_route_cannot_revive_invalid_evidence(settings, updates, now, reason):
+    d = replace_observation(deployment(settings, "fw-cuda"), "smoke", **updates)
+    c = evaluate(d, settings, now=now)
+    assert c.runnable == "unknown" and reason in codes(c)
+    smoke = next(o for o in c.observations if o.kind == "smoke")
+    assert smoke.encoder_device_index_observed is None
+    assert "smoke_route_unverified" not in codes(c)
+
+
+def test_unverified_route_resolution_and_failure_precedence(settings):
+    d = replace_observation(deployment(settings, "fw-cuda"), "smoke", decoder_observed="unknown")
+    inv = inventory(settings, d, deployment(settings))
+    result = resolve(inv, policy(), now=NOW)
+    assert result.selected.deployment.identity.recipe_id == "fw-cpu"
+    alternative = next(a for a in result.alternatives if a.candidate.id == evaluate(d, settings).id)
+    assert not alternative.eligible and "smoke_route_unverified" in alternative.reason_codes
+    result = resolve(
+        inv, policy(mode="fixed", fixed_candidate_id=evaluate(d, settings).id), now=NOW
+    )
+    assert result.error == "fixed_candidate_unavailable" and result.preapproved == ()
+    failed = replace_observation(d, "model", state="failed", reason_code="model_missing")
+    assert evaluate(failed, settings).runnable == "blocked"
+    failed = replace_observation(d, "smoke", state="failed", reason_code="probe_error")
+    assert "probe_error" in codes(evaluate(failed, settings))
+    assert "smoke_route_unverified" not in codes(evaluate(failed, settings))
+
+
+def test_openvino_gpu_label_is_not_generic_gpu(settings):
+    d = replace_observation(deployment(settings, "wc-ov"), "smoke", encoder_observed="gpu")
+    assert "smoke_route_mismatch" in codes(evaluate(d, settings))

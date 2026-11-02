@@ -115,3 +115,12 @@ profile manifest/model等の欠落を理由に保守的な結果となり、実�
 
 [Draft PR #25](https://github.com/zawa356/Utteran/pull/25)、base `feat/b3-profile-worker`。
 B3 PR #24はOPEN/Draftのまま。Ready化・merge・B5着手は行わない。
+
+## PR #25レビュー修正 P2（2026-11-02）
+
+レビュー開始HEAD `9b99a6fe7e2bd44017ea2db50e76d8ddd1dd0e84`、base B3/Draftを再確認。
+smoke routeをverified/unverified/mismatchへ分離し、必須component/native routeと
+acceleratorのengine別実測indexを要求。smoke_route_unverifiedをallowlist/schemaへ追加。
+全recipeの成功fixtureは明示的な合成実測へ更新し、全passedだが実route unknownならunknownとなる。
+モデル/GPU推論は実行していない。B1/B3 DTO/schemaとresolverの選択順位は変更しない。
+P2/P3を含む最終回帰・Windows CI結果は追補に記録する。

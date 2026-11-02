@@ -36,3 +36,19 @@ component fingerprintと個別Observationを要求する。XPUは現Utteranの�
 GenAI＋話者分離はauto/ja/zh/th/lo/my/yueを拒否する。
 実装されないglossary/extra arguments等は拒否、固定backend/model/compute、inactive namespace、
 word timestamp等の条件も評価する。対応していない構成をlibrary一般論で追加しない。
+
+## PR #25 P2: recipe別の実測要件
+
+| Recipe | 必須smoke実測 |
+|---|---|
+| fw-cpu | encoder=cpu、decoder=cpu |
+| fw-cuda | encoder=cuda、decoder=cuda、両engineのdevice index |
+| wc-cpu | native=cpu、encoder=cpu、decoder=cpu |
+| wc-vulkan | native=vulkan、decoder=vulkanとそのindex。encoderは不要 |
+| wc-ov | native=openvino、encoder=openvino-gpuとそのindex。decoderは不要 |
+| wc-ov-vk | native=openvino_vulkan、encoder=openvino-gpu、decoder=vulkan、両index |
+| genai-ov | encoder/decoderとも選択したcpu/gpu/npu。gpu/npuは両indexも必要 |
+
+すべてproviderの実測として記録する。要求や初期化要求のコピーは証明ではない。
+実測値の一部欠落はunknown、不一致はblocked、fresh passedと必須実測が整合する場合だけverified。
+詳細は[observations](observations.md)。

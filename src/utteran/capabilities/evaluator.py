@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from utteran.asr.registry import NON_SPACE_LANGUAGES
 from utteran.capabilities.recipes import get_recipe
@@ -76,6 +76,8 @@ def normalize_observation(
             initialized_route=None,
             encoder_observed="unknown",
             decoder_observed="unknown",
+            encoder_device_index_observed=None,
+            decoder_device_index_observed=None,
         )
     )
 
@@ -155,11 +157,21 @@ def _settings_issues(
     return [SelectionIssue(kind="settings", code=code) for code in dict.fromkeys(codes)]
 
 
-def _route_conflicts(observation: CapabilityObservation, identity: ExecutionIdentity) -> bool:
+def _verify_smoke_route(
+    observation: CapabilityObservation,
+    identity: ExecutionIdentity,
+) -> Literal["verified", "unverified", "mismatch"]:
+    """Only explicit provider attestations establish execution on the target route.
+
+    A matching request/fingerprint or initialized route alone never fills missing
+    component observations. Accelerator indices belong to each observed engine;
+    providers must bind their hardware/runtime mapping to the evidence scope.
+    """
     requested = get_recipe(identity.recipe_id).requested_route
     initialized = observation.initialized_route
+    missing = requested.native_variant is not None and initialized is None
     if initialized is not None and initialized.native_variant != requested.native_variant:
-        return True
+        return "mismatch"
     for component in ("encoder", "decoder"):
         expected = getattr(requested, component)
         if expected == "backend-default":
@@ -167,14 +179,23 @@ def _route_conflicts(observation: CapabilityObservation, identity: ExecutionIden
         if expected == "selected-device":
             expected = identity.device
         actual = getattr(observation, component + "_observed")
-        if actual != "unknown" and actual != expected:
-            return True
-        if initialized is not None and getattr(initialized, component) not in {
-            expected,
-            getattr(requested, component),
-        }:
-            return True
-    return False
+        if actual == "unknown":
+            missing = True
+        elif actual != expected:
+            return "mismatch"
+        if initialized is not None:
+            route_value = getattr(initialized, component)
+            # Symbolic request labels are not runtime observations. Concrete
+            # initialized values may reveal contradictions, but cannot replace
+            # the component attestation above.
+            if route_value not in {"selected-device", "backend-default", expected}:
+                return "mismatch"
+        index = getattr(observation, component + "_device_index_observed")
+        if expected != "cpu" and index is None:
+            missing = True
+        elif index is not None and index != identity.device_index:
+            return "mismatch"
+    return "unverified" if missing else "verified"
 
 
 def evaluate_candidate(
@@ -296,17 +317,17 @@ def evaluate_candidate(
             continue
         observation = normalize_observation(observation, fingerprint, now)
 
-        if (
-            kind == "smoke"
-            and observation.state == "passed"
-            and _route_conflicts(observation, identity)
-        ):
-            observation = observation.model_copy(
-                update={
-                    "state": "failed",
-                    "reason_code": "smoke_route_mismatch",
-                }
-            )
+        if kind == "smoke" and observation.state == "passed":
+            route = _verify_smoke_route(observation, identity)
+            if route != "verified":
+                observation = observation.model_copy(
+                    update={
+                        "state": "failed" if route == "mismatch" else "unknown",
+                        "reason_code": "smoke_route_mismatch"
+                        if route == "mismatch"
+                        else "smoke_route_unverified",
+                    }
+                )
         observations.append(observation)
         if observation.state != "passed":
             code = (
