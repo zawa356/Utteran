@@ -1,5 +1,21 @@
 # AI 作業状態
 
+## PR #26 B5レビュー受理・未解決ゲート記録（2026-11-02）
+
+- PR #26のOPEN/Draft、base B4 `f6c2a95`、HEAD `410e39ad4e37876c20f630ef7036cc4ca3cff052`を再確認。
+- 外部レビュー判定: **未解決ゲート明示付きでB5コードレビュー受理**。新規release-blocking欠陥なし、
+  レビュースレッドなし。静的レビューであり、CI緑・Windows配布試験済み・merge/releaseとは扱わない。
+- 修正対象コードがないため文書のみ更新。実装/テスト/schema/CI/version/lockは不変。
+- 最終HEAD Actions run 41380461146: Windows pytest 951 passed / 3 skipped（後続Inno Setupで赤）、
+  3.11/3.12契約各350 passed、linux-qualityは既知mypy9件で停止。
+- 補助再実行（Linux 3.11.18）: B5 73 passed、全体944 passed / 2 failed / 8 skipped（既知3件の部分集合）。
+  Ruff/schema/lock成功、mypy既知9件のみ。
+- 未解決: CI既知失敗とPID-file競合（専用Issue未作成）、Windows ACL/配布/GPU実受入、
+  `resources.sqlite3`非暗号化・無期限保持・完全消去なし、opt-in境界、stacked未merge。
+- [レビュー記録](docs/architecture/b5/pr26-review-validation.md)、[文書監査](docs/architecture/b5/docs-audit.md)。
+- 次はB6 durable operation store / outbox（別Draft PR）。ユーザー指示まで着手・rebase・merge・
+  Issue close・PR状態変更をしない。Draft維持で停止する。
+
 ## Phase B5 Preset / Policy / Editing API（0.1.34、2026-11-02）
 
 - PR #25はOPEN/Draft、base B3、HEAD `f6c2a9546e1ee9b780f8c1a098f7bcdfc7096314`を再確認。

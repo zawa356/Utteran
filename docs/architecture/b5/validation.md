@@ -94,3 +94,10 @@ workflow全体は既知問題で赤。Linux943 passedはローカル独立実行
 Windows ACL/installer/portable/WebView2実受入、GPU/native推論、quality/Prompt compiler、
 実電源断/物理disk failureは未検証。mock成功と実機成功を混同しない。
 全DoD無条件合格・release可能とは報告しない。Draftレビュー待ちで停止する。
+
+## PR #26レビュー受理後の追補
+
+最終HEAD `410e39ad4e37876c20f630ef7036cc4ca3cff052`のレビュー判定、最終HEAD Actions
+[run 41380461146](https://github.com/zawa356/Utteran/actions/runs/41380461146)のjob別結果、
+補助ローカル再実行、未解決release gateは[pr26-review-validation.md](pr26-review-validation.md)へ記録。
+上記の基準値・既知失敗集合は変更していない。

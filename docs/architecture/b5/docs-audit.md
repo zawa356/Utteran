@@ -41,3 +41,29 @@
 
 Windows実配布/ACL/GPUの未検証と既知CI障害はvalidation.mdに明示する。
 保持期限/完全消去は未解決で、無断pruneを行わない。B6以降には着手しない。
+
+## PR #26レビュー受理時の再点検（2026-11-02）
+
+HEAD `410e39a`のレビュー受理（新規コード欠陥なし）を受けた文書のみの追補。
+挙動・version・schema・依存に変更がないため、利用者向け文書は内容を再確認して据え置く。
+
+| 対象 | 状態 | 確認・理由 |
+|---|---|---|
+| B5 pr26-review-validation.md | updated | 新規。判定、CI証拠、補助再実行、未解決gate、次Phase |
+| AISTATE.md | updated | レビュー受理と未解決gate、停止点を先頭に追記 |
+| B5 validation.md | updated | レビュー追補への参照のみ。基準値・既知失敗集合は不変 |
+| B5 README.md | updated | 資料一覧へレビュー記録を追加 |
+| B5 docs-audit.md | updated | 本節 |
+| README.md / README.en.md | reviewed-no-change | 0.1.34・opt-in・非暗号化保存・未接続機能の記述はレビュー内容と一致 |
+| 変更履歴.md | reviewed-no-change | 0.1.34の追加/互換性/制限は一致。レビュー受理は製品変更でないため追記しない |
+| 要件定義.md | reviewed-no-change | 確定GUI/CLI仕様の変更なし |
+| docs/UI_UX_刷新計画.md | reviewed-no-change | B5 Draftの現在地記述は維持で正しい。未merge |
+| docs/リリース手順.md | reviewed-no-change | releaseしない。手順変更なし |
+| pyproject.toml / uv.lock / version | reviewed-no-change | 0.1.34のまま。`uv lock --check`成功 |
+| Phase A migration/lifecycles | reviewed-no-change | B6の前提確認のみ。B6未着手 |
+| B5 storage.md / security.md | reviewed-no-change | 非暗号化・無期限保持・完全消去なし・無断pruneなしを既に明記 |
+| GitHub #17 / #18 | updated | B5進捗節のチェックを「レビュー受理」と「merge・実受入」に分離 |
+| Draft PR #26 | reviewed-no-change | OPEN/Draft・base/headを確認。状態変更なし |
+| 全体品質gate | blocked | 既知mypy9件/Inno Setup前提/PID-file競合。別是正PRまたは既知失敗記録で管理 |
+| Windows実配布/ACL/GPU受入 | blocked | B5テスト対象外。#15/#22で後続確認 |
+| 保持期限/完全消去/backup方針 | blocked | security/privacy release gate前に決定が必要。無断pruneしない（#16） |

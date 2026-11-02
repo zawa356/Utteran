@@ -16,6 +16,7 @@ leaf適用・検証、GUI settings_apiは認証・HTTP境界を担当する。B1
 - [security/privacy](security.md)
 - [検証と未検証](validation.md)
 - [文書監査](docs-audit.md)
+- [PR #26レビュー結果・未解決ゲート](pr26-review-validation.md)
 
 通常のGUI/CLI起動は従来のまま。新APIは`create_app(..., enable_v1_settings=True,
 v1_authority="127.0.0.1:<bound port>")`で明示的に有効化する。frontend切替、job投入、
