@@ -1,5 +1,20 @@
 # AI 作業状態
 
+## PR #25 B4レビュー修正 P2/P3（2026-11-02）
+
+- 開始9b99a6fのPR #25（base B3、Draft）へ局所修正。P2 `eb14c6c`、P3 `e64176b`を別コミット。
+- P2: smoke routeをverified/unverified/mismatchへ分離。必須native/encoder/decoder実測と
+  acceleratorのengine別実測indexがない構成はunknown。要求値から実測を補完しない。
+- P3: 独立bridgeの読取中にstdout 8 MiB / stderr 64 KiBを制限し、既存ProcessSupervisorで
+  子孫停止・直接子wait・pipe/thread回収。専用allowlist環境からHF/cloud/session/proxy秘密値を除去。
+- Linuxモデル不要870 passed / 既知3 failed / 8 skipped。開始時とのfailed/error/skip集合は一致。
+  route134 + transport21 = 関連155件成功。Python3.11独立wheel環境の関連397件成功。
+- Ruff/Schema/lock/wheel成功、mypy既知9件のみ。B1/B3 schema、既存実行経路、uv.lock等に差分なし。
+- [レビュー検証追補](docs/architecture/b4/pr25-review-validation.md)へコマンドと証拠を記録。
+  Windows CIは878 passed / 3 skipped、3.11/3.12契約各277 passed。workflowの赤は既知9件/Inno Setupのみ。
+  実GPU/native/配布版受入は未検証。
+- 既存PR #25をDraftのまま更新。Ready化・merge・B5着手はしない。
+
 ## Phase B4 Capability Inventory / Resolver（2026-11-02）
 
 - B3 PR #24のOPEN/Draftとhead `5ef7bab7ba81cab7afc1fe23b85abc8da399ec1b`をGitHubで再確認し、

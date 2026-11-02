@@ -46,7 +46,49 @@ tracemallocでflood時のparent側peakが32 MiB未満であることを検査し
 
 ## 最終検証
 
-最終コードの全回帰・Python互換・Windows CIの実行結果を確認後に追記する。
+最終実装コード `e64176be1e68bd511fac226b78c335f4d22ce534` を検証。
+P2コミット `eb14c6cdd0bdd9a3a3217832b216157462b50f93`、P3コミットは上記実装HEAD。
+
+| 検査 | 修正後の結果 | 基準との差分 |
+|---|---|---|
+| Linux Python3.12.14 モデル不要pytest | **870 passed / 3 failed / 8 skipped**、33.16秒 | 新規49成功、failed/error/skip node集合一致 |
+| B4 route/inventory | **134 passed** | 合成route/index実測で全recipe、未観測拒否を検証 |
+| bridge transport | **21 passed** | 実childの出力/環境/回収/障害検証 |
+| Python3.11.17 独立wheel環境、B1/B2/B3/B4関連 | **397 passed**、18.21秒 | editable導入なし、wheel再導入して検査 |
+| Ruff lint / format | 成功、157 files | 新規違反0 |
+| mypy strict | 既知9 errors、86 source files | processes.pyのWindows ctypes属性のみ、新規0 |
+| B1/B3/B4 offline schema --check | 成功、B4は3.11/3.12両方 | B1/B3 artifact bytesに差分なし |
+| uv lock --check | 成功 | pyproject.toml/uv.lock差分なし |
+| wheel build | utteran-0.1.33成功 | 新transport moduleを収録 |
+| 公開worktree scan | 313 tracked files / 78 findings / blocking 2 | 既存合成WAV 2件のみ、新規blocking0 |
+
+Linux既知3件はtest_timeout_kills_probe_process_tree、profile manifest依存判定、venv移動判定。
+今回の変更前に独立baselineを取り、JUnit XMLでfailed/error/skippedのnode集合を完全一致と確認した。
+scanのblockingはtests/fixtures/benchmark/japanese_reference.wavとdiarization_quality/meeting.wav。
+出力/保存はredacted位置だけでmatched値を出していない。git diff --check成功。
+
+3.11は独立環境にlockからexportしたdev/gui依存と新wheelを導入し、下記関連subsetを実行:
+
+```console
+python -m pytest tests/test_capability_inventory.py tests/test_capability_bridge.py tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py tests/test_config_adapter.py tests/test_application.py tests/test_application_golden.py tests/test_worker_protocol.py tests/test_worker_runtime.py tests/test_worker_client.py -q
+```
+
+[PR Actions run 41376627021](https://github.com/zawa356/Utteran/actions/runs/41376627021)
+は実装HEAD e64176bに対して実行:
+
+| CI段階 | 結果 |
+|---|---|
+| Windowsモデル不要pytest | **878 passed / 0 failed / 0 errors / 3 skipped**、60.58秒 |
+| Windows PowerShell構文検査 | 成功 |
+| Windows汎用PowerShell起動検査 | 既存verify_uninstaller.ps1のInno Setup compiler未配置で失敗 |
+| contracts-python-compatibility 3.11 | **277 passed**、11.09秒、B1/B4 schema check成功 |
+| contracts-python-compatibility 3.12 | **277 passed**、11.93秒、B1/B4 schema check成功 |
+| linux-quality | lock/schema/Ruff成功。mypy既知9件で停止、後続pytestはskip |
+
+Windowsのpassedは基準829から49増、skipは既存3件のみ。
+Windowsでもflood/memory上限/同時pipe/blocked stdin/Job Objectによる子孫終了/秘密値除去が成功。
+**workflow全体は既知失敗により赤のまま**。Linuxの870 passedはCI後続の推測ではなく独立実行の証拠。
+この後の最終commitは検証文書のみであり、実装コードは上記HEADと同一。
 基準は今回の変更前に再実行したLinux **821 passed / 3 failed / 8 skipped**（25.76秒）。
 既知mypyはWindows ctypes属性9件、Windows基準は829 passed / 3 skipped。
 
