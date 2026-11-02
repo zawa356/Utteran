@@ -6,6 +6,11 @@
 [API差分](../b5/api.md)を参照。Provenance/ValidatedFile/ValidationResultと一覧5型は
 OpenAPIへ同期した。その他endpointはこの設計案のまま未接続。
 
+2026-11-02 B6追補: §4の冪等性（HMAC、replay先行、同transaction）と§5のOutbox/epoch:seq/
+snapshot watermarkは、**HTTPなしの内部control store**として（Queue dispatchのreplayを含む）[B6](../b6/README.md)にDraft実装。
+`/api/v1/events`・`/api/v1/sync`・jobs/setup-operations endpointは未実装（B7〜B9）。
+EventEnvelope/SyncSnapshotとの差分は[B6 compatibility](../b6/compatibility.md)。
+
 ## 1. 独立した管理概念
 
 | 概念 | 正本・内容 | 他の概念との関係 |

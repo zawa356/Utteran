@@ -89,6 +89,15 @@ class DataPaths:
         )
 
     @property
+    def control_store(self) -> Path:
+        """B6 control DB. Separate from settings_resources; created only on explicit use."""
+        return (
+            self.root / "data" / "control-v1" / "operations.sqlite3"
+            if self.root
+            else Path(user_data_dir("utteran")) / "control-v1" / "operations.sqlite3"
+        )
+
+    @property
     def memory_calibration(self) -> Path:
         return (
             self.root / "config" / "memory-calibration.json"

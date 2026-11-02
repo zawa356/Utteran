@@ -1,0 +1,171 @@
+{
+  "_comment": "Synthetic B6 examples generated from the store; IDs are random hex, no private values.",
+  "SubmitOperation": {
+    "schema_version": 1,
+    "kind": "job",
+    "private_payload": {
+      "note": "synthetic (stored privately, never published)"
+    }
+  },
+  "TransitionRequest": {
+    "schema_version": 1,
+    "expected_revision": 1,
+    "to_status": "held",
+    "reason_code": "user_hold"
+  },
+  "ControlSnapshot_before_recovery": {
+    "schema_version": 1,
+    "event_cursor": "9b56709056268681e1f3c3ca117ccf1e:7",
+    "operations_revision": 4,
+    "operations": [
+      {
+        "schema_version": 1,
+        "id": "job_e307f8ea311bb14c89d6a65d4b131554",
+        "kind": "job",
+        "status": "running",
+        "revision": 3,
+        "held": false,
+        "blocked": false,
+        "blockers": [],
+        "recovery_required": null,
+        "reason_code": "launch_confirmed",
+        "attempt": {
+          "attempt_id": "att_43bf3080cf54f7f66259c0b9107e5d94",
+          "number": 1,
+          "owner_id": "own_00000000000000000000000000000001",
+          "state": "active",
+          "launch": "confirmed",
+          "started_at": "2026-11-02T03:00:12Z",
+          "ended_at": null
+        },
+        "created_at": "2026-11-02T03:00:02Z",
+        "updated_at": "2026-11-02T03:00:17Z"
+      },
+      {
+        "schema_version": 1,
+        "id": "job_868f6f427ab3037c6cbe818a709a85c0",
+        "kind": "job",
+        "status": "queued",
+        "revision": 1,
+        "held": false,
+        "blocked": false,
+        "blockers": [],
+        "recovery_required": null,
+        "reason_code": "submitted",
+        "attempt": null,
+        "created_at": "2026-11-02T03:00:07Z",
+        "updated_at": "2026-11-02T03:00:07Z"
+      }
+    ],
+    "queue": {
+      "schema_version": 1,
+      "revision": 4,
+      "dispatch": "running",
+      "active_item_id": "qi_0e85f5347868c4efc119c335ce34aa64",
+      "items": [
+        {
+          "id": "qi_0e85f5347868c4efc119c335ce34aa64",
+          "resource_id": "job_e307f8ea311bb14c89d6a65d4b131554",
+          "resource_kind": "job",
+          "position": null,
+          "held": false,
+          "blockers": []
+        },
+        {
+          "id": "qi_5916ecb3cf481fd7f40ac8d090e6a2fe",
+          "resource_id": "job_868f6f427ab3037c6cbe818a709a85c0",
+          "resource_kind": "job",
+          "position": 1,
+          "held": false,
+          "blockers": []
+        }
+      ]
+    }
+  },
+  "RecoveryReport": {
+    "schema_version": 1,
+    "queue_paused": true,
+    "held": [
+      "job_868f6f427ab3037c6cbe818a709a85c0"
+    ],
+    "interrupted": [],
+    "recovery_required": [
+      "job_e307f8ea311bb14c89d6a65d4b131554"
+    ],
+    "owner_alive": [],
+    "changed": true,
+    "event_cursor": "9b56709056268681e1f3c3ca117ccf1e:10"
+  },
+  "EventPage_after_snapshot": {
+    "schema_version": 1,
+    "events": [
+      {
+        "schema_version": 1,
+        "id": "9b56709056268681e1f3c3ca117ccf1e:8",
+        "resource_id": "job_868f6f427ab3037c6cbe818a709a85c0",
+        "resource_kind": "job",
+        "resource_revision": 2,
+        "timestamp": "2026-11-02T03:00:21Z",
+        "type": "state_changed",
+        "payload": {
+          "status": "held",
+          "reason_code": "recovery_held",
+          "attempt_id": null
+        }
+      },
+      {
+        "schema_version": 1,
+        "id": "9b56709056268681e1f3c3ca117ccf1e:9",
+        "resource_id": "job_e307f8ea311bb14c89d6a65d4b131554",
+        "resource_kind": "job",
+        "resource_revision": 4,
+        "timestamp": "2026-11-02T03:00:24Z",
+        "type": "state_changed",
+        "payload": {
+          "status": "running",
+          "reason_code": "recovery_owner_unverified",
+          "attempt_id": "att_43bf3080cf54f7f66259c0b9107e5d94"
+        }
+      },
+      {
+        "schema_version": 1,
+        "id": "9b56709056268681e1f3c3ca117ccf1e:10",
+        "resource_id": "queue",
+        "resource_kind": "queue",
+        "resource_revision": 5,
+        "timestamp": "2026-11-02T03:00:26Z",
+        "type": "queue_changed",
+        "payload": {
+          "status": "paused",
+          "reason_code": "recovery_paused",
+          "attempt_id": null
+        }
+      }
+    ],
+    "next_cursor": "9b56709056268681e1f3c3ca117ccf1e:10",
+    "has_more": false
+  },
+  "OperationView_after_recovery": {
+    "schema_version": 1,
+    "id": "job_e307f8ea311bb14c89d6a65d4b131554",
+    "kind": "job",
+    "status": "running",
+    "revision": 4,
+    "held": false,
+    "blocked": false,
+    "blockers": [],
+    "recovery_required": "recovery_owner_unverified",
+    "reason_code": "recovery_owner_unverified",
+    "attempt": {
+      "attempt_id": "att_43bf3080cf54f7f66259c0b9107e5d94",
+      "number": 1,
+      "owner_id": "own_00000000000000000000000000000001",
+      "state": "active",
+      "launch": "confirmed",
+      "started_at": "2026-11-02T03:00:12Z",
+      "ended_at": null
+    },
+    "created_at": "2026-11-02T03:00:02Z",
+    "updated_at": "2026-11-02T03:00:23Z"
+  }
+}
