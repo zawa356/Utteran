@@ -27,6 +27,10 @@ class QueueItem:
     finished_at: str | None = None
 
 
+class QueueClosedError(RuntimeError):
+    """The legacy queue is closed because the opt-in v1 job runtime owns execution."""
+
+
 class OperationQueue:
     """Execute all resource-heavy GUI operations one at a time.
 
@@ -39,6 +43,7 @@ class OperationQueue:
         self._condition = threading.Condition(threading.RLock())
         self._items: dict[str, QueueItem] = {}
         self._order: list[str] = []
+        self._closed_by: str | None = None
         self._worker = threading.Thread(
             target=self._work, name="utteran-operation-queue", daemon=True
         )
@@ -48,12 +53,34 @@ class OperationQueue:
         self, item_id: str, *, kind: str, label: str, runner: Runner, canceller: Canceller
     ) -> dict[str, object]:
         with self._condition:
+            if self._closed_by is not None:
+                raise QueueClosedError("v1 job runtime owns the execution slot")
             if item_id in self._items:
                 raise ValueError(f"Queue item already exists: {item_id}")
             self._items[item_id] = QueueItem(item_id, kind, label, runner, canceller)
             self._order.append(item_id)
             self._condition.notify()
             return self._snapshot(self._items[item_id])
+
+    def close_for(self, owner: str) -> bool:
+        """Single-writer handover: close only when no item is waiting or running."""
+        with self._condition:
+            if self._closed_by is not None:
+                return self._closed_by == owner
+            if any(item.status not in TERMINAL_QUEUE_STATUSES for item in self._items.values()):
+                return False
+            self._closed_by = owner
+            return True
+
+    def reopen(self, owner: str) -> None:
+        with self._condition:
+            if self._closed_by == owner:
+                self._closed_by = None
+
+    @property
+    def closed(self) -> bool:
+        with self._condition:
+            return self._closed_by is not None
 
     def cancel(self, item_id: str) -> dict[str, object]:
         with self._condition:
