@@ -98,6 +98,9 @@ ReasonCode = Literal[
     "benchmark_stale",
     "bridge_unavailable",
     "bridge_invalid",
+    "bridge_stdout_limit",
+    "bridge_stderr_limit",
+    "bridge_io_error",
     "profile_scope_mismatch",
 ]
 

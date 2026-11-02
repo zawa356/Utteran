@@ -15,6 +15,12 @@ from utteran_contracts.capabilities import (
     InventoryRefreshResult,
     RecipeCatalog,
 )
+from utteran_gui.capability_transport import (
+    STDOUT_LIMIT,
+    BridgeReadError,
+    bridge_environment,
+    read_bridge,
+)
 from utteran_gui.cli import CliAdapter, CliError
 
 # One short-lived metadata reader, with no children, inference imports or probes.
@@ -22,29 +28,34 @@ Runner = Callable[..., subprocess.CompletedProcess[bytes]]
 
 
 class CapabilityInventoryAdapter:
-    def __init__(self, cli: CliAdapter, *, runner: Runner = subprocess.run) -> None:
+    def __init__(self, cli: CliAdapter, *, runner: Runner = read_bridge) -> None:
         self.cli = cli
         self.runner = runner
 
     def _read(self, profile: str, action: str, request: bytes | None, timeout: float) -> Any:
+        if action not in {"recipes", "refresh"}:
+            raise BridgeReadError("bridge_invalid")
         info = self.cli.profile_info(profile)
         python = info.path / (
             "Scripts/python.exe" if platform.system() == "Windows" else "bin/python"
         )
         if not info.exists or not python.is_file():
-            raise CliError("profile_missing")
+            raise BridgeReadError("profile_missing")
         completed = self.runner(
             [str(python.absolute()), "-I", "-B", "-m", "utteran.capabilities.bridge", action],
             cwd=self.cli.repo_root,
-            env=self.cli.environment(profile),
+            env=bridge_environment(profile),
             input=request if request is not None else b"",
-            capture_output=True,
             timeout=timeout,
-            check=False,
         )
-        if completed.returncode != 0 or len(completed.stdout) > 8 * 1024 * 1024:
-            raise CliError("bridge_unavailable")
-        return json.loads(completed.stdout)
+        if completed.returncode != 0:
+            raise BridgeReadError("bridge_unavailable")
+        if len(completed.stdout) > STDOUT_LIMIT:
+            raise BridgeReadError("bridge_stdout_limit")
+        try:
+            return json.loads(completed.stdout.decode("utf-8"))
+        except (UnicodeError, ValueError):
+            raise BridgeReadError("bridge_invalid") from None
 
     def recipes(self, profile: str, *, timeout: float = 20.0) -> RecipeCatalog | None:
         try:
@@ -81,6 +92,8 @@ class CapabilityInventoryAdapter:
                     reason_code="profile_scope_mismatch",
                 )
             return result
+        except BridgeReadError as exc:
+            code = exc.code
         except subprocess.TimeoutExpired:
             code = "probe_timeout"
         except ValidationError:

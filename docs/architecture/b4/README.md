@@ -33,6 +33,7 @@ B4はB3をbaseとするstacked Draft PRとしてレビューする。
 | `utteran.capabilities.collector` | 明示的なread-only収集、差替可能provider |
 | `utteran.capabilities.bridge` | profile Pythonの独立CLI。旧CLI loggingを起動しない |
 | `utteran_gui.capability_inventory` | subprocessと軽量DTOだけ。core/heavy import禁止 |
+| `utteran_gui.capability_transport` | 読取中のstdout/stderr上限、子孫回収、専用environment allowlist |
 
 ## 開発入口
 
@@ -73,3 +74,5 @@ B5へpolicy/preset採用、B7へrevision再確認/token/job snapshot/attempt/fal
 
 [recipes](recipes.md) / [observations](observations.md) / [resolution](resolution.md) /
 [compatibility](compatibility.md) / [validation](validation.md)
+
+PR #25のP2/P3レビュー修正・検証は[追補](pr25-review-validation.md)。

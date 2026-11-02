@@ -124,3 +124,5 @@ acceleratorのengine別実測indexを要求。smoke_route_unverifiedをallowlist
 全recipeの成功fixtureは明示的な合成実測へ更新し、全passedだが実route unknownならunknownとなる。
 モデル/GPU推論は実行していない。B1/B3 DTO/schemaとresolverの選択順位は変更しない。
 P2/P3を含む最終回帰・Windows CI結果は追補に記録する。
+
+レビュー修正後の最終コマンド・基準差分・CI証跡は[PR #25追補](pr25-review-validation.md)。
