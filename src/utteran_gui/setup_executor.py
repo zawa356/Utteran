@@ -97,6 +97,7 @@ class _Drain:
         self.ambiguous = False
         self._line = bytearray()
         self._overflow = False
+        self._overflow_json = False
         self.thread = threading.Thread(target=self._run, daemon=True, name="utteran-setup-pipe")
 
     def _end_line(self) -> None:
@@ -110,10 +111,13 @@ class _Drain:
                     self.ambiguous = True
                 else:
                     self.json_lines.append(text)
-        elif self.capture and self._overflow:
-            self.ambiguous = True  # an over-long line may have been a status: refuse
+        elif self.capture and self._overflow and self._overflow_json:
+            # An over-long line that *looks like* a JSON status is refused, never truncated.
+            # Other long lines (progress noise, e.g. 64 KiB + "\r" on Windows) are ignored.
+            self.ambiguous = True
         self._line.clear()
         self._overflow = False
+        self._overflow_json = False
 
     def _feed(self, chunk: bytes) -> None:
         if not self.capture:
@@ -124,6 +128,8 @@ class _Drain:
             piece = chunk[start:] if index < 0 else chunk[start:index]
             if not self._overflow:
                 if len(self._line) + len(piece) > MAX_STATUS_LINE:
+                    head = (bytes(self._line[:256]) + piece[:256]).lstrip()
+                    self._overflow_json = head.startswith(b"{")
                     self._overflow = True
                     self._line.clear()
                 else:

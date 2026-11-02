@@ -48,6 +48,13 @@
 |---|---|---|
 | `tests/test_b8_review_fixes.py`（16件、実OS subprocess、Python 3.11） | **10 failed / 6 passed**（deadlockによる期限切れ4、status channel/不正JSON/複数JSON 3、異常終了・reader失敗・子孫pipe 3） | **16 passed** |
 | 既存B8（`test_b8_setup.py`・`test_b8_api.py`、41件） | passed | passed |
+| 追加1件（JSONでない上限超過行の後の有効status） | `6b5aebf`のrunnerで失敗 | passed（計17件） |
+
+CIで見つかった追加不具合: `6b5aebf`のWindows CI（[run 41416498870](https://github.com/zawa356/Utteran/actions/runs/41416498870)、
+[run 41416490232](https://github.com/zawa356/Utteran/actions/runs/41416490232)）で`test_both_channels_drained_concurrently`が失敗。
+Windowsの子はtext modeで`\n`を`\r\n`に変換するため65,536文字の進捗行が上限+1 byteとなり、「上限超過行は常に
+status曖昧」とした規則で有効なJSON行まで破棄していた（Linuxでは境界内で再現しない）。JSONに見える上限超過行
+だけを曖昧扱いにする修正と、OSに依存しない回帰ケースを追加した（修正前`6b5aebf`で失敗、修正後成功を確認）。
 
 再現条件: stderrへ4 MiB書いた後にstdout出力、stdoutへ4 MiB後にstderrへ4 MiB、64 KiB行を両channelへ交互に64回、
 改行なし32 MiB×2、stderrのみの偽status、複数・不正・上限超過JSON、exit 7、`on_spawn`例外、reader例外（終了後／生存中）、
