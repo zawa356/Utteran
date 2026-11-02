@@ -23,6 +23,7 @@ from utteran_contracts.control import (
     OperationView,
     OwnerIdentity,
     ProcessIdentity,
+    QueueView,
     SubmitOperation,
     TransitionRequest,
 )
@@ -30,7 +31,7 @@ from utteran_contracts.control_schema import schema_bytes
 from utteran_control import transitions
 from utteran_control.errors import ControlError, ErrorCode
 from utteran_control.recovery import Liveness, Outcome, UnknownVerifier, decide
-from utteran_control.store import ControlStore, IdempotencyScope
+from utteran_control.store import AcceptedQueue, ControlStore, IdempotencyScope
 from utteran_paths import DataPaths
 
 ROOT = Path(__file__).parents[1]
@@ -279,7 +280,7 @@ def test_existing_foreign_or_corrupt_files_are_never_reinitialized(tmp_path, pre
 
 def test_unknown_version_and_missing_tables_are_rejected_without_change(store, path):
     with sqlite3.connect(path) as db:
-        db.execute("PRAGMA user_version=2")
+        db.execute("PRAGMA user_version=3")
     before = path.read_bytes()
     with pytest.raises(ControlError) as excinfo:
         ControlStore(path)
@@ -686,7 +687,7 @@ def test_queue_order_single_slot_and_dispatch_gates(store, path):
     with pytest.raises(ControlError) as excinfo:
         store.begin_attempt(a.id, held.revision, owner(2))
     assert code(excinfo) is E.INVALID_TRANSITION
-    queue = store.set_dispatch(store.queue().revision, "paused")
+    queue = store.set_dispatch(store.queue().revision, "paused").queue
     with pytest.raises(ControlError) as excinfo:
         store.begin_attempt(c.id, c.revision, owner(2))
     assert code(excinfo) is E.QUEUE_PAUSED
@@ -1023,7 +1024,7 @@ def test_unverifiable_owner_requires_recovery_and_keeps_slot(store, verifier, la
     flagged = store.get(op.id)
     assert flagged.status == "running" and flagged.recovery_required == reason
     assert flagged.attempt.state == "active"
-    resumed = store.set_dispatch(store.queue().revision, "running")
+    resumed = store.set_dispatch(store.queue().revision, "running").queue
     assert resumed.active_item_id is not None
     released = store.set_hold(queued.id, store.get(queued.id).revision, held=False).operation
     with pytest.raises(ControlError) as excinfo:
@@ -1177,3 +1178,358 @@ def test_public_models_are_exported_contracts():
     names = {model.__name__ for model in PUBLIC_MODELS}
     assert {"OperationView", "EventEnvelope", "ControlSnapshot", "RecoveryReport"} <= names
     assert "PrivateOperation" not in names and "LeaseGrant" not in names
+
+
+# ----------------------------------------------------------------- PR #28 review: queue replay
+
+DISPATCH = "/api/v1/queue/dispatch"
+
+
+def qscope(k: str) -> IdempotencyScope:
+    return IdempotencyScope(DISPATCH, k)
+
+
+def outbox_high(path: Path) -> tuple[int, int]:
+    with sqlite3.connect(path) as db:
+        seq = db.execute("SELECT value FROM counters WHERE name='outbox_seq'").fetchone()[0]
+        revision = db.execute("SELECT revision FROM queue").fetchone()[0]
+    return seq, revision
+
+
+def test_dispatch_replay_returns_first_response_verbatim(store, path):
+    first = store.set_dispatch(1, "paused", idempotency=qscope("queue-key-000001"))
+    assert isinstance(first, AcceptedQueue) and not first.replayed
+    assert first.status == 200 and dict(first.headers) == {"ETag": '"2"'}
+    assert first.queue.dispatch == "paused" and first.queue.revision == 2
+    before = table_counts(path), outbox_high(path)
+    again = store.set_dispatch(1, "paused", idempotency=qscope("queue-key-000001"))
+    assert again.replayed and again.status == first.status
+    assert dict(again.headers) == dict(first.headers) and again.queue == first.queue
+    assert (table_counts(path), outbox_high(path)) == before
+    # Later progress under another key does not rewrite the first response or the state.
+    resumed = store.set_dispatch(2, "running", idempotency=qscope("queue-key-000002"))
+    submit(store)
+    late = ControlStore(path).set_dispatch(1, "paused", idempotency=qscope("queue-key-000001"))
+    assert late.replayed and late.queue == first.queue and late.queue.dispatch == "paused"
+    current = store.queue()
+    assert current.dispatch == "running" and current.revision == resumed.queue.revision + 1
+
+
+def test_dispatch_response_lost_then_replayed_after_reopen(path):
+    lost = ControlStore(path, _fault=full("after_commit"))
+    with pytest.raises(ControlError):
+        lost.set_dispatch(1, "paused", idempotency=qscope("queue-key-lost-01"))
+    committed = table_counts(path), outbox_high(path)
+    assert committed[0]["queue_replays"] == 1 and committed[1] == (1, 2)
+    replay = ControlStore(path).set_dispatch(1, "paused", idempotency=qscope("queue-key-lost-01"))
+    assert replay.replayed and replay.queue.revision == 2 and replay.queue.dispatch == "paused"
+    assert (table_counts(path), outbox_high(path)) == committed
+
+
+def test_dispatch_conflicts_and_unaccepted_requests_record_nothing(store, path):
+    store.set_dispatch(1, "paused", idempotency=qscope("queue-key-000010"))
+    before = table_counts(path), outbox_high(path), path.read_bytes()
+    for revision, state in ((1, "running"), (2, "paused"), (2, "running")):
+        with pytest.raises(ControlError) as excinfo:
+            store.set_dispatch(revision, state, idempotency=qscope("queue-key-000010"))
+        assert code(excinfo) is E.IDEMPOTENCY_CONFLICT and excinfo.value.status == 409
+    # Stale CAS under a new key: 412 and no replay row; the key stays free.
+    with pytest.raises(ControlError) as excinfo:
+        store.set_dispatch(1, "running", idempotency=qscope("queue-key-000011"))
+    assert code(excinfo) is E.REVISION_CONFLICT
+    with pytest.raises(ControlError) as excinfo:
+        store.set_dispatch(2, "stopped", idempotency=qscope("queue-key-000012"))  # type: ignore[arg-type]
+    assert code(excinfo) is E.REQUEST_INVALID
+    assert (table_counts(path), outbox_high(path), path.read_bytes()) == before
+    ok = store.set_dispatch(2, "running", idempotency=qscope("queue-key-000011"))
+    assert not ok.replayed and ok.queue.dispatch == "running"
+    for bad in (IdempotencyScope(DISPATCH, "short"), IdempotencyScope("/queue", "queue-key-0000x")):
+        with pytest.raises(ControlError):
+            store.set_dispatch(3, "paused", idempotency=bad)
+
+
+def test_dispatch_noop_records_response_without_revision_or_event(store, path):
+    before = outbox_high(path)
+    noop = store.set_dispatch(1, "running", idempotency=qscope("queue-key-noop-01"))
+    assert not noop.replayed and noop.queue.revision == 1 and noop.queue.dispatch == "running"
+    assert outbox_high(path) == before and table_counts(path)["queue_replays"] == 1
+    again = store.set_dispatch(1, "running", idempotency=qscope("queue-key-noop-01"))
+    assert again.replayed and again.queue == noop.queue and outbox_high(path) == before
+    assert store.set_dispatch(1, "running").queue.revision == 1  # keyless no-op unchanged
+
+
+def test_dispatch_scope_is_not_shared_with_operation_replays(store):
+    store.submit(DISPATCH, "queue-key-shared1", body())
+    with pytest.raises(ControlError) as excinfo:
+        store.set_dispatch(2, "paused", idempotency=qscope("queue-key-shared1"))
+    assert code(excinfo) is E.IDEMPOTENCY_CONFLICT
+    store.set_dispatch(2, "paused", idempotency=qscope("queue-key-shared2"))
+    with pytest.raises(ControlError) as excinfo:
+        store.submit(DISPATCH, "queue-key-shared2", body())
+    assert code(excinfo) is E.IDEMPOTENCY_CONFLICT
+
+
+@pytest.mark.parametrize("hook", ["fault", "full", "readonly", "busy"])
+def test_dispatch_failures_leave_no_orphan_rows(store, path, hook):
+    before = table_counts(path), outbox_high(path)
+    if hook == "fault":
+        failing = ControlStore(path, _fault=full("before_commit"))
+    elif hook == "full":
+
+        def limit(db: sqlite3.Connection) -> None:
+            pages = db.execute("PRAGMA page_count").fetchone()[0]
+            db.execute(f"PRAGMA max_page_count={pages}")
+
+        for _ in range(40):  # QueueView body > one page, so the replay row needs a new page
+            submit(store)
+        failing = ControlStore(path, _connect_hook=limit)
+        while True:  # fill every free page under the cap; queue body grows with items
+            try:
+                failing.submit("/api/v1/jobs", key(), body(payload={"n": "x" * 200}))
+            except ControlError as exc:
+                assert exc.code is E.STORE_FULL
+                break
+        before = table_counts(path), outbox_high(path)
+    elif hook == "readonly":
+        failing = ControlStore(path, _connect_hook=lambda db: db.execute("PRAGMA query_only=ON"))
+    else:
+        failing = ControlStore(path, timeout=0.05)
+    blocker = None
+    if hook == "busy":
+        blocker = sqlite3.connect(path, isolation_level=None)
+        blocker.execute("BEGIN IMMEDIATE")
+    try:
+        revision = before[1][1]
+        with pytest.raises(ControlError):
+            failing.set_dispatch(revision, "paused", idempotency=qscope("queue-key-fail-01"))
+    finally:
+        if blocker is not None:
+            blocker.rollback()
+            blocker.close()
+    assert (table_counts(path), outbox_high(path)) == before
+    ok = store.set_dispatch(before[1][1], "paused", idempotency=qscope("queue-key-fail-01"))
+    assert not ok.replayed
+
+
+def test_dispatch_same_key_concurrent_threads_apply_once(store, path):
+    results: list[AcceptedQueue] = []
+    barrier = threading.Barrier(6)
+
+    def send() -> None:
+        barrier.wait()
+        results.append(
+            ControlStore(path).set_dispatch(1, "paused", idempotency=qscope("queue-key-race-1"))
+        )
+
+    threads = [threading.Thread(target=send) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sum(not r.replayed for r in results) == 1
+    assert len({r.queue for r in results}) == 1 and outbox_high(path) == (1, 2)
+
+
+DISPATCH_PROCESS = """
+import sys
+from pathlib import Path
+from utteran_control.store import ControlStore, IdempotencyScope
+sys.stdin.read()
+store = ControlStore(Path(sys.argv[1]), timeout=10)
+r = store.set_dispatch(1, 'paused', idempotency=IdempotencyScope('/api/v1/queue/dispatch',
+                                                               'queue-key-proc-01'))
+print(r.replayed, r.queue.revision, r.headers['ETag'])
+"""
+
+
+def test_dispatch_same_key_two_processes_apply_once(store, path):
+    children = [
+        subprocess.Popen(
+            [sys.executable, "-c", DISPATCH_PROCESS, str(path)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(2)
+    ]
+    outputs = sorted(child.communicate("go")[0].split() for child in children)
+    assert outputs == [["False", "2", '"2"'], ["True", "2", '"2"']]
+    assert outbox_high(path) == (1, 2)
+
+
+def test_queue_replay_body_is_public_and_schema_valid(store, path):
+    op, _ = running(store)
+    accepted = store.set_dispatch(
+        store.queue().revision, "paused", idempotency=qscope("queue-key-public1")
+    )
+    with sqlite3.connect(path) as db:
+        stored = db.execute("SELECT body, headers FROM queue_replays").fetchone()
+    text = json.dumps(stored, ensure_ascii=False)
+    for secret in (SENTINEL, NONCE, "boot-1", "child-start"):
+        assert secret not in text
+    schema = json.loads(schema_bytes())
+    jsonschema.Draft202012Validator({**schema, "$ref": "#/$defs/QueueView"}).validate(
+        json.loads(stored[0])
+    )
+    assert QueueView.model_validate_json(stored[0]) == accepted.queue
+    assert accepted.queue.items[0].resource_id == op.id
+
+
+# ----------------------------------------------------------------- PR #28 review: v1 -> v2
+
+
+def v1_module() -> Any:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "b6_store_v1", ROOT / "tests" / "fixtures" / "b6" / "store_v1.py"
+    )
+    assert spec and spec.loader
+    if "b6_store_v1" in sys.modules:
+        return sys.modules["b6_store_v1"]
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["b6_store_v1"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def make_v1(path: Path) -> dict[str, Any]:
+    old = v1_module()
+    store = old.ControlStore(path, clock=Clock())
+    created = store.submit("/api/v1/jobs", "v1-operation-key-1", body())
+    held = store.set_hold(created.operation.id, 1, held=True)
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        tables = {
+            name: db.execute(f"SELECT * FROM {name} ORDER BY 1").fetchall()
+            for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    assert "queue_replays" not in tables
+    return {"created": created, "held": held, "tables": tables, "events": store.read_events()}
+
+
+def test_v1_store_migrates_to_v2_without_losing_data(path):
+    v1 = make_v1(path)
+    store = ControlStore(path)
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        for name, rows in v1["tables"].items():
+            assert db.execute(f"SELECT * FROM {name} ORDER BY 1").fetchall() == rows, name
+        assert db.execute("SELECT count(*) FROM queue_replays").fetchone()[0] == 0
+    # Old operation replay keeps its exact format and meaning.
+    replay = store.submit("/api/v1/jobs", "v1-operation-key-1", body())
+    assert replay.replayed and replay.operation.to_wire() == v1["created"].operation.to_wire()
+    assert dict(replay.headers) == dict(v1["created"].headers)
+    assert store.get(v1["held"].operation.id).status == "held"
+    assert store.read_events().to_wire() == v1["events"].to_wire()  # same epoch, no rewind
+    assert store.get_private(v1["created"].operation.id).private_payload == {"prompt": SENTINEL}
+    accepted = store.set_dispatch(
+        store.queue().revision, "paused", idempotency=qscope("queue-key-mig-01")
+    )
+    assert not accepted.replayed
+    ControlStore(path)  # reopening v2 is a no-op
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+
+
+@pytest.mark.parametrize("failure", ["fault", "full"])
+def test_failed_migration_leaves_complete_v1_store(path, failure):
+    make_v1(path)
+    with sqlite3.connect(path) as db:
+        tables = {
+            n: db.execute(f"SELECT * FROM {n} ORDER BY 1").fetchall()
+            for (n,) in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    if failure == "fault":
+        kwargs: dict[str, Any] = {"_fault": full("before_commit")}
+    else:
+
+        def limit(db: sqlite3.Connection) -> None:
+            pages = db.execute("PRAGMA page_count").fetchone()[0]
+            db.execute(f"PRAGMA max_page_count={pages}")
+
+        kwargs = {"_connect_hook": limit}
+    with pytest.raises(ControlError) as excinfo:
+        ControlStore(path, **kwargs)
+    assert code(excinfo) is E.STORE_FULL
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        now = {
+            n: db.execute(f"SELECT * FROM {n} ORDER BY 1").fetchall()
+            for (n,) in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    assert now == tables
+    assert ControlStore(path).queue().revision >= 1  # a later normal open migrates
+
+
+MIGRATE_CRASH = """
+import os, sys
+from pathlib import Path
+from utteran_control.store import ControlStore
+def hook(where):
+    if where == 'before_commit':
+        os._exit(73)
+ControlStore(Path(sys.argv[1]), _fault=hook)
+"""
+
+
+def test_process_crash_during_migration_keeps_v1(path):
+    make_v1(path)
+    child = subprocess.run(
+        [sys.executable, "-c", MIGRATE_CRASH, str(path)], capture_output=True, text=True
+    )
+    assert child.returncode == 73, child.stderr
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert ControlStore(path).submit("/api/v1/jobs", "v1-operation-key-1", body()).replayed
+
+
+def test_concurrent_opens_migrate_once(path):
+    make_v1(path)
+    errors: list[Any] = []
+    barrier = threading.Barrier(6)
+
+    def open_store() -> None:
+        barrier.wait()
+        try:
+            ControlStore(path, timeout=10)
+        except ControlError as exc:  # pragma: no cover - must not happen
+            errors.append(exc.code)
+
+    threads = [threading.Thread(target=open_store) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert (
+            db.execute("SELECT count(*) FROM sqlite_master WHERE name='queue_replays'").fetchone()[
+                0
+            ]
+            == 1
+        )
+
+
+def test_abnormal_v1_headers_fail_closed(path, tmp_path):
+    ControlStore(path)  # v2 layout
+    with sqlite3.connect(path) as db:
+        db.execute("PRAGMA user_version=1")  # v1 header but v2 tables: inconsistent
+    before = path.read_bytes()
+    with pytest.raises(ControlError) as excinfo:
+        ControlStore(path)
+    assert code(excinfo) is E.STORE_CORRUPT and path.read_bytes() == before
+    broken = tmp_path / "broken" / "operations.sqlite3"
+    make_v1(broken)
+    with sqlite3.connect(broken) as db:
+        db.execute("DROP TABLE leases")
+    before = broken.read_bytes()
+    with pytest.raises(ControlError) as excinfo:
+        ControlStore(broken, create=False)
+    assert code(excinfo) is E.STORE_CORRUPT and broken.read_bytes() == before
+    with sqlite3.connect(broken) as db:
+        db.execute("PRAGMA user_version=3")
+    with pytest.raises(ControlError) as excinfo:
+        ControlStore(broken)
+    assert code(excinfo) is E.STORE_SCHEMA_UNSUPPORTED

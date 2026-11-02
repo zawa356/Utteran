@@ -60,7 +60,9 @@ S = OperationStatus
 R = ReasonCode
 E = ErrorCode
 
-SCHEMA_VERSION: Final = 1
+# SQLite PRAGMA user_version (storage layout), not the wire DTO ``schema_version``.
+# v1: initial B6 layout (PR #28 a037857). v2: adds ``queue_replays`` (additive migration).
+SCHEMA_VERSION: Final = 2
 DEFAULT_TIMEOUT: Final = 2.0
 MAX_REQUEST_BYTES: Final = 256 * 1024
 MAX_PAYLOAD_DEPTH: Final = 32
@@ -97,7 +99,7 @@ RESERVED_REASONS: Final = frozenset(
         R.LAUNCH_FAILED,
     }
 )
-REQUIRED_TABLES: Final = frozenset(
+REQUIRED_TABLES_V1: Final = frozenset(
     {
         "installation",
         "counters",
@@ -114,7 +116,7 @@ REQUIRED_TABLES: Final = frozenset(
     }
 )
 
-_DDL: Final = (
+_DDL_V1: Final = (
     "CREATE TABLE installation (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), "
     "id TEXT NOT NULL, secret BLOB NOT NULL CHECK (length(secret) = 32), "
     "epoch TEXT NOT NULL CHECK (length(epoch) = 32), "
@@ -172,6 +174,21 @@ _DDL: Final = (
         f"CREATE TRIGGER {table}_immutable_{verb} BEFORE {verb} ON {table} "
         "BEGIN SELECT RAISE(ABORT, 'immutable'); END"
         for table in ("operation_history", "outbox", "replays")
+        for verb in ("UPDATE", "DELETE")
+    ),
+)
+REQUIRED_TABLES: Final = REQUIRED_TABLES_V1 | {"queue_replays"}
+# v2 additions. Operation replays stay in ``replays`` unchanged; queue responses get their
+# own table so no fictitious operation ID or OperationView body is ever stored.
+_DDL_V2: Final = (
+    "CREATE TABLE queue_replays (installation TEXT NOT NULL, method TEXT NOT NULL, "
+    "endpoint TEXT NOT NULL, key TEXT NOT NULL, digest TEXT NOT NULL, "
+    "status INTEGER NOT NULL, headers TEXT NOT NULL, body TEXT NOT NULL, "
+    "queue_revision INTEGER NOT NULL CHECK (queue_revision >= 1), created_at TEXT NOT NULL, "
+    "PRIMARY KEY (installation, method, endpoint, key))",
+    *(
+        f"CREATE TRIGGER queue_replays_immutable_{verb} BEFORE {verb} ON queue_replays "
+        "BEGIN SELECT RAISE(ABORT, 'immutable'); END"
         for verb in ("UPDATE", "DELETE")
     ),
 )
@@ -301,6 +318,16 @@ class Accepted:
 
 
 @dataclass(frozen=True)
+class AcceptedQueue:
+    """Accepted queue mutation; a replay returns the first committed QueueView verbatim."""
+
+    status: int
+    headers: Mapping[str, str]
+    queue: QueueView
+    replayed: bool
+
+
+@dataclass(frozen=True)
 class IdempotencyScope:
     endpoint: str
     key: str
@@ -346,6 +373,7 @@ class ControlStore:
                     raise ControlError(E.STORE_UNAVAILABLE)
                 self._initialize()
                 _check_file(path)
+            self._migrate()
             with self._transaction(write=False) as db:
                 self._installation, self._secret = self._verify(db)
         except ControlError:
@@ -363,7 +391,7 @@ class ControlStore:
         try:
             with closing(_connect(temporary, self._timeout, None)) as db:
                 db.execute("BEGIN IMMEDIATE")
-                for statement in _DDL:
+                for statement in (*_DDL_V1, *_DDL_V2):
                     db.execute(statement)
                 now = _ts(self._clock())
                 db.execute(
@@ -389,18 +417,49 @@ class ControlStore:
                 with suppress(FileNotFoundError):
                     leftover.unlink()
 
-    def _verify(self, db: sqlite3.Connection) -> tuple[str, bytes]:
-        version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version != SCHEMA_VERSION:
-            # Includes 0 (empty / foreign file). Never initialize, migrate or downgrade.
+    def _migrate(self) -> None:
+        """Explicit, versioned, additive v1 -> v2 migration in one BEGIN IMMEDIATE.
+
+        Only a structurally valid v1 store is migrated; v2 is left alone; anything else
+        (0, unknown, newer) fails closed without touching the file. A crash or failure
+        before commit leaves the complete v1 store, since DDL and user_version roll back.
+        """
+        with self._transaction(write=False) as db:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+        if version == SCHEMA_VERSION:
+            return
+        if version != 1:
             raise ControlError(E.STORE_SCHEMA_UNSUPPORTED)
-        if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
-            raise ControlError(E.STORE_CORRUPT)
-        names = {
+        with self._transaction() as db:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version == SCHEMA_VERSION:
+                return  # a concurrent opener migrated first
+            if version != 1:
+                raise ControlError(E.STORE_SCHEMA_UNSUPPORTED)
+            self._verify(db, version=1)
+            if "queue_replays" in self._tables(db):
+                raise ControlError(E.STORE_CORRUPT)  # v1 header with v2 layout: refuse
+            for statement in _DDL_V2:
+                db.execute(statement)
+            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+    @staticmethod
+    def _tables(db: sqlite3.Connection) -> set[str]:
+        return {
             row[0]
             for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
-        if not names >= REQUIRED_TABLES:
+
+    def _verify(
+        self, db: sqlite3.Connection, *, version: int = SCHEMA_VERSION
+    ) -> tuple[str, bytes]:
+        if db.execute("PRAGMA user_version").fetchone()[0] != version:
+            # Includes 0 (empty / foreign file). Never initialize or downgrade.
+            raise ControlError(E.STORE_SCHEMA_UNSUPPORTED)
+        if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+            raise ControlError(E.STORE_CORRUPT)
+        required = REQUIRED_TABLES if version == SCHEMA_VERSION else REQUIRED_TABLES_V1
+        if not self._tables(db) >= required:
             raise ControlError(E.STORE_CORRUPT)
         identity = db.execute("SELECT id, secret FROM installation").fetchall()
         if len(identity) != 1 or not isinstance(identity[0][1], bytes):
@@ -721,6 +780,8 @@ class ControlStore:
             (self._installation, scope.endpoint, scope.key),
         ).fetchone()
         if row is None:
+            if self._scope_used(db, "queue_replays", scope):
+                raise ControlError(E.IDEMPOTENCY_CONFLICT)  # one scope, one response kind
             return None
         if not hmac.compare_digest(row[0], digest):
             raise ControlError(E.IDEMPOTENCY_CONFLICT)
@@ -1082,18 +1143,91 @@ class ControlStore:
                 return self._remember(db, idempotency, digest, 200, headers, view)
             return Accepted(200, MappingProxyType(headers), view, False)
 
-    def set_dispatch(self, expected_revision: int, dispatch: DispatchState) -> QueueView:
-        """Record queue dispatch state. ``paused`` only stops *new* dispatch."""
-        if dispatch not in ("running", "paused"):
-            raise ControlError(E.REQUEST_INVALID)
+    def _scope_used(self, db: sqlite3.Connection, table: str, scope: IdempotencyScope) -> bool:
+        return (
+            db.execute(
+                f"SELECT 1 FROM {table} WHERE installation = ? AND method = 'POST' "
+                "AND endpoint = ? AND key = ?",
+                (self._installation, scope.endpoint, scope.key),
+            ).fetchone()
+            is not None
+        )
+
+    def _queue_replay(
+        self, db: sqlite3.Connection, scope: IdempotencyScope, digest: str
+    ) -> AcceptedQueue | None:
+        row = db.execute(
+            "SELECT digest, status, headers, body FROM queue_replays WHERE installation = ? "
+            "AND method = 'POST' AND endpoint = ? AND key = ?",
+            (self._installation, scope.endpoint, scope.key),
+        ).fetchone()
+        if row is None:
+            if self._scope_used(db, "replays", scope):
+                raise ControlError(E.IDEMPOTENCY_CONFLICT)
+            return None
+        if not hmac.compare_digest(row[0], digest):
+            raise ControlError(E.IDEMPOTENCY_CONFLICT)
+        try:
+            headers = json.loads(row[2])
+            if not isinstance(headers, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in headers.items()
+            ):
+                raise ValueError
+            queue = QueueView.model_validate_json(row[3])
+        except (ValueError, ValidationError):
+            raise ControlError(E.STORE_CORRUPT) from None
+        return AcceptedQueue(row[1], MappingProxyType(headers), queue, True)
+
+    def set_dispatch(
+        self,
+        expected_revision: int,
+        dispatch: DispatchState,
+        *,
+        idempotency: IdempotencyScope | None = None,
+    ) -> AcceptedQueue:
+        """Record queue dispatch state. ``paused`` only stops *new* dispatch.
+
+        With ``idempotency`` the first committed response (status, ETag, QueueView) is
+        stored in ``queue_replays`` in the same transaction and replayed verbatim, before
+        any validation or CAS. Omitting it is allowed for internal B6 callers only; the
+        B7+ HTTP boundary must always pass a key. A no-op (already in the requested state
+        with a matching revision) adds no revision or event, but its response is recorded.
+        """
+        digest = None
+        if idempotency is not None:
+            self._validate_scope(idempotency)
+            digest = self._digest({"expected_revision": expected_revision, "dispatch": dispatch})
         with self._transaction() as db:
+            if idempotency is not None and digest is not None:
+                replay = self._queue_replay(db, idempotency, digest)
+                if replay is not None:
+                    return replay
+            if dispatch not in ("running", "paused") or type(expected_revision) is not int:
+                raise ControlError(E.REQUEST_INVALID)
             revision, current = db.execute("SELECT revision, dispatch FROM queue").fetchone()
             if revision != expected_revision:
                 raise ControlError(E.REVISION_CONFLICT)
             if current != dispatch:
                 db.execute("UPDATE queue SET dispatch = ?", (dispatch,))
                 self._queue_changed(db, R.QUEUE_PAUSED if dispatch == "paused" else R.QUEUE_RESUMED)
-            return self._queue_view(db)
+            view = self._queue_view(db)
+            headers = {"ETag": f'"{view.revision}"'}
+            if idempotency is not None and digest is not None:
+                db.execute(
+                    "INSERT INTO queue_replays VALUES (?,'POST',?,?,?,?,?,?,?,?)",
+                    (
+                        self._installation,
+                        idempotency.endpoint,
+                        idempotency.key,
+                        digest,
+                        200,
+                        canonical(headers),
+                        canonical(view.to_wire()),
+                        view.revision,
+                        self._now(),
+                    ),
+                )
+            return AcceptedQueue(200, MappingProxyType(headers), view, False)
 
     # ------------------------------------------------------------------ reads
 
