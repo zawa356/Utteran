@@ -162,3 +162,128 @@ def test_worker_schema_offline_artifact(worker_request: WorkerRequest) -> None:
         EVENT_ADAPTER.validate_python(
             {"type": "progress", "sequence": 0, "stage": "PRIVATE_PROMPT"}
         )
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        Code.MALFORMED_MESSAGE,
+        Code.SCHEMA_MISMATCH,
+        Code.PROTOCOL_MISMATCH,
+        Code.OVERSIZED_MESSAGE,
+        Code.UNEXPECTED_EOF,
+    ],
+)
+def test_pre_accepted_anonymous_rejection_preserves_code(
+    worker_request: WorkerRequest,
+    code: Code,
+) -> None:
+    state = EventSequence(worker_request)
+    state.accept(WorkerHello(sequence=0, profile="cpu"))
+    event = WorkerError(sequence=1, code=code)
+    state.accept(event)
+    assert state.terminal is event and state.terminal.code == code
+    assert not state.accepted and state.sequence == 2
+    assert set(event.public_projection()) == {
+        "contract",
+        "protocol_version",
+        "type",
+        "sequence",
+        "code",
+    }
+
+
+@pytest.mark.parametrize(
+    "code",
+    sorted(
+        set(Code)
+        - {
+            Code.MALFORMED_MESSAGE,
+            Code.SCHEMA_MISMATCH,
+            Code.PROTOCOL_MISMATCH,
+            Code.OVERSIZED_MESSAGE,
+            Code.UNEXPECTED_EOF,
+        }
+    ),
+)
+def test_anonymous_error_cannot_claim_execution_failure(
+    worker_request: WorkerRequest,
+    code: Code,
+) -> None:
+    state = EventSequence(worker_request)
+    state.accept(WorkerHello(sequence=0, profile="cpu"))
+    with pytest.raises(ProtocolError, match="invalid_sequence"):
+        state.accept(WorkerError(sequence=1, code=code))
+    assert state.terminal is None and state.sequence == 1
+
+
+def test_post_accepted_error_requires_full_matching_identity(worker_request: WorkerRequest) -> None:
+    state = EventSequence(worker_request)
+    state.accept(WorkerHello(sequence=0, profile="cpu"))
+    state.accept(WorkerAccepted(sequence=1, **ids(worker_request)))
+    with pytest.raises(ProtocolError, match="id_mismatch"):
+        state.accept(WorkerError(sequence=2, code=Code.MALFORMED_MESSAGE))
+    assert state.terminal is None and state.sequence == 2
+    error = WorkerError(sequence=2, code=Code.CORE_FAILURE, **ids(worker_request))
+    state.accept(error)
+    assert state.terminal is error
+
+
+@pytest.mark.parametrize("field", ["request_id", "job_id", "attempt_id"])
+def test_partial_null_error_identity_is_rejected_by_dto(
+    worker_request: WorkerRequest,
+    field: str,
+) -> None:
+    identity: dict[str, Any] = ids(worker_request)
+    identity[field] = None
+    with pytest.raises(ValidationError):
+        EVENT_ADAPTER.validate_python(
+            dict(type="error", sequence=1, code="malformed_message", **identity)
+        )
+
+
+@pytest.mark.parametrize("accepted", [False, True])
+@pytest.mark.parametrize("field", ["request_id", "job_id", "attempt_id"])
+def test_rejection_cannot_spoof_a_different_identity(
+    worker_request: WorkerRequest,
+    accepted: bool,
+    field: str,
+) -> None:
+    state = EventSequence(worker_request)
+    state.accept(WorkerHello(sequence=0, profile="cpu"))
+    if accepted:
+        state.accept(WorkerAccepted(sequence=1, **ids(worker_request)))
+    identity = ids(worker_request)
+    identity[field] = "spoofed"
+    with pytest.raises(ProtocolError, match="id_mismatch"):
+        state.accept(
+            WorkerError(sequence=2 if accepted else 1, code=Code.MALFORMED_MESSAGE, **identity)
+        )
+
+
+def test_rejection_before_hello_is_invalid(worker_request: WorkerRequest) -> None:
+    with pytest.raises(ProtocolError, match="invalid_sequence"):
+        EventSequence(worker_request).accept(WorkerError(sequence=0, code=Code.MALFORMED_MESSAGE))
+
+
+@pytest.mark.parametrize("kind", ["error", "accepted", "progress"])
+def test_anonymous_rejection_is_terminal(worker_request: WorkerRequest, kind: str) -> None:
+    state = EventSequence(worker_request)
+    state.accept(WorkerHello(sequence=0, profile="cpu"))
+    state.accept(WorkerError(sequence=1, code=Code.MALFORMED_MESSAGE))
+    event = EVENT_ADAPTER.validate_python(
+        dict(
+            type=kind,
+            sequence=2,
+            **ids(worker_request),
+            **(
+                {"code": "malformed_message"}
+                if kind == "error"
+                else {"stage": "asr", "state": "running"}
+                if kind == "progress"
+                else {}
+            ),
+        )
+    )
+    with pytest.raises(ProtocolError, match="invalid_sequence"):
+        state.accept(event)

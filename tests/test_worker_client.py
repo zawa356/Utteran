@@ -337,3 +337,59 @@ def test_external_kill_is_not_cancellation(
     with pytest.raises(ProtocolError, match="worker_crash"):
         client.execute(worker_request, on_event=progress)
     assert children[0].poll() is not None
+
+
+@pytest.mark.parametrize(
+    "corruption,code",
+    [
+        ("json", Code.MALFORMED_MESSAGE),
+        ("utf8", Code.MALFORMED_MESSAGE),
+        ("schema", Code.SCHEMA_MISMATCH),
+        ("protocol", Code.PROTOCOL_MISMATCH),
+        ("settings_schema", Code.MALFORMED_MESSAGE),
+        ("unknown", Code.MALFORMED_MESSAGE),
+    ],
+)
+def test_actual_worker_client_preserves_pre_accepted_rejection(
+    worker_request: WorkerRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    corruption: str,
+    code: Code,
+) -> None:
+    from utteran_contracts.worker_framing import encode_record
+
+    client = WorkerClient(ROOT)
+    monkeypatch.setattr(
+        client,
+        "command",
+        lambda _: [sys.executable, "-I", "-m", "utteran.worker", "--protocol", "1"],
+    )
+    private = "PRIVATE_PROMPT_秘密 /private/input hf_synthetic123"
+    data = worker_request.model_dump(mode="json")
+    if corruption in {"schema", "protocol"}:
+        data[corruption + "_version"] = 2
+    elif corruption == "settings_schema":
+        data["settings"]["schema_version"] = 2
+    elif corruption == "unknown":
+        data["unknown"] = private
+    frame = (json.dumps(data, ensure_ascii=False) + "\n").encode("utf-8")
+    if corruption == "json":
+        frame = ('{"invalid":' + private + "\n").encode("utf-8")
+    elif corruption == "utf8":
+        frame = b"\xff\n"
+
+    def corrupt_request(value: Any, limit: int) -> bytes:
+        return frame if isinstance(value, WorkerRequest) else encode_record(value, limit)
+
+    monkeypatch.setattr("utteran_gui.worker_client.encode_record", corrupt_request)
+    events: list[Any] = []
+    from utteran_gui.worker_client import WorkerClientError
+
+    with pytest.raises(WorkerClientError) as caught:
+        client.execute(worker_request, on_event=events.append)
+    assert caught.value.code == code
+    assert [event["type"] for event in events] == ["error"]
+    assert events[0]["sequence"] == 1 and events[0]["code"] == code
+    assert "PRIVATE_PROMPT" not in str(caught.value) + str(events) + caplog.text
+    assert worker_request.input_path not in str(caught.value) + str(events) + caplog.text

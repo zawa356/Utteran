@@ -14,6 +14,17 @@ from utteran_contracts.worker import (
 )
 from utteran_contracts.worker_framing import ProtocolError
 
+# Only framing/structural rejection can precede a validated request identity.
+PRE_ACCEPTED_ERROR_CODES = frozenset(
+    {
+        WorkerErrorCode.MALFORMED_MESSAGE,
+        WorkerErrorCode.SCHEMA_MISMATCH,
+        WorkerErrorCode.PROTOCOL_MISMATCH,
+        WorkerErrorCode.OVERSIZED_MESSAGE,
+        WorkerErrorCode.UNEXPECTED_EOF,
+    }
+)
+
 
 class EventSequence:
     def __init__(self, request: WorkerRequest) -> None:
@@ -37,7 +48,18 @@ class EventSequence:
         else:
             if isinstance(event, WorkerHello):
                 raise ProtocolError(WorkerErrorCode.INVALID_SEQUENCE)
-            if any(
+            anonymous_rejection = (
+                isinstance(event, WorkerError)
+                and not self.accepted
+                and self.sequence == 1
+                and all(
+                    getattr(event, key) is None for key in ("request_id", "job_id", "attempt_id")
+                )
+            )
+            if anonymous_rejection and isinstance(event, WorkerError):
+                if event.code not in PRE_ACCEPTED_ERROR_CODES:
+                    raise ProtocolError(WorkerErrorCode.INVALID_SEQUENCE)
+            elif any(
                 getattr(event, key) != getattr(self.request, key)
                 for key in ("request_id", "job_id", "attempt_id")
             ):
