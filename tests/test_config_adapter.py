@@ -232,3 +232,43 @@ def test_native_conflict_and_context_defaults_are_not_discarded(
     sources = {s.path: s.source for s in result.sources}
     assert sources["/asr/whisper_cpp/temperature"] == "context"
     assert sources["/asr/whisper_cpp/threads"] == "dto"
+
+
+@pytest.mark.parametrize(
+    "device", ["", " ", "\t", "auto", "AUTO", " auto ", "Auto ", " cpu", "cpu "]
+)
+def test_enabled_diarization_rejects_unresolved_or_padded_device(
+    settings_data: dict[str, Any], device: str
+) -> None:
+    settings_data["diarization"]["enabled"] = True
+    with pytest.raises(ConfigAdaptationError, match="unresolved_execution_context"):
+        adapt_settings(
+            ProcessingSettings.model_validate(settings_data),
+            replace(context(), diarization_device=device),
+        )
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda:0", "xpu:0"])
+def test_enabled_diarization_keeps_explicit_device(
+    settings_data: dict[str, Any], device: str
+) -> None:
+    settings_data["diarization"]["enabled"] = True
+    result = adapt_settings(
+        ProcessingSettings.model_validate(settings_data),
+        replace(context(), diarization_device=device),
+    )
+    assert result.config.diarization.device == device
+
+
+@pytest.mark.parametrize("device", ["", " ", "auto", " auto "])
+def test_disabled_diarization_preserves_legacy_device_behavior(
+    settings_data: dict[str, Any], device: str
+) -> None:
+    settings_data["diarization"]["enabled"] = False
+    assert (
+        adapt_settings(
+            ProcessingSettings.model_validate(settings_data),
+            replace(context(), diarization_device=device),
+        ).config.diarization.device
+        == device
+    )

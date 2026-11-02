@@ -70,8 +70,10 @@ def adapt_settings(settings: ProcessingSettings, context: ExecutionContext) -> A
         value = getattr(context, name)
         if not isinstance(value, str) or not value.strip() or value.strip().casefold() == "auto":
             _reject(f"/context/{name}", "unresolved_execution_context")
-    if settings.diarization.enabled and context.diarization_device.casefold() in {"", "auto"}:
-        _reject("/context/diarization_device", "unresolved_execution_context")
+    if settings.diarization.enabled:
+        device = context.diarization_device
+        if not device.strip() or device != device.strip() or device.casefold() == "auto":
+            _reject("/context/diarization_device", "unresolved_execution_context")
     if asr.backend != "auto" and asr.backend != context.asr_backend:
         _reject("/asr/backend", "context_conflict")
     # Use the same static catalogue alias normalization as legacy ASRConfig.
