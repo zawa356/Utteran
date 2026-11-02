@@ -1,5 +1,23 @@
 # AI 作業状態
 
+## Phase B4 Capability Inventory / Resolver（2026-11-02）
+
+- B3 PR #24のOPEN/Draftとhead `5ef7bab7ba81cab7afc1fe23b85abc8da399ec1b`をGitHubで再確認し、
+  `feat/b4-capability-inventory-resolver`へ分岐。B3をbaseとするstacked Draft PRとして提出する。
+- coreの7 recipe、immutable capability/evidence DTOとoffline schema、read-only collector、
+  scope/freshness evaluator、pure auto/fixed resolver、独立profile bridge/GUI adapterを追加。
+- 標準collectorはmanaged model/manifest/package metadataの読取だけ。smoke/runtime/GPU/memoryを
+  推測せず、未検証構成をreadyへ昇格しない。通常CLI/GUI、B3 worker、既存job/profileは変更しない。
+- Linux Python3.12: 821 passed / 既知3 failed / 8 skipped。B3基準715件から新規106成功、
+  failed/skip node集合は同一。mypyは既知Windows ctypes 9件のみで増分0。
+- Python3.11独立wheel環境のB1/B2/B3/B4関連348件成功。Ruff、3 schema --check、lock、wheel成功。
+- 要件定義24.1に従い0.1.33へ更新。lock root versionのみ変更。全体hash問題による旧profileの
+  dependency_lock_changedを隠さずblockedへ反映し、manifest/venvは変更しない。
+- [B4資料](docs/architecture/b4/README.md)と[検証](docs/architecture/b4/validation.md)を参照。
+  Windows CI結果はPR確認後に追記。実GPU/native推論・性能・quality・配布は未検証。
+- B5/API/UI切替、setup承認/実行、job snapshot/queue/fallback実行には進まない。
+  lock closure fingerprint、既知mypy/PowerShell CIは別PR対象。Ready化・mergeを行わずレビュー待ち。
+
 ## PR #24 B3レビュー修正（2026-11-02、Draft維持）
 
 - P1 `c9e9aca`: B1/B2/B3テストのUTF-8読書きを明示。P2 `03e7782`: 受理前の限定匿名errorを

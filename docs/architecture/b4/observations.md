@@ -1,0 +1,61 @@
+# 観測・鮮度・privacy
+
+software_support / hardware / runtime / venv / model / native / smoke / execution_path /
+memory / diarizationを別Observationとして保持する。sourceとreasonは固定allowlist。
+stateはpassed/failed/unknown/not_applicable。native不要、話者分離無効だけnot_applicableをcoreが生成。
+必須Observationのnot_applicableはunknown判定となり、passedに読み替えない。
+software_supportとexecution_pathはrecipe/settingsからpureに判定し、それ以外は取得証拠に基づく。
+
+## 判定と証拠の条件
+
+- ready: hard条件が一致し、全必須Observationが新鮮なpassed、identityが完全、
+  対象settings/route/model/profile/runtime/hardwareに対応するsmokeがあり、memory条件も満たす。
+- blocked: fresh failed、software/transport/固定設定の不適合、明示memory不足がある。
+- unknown: 観測なし、不完全identity、期限切れ、fingerprint相違、smoke欠落、memory不明。
+  blockedの明確な理由が同時にあればblockedを優先する。
+
+`normalize_observation()`はobserved_atなし、未来、expires_atなし、期限切れ、fingerprint相違を
+unknownへ戻す。元のobserved_at/fingerprintを維持し、最新と偽らない。
+期限のない証拠はcache_stale。元のprobe_timeout/probe_error等はdeployment.observationsにも残し、
+candidate.observationsには正規化後の失効理由を持つ。not_applicableはそのまま別状態。
+resolve時にも再評価するため、古いsnapshot内のrunnable=readyをそのまま信用しない。
+
+`evidence_fingerprint()`はExecutionIdentityとProcessingSettings全体のcanonical JSON SHA-256。
+profile ID/generation/path-extras-lockのdigest、OS/Python ABI、runtime依存/driver、hardware/index、
+model revision/required file identity、native manifest/build、recipe/adapter/smoke条件版、
+transport、pyannote component、全設定が異なると証拠を共有しない。identity欠損のまま全passedでもready不可。
+providerはruntime/hardware fingerprintに実際のOS/driver/dependency/device identityを含める責務を持つ。
+既存`devices.device_probe_fingerprint()`を明示probe providerで再利用できるが、呼出しがdriver検出を
+起動するためpure resolve/標準metadata collectorからは呼ばない。
+
+smokeが別のnative/encoder/decoder routeを明示した場合はsmoke_route_mismatchでblocked。
+backend-defaultは観測値を限定せず、selected-deviceはidentityの明示deviceへ照合する。
+
+Candidate IDはidentityのSHA-256から作るopaque ID。candidate revisionは元deployment/evidenceと
+設定scopeから導くdigest。パス・実行fileをIDから組み立てない。immutableなDTOを新規生成し、
+新inventoryが以前のResolvedSelectionを書き換えることはない。
+
+## 標準collectorの限界
+
+現profileのsys.prefix、manifest、cwdのuv.lock、package metadata、managed model、native statusを読む。
+manifest schema/lock全体SHA-256/extras/venv_pathを現GUIと同じ条件で判定する。
+venv generationはmanifest内容/mtimeとprofile root ctimeのdigest、profile fingerprintには
+path/extras/依存版/OS/ABIも含む。新たなgeneration管理storeはB8以降。
+model revisionは`local-<file identity digest>`でありupstream Hub revisionとは異なる。
+file identityはresolved path/size/mtime_ns/ctime_ns。content checksumや完全検証の証明ではない。
+read-only native statusとmanifest/executableのidentityを分離する。
+
+Hub cache探索、driver/GPU probe、IR変換、memory推定、pyannote依存解決、smokeを行わない。
+標準collectorのhardware/runtime fingerprintはnull、smoke/memory/diarizationはunknownであり、
+モデルとvenvが完全でもreadyにはならない。managed領域にないcache-onlyモデルもこのcollectorでは
+未導入候補として扱う。追加観測は明示providerで差替可能。合成passedはテスト専用で実機証明にしない。
+取得日時が判明しない旧device cacheを今の観測として再stampしない。
+
+## 公開と読取専用
+
+repr/strは値なし、public_projectionはcontract名/versionだけ。to_wireは**private**。
+設定にPrompt等を含み得るため、evidence digestを含めて通常log/公開SSEへ出してはいけない。
+公開DTO metadataにはtoken、音声、文字起こし、絶対path、raw stderr/tracebackを含めない。
+橋渡しはstdin、固定module、shellなし、UTF-8、サイズ制限、固定エラーだけを使用する。
+model download、uv sync、venv新設、native build、manifest rewrite、cache更新、logging初期化なし。
+テストのaudit hookはimport/schema/collection/resolveの子process・network・書込みを拒否して検査する。
