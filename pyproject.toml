@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "utteran"
-version = "0.1.33"
+version = "0.1.34"
 description = "Local speaker-aware transcription CLI for audio and video files"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -124,7 +124,7 @@ utteran = "utteran.cli:app"
 utteran-gui = "utteran_gui.app:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/utteran", "src/utteran_gui", "src/utteran_paths", "src/utteran_contracts"]
+packages = ["src/utteran", "src/utteran_gui", "src/utteran_paths", "src/utteran_contracts", "src/utteran_settings"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --capture=sys"
@@ -145,7 +145,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
-packages = ["utteran", "utteran_gui", "utteran_paths", "utteran_contracts"]
+packages = ["utteran", "utteran_gui", "utteran_paths", "utteran_contracts", "utteran_settings"]
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]

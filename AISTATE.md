@@ -1,5 +1,25 @@
 # AI 作業状態
 
+## Phase B5 Preset / Policy / Editing API（0.1.34、2026-11-02）
+
+- PR #25はOPEN/Draft、base B3、HEAD `f6c2a9546e1ee9b780f8c1a098f7bcdfc7096314`を再確認。
+  同HEADから`feat/b5-preset-policy-editing-api`を作成、B4 baseのstacked Draftとして提出する。
+- 軽量`utteran_settings`にSQLite履歴/CAS/tombstone/replay/snapshot listと純粋な継承を追加。
+  GUIは明示opt-inのみ。既存config/GuiSettings/job/worker/resolverを自動移行・切替しない。
+- previewはraw入力状態と正規化provenance、参照revision、worker未対応warningを返す。
+  空Promptのnull正規化はB5内だけで旧hashには適用しない。未知extra tokensは安全に拒否。
+- Linux全体943 passed / 既知3 failed / 8 skipped、増分73。3.11独立wheel関連470 passed。
+  Ruff/schema/lock/wheel成功、mypy既知9件のみ。failed/error/skip node集合一致。
+- [B5資料](docs/architecture/b5/README.md)、[検証](docs/architecture/b5/validation.md)、
+  [文書監査](docs/architecture/b5/docs-audit.md)を参照。全体検証/CIの実測を同文書へ集約する。
+- version/lockは0.1.34（root versionのみ）、`__version__`は既存metadata方式を維持。
+  lock全体hashによる旧profile非互換課題を隠さず、manifest/venvは書き換えない。
+- 既知Linux pytest3件/mypy9件、Windows Inno Setup前提とPID-file競合は別PR課題。
+  Windows ACL/実配布/実GPU/quality、保持期限/完全消去は未解決・未検証として保持する。
+- README日英/CHANGELOG/Phase A preview/Phase B5/ロードマップ時点を同期。
+  要件定義は確認済みで確定GUI/CLI仕様変更なし。Draft維持、未マージ・未リリース。
+  B6/B7/B8/B9/U0〜U3には着手せずレビュー待ちで停止する。
+
 ## PR #25 B4レビュー修正 P2/P3（2026-11-02）
 
 - 開始9b99a6fのPR #25（base B3、Draft）へ局所修正。P2 `eb14c6c`、P3 `e64176b`を別コミット。

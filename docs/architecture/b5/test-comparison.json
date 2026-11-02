@@ -1,0 +1,57 @@
+{
+  "failure": {
+    "baseline": [
+      "test_devices::test_timeout_kills_probe_process_tree",
+      "test_gui_processes::test_profile_manifest_detects_current_and_stale_dependencies",
+      "test_gui_processes::test_profile_manifest_detects_venv_move_without_disabling_profile"
+    ],
+    "b5": [
+      "test_devices::test_timeout_kills_probe_process_tree",
+      "test_gui_processes::test_profile_manifest_detects_current_and_stale_dependencies",
+      "test_gui_processes::test_profile_manifest_detects_venv_move_without_disabling_profile"
+    ],
+    "same": true
+  },
+  "error": {
+    "baseline": [],
+    "b5": [],
+    "same": true
+  },
+  "skipped": {
+    "baseline": [
+      "test_acceptance_scenarios::test_ctrl_c_is_confined_to_the_child_console",
+      "test_gui_processes::test_real_hidden_process_tree_can_still_be_cancelled",
+      "test_gui_processes::test_supervisor_job_closes_after_forced_parent_exit",
+      "test_gui_processes::test_supervisor_shutdown_terminates_a_real_child",
+      "test_jobs::test_windows_process_probe_detects_live_and_finished_child",
+      "test_private_history_match::test_rewrite_rules_work_with_filter_repo",
+      "test_profiles::test_setup_list_writes_valid_utf8_when_stdout_is_piped",
+      "test_profiles::test_start_exits_cleanly_when_no_profiles_exist"
+    ],
+    "b5": [
+      "test_acceptance_scenarios::test_ctrl_c_is_confined_to_the_child_console",
+      "test_gui_processes::test_real_hidden_process_tree_can_still_be_cancelled",
+      "test_gui_processes::test_supervisor_job_closes_after_forced_parent_exit",
+      "test_gui_processes::test_supervisor_shutdown_terminates_a_real_child",
+      "test_jobs::test_windows_process_probe_detects_live_and_finished_child",
+      "test_private_history_match::test_rewrite_rules_work_with_filter_repo",
+      "test_profiles::test_setup_list_writes_valid_utf8_when_stdout_is_piped",
+      "test_profiles::test_start_exits_cleanly_when_no_profiles_exist"
+    ],
+    "same": true
+  },
+  "counts": {
+    "baseline": {
+      "passed": 870,
+      "failed": 3,
+      "skipped": 8
+    },
+    "b5": {
+      "passed": 943,
+      "failed": 3,
+      "skipped": 8
+    },
+    "b5_new_tests": 73,
+    "wheel_python311_passed": 470
+  }
+}

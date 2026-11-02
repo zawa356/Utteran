@@ -497,5 +497,458 @@
         "blockers": []
       }
     ]
+  },
+  "validation_b5": {
+    "schema_version": 1,
+    "valid": true,
+    "preset_ref": {
+      "id": "preset-synthetic",
+      "revision": 1
+    },
+    "policy_ref": {
+      "id": "policy-synthetic",
+      "revision": 1
+    },
+    "files": [
+      {
+        "client_file_id": "file-synthetic",
+        "valid": true,
+        "effective_settings": {
+          "schema_version": 1,
+          "asr": {
+            "backend": "faster-whisper",
+            "model": "large-v3-turbo",
+            "language": "ja",
+            "initial_prompt": null,
+            "glossary": [],
+            "beam_size": 8,
+            "vad": {
+              "enabled": true
+            },
+            "word_timestamps": "auto",
+            "condition_on_previous_text": false,
+            "faster_whisper": {
+              "compute_type": "int8"
+            }
+          },
+          "diarization": {
+            "enabled": false,
+            "backend": "pyannote",
+            "model": "pyannote/speaker-diarization-community-1",
+            "device_preference": "auto",
+            "num_speakers": null,
+            "min_speakers": null,
+            "max_speakers": null,
+            "memory_guard": "auto"
+          },
+          "postprocessing": {
+            "boundary_snap_enabled": true,
+            "boundary_snap_unit": "A",
+            "merge_gap": 0.5,
+            "speaker_switch_penalty": 0.75
+          },
+          "output": {
+            "formats": [
+              "srt",
+              "json",
+              "md"
+            ],
+            "newline": "lf",
+            "srt_bom": false,
+            "show_speaker": true,
+            "speaker_labels": {}
+          }
+        },
+        "provenance": [
+          {
+            "path": "/asr/backend",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/asr/beam_size",
+            "source": "common",
+            "input_source": "common",
+            "input_status": "value"
+          },
+          {
+            "path": "/asr/condition_on_previous_text",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/asr/extra_arguments/allow_unverified",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/extra_arguments/backend",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/extra_arguments/tokens",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/faster_whisper/compute_type",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/asr/glossary",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "empty"
+          },
+          {
+            "path": "/asr/initial_prompt",
+            "source": "file",
+            "input_source": "file",
+            "input_status": "null"
+          },
+          {
+            "path": "/asr/language",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/asr/model",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/asr/openvino_genai/max_new_tokens",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/vad/enabled",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/asr/vad/threshold",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/dtw",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/entropy_threshold",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/logprob_threshold",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/max_word_duration_seconds",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/no_context",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/no_speech_threshold",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/repetition_limit",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/temperature",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/temperature_increment",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/threads",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/vad",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/vad_model",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/whisper_cpp/vad_threshold",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/asr/word_timestamps",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/diarization/backend",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/diarization/device_preference",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/diarization/enabled",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/diarization/max_speakers",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "null"
+          },
+          {
+            "path": "/diarization/memory_guard",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/diarization/memory_safety_margin",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/diarization/min_speakers",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "null"
+          },
+          {
+            "path": "/diarization/model",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/diarization/num_speakers",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "null"
+          },
+          {
+            "path": "/output/formats",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/output/newline",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/output/show_speaker",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/output/speaker_labels",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "empty"
+          },
+          {
+            "path": "/output/srt_bom",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/postprocessing/boundary_snap_enabled",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/postprocessing/boundary_snap_max_characters",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/boundary_snap_max_gap",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/boundary_snap_unit",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/postprocessing/fallback_characters_per_second",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/fallback_duration_padding",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/fallback_min_duration",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/max_nearest_distance",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/max_same_speaker_bridge_gap",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/max_unsupported_fragment_characters",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/max_unsupported_fragment_duration",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/merge_gap",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/postprocessing/min_clear_turn_duration",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/min_fragment_speaker_overlap",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/min_segment_duration",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/min_segment_words",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/min_unknown_characters",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/min_unknown_duration",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/renumber_speakers",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/silence_switch_threshold",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          },
+          {
+            "path": "/postprocessing/speaker_switch_penalty",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "value"
+          },
+          {
+            "path": "/postprocessing/unknown_emission_score",
+            "source": "preset",
+            "input_source": "preset",
+            "input_status": "absent"
+          }
+        ],
+        "issues": [],
+        "warnings": [],
+        "worker_support": "unverified"
+      }
+    ]
   }
 }

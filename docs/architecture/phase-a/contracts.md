@@ -2,6 +2,10 @@
 
 **全て将来仕様案、未実装**。型の必須/任意、request/response、全endpointは[OpenAPI](openapi.yaml)。以下はその意味・交差制約を定める。合成データのみの[JSON例](examples.json)も参照。
 
+2026-11-02 B5追補: opt-in Preset/Policy/validationsの実装とpreview契約拡張は
+[API差分](../b5/api.md)を参照。Provenance/ValidatedFile/ValidationResultと一覧5型は
+OpenAPIへ同期した。その他endpointはこの設計案のまま未接続。
+
 ## 1. 独立した管理概念
 
 | 概念 | 正本・内容 | 他の概念との関係 |
