@@ -69,7 +69,8 @@ class DiagnosticEntry(Contract):
 class DiagnosticEntryList(VersionedContract):
     revision: Revision
     items: tuple[DiagnosticEntry, ...]
-    next_cursor: Annotated[StrictStr, Field(max_length=64)] | None
+    # ``d2.*`` HMAC-bound snapshot cursor (PR #33 review fix); same bound as other lists.
+    next_cursor: Annotated[StrictStr, Field(max_length=200)] | None
 
 
 PUBLIC_MODELS: tuple[type[Contract], ...] = (

@@ -25,7 +25,7 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from utteran_contracts.control import EventEnvelope, EventPage
 from utteran_contracts.events import ResyncRequired
 from utteran_control.errors import ControlError, ErrorCode
-from utteran_control.events_repository import SyncService, diagnostics, watermark
+from utteran_control.events_repository import DiagnosticsService, SyncService, watermark
 from utteran_control.job_repository import JobControlStore
 from utteran_gui.job_admission import ResolutionTokens
 from utteran_gui.job_runtime import JobRuntime, RuntimeStateError
@@ -204,12 +204,27 @@ def register_event_routes(
         )
         return JSONResponse(snapshot.to_wire(), headers={"ETag": f'"{snapshot.queue.revision}"'})
 
+    diagnostic_services: dict[int, DiagnosticsService] = {}
+
+    def diagnostics_service() -> DiagnosticsService:
+        # One process-local snapshot registry per active store (not per request).
+        repo = store()
+        with lock:
+            service = diagnostic_services.get(id(repo))
+            if service is None or service.store is not repo:
+                diagnostic_services.clear()
+                service = diagnostic_services[id(repo)] = DiagnosticsService(repo)
+            return service
+
     def diagnostic_route(path: str, pattern: re.Pattern[str], kind: str) -> None:
         async def handler(resource_id: str, request: Request) -> Response:
             if not pattern.fullmatch(resource_id):
                 raise EventApiError("resource_not_found", 404)
             cursor = request.query_params.get("cursor")
-            result: Any = await call(lambda: diagnostics(store(), resource_id, kind, cursor))
+            viewer = ResolutionTokens.binding(_session(request))
+            result: Any = await call(
+                lambda: diagnostics_service().page(resource_id, kind, cursor, viewer=viewer)
+            )
             return JSONResponse(result.to_wire(), headers={"ETag": f'"{result.revision}"'})
 
         app.add_api_route(path, handler, methods=["GET"])
