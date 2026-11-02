@@ -3,7 +3,11 @@
 ## Phase B5 Preset / Policy / Editing API（0.1.34、2026-11-02）
 
 - PR #25はOPEN/Draft、base B3、HEAD `f6c2a9546e1ee9b780f8c1a098f7bcdfc7096314`を再確認。
-  同HEADから`feat/b5-preset-policy-editing-api`を作成、B4 baseのstacked Draftとして提出する。
+  同HEADから`feat/b5-preset-policy-editing-api`を作成。
+  [Draft PR #26](https://github.com/zawa356/Utteran/pull/26)、base B4。
+  実装HEAD `f7f0f11d164e0063e7d18bc3a94d1a0d094968e9`、最終追補は文書のみ。
+- 同HEADのWindows CIは951 passed / 3 skipped、3.11/3.12契約各350 passed。
+  workflowは既知mypy9件/Inno Setupで赤。実測URLはB5 validationへ記録。
 - 軽量`utteran_settings`にSQLite履歴/CAS/tombstone/replay/snapshot listと純粋な継承を追加。
   GUIは明示opt-inのみ。既存config/GuiSettings/job/worker/resolverを自動移行・切替しない。
 - previewはraw入力状態と正規化provenance、参照revision、worker未対応warningを返す。
