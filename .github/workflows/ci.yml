@@ -38,6 +38,8 @@ jobs:
         run: uv run --no-sync python -m utteran_contracts.job_schema --output docs/architecture/b7/jobs.schema.json --check
       - name: Check offline B8 setup schema
         run: uv run --no-sync python -m utteran_contracts.setup_schema --output docs/architecture/b8/setup.schema.json --check
+      - name: Check offline B9 events schema
+        run: uv run --no-sync python -m utteran_contracts.events_schema --output docs/architecture/b9/events.schema.json --check
       - name: Lint
         run: uv run --no-sync ruff check src tests tools
       - name: Check formatting
@@ -124,10 +126,11 @@ jobs:
           enable-cache: true
       - run: uv sync --extra dev --extra gui --locked
       - name: Contract, schema, and import boundary tests (no models)
-        run: uv run --no-sync pytest tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py tests/test_worker_protocol.py tests/test_capability_inventory.py tests/test_capability_bridge.py tests/test_b5_settings.py tests/test_b6_control.py tests/test_b7_jobs.py tests/test_b7_api.py tests/test_b7_review_fixes.py tests/test_b8_setup.py tests/test_b8_api.py
+        run: uv run --no-sync pytest tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py tests/test_worker_protocol.py tests/test_capability_inventory.py tests/test_capability_bridge.py tests/test_b5_settings.py tests/test_b6_control.py tests/test_b7_jobs.py tests/test_b7_api.py tests/test_b7_review_fixes.py tests/test_b8_setup.py tests/test_b8_api.py tests/test_b9_events.py
       - run: uv run --no-sync python -m utteran_contracts.schema --output docs/architecture/b1/contracts.schema.json --check
       - run: uv run --no-sync python -m utteran_contracts.capability_schema --output docs/architecture/b4/capabilities.schema.json --check
       - run: uv run --no-sync python -m utteran_contracts.preview_schema --output docs/architecture/b5/preview.schema.json --check
       - run: uv run --no-sync python -m utteran_contracts.control_schema --output docs/architecture/b6/control.schema.json --check
       - run: uv run --no-sync python -m utteran_contracts.job_schema --output docs/architecture/b7/jobs.schema.json --check
       - run: uv run --no-sync python -m utteran_contracts.setup_schema --output docs/architecture/b8/setup.schema.json --check
+      - run: uv run --no-sync python -m utteran_contracts.events_schema --output docs/architecture/b9/events.schema.json --check
