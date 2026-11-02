@@ -25,6 +25,9 @@ PR #32レビュー修正: §list responseの「filter付きsnapshot pagination�
 2026-11-02 B9追補（Draft）: §6の`/events`・`/sync`とdiagnosticsをopt-inで実装。`progress`等の未配信type、
 `inventory_revision` nullable等の差異は[B9](../b9/README.md)。
 
+2026-11-02 PR #33レビュー修正追補: diagnosticsは固定snapshot paging（`d2` cursor、期限切れ409 `cursor_expired`、
+改ざん・転用400 `cursor_invalid`）。attempt IDはOutbox圧縮に依存しない（layout v6）。[B9 diagnostics](../b9/diagnostics-legacy.md)。
+
 ## 1. 独立した管理概念
 
 | 概念 | 正本・内容 | 他の概念との関係 |

@@ -26,3 +26,18 @@
 
 背景ループ・外部schedulerなし。**明示的なv1 activate時に1回**（recovery後）だけ実行する。
 接続中のstreamは、自分のcursorがfloor未満になった時点で`resync_required`を受けて切断される。
+
+## PR #33レビュー修正: layout v6と診断の独立（B9-P2-2、2026-11-02追補）
+
+提出時の診断は`operation_history LEFT JOIN outbox`で`attempt_id`を得ていたため、compaction後に同じrevisionの
+`attempt_id`が`null`へ変化した（修正前スクリプトで再現: 圧縮3件後に既知attempt 2件が`null`）。
+
+- **v6**（`ManagedControlStore`）: `operation_history_attempts(operation_id, revision, outbox_seq, attempt_id,
+  attempt_state)`を追加。PK(operation_id, revision)、`operation_history`へのFK、UPDATE/DELETE禁止trigger。
+- 書込み: 全revisionが通る`_journal`で、履歴・Outbox・sidecarを**同じtransaction**にcommit（`attempt_state='recorded'`）。
+- v5→v6 migration（1 transaction）: 現存Outboxから`attempt_id`を移す（`backfilled`）。既にOutboxが圧縮済みの行は
+  `attempt_id=NULL, attempt_state='lost'`として固定し、**値を推測しない**。失敗・disk full・crash時はv5のまま。
+- 旧クラス: B9提出時のv5クラスは`EventsControlStore`として残し、v6を拒否。B6/B7/B8クラスも拒否。
+- compactionの保持policy（7日・最新100,000件・1回50,000件・保護resource・floorとDELETEの原子性）は不変。
+- v5 store（sidecarなし・compaction可能）でのdiagnosticsは不安定なため`store_schema_unsupported`で拒否。
+  v3/v4（compactionなし）は従来どおりOutbox結合で読む。

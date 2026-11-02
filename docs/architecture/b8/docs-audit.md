@@ -19,3 +19,14 @@
 | pyproject.toml / uv.lock | updated | 0.1.37、lockはroot version行のみ。依存追加なし（ADR不要） |
 | .github/workflows/ci.yml | updated | B8 schema `--check`、契約matrixへB8テスト |
 | site/src | reviewed-no-change | 未リリースの実験機能のため製品サイトで宣伝しない。favicon 404は別件 |
+
+## 2回目（PR #33レビュー修正後、2026-11-02）
+
+| ファイル | 判定 | 理由 |
+|---|---|---|
+| b8/execution-recovery.md | updated | 両pipe同時排水・status channel・未確認時の扱い（追補節） |
+| b8/security.md | updated | bounded memory・stdoutのみのstatus |
+| b8/validation.md | updated | 修正前10 failed→修正後16 passedの再現記録（追補節、提出時記録は保持） |
+| b8/storage.md / compatibility.md | updated | Runtimeのlayout v6、旧クラス拒否、backup、一方向性 |
+| b8/README.md / contracts.md / api.md | reviewed-no-change | API・DTO・実行範囲は不変 |
+| b8/setup.schema.json | reviewed-no-change | B8 wire DTOは不変（`--check`成功） |

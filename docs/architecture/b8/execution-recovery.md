@@ -54,3 +54,23 @@ interruptedからは明示`resume`（新attempt、各stepはverify-firstで再�
 - 既存venvの再構築・generation切替・Windows venv renameは提供しない（`profile_rebuild_unsupported`）。
 - read/write leaseはheavy slotの排他で代替（setup実行中はJobも別setupも動かない）。profile単位の
   共有read leaseは未実装（slotが1つのため現時点で競合は起きないが、並列化時は別ADRが必要）。
+
+## PR #33レビュー修正（B8-P2-1、2026-11-02追補）
+
+提出時の`ProcessChildRunner`はstdoutをEOFまで読んでからstderrを読んでいた（両方PIPE）。子がstdoutを
+閉じる前にpipe容量を超えてstderrへ書くと親子ともblockし、heavy slotとleaseを保持し続ける
+（実subprocessで再現: 修正前は4 MiBのstderr/stdout先行・交互出力の4ケースが期限切れ）。
+
+修正後:
+
+- stdout/stderrを**2本のreader threadで同時に**EOFまで排水する（`selectors`不使用、Windows pipe可）。
+  binary pipeを64 KiB単位で読み、内容は破棄する（全量蓄積・`communicate()`なし）。
+- status channelは**stdoutのみ**。`MAX_STATUS_LINE`（64 KiB）以下・UTF-8・JSON objectの行が**ちょうど1行**の
+  場合だけ採用。stderrのJSON、複数JSON行、不正JSON、上限超過行（改行なしの巨大行を含む）は採用しない
+  → preflightは`preflight_invalid`（安全側）。
+- 終了確認: `process.wait()`で子の終了を観測し、さらに両pipeのEOF（猶予10秒）を確認してから結果を返す。
+  - 子の生存中にreaderが失敗（排水不能）→ `ChildUnconfirmed`（slot・lease保持、`termination_failed`）。
+  - 子の終了後にreaderが失敗 → `ChildOutputError`（終了は確認済み）→ step `process_failed`。
+  - 子は終了したがpipeが閉じない（子孫がpipeを保持）→ `ChildUnconfirmed`。
+  - `on_spawn`失敗 → 既存どおりtree killし、5秒以内に終了を確認できれば元の例外、できなければ`ChildUnconfirmed`。
+- 無限join・確認なしのslot解放・新しい強制停止はない。cancelは引き続き子process境界のcooperativeのみ。

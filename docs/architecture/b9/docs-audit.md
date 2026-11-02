@@ -19,3 +19,20 @@
 | .github/workflows/ci.yml | updated | B9 schema `--check`、契約matrixへB9テスト |
 | tests/fixtures/b9_default_routes.json | updated（新規） | 既定app route golden（main時点から生成） |
 | site/src | reviewed-no-change | 未リリース機能を宣伝しない |
+
+## 2回目（PR #33レビュー修正後、2026-11-02）
+
+| ファイル | 判定 | 理由 |
+|---|---|---|
+| b9/retention.md | updated | layout v6・sidecar・backfill（lostは推測しない）・旧クラス拒否 |
+| b9/diagnostics-legacy.md | updated | 固定snapshot paging、`d2` cursor、409/400/503、単一プロセス制約 |
+| b9/sync.md | updated | `/sync`不変、`d2`との関係のみ追補 |
+| b9/validation.md | updated | 修正前再現・追加テスト・実測（追補節） |
+| b9/events.schema.json | updated | `DiagnosticEntryList.next_cursor` maxLength 64→200 |
+| b9/README.md / events-sse.md | reviewed-no-change | SSE・event type・cursorの意味は不変 |
+| phase-a/contracts.md | updated | diagnostics cursor/errorの追補 |
+| phase-a/openapi.yaml | reviewed-no-change | 歴史的仕様案（`DiagnosticEntryList.next_cursor`は任意文字列・長さ制約なし）で今回の挙動と矛盾しない。wire正本は`events.schema.json` |
+| 変更履歴.md / AISTATE.md / 要件定義.md | updated | 0.1.38内のレビュー修正、diagnostics pagingの仕様 |
+| README.md / README.en.md | reviewed-no-change | 機能範囲・opt-in・versionは不変。DB layout番号はREADMEに記載していない |
+| docs/UI_UX_刷新計画.md / docs/リリース手順.md | reviewed-no-change | UI接続状況・versionは不変 |
+| .github/workflows/ci.yml | updated | 契約matrixに`test_b8_review_fixes.py`・`test_b9_review_fixes.py`を追加 |

@@ -6,6 +6,8 @@
 - 実装: SSE `/events`（commit済みのみ、cursor 400/410、`resync_required`、上限・keepalive）、`/sync`（1 read transaction・
   snapshot paging）、sanitized diagnostics、layout v5 bounded compaction、純粋EventReducer、既定route golden。
 - 配信しない: progress/inventory_changed/fallback（永続証拠なし）。詳細[B9](docs/architecture/b9/README.md)。
+- PR #33レビュー修正（基準`8264ab1`、他者commitなし、同じDraft PRへ通常push）: B8-P2-1 dual-pipe同時排水、
+  B9-P2-2 layout v6の診断attempt sidecar、B9-P2-3 diagnostics固定snapshot paging。version 0.1.38・lockは不変。
 
 ## Phase B8 Setup Plan / Approval / Durable Setup Execution（0.1.37、2026-11-02、Draft）
 

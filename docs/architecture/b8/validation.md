@@ -39,3 +39,17 @@
 - 実Windowsでの`setup.ps1`実行、実`uv sync`、実モデルdownload/verify、実smoke、GPU。
 - Windowsの`ProcessChildRunner`（Job object経由のpopen_factory）と実PID start identity。
 - PR CI（Linux/Windows/3.11/3.12）の結果はpush後に追記。
+
+## PR #33レビュー修正の検証（2026-11-02追補）
+
+本節は追補であり、上記の提出時記録は当時の事実として保持する（提出時のテストはdual-pipe deadlockを検出していなかった）。
+
+| 項目 | 修正前（`8264ab1`のrunner） | 修正後 |
+|---|---|---|
+| `tests/test_b8_review_fixes.py`（16件、実OS subprocess、Python 3.11） | **10 failed / 6 passed**（deadlockによる期限切れ4、status channel/不正JSON/複数JSON 3、異常終了・reader失敗・子孫pipe 3） | **16 passed** |
+| 既存B8（`test_b8_setup.py`・`test_b8_api.py`、41件） | passed | passed |
+
+再現条件: stderrへ4 MiB書いた後にstdout出力、stdoutへ4 MiB後にstderrへ4 MiB、64 KiB行を両channelへ交互に64回、
+改行なし32 MiB×2、stderrのみの偽status、複数・不正・上限超過JSON、exit 7、`on_spawn`例外、reader例外（終了後／生存中）、
+pipeを保持する孫process。各ケースは60秒の期限付きthreadで実行し、期限切れ時は子をkillして失敗とする。
+全体の実測は[B9 validation](../b9/validation.md)の追補を参照。

@@ -11,3 +11,10 @@
 - 公開DTOは固定語彙とID・時刻・件数のみ。step journal（PID・exit code）はprivate。
 - sentinel test: token形の合成値を子processの出力へ流し、DB dump・HTTP応答・plan本文に出ないことを確認。
 - private DBはB6/B7同様に暗号化なし・無期限保持（未解決ゲート）。Windows ACLは未検証。
+
+## PR #33レビュー修正（B8-P2-1）
+
+- 子のstdout/stderrはbounded（64 KiB chunk＋最大64 KiBのstatus候補1行）で読み捨てる。改行のない
+  巨大出力でもメモリは増えない（32 MiB×2 channelの出力でpeak < 4 MiBをtracemallocで確認）。
+- raw出力・token・argv・path・promptをDB・Outbox・ログ・診断へ保存しない点は不変。statusはstdoutの
+  1行に限り、stderr上の偽`{"access":"available"}`は受理しない。
