@@ -7,6 +7,8 @@
 2026-11-02追補: backend基盤はB4に続き[B5](architecture/b5/README.md)をDraftで実装。
 Preset/Policy/継承APIはopt-inで、通常frontendとU0〜U3は未着手。以下の2026-10-30時点の
 UI監査・技術選定計画は維持する。B6/B7/B8/B9はB5の実装範囲に含めない。
+同日B6追補: 既定未使用の永続control store/Outbox基盤を[B6](architecture/b6/README.md)でDraft実装。
+frontend・HTTP events/sync・job/setup実行の切替はなく、U0〜U3とB7〜B9は未着手。
 
 ## 1. ユーザー要望・優先順位
 
