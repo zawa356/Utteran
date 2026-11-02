@@ -17,9 +17,10 @@ from utteran_contracts.control import EventEnvelope
 from utteran_contracts.events import EventReducer, SyncSnapshot
 from utteran_control.errors import ControlError, ErrorCode
 from utteran_control.events_repository import (
+    DiagnosticsService,
+    EventsControlStore,
     ManagedControlStore,
     SyncService,
-    diagnostics,
     read_sync,
 )
 from utteran_control.job_repository import JobControlStore
@@ -429,15 +430,16 @@ def test_compaction_keep_latest_and_crash(tmp_path, clock) -> None:
     assert report.deleted == total - 3
 
 
-def test_v5_migration_and_refusal(tmp_path) -> None:
+def test_v4_migrates_to_current_layout_and_older_code_refuses(tmp_path) -> None:
     path = tmp_path / "c" / "operations.sqlite3"
     v4 = SetupControlStore(path)
     op = submit(v4)
     migrated = ManagedControlStore(path)
     assert migrated.get(op).id == op
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
-    for older in (ControlStore, JobControlStore, SetupControlStore):
+        # PR #33 review fix: the current layout is v6 (diagnostics attempt sidecar).
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
+    for older in (ControlStore, JobControlStore, SetupControlStore, EventsControlStore):
         with pytest.raises(ControlError) as excinfo:
             older(path)
         assert excinfo.value.code is E.STORE_SCHEMA_UNSUPPORTED
@@ -466,8 +468,9 @@ def test_setup_diagnostics_are_sanitized_and_paged(http: TestClient) -> None:
     assert set(body["items"][0]) == {"timestamp", "code", "message_key", "stage", "attempt_id"}
     text = response.text
     assert SECRET not in text and str(world.tmp) not in text and "powershell" not in text
-    page1 = diagnostics(store, sid, "setup_operation", limit=3)
-    page2 = diagnostics(store, sid, "setup_operation", page1.next_cursor, limit=3)
+    service = DiagnosticsService(store)
+    page1 = service.page(sid, "setup_operation", limit=3)
+    page2 = service.page(sid, "setup_operation", page1.next_cursor, limit=3)
     assert [i.code for i in page1.items + page2.items] == codes[:6]
     assert http.get(f"/api/v1/jobs/{sid}/diagnostics").status_code == 404
     assert http.get("/api/v1/jobs/job_" + "0" * 32 + "/diagnostics").status_code == 404
