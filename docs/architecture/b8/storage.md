@@ -16,6 +16,9 @@ readonlyでは旧versionのまま（`PRAGMA user_version`はDDLと同じtransact
 activate時のbackup（`operations-pre-v1-*.sqlite3`、v3のまま）から戻す必要がある。setupを一度有効にした
 環境ではjobs-only運用へ自動で戻らない（fail closedで誤読しないことを優先）。
 
+> B9追補: `JobRuntime(setup=...)`はB9からlayout v5（[retention](../b9/retention.md)、v4＋outbox compaction guard）を開く。
+> v4ファイルは1 transactionでv5へ移行し、v4のクラス（`SetupControlStore`）はv5を拒否する。
+
 ## 表（追加分）
 
 | 表 | 用途 | 不変性 |

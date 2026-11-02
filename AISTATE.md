@@ -1,5 +1,12 @@
 # AI 作業状態
 
+## Phase B9 Events / Sync / Diagnostics（0.1.38、2026-11-02、Draft）
+
+- B8と同じブランチ・同じDraft PRの後続commit系列（[理由](docs/architecture/b8/compatibility.md)）。
+- 実装: SSE `/events`（commit済みのみ、cursor 400/410、`resync_required`、上限・keepalive）、`/sync`（1 read transaction・
+  snapshot paging）、sanitized diagnostics、layout v5 bounded compaction、純粋EventReducer、既定route golden。
+- 配信しない: progress/inventory_changed/fallback（永続証拠なし）。詳細[B9](docs/architecture/b9/README.md)。
+
 ## Phase B8 Setup Plan / Approval / Durable Setup Execution（0.1.37、2026-11-02、Draft）
 
 - 基点main `4fbb4d1`（B7マージ、fetchで再確認、他者commitなし）。push先は環境固定の`claude/funny-cori-9lnbpr`
