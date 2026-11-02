@@ -1,0 +1,501 @@
+{
+  "preset": {
+    "schema_version": 1,
+    "name": "合成会議preset",
+    "settings": {
+      "schema_version": 1,
+      "asr": {
+        "backend": "faster-whisper",
+        "model": "large-v3-turbo",
+        "language": "ja",
+        "initial_prompt": null,
+        "glossary": [],
+        "beam_size": 5,
+        "vad": {
+          "enabled": true
+        },
+        "word_timestamps": "auto",
+        "condition_on_previous_text": false,
+        "faster_whisper": {
+          "compute_type": "int8"
+        }
+      },
+      "diarization": {
+        "enabled": false,
+        "backend": "pyannote",
+        "model": "pyannote/speaker-diarization-community-1",
+        "device_preference": "auto",
+        "num_speakers": null,
+        "min_speakers": null,
+        "max_speakers": null,
+        "memory_guard": "auto"
+      },
+      "postprocessing": {
+        "boundary_snap_enabled": true,
+        "boundary_snap_unit": "A",
+        "merge_gap": 0.5,
+        "speaker_switch_penalty": 0.75
+      },
+      "output": {
+        "formats": [
+          "srt",
+          "json",
+          "md"
+        ],
+        "newline": "lf",
+        "srt_bom": false,
+        "show_speaker": true,
+        "speaker_labels": {}
+      }
+    }
+  },
+  "policy": {
+    "schema_version": 1,
+    "name": "合成固定ポリシー",
+    "mode": "fixed",
+    "fixed_candidate_id": "candidate-synthetic",
+    "allowed_profile_ids": [
+      "env-synthetic"
+    ],
+    "objective": "balanced",
+    "max_memory_bytes": null,
+    "fallback": "none",
+    "execution_deadline_seconds": null
+  },
+  "editing": {
+    "schema_version": 1,
+    "preset_ref": {
+      "id": "preset-synthetic",
+      "revision": 1
+    },
+    "policy_ref": {
+      "id": "policy-synthetic",
+      "revision": 1
+    },
+    "common_overrides": [
+      {
+        "path": "/asr/beam_size",
+        "value": 8
+      }
+    ],
+    "files": [
+      {
+        "client_file_id": "file-synthetic",
+        "input_path": "C:/synthetic/input.wav",
+        "output_dir": "C:/synthetic/output",
+        "overrides": [
+          {
+            "path": "/asr/initial_prompt",
+            "value": null
+          }
+        ]
+      }
+    ]
+  },
+  "resolution": {
+    "schema_version": 1,
+    "id": "resolution-synthetic",
+    "token": "opaque-resolution-synthetic",
+    "expires_at": "2026-10-30T06:00:00Z",
+    "files": [
+      {
+        "client_file_id": "file-synthetic",
+        "input_identity": "identity-synthetic",
+        "spec": {
+          "schema_version": 1,
+          "candidate_id": "candidate-synthetic",
+          "profile_ref": {
+            "id": "env-synthetic",
+            "revision": 1
+          },
+          "profile_generation": "gen-synthetic",
+          "model_revision": "model-synthetic-revision",
+          "backend": "faster-whisper",
+          "requested_route": {
+            "native_variant": null,
+            "encoder": "cpu",
+            "decoder": "cpu"
+          },
+          "diarization_device": null,
+          "settings": {
+            "schema_version": 1,
+            "asr": {
+              "backend": "faster-whisper",
+              "model": "large-v3-turbo",
+              "language": "ja",
+              "initial_prompt": null,
+              "glossary": [],
+              "beam_size": 8,
+              "vad": {
+                "enabled": true
+              },
+              "word_timestamps": "auto",
+              "condition_on_previous_text": false,
+              "faster_whisper": {
+                "compute_type": "int8"
+              }
+            },
+            "diarization": {
+              "enabled": false,
+              "backend": "pyannote",
+              "model": "pyannote/speaker-diarization-community-1",
+              "device_preference": "auto",
+              "num_speakers": null,
+              "min_speakers": null,
+              "max_speakers": null,
+              "memory_guard": "auto"
+            },
+            "postprocessing": {
+              "boundary_snap_enabled": true,
+              "boundary_snap_unit": "A",
+              "merge_gap": 0.5,
+              "speaker_switch_penalty": 0.75
+            },
+            "output": {
+              "formats": [
+                "srt",
+                "json",
+                "md"
+              ],
+              "newline": "lf",
+              "srt_bom": false,
+              "show_speaker": true,
+              "speaker_labels": {}
+            }
+          },
+          "adapter_version": "adapter-1",
+          "prompt_compiler_version": "prompt-1",
+          "inventory_revision": 1,
+          "policy_ref": {
+            "id": "policy-synthetic",
+            "revision": 1
+          },
+          "reason_codes": [
+            "fixed_selection"
+          ],
+          "confidence": "low",
+          "evidence": [
+            {
+              "kind": "static_rule",
+              "id": "rule-synthetic",
+              "comparability_key": null,
+              "confidence": "low",
+              "reason_code": "fixed_selection"
+            }
+          ],
+          "alternatives": [],
+          "warnings": [],
+          "fallback_specs": [],
+          "runtime_fingerprint": "runtime-synthetic"
+        },
+        "provenance": [
+          {
+            "path": "/asr/beam_size",
+            "source": "common"
+          },
+          {
+            "path": "/asr/initial_prompt",
+            "source": "file"
+          }
+        ]
+      }
+    ]
+  },
+  "submission": {
+    "schema_version": 1,
+    "resolution_token": "opaque-resolution-synthetic",
+    "editing_session": {
+      "schema_version": 1,
+      "preset_ref": {
+        "id": "preset-synthetic",
+        "revision": 1
+      },
+      "policy_ref": {
+        "id": "policy-synthetic",
+        "revision": 1
+      },
+      "common_overrides": [
+        {
+          "path": "/asr/beam_size",
+          "value": 8
+        }
+      ],
+      "files": [
+        {
+          "client_file_id": "file-synthetic",
+          "input_path": "C:/synthetic/input.wav",
+          "output_dir": "C:/synthetic/output",
+          "overrides": [
+            {
+              "path": "/asr/initial_prompt",
+              "value": null
+            }
+          ]
+        }
+      ]
+    },
+    "resume_mode": "resume"
+  },
+  "error": {
+    "schema_version": 1,
+    "error": {
+      "code": "argument_conflict",
+      "message_key": "errors.argument_conflict",
+      "request_id": "req-synthetic",
+      "retryable": false,
+      "issues": [
+        {
+          "path": "/asr/extra_arguments/tokens/0",
+          "code": "typed_setting_owned",
+          "message_key": "errors.typed_setting_owned"
+        }
+      ]
+    }
+  },
+  "event": {
+    "schema_version": 1,
+    "id": "epoch-synthetic:12",
+    "resource_id": "job-synthetic",
+    "resource_kind": "job",
+    "resource_revision": 3,
+    "timestamp": "2026-10-30T05:55:00Z",
+    "type": "state_changed",
+    "payload": {
+      "status": "running",
+      "attempt_id": "attempt-synthetic"
+    }
+  },
+  "job": {
+    "schema_version": 1,
+    "id": "job-synthetic",
+    "revision": 1,
+    "status": "queued",
+    "snapshot": {
+      "schema_version": 1,
+      "created_at": "2026-10-30T05:55:00Z",
+      "preset_ref": {
+        "id": "preset-synthetic",
+        "revision": 1
+      },
+      "policy_ref": {
+        "id": "policy-synthetic",
+        "revision": 1
+      },
+      "common_overrides": [
+        {
+          "path": "/asr/beam_size",
+          "value": 8
+        }
+      ],
+      "file": {
+        "client_file_id": "file-synthetic",
+        "input_path": "C:/synthetic/input.wav",
+        "output_dir": "C:/synthetic/output",
+        "overrides": [
+          {
+            "path": "/asr/initial_prompt",
+            "value": null
+          }
+        ]
+      },
+      "input_identity": "identity-synthetic",
+      "resolved": {
+        "schema_version": 1,
+        "candidate_id": "candidate-synthetic",
+        "profile_ref": {
+          "id": "env-synthetic",
+          "revision": 1
+        },
+        "profile_generation": "gen-synthetic",
+        "model_revision": "model-synthetic-revision",
+        "backend": "faster-whisper",
+        "requested_route": {
+          "native_variant": null,
+          "encoder": "cpu",
+          "decoder": "cpu"
+        },
+        "diarization_device": null,
+        "settings": {
+          "schema_version": 1,
+          "asr": {
+            "backend": "faster-whisper",
+            "model": "large-v3-turbo",
+            "language": "ja",
+            "initial_prompt": null,
+            "glossary": [],
+            "beam_size": 8,
+            "vad": {
+              "enabled": true
+            },
+            "word_timestamps": "auto",
+            "condition_on_previous_text": false,
+            "faster_whisper": {
+              "compute_type": "int8"
+            }
+          },
+          "diarization": {
+            "enabled": false,
+            "backend": "pyannote",
+            "model": "pyannote/speaker-diarization-community-1",
+            "device_preference": "auto",
+            "num_speakers": null,
+            "min_speakers": null,
+            "max_speakers": null,
+            "memory_guard": "auto"
+          },
+          "postprocessing": {
+            "boundary_snap_enabled": true,
+            "boundary_snap_unit": "A",
+            "merge_gap": 0.5,
+            "speaker_switch_penalty": 0.75
+          },
+          "output": {
+            "formats": [
+              "srt",
+              "json",
+              "md"
+            ],
+            "newline": "lf",
+            "srt_bom": false,
+            "show_speaker": true,
+            "speaker_labels": {}
+          }
+        },
+        "adapter_version": "adapter-1",
+        "prompt_compiler_version": "prompt-1",
+        "inventory_revision": 1,
+        "policy_ref": {
+          "id": "policy-synthetic",
+          "revision": 1
+        },
+        "reason_codes": [
+          "fixed_selection"
+        ],
+        "confidence": "low",
+        "evidence": [
+          {
+            "kind": "static_rule",
+            "id": "rule-synthetic",
+            "comparability_key": null,
+            "confidence": "low",
+            "reason_code": "fixed_selection"
+          }
+        ],
+        "alternatives": [],
+        "warnings": [],
+        "fallback_specs": [],
+        "runtime_fingerprint": "runtime-synthetic"
+      },
+      "resume_mode": "resume"
+    },
+    "attempts": [],
+    "retry_of": null,
+    "rerun_of": null,
+    "blockers": [],
+    "error": null
+  },
+  "setup_request": {
+    "schema_version": 1,
+    "profile_kind": "intel",
+    "model_refs": [
+      "whisper-cpp:synthetic-model"
+    ],
+    "diarization_enabled": false
+  },
+  "setup_plan": {
+    "schema_version": 1,
+    "id": "plan-intel-synthetic",
+    "revision": 1,
+    "state": "proposed",
+    "profile_kind": "intel",
+    "inventory_revision": 2,
+    "plan_hash": "opaque-plan-hash-synthetic",
+    "expires_at": "2026-10-31T05:55:00Z",
+    "estimate": {
+      "download_bytes": null,
+      "disk_bytes": null,
+      "duration_seconds": null,
+      "confidence": "low"
+    },
+    "changes": [
+      {
+        "resource_kind": "profile",
+        "resource_id": "env-intel-synthetic",
+        "action": "create",
+        "reason_code": "additional_environment"
+      }
+    ],
+    "steps": [
+      {
+        "id": "venv",
+        "kind": "venv_sync",
+        "depends_on": [],
+        "required": true,
+        "recovery": "rerun"
+      },
+      {
+        "id": "model",
+        "kind": "model_download",
+        "depends_on": [
+          "venv"
+        ],
+        "required": true,
+        "recovery": "manager_resume"
+      },
+      {
+        "id": "native",
+        "kind": "native_build",
+        "depends_on": [
+          "venv",
+          "model"
+        ],
+        "required": true,
+        "recovery": "verified_reuse"
+      },
+      {
+        "id": "smoke",
+        "kind": "smoke",
+        "depends_on": [
+          "native"
+        ],
+        "required": true,
+        "recovery": "rerun"
+      },
+      {
+        "id": "register",
+        "kind": "register",
+        "depends_on": [
+          "smoke"
+        ],
+        "required": true,
+        "recovery": "verified_reuse"
+      }
+    ],
+    "preserved_environment_ids": [
+      "env-cuda-synthetic"
+    ],
+    "required_agreements": [],
+    "missing_credentials": []
+  },
+  "approval_request": {
+    "schema_version": 1,
+    "plan_hash": "opaque-plan-hash-synthetic",
+    "accepted_agreement_ids": []
+  },
+  "queue": {
+    "schema_version": 1,
+    "revision": 1,
+    "dispatch": "paused",
+    "active_item_id": null,
+    "items": [
+      {
+        "id": "item-synthetic",
+        "resource_id": "job-synthetic",
+        "resource_kind": "job",
+        "position": 1,
+        "held": false,
+        "blockers": []
+      }
+    ]
+  }
+}
