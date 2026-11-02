@@ -35,7 +35,9 @@ def normalize(schema: Any) -> Any:
 
 
 def test_phase_a_wire_shape_matches_implemented_subset() -> None:
-    proposed = yaml.safe_load((ROOT / "docs/architecture/phase-a/openapi.yaml").read_text())
+    proposed = yaml.safe_load(
+        (ROOT / "docs/architecture/phase-a/openapi.yaml").read_text(encoding="utf-8")
+    )
     source = proposed["components"]["schemas"]
     generated = contract_schema()["$defs"]
     for model in MODELS:
@@ -57,7 +59,9 @@ def test_phase_a_wire_shape_matches_implemented_subset() -> None:
 def test_schema_valid_examples_and_negative_inputs() -> None:
     schema = contract_schema()
     Draft202012Validator.check_schema(schema)
-    examples = json.loads((ROOT / "docs/architecture/phase-a/examples.json").read_text())
+    examples = json.loads(
+        (ROOT / "docs/architecture/phase-a/examples.json").read_text(encoding="utf-8")
+    )
     for key, name in [
         ("preset", "PresetWrite"),
         ("policy", "PolicyWrite"),
@@ -91,9 +95,9 @@ def test_schema_reproducibility_and_check_mode(tmp_path: Path, capsys: Any) -> N
     before = output.stat().st_mtime_ns
     assert main(["--output", str(output), "--check"]) == 0
     assert output.stat().st_mtime_ns == before
-    output.write_text("{}")
+    output.write_text("{}", encoding="utf-8")
     assert main(["--output", str(output), "--check"]) == 1
-    assert output.read_text() == "{}"
+    assert output.read_text(encoding="utf-8") == "{}"
     assert "stale" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         main(["--check"])
@@ -128,9 +132,9 @@ def test_override_leaf_constraints_are_exported() -> None:
 def test_phase_a_allof_policy_rules_are_preserved(
     mode: str, candidate: Any, fallback: str, expected: bool
 ) -> None:
-    source = yaml.safe_load((ROOT / "docs/architecture/phase-a/openapi.yaml").read_text())[
-        "components"
-    ]["schemas"]
+    source = yaml.safe_load(
+        (ROOT / "docs/architecture/phase-a/openapi.yaml").read_text(encoding="utf-8")
+    )["components"]["schemas"]
     payload = {"mode": mode, "fixed_candidate_id": candidate, "fallback": fallback}
     for name in ("Policy", "PolicyWrite"):
         actual = contract_schema()["$defs"][name]
