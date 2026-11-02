@@ -58,6 +58,7 @@
 | B6 validation.md | updated | 修正後実測への参照（上表は修正前の記録値と明記） |
 | B6 pr28-review-fixes-validation.md / pr28-review-test-comparison.json | updated | 新規。実測・追加テスト・未検証 |
 | B6 README.md | updated | 資料一覧と冪等性の範囲 |
+| B6 outbox.md | updated | 書込み飽和時に読取が`store_busy`（再試行可能）になり得ること（Windows CIで観測） |
 | B6 control.schema.json / examples.json | reviewed-no-change | `AcceptedQueue`はDTOではなくschemaのbytes不変（`--check`成功）。例は引き続き適合 |
 | B1〜B5 schema/資料 | reviewed-no-change | bytes不変、変更なし |
 | pyproject.toml | updated | descriptionのみ。version 0.1.35維持 |
