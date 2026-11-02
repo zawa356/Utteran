@@ -1,5 +1,7 @@
 # Phase B5 — Preset / Policy / Editing API
 
+> **現在の状態（2026-11-02）：[PR #26](https://github.com/zawa356/Utteran/pull/26)でmainへ統合済み（merge commit `8a3f175`）、未リリースです。** 以下のDraft・baseに関する記載は提出当時の履歴です。CI・実機・DB保持消去は未解決のままです。[統合記録](../integration-2026-11-02.md)を参照。
+
 2026-11-02 JST、0.1.34、未マージ・未リリース。B4 PR #25のDraft/base B3/HEAD
 `f6c2a9546e1ee9b780f8c1a098f7bcdfc7096314`を再確認して
 `feat/b5-preset-policy-editing-api`を分岐。[Draft PR #26](https://github.com/zawa356/Utteran/pull/26)はB4へのstacked PR。mainへマージしない。
