@@ -149,6 +149,7 @@ def create_app(
     v1_store_path: Path | None = None,
     enable_v1_jobs: bool = False,
     v1_jobs_runtime: Any = None,
+    enable_v1_setup: bool = False,
 ) -> FastAPI:
     """Create one session-scoped application without importing the CLI package."""
     if not session_key:
@@ -195,14 +196,29 @@ def create_app(
             from utteran_gui.jobs_api import register_job_routes
 
             v1_runtime = v1_jobs_runtime or _default_job_runtime(
-                repo_root, settings_path, selected_queue, selected_cli
+                repo_root,
+                settings_path,
+                selected_queue,
+                selected_cli,
+                setup=enable_v1_setup,
+                tokens=selected_tokens,
+                popen_factory=supervisor.popen,
             )
+            if enable_v1_setup and getattr(v1_runtime, "setup", None) is None:
+                raise ValueError("v1 setup requires a job runtime with setup components")
             v1_runtime.activate()  # explicit opt-in cutover: refuses if legacy work exists
             app.state.v1_jobs_runtime = v1_runtime
             register_job_routes(v1_app, v1_runtime)
+            if enable_v1_setup:
+                # Same sub-app and same runtime: setup and jobs share one heavy slot.
+                from utteran_gui.setup_api import register_setup_routes
+
+                register_setup_routes(v1_app, v1_runtime)
+        elif enable_v1_setup:
+            raise ValueError("v1 setup requires the v1 job runtime")
         app.mount("/api/v1", v1_app)
-    elif enable_v1_jobs:
-        raise ValueError("v1 jobs require the v1 settings application")
+    elif enable_v1_jobs or enable_v1_setup:
+        raise ValueError("v1 jobs/setup require the v1 settings application")
 
     def shutdown_processes() -> None:
         runtime = getattr(app.state, "v1_jobs_runtime", None)
@@ -633,7 +649,14 @@ def create_app(
 
 
 def _default_job_runtime(
-    repo_root: Path, settings_path: Path, queue: OperationQueue, cli: CliAdapter
+    repo_root: Path,
+    settings_path: Path,
+    queue: OperationQueue,
+    cli: CliAdapter,
+    *,
+    setup: bool = False,
+    tokens: Any = None,
+    popen_factory: Any = None,
 ) -> Any:
     """Opt-in only: imported lazily so default startup never loads the control store."""
     from utteran_gui.capability_inventory import CapabilityInventoryAdapter
@@ -643,6 +666,23 @@ def _default_job_runtime(
     from utteran_paths import resolve_data_paths
 
     paths = resolve_data_paths(repo_root)
+    components = None
+    if setup:
+        from utteran_gui.job_runtime import SetupComponents
+        from utteran_gui.setup_executor import ProcessChildRunner, ProductionStepAdapter
+        from utteran_gui.setup_planner import SetupObserver
+
+        def credential_present() -> bool:
+            # Presence only; the value is never read into the control store.
+            return bool(tokens is not None and tokens.status().configured)
+
+        components = SetupComponents(
+            observer=SetupObserver(
+                cli, models_root=paths.models, credential_present=credential_present
+            ),
+            adapter=ProductionStepAdapter(cli),
+            runner=ProcessChildRunner(popen_factory),
+        )
     return JobRuntime(
         store_path=paths.control_store,
         settings_path=settings_path,
@@ -650,6 +690,7 @@ def _default_job_runtime(
         provider=BridgeResolutionProvider(CapabilityInventoryAdapter(cli)),
         runner=WorkerClient(repo_root),
         job_dir=paths.jobs,
+        setup=components,
     )
 
 

@@ -15,9 +15,10 @@ import contextlib
 import secrets
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from utteran_contracts.control import RecoveryReport
 from utteran_control.job_repository import JobControlStore
@@ -26,6 +27,16 @@ from utteran_gui.job_admission import JobAdmission, ResolutionProvider
 from utteran_gui.job_dispatcher import JobDispatcher, WorkerRunner
 from utteran_gui.operation_queue import OperationQueue
 from utteran_gui.process_verifier import OsProcessVerifier, current_owner
+
+
+@dataclass(frozen=True)
+class SetupComponents:
+    """B8 opt-in parts: read-only observer, fixed step adapter and child runner."""
+
+    observer: Any
+    adapter: Any
+    runner: Any
+    work_dir: Path | None = None
 
 
 class RuntimeStateError(Exception):
@@ -51,6 +62,7 @@ class JobRuntime:
         lease_seconds: int = 60,
         poll_interval: float = 0.5,
         autostart_dispatcher: bool = True,
+        setup: SetupComponents | None = None,
     ) -> None:
         self.store_path = store_path
         self.settings_path = settings_path
@@ -63,6 +75,9 @@ class JobRuntime:
         self.lease_seconds = lease_seconds
         self.poll_interval = poll_interval
         self.autostart_dispatcher = autostart_dispatcher
+        # B8 opt-in: when set, the store opens at layout v4 (one-way; see b8/storage.md).
+        self.setup = setup
+        self.setup_executor: Any = None
         self.state: Literal["inactive", "active"] = "inactive"
         self.store: JobControlStore | None = None
         self.admission: JobAdmission | None = None
@@ -92,7 +107,12 @@ class JobRuntime:
             dispatcher: JobDispatcher | None = None
             try:
                 existed = self.store_path.exists()
-                store = JobControlStore(self.store_path, clock=self.clock)
+                store_type: type[JobControlStore] = JobControlStore
+                if self.setup is not None:
+                    from utteran_control.setup_repository import SetupControlStore
+
+                    store_type = SetupControlStore
+                store = store_type(self.store_path, clock=self.clock)
                 if existed:
                     self._backup(store, "pre-v1")
                 report = store.recover(self.verifier)
@@ -102,6 +122,18 @@ class JobRuntime:
                     provider=self.provider,
                     clock=self.clock,
                 )
+                executor = None
+                if self.setup is not None:
+                    from utteran_gui.setup_executor import SetupExecutor
+
+                    executor = SetupExecutor(
+                        store,  # type: ignore[arg-type]
+                        adapter=self.setup.adapter,
+                        observer=self.setup.observer,
+                        runner=self.setup.runner,
+                        lease_seconds=self.lease_seconds,
+                        work_dir=self.setup.work_dir,
+                    )
                 dispatcher = JobDispatcher(
                     store,
                     prestart=admission.prestart_check,
@@ -110,6 +142,7 @@ class JobRuntime:
                     job_dir=self.job_dir,
                     lease_seconds=self.lease_seconds,
                     poll_interval=self.poll_interval,
+                    setup=executor,
                 )
                 if self.autostart_dispatcher:
                     dispatcher.start()
@@ -120,6 +153,7 @@ class JobRuntime:
                 raise
             self._queue_token = token
             self.store, self.admission, self.dispatcher = store, admission, dispatcher
+            self.setup_executor = executor
             self.state = "active"
             return report
 
@@ -137,6 +171,7 @@ class JobRuntime:
             self._queue_token = None
             self.state = "inactive"
             self.store = self.admission = self.dispatcher = None
+            self.setup_executor = None
             return backup
 
     def shutdown(self, timeout: float = 30.0) -> None:
