@@ -254,6 +254,19 @@
     "CapabilityObservation": {
       "additionalProperties": false,
       "properties": {
+        "decoder_device_index_observed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decoder Device Index Observed"
+        },
         "decoder_observed": {
           "default": "unknown",
           "enum": [
@@ -266,6 +279,19 @@
           ],
           "title": "Decoder Observed",
           "type": "string"
+        },
+        "encoder_device_index_observed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Encoder Device Index Observed"
         },
         "encoder_observed": {
           "default": "unknown",
@@ -396,6 +422,7 @@
             "runtime_missing",
             "smoke_missing",
             "smoke_route_mismatch",
+            "smoke_route_unverified",
             "stable_id_tiebreak",
             "static_heuristic",
             "supported",
@@ -1095,6 +1122,7 @@
               "runtime_missing",
               "smoke_missing",
               "smoke_route_mismatch",
+              "smoke_route_unverified",
               "stable_id_tiebreak",
               "static_heuristic",
               "supported",
@@ -1232,6 +1260,7 @@
             "runtime_missing",
             "smoke_missing",
             "smoke_route_mismatch",
+            "smoke_route_unverified",
             "stable_id_tiebreak",
             "static_heuristic",
             "supported",
@@ -1878,6 +1907,7 @@
               "runtime_missing",
               "smoke_missing",
               "smoke_route_mismatch",
+              "smoke_route_unverified",
               "stable_id_tiebreak",
               "static_heuristic",
               "supported",
@@ -2002,6 +2032,7 @@
               "runtime_missing",
               "smoke_missing",
               "smoke_route_mismatch",
+              "smoke_route_unverified",
               "stable_id_tiebreak",
               "static_heuristic",
               "supported",
@@ -2085,6 +2116,7 @@
             "runtime_missing",
             "smoke_missing",
             "smoke_route_mismatch",
+            "smoke_route_unverified",
             "stable_id_tiebreak",
             "static_heuristic",
             "supported",

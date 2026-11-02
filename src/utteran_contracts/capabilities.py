@@ -72,6 +72,7 @@ ReasonCode = Literal[
     "hardware_missing",
     "smoke_missing",
     "smoke_route_mismatch",
+    "smoke_route_unverified",
     "component_missing",
     "probe_timeout",
     "probe_error",
@@ -178,6 +179,10 @@ class CapabilityObservation(Contract):
     initialized_route: RequestedRoute | None = None
     encoder_observed: Literal["unknown", "cpu", "cuda", "openvino-gpu", "gpu", "npu"] = "unknown"
     decoder_observed: Literal["unknown", "cpu", "cuda", "vulkan", "gpu", "npu"] = "unknown"
+
+    # Provider-attested runtime indices, never populated from the request by core.
+    encoder_device_index_observed: Annotated[StrictInt, Field(ge=0)] | None = None
+    decoder_device_index_observed: Annotated[StrictInt, Field(ge=0)] | None = None
 
     @model_validator(mode="after")
     def time_range(self) -> CapabilityObservation:
