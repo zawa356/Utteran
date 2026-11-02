@@ -110,8 +110,11 @@ class JobDispatcher:
         lease_seconds: int = 60,
         poll_interval: float = 0.5,
         identity_of: Callable[[int], str | None] = start_identity,
+        setup: Any = None,
     ) -> None:
         self.store = store
+        # B8: optional SetupExecutor sharing this thread and the single heavy slot.
+        self.setup = setup
         self.prestart = prestart
         self.runner = runner
         self.owner = owner
@@ -148,6 +151,8 @@ class JobDispatcher:
         self._wake.set()
 
     def notify_cancel(self, job_id: str) -> None:
+        if self.setup is not None:
+            self.setup.notify_cancel(job_id)
         with self._lock:
             if self._active is not None and self._active.job_id == job_id:
                 self._active.cancel.set()
@@ -155,7 +160,9 @@ class JobDispatcher:
     @property
     def active_job_id(self) -> str | None:
         with self._lock:
-            return None if self._active is None else self._active.job_id
+            if self._active is not None:
+                return self._active.job_id
+        return None if self.setup is None else self.setup.active_operation
 
     def stop(self, timeout: float = 30.0) -> bool:
         """Shutdown intent -> no new dispatch -> cooperative cancel -> wait for exit.
@@ -169,6 +176,8 @@ class JobDispatcher:
             active = self._active
         if active is not None:
             self._request_cancel(active)
+        if self.setup is not None:
+            self.setup.request_cancel()
         if self._thread is not None:
             self._thread.join(timeout)
             if self._thread.is_alive():
@@ -203,6 +212,8 @@ class JobDispatcher:
         if candidate is None:
             return False
         job_id, revision = candidate
+        if self.setup is not None and job_id.startswith("setup_"):
+            return bool(self.setup.dispatch(job_id, revision, self.owner))
         snapshot = self.store.get_snapshot(job_id)
         reason = self.prestart(snapshot)
         if reason is None:
