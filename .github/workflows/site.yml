@@ -32,6 +32,17 @@ jobs:
       - name: Install website dependencies
         working-directory: site
         run: npm install --no-audit --no-fund
+      - name: Capture resolved dependency lock (temporary)
+        working-directory: site
+        if: github.event_name == 'pull_request'
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const compact = JSON.stringify(JSON.parse(fs.readFileSync('package-lock.json', 'utf8')));
+          for (let offset = 0; offset < compact.length; offset += 1800) {
+            console.log('UTTERAN_LOCK_CHUNK:' + compact.slice(offset, offset + 1800));
+          }
+          NODE
       - name: Build and validate Japanese / English routes
         working-directory: site
         run: npm run build
