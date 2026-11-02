@@ -8,8 +8,12 @@ OpenAPIへ同期した。その他endpointはこの設計案のまま未接続�
 
 2026-11-02 B6追補: §4の冪等性（HMAC、replay先行、同transaction）と§5のOutbox/epoch:seq/
 snapshot watermarkは、**HTTPなしの内部control store**として（Queue dispatchのreplayを含む）[B6](../b6/README.md)にDraft実装。
-`/api/v1/events`・`/api/v1/sync`・jobs/setup-operations endpointは未実装（B7〜B9）。
+`/api/v1/events`・`/api/v1/sync`・setup-operations endpointは未実装（B8〜B9）。
 EventEnvelope/SyncSnapshotとの差分は[B6 compatibility](../b6/compatibility.md)。
+
+2026-11-02 B7追補（Draft）: jobs/queue/execution-resolutions endpointをopt-inで実装。公開`Job`は
+allowlistの`JobSnapshotSummary`を返し、private snapshot（path・settings）は返さない等の差異は
+[B7 baseline-and-scope](../b7/baseline-and-scope.md)。diagnostics・force cancelは未実装。
 
 ## 1. 独立した管理概念
 
