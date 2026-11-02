@@ -14,6 +14,9 @@ EventEnvelope/SyncSnapshotとの差分は[B6 compatibility](../b6/compatibility.
 2026-11-02 B7追補（Draft）: jobs/queue/execution-resolutions endpointをopt-inで実装。公開`Job`は
 allowlistの`JobSnapshotSummary`を返し、private snapshot（path・settings）は返さない等の差異は
 [B7 baseline-and-scope](../b7/baseline-and-scope.md)。diagnostics・force cancelは未実装。
+PR #32レビュー修正: §list responseの「filter付きsnapshot pagination、期限切れ409」にB7 `GET /jobs`を
+一致させた（プロセス内snapshot、再起動でも409 `cursor_expired`、上限超過は503）。同key並行POSTの
+処理中は再試行可能な503 `submission_in_progress`を返す（§4の冪等性は維持）。[記録](../b7/pr32-review-fixes-validation.md)。
 
 ## 1. 独立した管理概念
 

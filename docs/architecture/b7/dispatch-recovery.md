@@ -44,6 +44,9 @@ backend能力・Windows実機検証がないため409。停止未確認ならlea
 | 記録identityなし・権限不足・例外 | unknown | unknown |
 
 PIDだけを生存証拠にしない。macOS等はPID不在のみgone、それ以外unknown。
+Windowsは`OpenProcess`/`GetProcessTimes`/`GetExitCodeProcess`/`CloseHandle`の`argtypes`/`restype`を
+明示し（HANDLEをpointer幅で扱う）、判定は`observe_windows()`の純関数として64-bit handleのfakeで検証する。
+OpenProcess後のAPI失敗はUNKNOWN、handleは`finally`でclose、close失敗は判定に影響しない（PR #32 P3）。
 
 ## Recovery（`recover()`はv1 activate時のみ）
 
