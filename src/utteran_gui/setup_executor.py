@@ -15,6 +15,7 @@ except the bounded JSON status line of the credential preflight.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import shutil
@@ -71,11 +72,112 @@ class ChildRunner(Protocol):
     ) -> ChildResult: ...
 
 
-class ProcessChildRunner:
-    """Production runner: ``Popen(shell=False)`` via the GUI process supervisor."""
+class ChildOutputError(Exception):
+    """A pipe reader failed after the child exit was observed (exit is confirmed)."""
 
-    def __init__(self, popen_factory: Callable[..., Any] | None = None) -> None:
+
+READ_CHUNK = 64 * 1024
+# After the direct child exits, its pipes must reach EOF within this grace period; a
+# descendant still holding them means the process tree is not confirmed finished.
+PIPE_EOF_GRACE = 10.0
+
+
+class _Drain:
+    """Reads one pipe to EOF in fixed-size chunks and drops the bytes.
+
+    Memory is bounded by ``READ_CHUNK`` plus, when ``capture`` is set, one candidate status
+    line of at most ``MAX_STATUS_LINE`` bytes (a longer line is discarded, never truncated).
+    """
+
+    def __init__(self, stream: Any, *, capture: bool) -> None:
+        self.stream = stream
+        self.capture = capture
+        self.error: BaseException | None = None
+        self.json_lines: list[str] = []
+        self.ambiguous = False
+        self._line = bytearray()
+        self._overflow = False
+        self.thread = threading.Thread(target=self._run, daemon=True, name="utteran-setup-pipe")
+
+    def _end_line(self) -> None:
+        if self.capture and not self._overflow and self._line.strip():
+            try:
+                text = self._line.decode("utf-8").strip()
+            except UnicodeDecodeError:
+                text = ""
+            if text.startswith("{"):
+                if len(self.json_lines) >= 1:
+                    self.ambiguous = True
+                else:
+                    self.json_lines.append(text)
+        elif self.capture and self._overflow:
+            self.ambiguous = True  # an over-long line may have been a status: refuse
+        self._line.clear()
+        self._overflow = False
+
+    def _feed(self, chunk: bytes) -> None:
+        if not self.capture:
+            return
+        start = 0
+        while True:
+            index = chunk.find(b"\n", start)
+            piece = chunk[start:] if index < 0 else chunk[start:index]
+            if not self._overflow:
+                if len(self._line) + len(piece) > MAX_STATUS_LINE:
+                    self._overflow = True
+                    self._line.clear()
+                else:
+                    self._line.extend(piece)
+            if index < 0:
+                return
+            self._end_line()
+            start = index + 1
+
+    def _run(self) -> None:
+        reader = getattr(self.stream, "read1", None) or self.stream.read
+        try:
+            while True:
+                chunk = reader(READ_CHUNK)
+                if not chunk:
+                    break
+                self._feed(chunk)
+            self._end_line()
+        except BaseException as exc:  # reported to the runner; never re-raised here
+            self.error = exc
+
+    def status(self) -> str | None:
+        if self.ambiguous or len(self.json_lines) != 1:
+            return None
+        try:
+            parsed = json.loads(self.json_lines[0])
+        except ValueError:
+            return None  # malformed: never interpreted
+        return self.json_lines[0] if isinstance(parsed, dict) else None
+
+
+def _close(stream: Any) -> None:
+    with contextlib.suppress(Exception):
+        if stream is not None:
+            stream.close()
+
+
+class ProcessChildRunner:
+    """Production runner: ``Popen(shell=False)`` via the GUI process supervisor.
+
+    stdout and stderr are drained *concurrently* by two reader threads (no ``selectors``,
+    so Windows pipes work), in bounded chunks that are discarded. Only stdout is a trusted
+    status channel. The runner never declares a child finished without observing its
+    exit and the EOF of both pipes; otherwise it raises ``ChildUnconfirmed``.
+    """
+
+    def __init__(
+        self,
+        popen_factory: Callable[..., Any] | None = None,
+        *,
+        eof_grace: float = PIPE_EOF_GRACE,
+    ) -> None:
         self.popen_factory: Callable[..., Any] = popen_factory or subprocess.Popen
+        self.eof_grace = eof_grace
 
     def run(
         self,
@@ -89,27 +191,55 @@ class ProcessChildRunner:
         from utteran_gui.processes import build_popen_kwargs
 
         kwargs = build_popen_kwargs(cwd=cwd, env=env)
+        # Binary pipes: bounded chunk reads (no line assembly in a text wrapper).
+        for name in ("text", "encoding", "errors", "bufsize"):
+            kwargs.pop(name, None)
         kwargs["shell"] = False
         process = self.popen_factory(argv, **kwargs)
         try:
             on_spawn(process)
-        except BaseException:
+        except BaseException as exc:
             _stop(process)
+            with contextlib.suppress(Exception):
+                process.wait(timeout=5)
+            alive = process.poll() is None
+            _close(process.stdout)
+            _close(process.stderr)
+            if alive:
+                raise ChildUnconfirmed from exc
             raise
-        status: str | None = None
+        drains = [
+            _Drain(stream, capture=capture_status and stream is process.stdout)
+            for stream in (process.stdout, process.stderr)
+            if stream is not None
+        ]
+        for drain in drains:
+            drain.thread.start()
         try:
-            for stream in (process.stdout, process.stderr):
-                if stream is None:
-                    continue
-                for line in stream:  # drained and dropped: no raw output is persisted
-                    text = line.strip()
-                    if capture_status and text.startswith("{") and len(text) <= MAX_STATUS_LINE:
-                        status = text
-            code = process.wait()
+            while True:
+                try:
+                    code = process.wait(timeout=0.5)
+                    break
+                except subprocess.TimeoutExpired:
+                    if any(not d.thread.is_alive() and d.error is not None for d in drains):
+                        # A pipe can no longer be drained while the child still runs.
+                        raise ChildUnconfirmed from None
+        except ChildUnconfirmed:
+            raise
         except BaseException:
             if process.poll() is None:
                 raise ChildUnconfirmed from None
             raise
+        deadline = time.monotonic() + self.eof_grace
+        for drain in drains:
+            drain.thread.join(max(0.0, deadline - time.monotonic()))
+        if any(drain.thread.is_alive() for drain in drains):
+            raise ChildUnconfirmed  # a descendant still holds the pipes
+        for stream in (process.stdout, process.stderr):
+            _close(stream)
+        if any(drain.error is not None for drain in drains):
+            raise ChildOutputError
+        status = next((d.status() for d in drains if d.capture), None)
         return ChildResult(int(code), status)
 
 
