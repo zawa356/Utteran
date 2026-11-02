@@ -34,6 +34,7 @@
 | .github/workflows/ci.yml | updated | B6 schema checkと3.11/3.12契約jobへB6 test追加。既知CI問題は修正しない |
 | GitHub Issue #17 / #18 | updated | B6 Draft実装・検証・レビュー待ち、B7/B8/B9未実装を事実のみ追記。完了チェック・closeはしない |
 | GitHub Issue #27 | reviewed-no-change | リンク記録のみ。本PRでCI改善を行ったとは主張しない |
+| Draft PR #28 / Actions | updated | base B5、Draft。run 41390499258の実測をvalidation.mdとPR本文へ記録（Windows 1011/4skip、3.11/3.12各411、workflowは既知課題で赤） |
 | 全体品質gate（Linux mypy9/pytest2、Windows Inno Setup、PID競合、BOM、既存fixture scan） | blocked | baselineから存在する既知課題、#27の範囲。B6新規回帰なし |
 | Windows ACL/実配布/実process recovery | blocked | 未検証。B7（実process）・U3（配布/VM）で確認 |
 | 保持期限・完全消去・暗号化 | blocked | 方針未決（レビュー事項）。B6はGCせず既存private履歴を削除しない |
