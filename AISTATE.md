@@ -1,5 +1,15 @@
 # AI 作業状態
 
+## PR #24 B3レビュー修正（2026-11-02、Draft維持）
+
+- P1 `c9e9aca`: B1/B2/B3テストのUTF-8読書きを明示。P2 `03e7782`: 受理前の限定匿名errorを
+  元reason codeのまま受理し、accepted後の全ID一致・部分null/偽装/重複terminal拒否を維持。
+- [検証追補](docs/architecture/b3/pr24-review-validation.md)に修正前100件の分類・97 ERROR node一覧を保存。
+- 修正後Windows pytestは723成功/失敗0/エラー0/3skip。後続PowerShell labは既存Inno Setup前提不足で
+  初観測の失敗。Windows job全体は未合格。Linux CIは既存mypy9件で失敗、ローカルpytest715/既知3/8。
+- B3関連126件、Python3.11 wheel186件成功。依存/lock/version/通常CLI・GUI経路・B1/B2 branchは変更しない。
+- 同じDraft PR #24へpush。最終HEADのActionsはPR本文で報告し、Ready化・merge・B4着手はしない。
+
 ## Phase B3 Profile Worker / 構造化IPC（0.1.32、2026-11-02、レビュー待ち）
 
 - B2 HEAD ff45892を確認し、diarization_deviceのP2を独立commit `294c383` でB2へpush。
