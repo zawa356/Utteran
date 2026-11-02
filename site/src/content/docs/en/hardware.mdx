@@ -1,0 +1,30 @@
+---
+title: Supported hardware
+description: Operating systems, GPU paths, and inference profiles.
+---
+
+**Windows 10/11 is the primary target.** Linux has secondary CLI-oriented test coverage, but is not covered by the same desktop acceptance criteria as Windows.
+
+## Inference profiles
+
+| Profile | Typical hardware | ASR acceleration | GPU diarization |
+| --- | --- | --- | --- |
+| `cpu` | CPU-only systems | CPU | None |
+| `cuda` | NVIDIA GPU | CUDA | CUDA |
+| `intel` | Intel GPU (integrated / Arc) | OpenVINO / Vulkan and related paths | Intel XPU |
+| `vulkan` | Vulkan-compatible GPUs (including some AMD GPUs) | Vulkan | None (CPU only) |
+
+This table describes supported categories, not a guarantee for every device and driver combination.
+
+:::tip
+An Intel CPU alone does not mean you should select the `intel` profile. That profile targets Intel GPUs. The desktop setup wizard can help identify an appropriate configuration.
+:::
+
+## Requirements
+
+- Windows 10/11 for the installer or portable desktop build
+- Microsoft Edge WebView2 Runtime for the GUI (commonly already available on Windows 11)
+- Internet connectivity and several gigabytes of space for initial setup and model downloads
+- Appropriate drivers and dependencies for GPU acceleration
+
+See the [profile comparison in the English README](https://github.com/zawa356/Utteran/blob/main/README.en.md) for technical details and limitations.

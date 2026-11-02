@@ -1,0 +1,53 @@
+---
+title: Utteran
+description: Open-source desktop app for local audio and video transcription.
+template: splash
+hero:
+  title: Utteran
+  tagline: Transcribe audio and video locally. Organize speech by speaker and export subtitles or text from a Windows desktop app.
+  actions:
+    - text: Download
+      link: https://github.com/zawa356/Utteran/releases/latest
+      icon: external
+    - text: Get started
+      link: /Utteran/en/getting-started/
+      variant: minimal
+      icon: right-arrow
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Utteran is an open-source application for transcribing meetings, interviews, talks, and other recordings.
+It does not send your input audio to a cloud transcription API.
+
+## Features
+
+<CardGrid>
+  <Card title="Local processing">
+    Run Whisper-based recognition engines on your computer. An internet connection is needed to download models and dependencies initially.
+  </Card>
+  <Card title="Speaker diarization">
+    Optionally group speech by speaker using a supported diarization model.
+  </Card>
+  <Card title="Flexible exports">
+    Export SRT, VTT, JSON, TXT, and Markdown for subtitles, meeting notes, and further processing.
+  </Card>
+  <Card title="Desktop app and CLI">
+    Use the Windows desktop interface for day-to-day work, or the CLI for automation and advanced workflows.
+  </Card>
+</CardGrid>
+
+## Getting started
+
+<CardGrid>
+  <LinkCard title="Install and set up" href="/Utteran/en/getting-started/" description="Install the Windows app and complete the first-run setup." />
+  <LinkCard title="Features and formats" href="/Utteran/en/features/" description="Explore diarization, inference backends, and export options." />
+  <LinkCard title="Supported hardware" href="/Utteran/en/hardware/" description="Find the right CPU, CUDA, Intel, or Vulkan configuration." />
+  <LinkCard title="Privacy" href="/Utteran/en/privacy/" description="Understand local processing and when network access is needed." />
+</CardGrid>
+
+## Source code and releases
+
+[Source code and issues](https://github.com/zawa356/Utteran) / [Published releases](https://github.com/zawa356/Utteran/releases) / [MIT license](https://github.com/zawa356/Utteran/blob/main/LICENSE)
+
+Features in development may differ from the latest published release. Check GitHub Releases for downloadable builds and release notes.
