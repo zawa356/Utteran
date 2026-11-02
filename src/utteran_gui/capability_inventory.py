@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import platform
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from pathlib import PurePath
+from types import MappingProxyType
 from typing import Any
 
 from pydantic import ValidationError
@@ -14,7 +17,9 @@ from utteran_contracts.capabilities import (
     InventoryRefreshRequest,
     InventoryRefreshResult,
     RecipeCatalog,
+    ResolvedSelection,
 )
+from utteran_contracts.settings import Policy
 from utteran_gui.capability_transport import (
     STDOUT_LIMIT,
     BridgeReadError,
@@ -27,13 +32,22 @@ from utteran_gui.cli import CliAdapter, CliError
 Runner = Callable[..., subprocess.CompletedProcess[bytes]]
 
 
+@dataclass(frozen=True)
+class BridgeResolution:
+    """Private result of the profile-side refresh+resolve (B7). Never log or publish."""
+
+    reason_code: str
+    selection: ResolvedSelection | None
+    worker_models: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+
+
 class CapabilityInventoryAdapter:
     def __init__(self, cli: CliAdapter, *, runner: Runner = read_bridge) -> None:
         self.cli = cli
         self.runner = runner
 
     def _read(self, profile: str, action: str, request: bytes | None, timeout: float) -> Any:
-        if action not in {"recipes", "refresh"}:
+        if action not in {"recipes", "refresh", "resolve"}:
             raise BridgeReadError("bridge_invalid")
         info = self.cli.profile_info(profile)
         python = info.path / (
@@ -107,3 +121,55 @@ class CapabilityInventoryAdapter:
                 reason_code=code,
             )
         )
+
+    def resolve(
+        self, request: InventoryRefreshRequest, policy: Policy, *, timeout: float = 30.0
+    ) -> BridgeResolution:
+        """Refresh and resolve in the profile. Scope is re-checked; failures are fixed codes."""
+        body = json.dumps({"refresh": request.to_wire(), "policy": policy.to_wire()})
+        try:
+            payload = self._read(request.profile_id, "resolve", body.encode("utf-8"), timeout)
+            if not isinstance(payload, dict) or set(payload) != {
+                "schema_version",
+                "reason_code",
+                "selection",
+                "worker_models",
+            }:
+                raise ValueError
+            if payload["schema_version"] != 1 or not isinstance(payload["reason_code"], str):
+                raise ValueError
+            if payload["selection"] is None:
+                return BridgeResolution(_known(payload["reason_code"]), None)
+            selection = ResolvedSelection.model_validate(payload["selection"])
+            models = payload["worker_models"]
+            chosen = (selection.selected, *selection.preapproved) if selection.selected else ()
+            ids = {candidate.id for candidate in chosen}
+            if (
+                selection.requested_settings != request.settings
+                or selection.inventory_revision != request.revision
+                or selection.policy != policy
+                or any(
+                    a.candidate.deployment.identity.profile_id != request.profile_id
+                    for a in selection.alternatives
+                )
+                or any(c.deployment.identity.profile_id != request.profile_id for c in chosen)
+                or not isinstance(models, dict)
+                or not set(models) <= ids
+                or not all(
+                    isinstance(v, str) and PurePath(v).is_absolute() for v in models.values()
+                )
+            ):
+                return BridgeResolution("profile_scope_mismatch", None)
+            return BridgeResolution("supported", selection, MappingProxyType(dict(models)))
+        except BridgeReadError as exc:
+            return BridgeResolution(exc.code, None)
+        except subprocess.TimeoutExpired:
+            return BridgeResolution("probe_timeout", None)
+        except (ValidationError, ValueError, TypeError, KeyError):
+            return BridgeResolution("bridge_invalid", None)
+        except (CliError, OSError, subprocess.SubprocessError):
+            return BridgeResolution("bridge_unavailable", None)
+
+
+def _known(code: str) -> str:
+    return code if code in {"bridge_invalid", "probe_error"} else "bridge_invalid"

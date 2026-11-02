@@ -29,6 +29,9 @@ class ErrorCode(StrEnum):
     SLOT_OCCUPIED = "slot_occupied"
     QUEUE_PAUSED = "queue_paused"
     NOT_DISPATCHABLE = "not_dispatchable"
+    # B7 job list snapshots (process-local)
+    LIST_CURSOR_EXPIRED = "cursor_expired"
+    LIST_SNAPSHOT_TOO_LARGE = "list_snapshot_too_large"
 
 
 # Intended HTTP mapping for B9; B6 itself serves no HTTP.
@@ -49,6 +52,8 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.QUEUE_PAUSED: 409,
     ErrorCode.NOT_DISPATCHABLE: 409,
     ErrorCode.STORE_EXISTS: 409,
+    ErrorCode.LIST_CURSOR_EXPIRED: 409,
+    ErrorCode.LIST_SNAPSHOT_TOO_LARGE: 503,
 }
 
 

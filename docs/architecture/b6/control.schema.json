@@ -493,6 +493,7 @@
         "submitted",
         "user_hold",
         "user_release",
+        "user_reorder",
         "user_cancel",
         "cancel_accepted",
         "prestart_revalidation_failed",

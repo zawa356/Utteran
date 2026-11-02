@@ -155,7 +155,11 @@ def create_settings_app(session_key: str, *, authority: str, store_path: Path) -
         origin = request.headers.get("origin")
         if origin is not None and origin != "http://" + authority:
             return error_response(SettingsError("origin_rejected", 403))
-        if request.method in {"POST", "PUT", "DELETE"} and origin is None and header is None:
+        if (
+            request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and origin is None
+            and header is None
+        ):
             return error_response(SettingsError("origin_required", 403))
         return await call_next(request)
 
