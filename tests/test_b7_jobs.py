@@ -1446,7 +1446,9 @@ def test_list_jobs_cursor_is_stable_and_signed(env: Env) -> None:
     rest = env.store.list_jobs(first.next_cursor, limit=2)
     assert len(rest.items) == 1 and rest.next_cursor is None
     with pytest.raises(ControlError) as excinfo:
-        env.store.list_jobs(first.next_cursor[:-1] + "0", limit=2)
+        # Always change the last MAC character (a fixed "0" is a no-op 1/16 of the time).
+        tampered = first.next_cursor[:-1] + ("1" if first.next_cursor[-1] == "0" else "0")
+        env.store.list_jobs(tampered, limit=2)
     assert code(excinfo) == "cursor_invalid"
 
 
