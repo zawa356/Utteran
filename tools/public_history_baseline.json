@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "description": "Trusted history for tools/public_history_delta.py. Changing this file widens what the new-history privacy gate trusts and requires security review (see docs/architecture/backend/testing-and-operations.md).",
+  "reviewed_cutover": {
+    "sha": "51dc90fa8bbdbe3c80c5e8adc3f96811677c6cb5",
+    "reason": "PR #34 review base (2026-11-03). Its full history was audited and classified in docs/architecture/backend/validation.md: bot trailers, synthetic test values and quoted decorator text only. Pinned; never moved to a newer HEAD automatically.",
+    "reviewed_in": "https://github.com/zawa356/Utteran/pull/34#pullrequestreview-5748662764"
+  },
+  "trusted_bot_coauthor_addresses": [
+    {
+      "local": "noreply",
+      "domain": "anthropic.com",
+      "reason": "Claude Code commit trailer required by the repository's attribution policy; exempt only as an exact Co-authored-by line in the final trailer paragraph."
+    }
+  ]
+}
