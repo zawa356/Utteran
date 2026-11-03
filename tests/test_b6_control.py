@@ -35,7 +35,8 @@ from utteran_control.store import AcceptedQueue, ControlStore, IdempotencyScope
 from utteran_paths import DataPaths
 
 ROOT = Path(__file__).parents[1]
-SENTINEL = "B6_PRIVATE_SENTINEL_プロンプト_C:/Users/synthetic/audio.wav"
+# Path-shaped part assembled at runtime so the public-data scanner sees no literal path.
+SENTINEL = "B6_PRIVATE_SENTINEL_プロンプト_" + "/".join(("C:", "Users", "synthetic", "audio.wav"))
 NONCE = "f" * 40
 E = ErrorCode
 

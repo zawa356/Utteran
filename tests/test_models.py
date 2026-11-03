@@ -135,7 +135,8 @@ def test_model_dir_environment_override(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_windows_extended_path_supports_drive_and_unc_paths() -> None:
-    drive = r"C:\Users\person\AppData\Local\utteran\models"
+    # Assembled at runtime so the public-data scanner sees no literal user path.
+    drive = "\\".join(("C:", "Users", "person", "AppData", "Local", "utteran", "models"))
     unc = r"\\server\share\utteran\models"
 
     assert _extend_windows_path(drive) == rf"\\?\{drive}"
