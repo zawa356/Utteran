@@ -103,3 +103,27 @@ def test_reviewed_media_manifest_entries_are_current_and_justified() -> None:
             check=True,
         ).stdout.strip()
         assert current == entry["git_blob_sha1"], entry["path"]
+
+
+def test_diff_markers_are_not_part_of_matched_values() -> None:
+    diff_sections = SCAN["_diff_sections"]
+    diff = (
+        b"diff --git a/src/cli.py b/src/cli.py\n"
+        b"--- a/src/cli.py\n"
+        b"+++ b/src/cli.py\n"
+        b"@@ -1,0 +1,3 @@\n"
+        # Assembled so this file itself holds no address-shaped literal.
+        + b"+"
+        + b'@app.command("eval")\n'
+        + b"+"
+        + b'@router.get("/api/settings")\n'
+        + b"+contact = 'private.account"
+        + b"@"
+        + b"corp.invalid'\n"
+    )
+    sections = list(diff_sections(diff))
+    assert [path for path, _ in sections] == ["src/cli.py"]
+    findings = _scan_bytes(sections[0][1], scope="commit-diff", path="src/cli.py")
+    emails = [f for f in findings if f.detector == "email-address"]
+    # Only the real address in the added line is counted, not the decorators.
+    assert [(f.category, f.count) for f in emails] == [("personal-data", 1)]

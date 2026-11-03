@@ -444,6 +444,12 @@ def _diff_sections(diff: bytes) -> Iterable[tuple[str, bytes]]:
             continue
         if line.startswith(b"+++ b/"):
             path = line[6:].decode("utf-8", errors="surrogateescape").rstrip("\r\n")
+        elif line[:1] in (b"+", b"-", b" ") and not line.startswith((b"+++ ", b"--- ")):
+            # Drop the diff marker: "+" is a valid e-mail local-part character, so an
+            # added decorator line (the "+" marker, then "@app.command(...)") read as
+            # an address.
+            buffer.extend(line[1:])
+            continue
         buffer.extend(line)
     if buffer:
         yield path, bytes(buffer)
