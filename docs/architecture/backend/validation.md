@@ -50,7 +50,7 @@
   修正前のコードに戻すと`test_opt_in_migrates_v3_to_v6_with_restorable_pre_cutover_backup`が失敗することを確認（mutation check）。
 - **B6並行snapshot testのWindows間欠失敗**: run 41592415226でWindowsのみ`store_busy`（PR #28当時と同じreader starvation）。
   `store_busy`は文書化されたretryable（503）なので有界retry（busy 50回まで）とし、25回の完全検証を必須に維持。
-- **history scanのdiff記号誤検出**: `+@app.command(...)`等のデコレータ追加行を、diff記号`+`をlocal partとしてe-mail扱いしていた。
+- **history scanのdiff記号誤検出**: デコレータ（`@app.command(...)`等）の追加行を、行頭のdiff記号`+`をlocal partとしてe-mail扱いしていた。
   内容行の1文字目（`+`/`-`/空白）を除いて走査するよう修正（実アドレスは引き続き検出、テストあり）。
 
 ## 完了時の実測（ローカル、Linux）
@@ -95,7 +95,8 @@ E2E実行後のcleanup: 各testは`tmp_path`のみを使い、`TestClient`のlif
 | [41591215254](https://github.com/zawa356/Utteran/actions/runs/41591215254) | `dd3436c` | **success（11/11 job）** | 独立job化直後。PID test 20/20、PowerShell起動: setup -List 0、run 1、start 0、launch-python -CheckOnly 1、reset-env -WhatIf 0 |
 | [41592415226](https://github.com/zawa356/Utteran/actions/runs/41592415226) | `0dc0a01` | **failure（10/11）** | Windows pytest 1227 passed / **1 failed** / 9 skipped: `test_b6_control.py::test_snapshot_is_consistent_under_concurrent_writes`（`store_busy`）。新E2EはWindowsでも成功 |
 | [41593297070](https://github.com/zawa356/Utteran/actions/runs/41593297070) | `b535e7d` | **success（11/11 job）** | Windows: PID test 20/20、B6 snapshot test 10/10 |
-| 最終 | 下記 | — | PR本文とIssue #27コメントに最終HEADのrun URLを記載 |
+| [41594491528](https://github.com/zawa356/Utteran/actions/runs/41594491528) | `d3633f6` | **failure（10/11）** | `privacy-worktree`がblocking 1を検出: 本書の誤検出説明文そのものがe-mail形状だった。文言を修正（gateは正しく機能） |
+| 最終 | 次のpush | — | PR本文とIssue #27コメントに最終HEADのrun URLを記載 |
 
 PID-file競合とB6 starvationは**間欠事象**のため、1回の成功で解消と結論しない。Windows CIで毎run反復し、証拠を蓄積する。
 
