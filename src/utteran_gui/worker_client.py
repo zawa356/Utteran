@@ -8,6 +8,7 @@ import os
 import platform
 import queue
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -378,7 +379,7 @@ class WorkerClient:
                 with suppress(subprocess.TimeoutExpired):
                     process.wait(timeout=5)
                 # A dead group leader can leave descendants holding pipes open.
-                if os.name != "nt":
+                if sys.platform != "win32":
                     import signal
 
                     with suppress(ProcessLookupError):

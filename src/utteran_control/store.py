@@ -15,6 +15,7 @@ import re
 import secrets
 import sqlite3
 import stat
+import sys
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
@@ -255,7 +256,9 @@ def _check_private(value: Any, depth: int = 0) -> None:
 
 
 def _posix_owned(info: os.stat_result) -> bool:
-    return os.name == "nt" or info.st_uid == os.geteuid()
+    if sys.platform == "win32":
+        return True
+    return info.st_uid == os.geteuid()
 
 
 def _validate_location(path: Path) -> None:

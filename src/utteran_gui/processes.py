@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -33,7 +34,7 @@ class ProcessSupervisor:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._processes: dict[int, subprocess.Popen[str]] = {}
-        self._job_handle = _create_kill_on_close_job() if os.name == "nt" else None
+        self._job_handle = _create_kill_on_close_job() if sys.platform == "win32" else None
         self._closed = False
 
     def popen(self, command: list[str], **kwargs: Any) -> subprocess.Popen[str]:
@@ -155,6 +156,11 @@ def kill_process_tree(process: subprocess.Popen[str]) -> None:
 
 def _create_kill_on_close_job() -> int:
     """Create a Windows Job Object whose members die when the GUI handle closes."""
+    if sys.platform != "win32":
+        # Windows-only Win32 API. This explicit platform branch is also what lets
+        # mypy type-check the body against the real win32 ctypes stubs on Windows
+        # (WinDLL/WinError/get_last_error) instead of failing on POSIX stubs.
+        raise OSError("Job Objects requires Windows")
     import ctypes
     from ctypes import wintypes
 
@@ -216,6 +222,11 @@ def _create_kill_on_close_job() -> int:
 
 
 def _assign_process_to_job(handle: int, process: subprocess.Popen[str]) -> None:
+    if sys.platform != "win32":
+        # Windows-only Win32 API. This explicit platform branch is also what lets
+        # mypy type-check the body against the real win32 ctypes stubs on Windows
+        # (WinDLL/WinError/get_last_error) instead of failing on POSIX stubs.
+        raise OSError("AssignProcessToJobObject requires Windows")
     import ctypes
     from ctypes import wintypes
 
@@ -228,6 +239,11 @@ def _assign_process_to_job(handle: int, process: subprocess.Popen[str]) -> None:
 
 
 def _close_windows_handle(handle: int) -> None:
+    if sys.platform != "win32":
+        # Windows-only Win32 API. This explicit platform branch is also what lets
+        # mypy type-check the body against the real win32 ctypes stubs on Windows
+        # (WinDLL/WinError/get_last_error) instead of failing on POSIX stubs.
+        raise OSError("CloseHandle requires Windows")
     import ctypes
     from ctypes import wintypes
 
