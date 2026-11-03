@@ -2,8 +2,13 @@
 
 ``read_sync`` / ``SyncService`` work on any B7+ store (layout v3 or later) and read the
 resources, the queue, the setup observation counter and the outbox watermark in ONE SQLite
-read transaction. ``ManagedControlStore`` (layout v5 = v4 + a guarded outbox delete) is the
-only class that can compact events; B6/B7/B8 classes refuse a v5 file.
+read transaction.
+
+Layouts: ``EventsControlStore`` opens layout v5 (= v4 + a guarded outbox delete).
+``ManagedControlStore`` -- the class ``JobRuntime`` uses -- opens layout v6 (= v5 + the
+immutable diagnostics attempt sidecar, PR #33 review fix B9-P2-2) and is the class that
+compacts events in production. Migration is one way: B6/B7/B8 classes refuse v5/v6 files
+and ``EventsControlStore`` refuses a v6 file.
 """
 
 from __future__ import annotations

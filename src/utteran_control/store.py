@@ -298,6 +298,53 @@ def _fsync_directory(directory: Path) -> None:
         os.close(descriptor)
 
 
+def _copy_database(
+    source_path: Path,
+    destination: Path,
+    timeout: float,
+    hook: ConnectHook | None,
+    *,
+    verify: Callable[[sqlite3.Connection], object],
+) -> None:
+    """SQLite online backup into a new exclusive 0600 file, verified, else removed."""
+    _validate_location(destination)
+    if destination.resolve() == source_path.resolve():
+        raise ControlError(E.STORE_UNSAFE_PATH)
+    try:
+        info = destination.parent.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise ControlError(E.STORE_UNSAFE_PATH)
+        try:
+            descriptor = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            raise ControlError(E.STORE_EXISTS) from None
+        os.close(descriptor)
+    except ControlError:
+        raise
+    except OSError as exc:
+        raise _storage_error(exc) from None
+    try:
+        with (
+            closing(_connect(source_path, timeout, hook)) as source,
+            closing(_connect(destination, timeout, None)) as target,
+        ):
+            source.backup(target)
+        with closing(_connect(destination, timeout, None)) as check:
+            check.execute("BEGIN")
+            verify(check)
+            check.rollback()
+    except BaseException as exc:
+        # Only the file this call created is removed; the live store is untouched.
+        for leftover in (destination, destination.with_name(destination.name + "-journal")):
+            with suppress(FileNotFoundError):
+                leftover.unlink()
+        if isinstance(exc, ControlError):
+            raise
+        if isinstance(exc, sqlite3.Error | OSError):
+            raise _storage_error(exc) from None
+        raise
+
+
 def _connect(path: Path, timeout: float, hook: ConnectHook | None) -> sqlite3.Connection:
     # mode=rw: never let a later connection silently create a fresh empty database.
     db = sqlite3.connect(
@@ -1521,42 +1568,31 @@ class ControlStore:
 
     def backup(self, destination: Path) -> None:
         """Consistent online copy via the SQLite backup API into a new 0600 file."""
-        _validate_location(destination)
-        if destination.resolve() == self.path.resolve():
-            raise ControlError(E.STORE_UNSAFE_PATH)
-        try:
-            info = destination.parent.lstat()
-            if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-                raise ControlError(E.STORE_UNSAFE_PATH)
-            try:
-                descriptor = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            except FileExistsError:
-                raise ControlError(E.STORE_EXISTS) from None
-            os.close(descriptor)
-        except ControlError:
-            raise
-        except OSError as exc:
-            raise _storage_error(exc) from None
-        try:
-            with (
-                closing(_connect(self.path, self._timeout, self._connect_hook)) as source,
-                closing(_connect(destination, self._timeout, None)) as target,
-            ):
-                source.backup(target)
-            with closing(_connect(destination, self._timeout, None)) as check:
-                check.execute("BEGIN")
-                self._verify(check)
-                check.rollback()
-        except BaseException as exc:
-            # Only the file this call created is removed; the live store is untouched.
-            for leftover in (destination, destination.with_name(destination.name + "-journal")):
-                with suppress(FileNotFoundError):
-                    leftover.unlink()
-            if isinstance(exc, ControlError):
-                raise
-            if isinstance(exc, sqlite3.Error | OSError):
-                raise _storage_error(exc) from None
-            raise
+        _copy_database(
+            self.path, destination, self._timeout, self._connect_hook, verify=self._verify
+        )
+
+    @classmethod
+    def backup_before_open(
+        cls, path: Path, destination: Path, *, timeout: float = DEFAULT_TIMEOUT
+    ) -> int:
+        """Copy an existing store file *before* any class opens (and migrates) it.
+
+        Opening a store with a newer class migrates it in place (one way), so a backup
+        taken after construction already has the new layout and cannot restore the
+        older code path. This copies the file at its current ``user_version`` and
+        returns that version; the copy is integrity-checked but not upgraded.
+        """
+        _validate_location(path)
+        copied: list[int] = []
+
+        def verify(check: sqlite3.Connection) -> None:
+            if check.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise ControlError(E.STORE_CORRUPT)
+            copied.append(int(check.execute("PRAGMA user_version").fetchone()[0]))
+
+        _copy_database(path, destination, timeout, None, verify=verify)
+        return copied[0]
 
     def rotate_epoch(self) -> str:
         """Start a new cursor epoch (required after restoring a backup); old cursors expire."""

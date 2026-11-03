@@ -24,6 +24,7 @@ from utteran_contracts.control import RecoveryReport
 from utteran_control.errors import ControlError
 from utteran_control.job_repository import JobControlStore
 from utteran_control.recovery import ProcessVerifier
+from utteran_control.store import ControlStore
 from utteran_gui.job_admission import JobAdmission, ResolutionProvider
 from utteran_gui.job_dispatcher import JobDispatcher, WorkerRunner
 from utteran_gui.operation_queue import OperationQueue
@@ -89,9 +90,12 @@ class JobRuntime:
         # Unpredictable, per-runtime ownership of the legacy queue; never shared.
         self._queue_token: str | None = None
 
-    def _backup(self, store: JobControlStore, label: str) -> Path:
+    def _backup_target(self, label: str) -> Path:
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        target = self.store_path.with_name(f"operations-{label}-{stamp}.sqlite3")
+        return self.store_path.with_name(f"operations-{label}-{stamp}.sqlite3")
+
+    def _backup(self, store: JobControlStore, label: str) -> Path:
+        target = self._backup_target(label)
         store.backup(target)
         self.last_backup = target
         return target
@@ -109,15 +113,21 @@ class JobRuntime:
             dispatcher: JobDispatcher | None = None
             try:
                 existed = self.store_path.exists()
+                if existed:
+                    # Before construction: opening with a newer class migrates in place
+                    # (one way), so this is the only point where the pre-cutover layout
+                    # (e.g. v3/v4/v5 before v6) can still be preserved for rollback.
+                    target = self._backup_target("pre-v1")
+                    ControlStore.backup_before_open(self.store_path, target)
+                    self.last_backup = target
                 store_type: type[JobControlStore] = JobControlStore
                 if self.setup is not None:
-                    # B8/B9: layout v5 = setup tables + guarded, bounded outbox compaction.
+                    # B8/B9: ManagedControlStore = layout v6 (v4 setup tables, v5 guarded
+                    # outbox compaction, v6 diagnostics attempt sidecar). One-way migration.
                     from utteran_control.events_repository import ManagedControlStore
 
                     store_type = ManagedControlStore
                 store = store_type(self.store_path, clock=self.clock)
-                if existed:
-                    self._backup(store, "pre-v1")
                 report = store.recover(self.verifier)
                 compact = getattr(store, "compact_events", None)
                 if compact is not None:
