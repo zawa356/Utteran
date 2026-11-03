@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -36,7 +37,13 @@ def _simulate_windows(monkeypatch: Any) -> None:
 
 
 def _create_profile(repo: Path, profile: str = "cpu") -> None:
-    executable = repo / ".venvs" / f"win-{profile}" / "Scripts" / "utteran.exe"
+    # Mirror CliAdapter.profile_info's layout for the platform it will observe
+    # (tests that simulate Windows patch platform.system before calling this).
+    # A hard-coded Windows layout made the manifest tests fail on Linux (#27).
+    if platform.system() == "Windows":
+        executable = repo / ".venvs" / f"win-{profile}" / "Scripts" / "utteran.exe"
+    else:
+        executable = repo / ".venvs" / f"linux-{profile}" / "bin" / "utteran"
     executable.parent.mkdir(parents=True)
     executable.write_text("", encoding="utf-8")
 
@@ -265,7 +272,10 @@ def test_supervisor_job_closes_after_forced_parent_exit(tmp_path: Path) -> None:
                 "supervisor = ProcessSupervisor()",
                 "child = supervisor.popen([sys.executable, '-c', 'import time; time.sleep(60)'], "
                 "**build_popen_kwargs(cwd=Path.cwd(), env=dict(os.environ)))",
-                "Path(sys.argv[1]).write_text(str(child.pid), encoding='ascii')",
+                # Publish the PID atomically: a reader never sees a partial write.
+                "staging = Path(sys.argv[1] + '.tmp')",
+                "staging.write_text(str(child.pid), encoding='ascii')",
+                "os.replace(staging, sys.argv[1])",
                 "time.sleep(60)",
             ]
         ),
@@ -277,11 +287,7 @@ def test_supervisor_job_closes_after_forced_parent_exit(tmp_path: Path) -> None:
         env=dict(os.environ),
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
-    deadline = time.monotonic() + 10
-    while not pid_file.is_file() and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert pid_file.is_file()
-    child_pid = int(pid_file.read_text(encoding="ascii"))
+    child_pid = _wait_for_published_pid(pid_file, parent, timeout=10)
 
     parent.kill()
     parent.wait(timeout=10)
@@ -290,6 +296,29 @@ def test_supervisor_job_closes_after_forced_parent_exit(tmp_path: Path) -> None:
         time.sleep(0.05)
 
     assert not _process_exists(child_pid)
+
+
+def _wait_for_published_pid(
+    path: Path, publisher: subprocess.Popen[bytes], *, timeout: float
+) -> int:
+    """Poll until ``path`` holds a complete positive PID (bounded, no fixed sleep).
+
+    Existence alone is not enough: the old check raced the writer and parsed an
+    empty file (``int('')``). Any non-integer content is treated as "not yet
+    published", and a publisher that exits early fails immediately.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            text = path.read_text(encoding="ascii").strip()
+        except (FileNotFoundError, PermissionError):
+            text = ""
+        if text.isdigit() and int(text) > 0:
+            return int(text)
+        if publisher.poll() is not None:
+            pytest.fail(f"PID publisher exited early with code {publisher.returncode}")
+        time.sleep(0.05)
+    pytest.fail(f"no complete PID was published within {timeout} seconds")
 
 
 def _process_exists(pid: int) -> bool:
