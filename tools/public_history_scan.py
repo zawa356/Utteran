@@ -7,6 +7,7 @@ Matched text is never printed or written to disk.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -129,6 +130,56 @@ PATTERNS = (
         blocking=False,
     ),
 )
+
+
+# Exact (path, git blob SHA-1) pairs of media fixtures that a maintainer reviewed as
+# synthetic project test data. Matching both keys keeps the exception as narrow as
+# possible: any content change produces a new blob id and the finding blocks again.
+REVIEWED_MEDIA_MANIFEST = Path(__file__).with_name("public_scan_reviewed_media.json")
+MPEG_TS_PACKET = 188
+MPEG_TS_SYNC = 0x47
+
+
+def _load_reviewed_media(manifest: Path = REVIEWED_MEDIA_MANIFEST) -> frozenset[tuple[str, str]]:
+    if not manifest.is_file():
+        return frozenset()
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != 1:
+        raise RuntimeError(f"unsupported reviewed media manifest: {manifest.name}")
+    reviewed: set[tuple[str, str]] = set()
+    for entry in payload["entries"]:
+        path, blob = str(entry["path"]), str(entry["git_blob_sha1"])
+        if not re.fullmatch(r"[0-9a-f]{40}", blob) or not entry.get("reason"):
+            raise RuntimeError(f"invalid reviewed media entry for {path}")
+        reviewed.add((path, blob))
+    return frozenset(reviewed)
+
+
+REVIEWED_MEDIA = _load_reviewed_media()
+
+
+def git_blob_id(data: bytes) -> str:
+    """Return the Git object id that ``git hash-object`` assigns to raw blob bytes."""
+    return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
+
+
+def _is_text_source(data: bytes) -> bool:
+    """Return True for UTF-8 source text that cannot be an MPEG transport stream.
+
+    ``.ts`` is both TypeScript and MPEG-TS. Transport streams are binary (NUL bytes,
+    0x47 sync byte every 188 bytes); TypeScript is NUL-free UTF-8 text.
+    """
+    if b"\0" in data:
+        return False
+    if len(data) > MPEG_TS_PACKET and all(
+        data[offset] == MPEG_TS_SYNC for offset in range(0, len(data), MPEG_TS_PACKET)
+    ):
+        return False
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
 
 
 def git(root: Path, *args: str, input_bytes: bytes | None = None) -> bytes:
@@ -297,16 +348,50 @@ def _scan_bytes(
     return findings
 
 
-def _path_findings(path: str, *, object_id: str, commit: str, scope: str) -> list[Finding]:
+def _path_findings(
+    path: str,
+    *,
+    object_id: str,
+    commit: str,
+    scope: str,
+    content: bytes | None = None,
+) -> list[Finding]:
+    """Classify a path; ``content`` (when known) may only narrow a media finding.
+
+    Without content every media extension blocks (fail closed). With content, a
+    ``.ts`` TypeScript text file and an exactly reviewed fixture blob are listed as
+    non-blocking findings instead of being dropped, so the report stays auditable.
+    """
     normalized = path.replace("\\", "/")
     pure = PurePosixPath(normalized)
     suffix = pure.suffix.casefold()
     lowered_parts = {part.casefold() for part in pure.parts}
     findings: list[Finding] = []
     if suffix in MEDIA_EXTENSIONS:
-        findings.append(
-            Finding("media", "media-file-path", scope, object_id, commit, path, 1, True)
-        )
+        blob = git_blob_id(content) if content is not None else object_id
+        if suffix == ".ts" and content is not None and _is_text_source(content):
+            findings.append(
+                Finding(
+                    "source-code", "typescript-source-path", scope, blob, commit, path, 1, False
+                )
+            )
+        elif content is not None and (normalized, blob) in REVIEWED_MEDIA:
+            findings.append(
+                Finding(
+                    "reviewed-fixture",
+                    "reviewed-synthetic-media",
+                    scope,
+                    blob,
+                    commit,
+                    path,
+                    1,
+                    False,
+                )
+            )
+        else:
+            findings.append(
+                Finding("media", "media-file-path", scope, object_id, commit, path, 1, True)
+            )
     name = pure.name.casefold()
     if name == ".env" or (name.startswith(".env.") and name != ".env.example"):
         findings.append(
@@ -397,6 +482,7 @@ def scan(root: Path) -> dict[str, object]:
                     object_id=object_id,
                     commit=commit,
                     scope=object_scope,
+                    content=data,
                 )
             )
 
@@ -448,12 +534,13 @@ def scan_worktree(root: Path) -> dict[str, object]:
     paths = [raw.decode("utf-8", errors="surrogateescape") for raw in raw_paths if raw]
     findings: set[Finding] = set()
     for path in paths:
-        findings.update(_path_findings(path, object_id="", commit="HEAD", scope="worktree"))
         candidate = root / path
-        if candidate.is_file():
-            findings.update(
-                _scan_bytes(candidate.read_bytes(), scope="worktree", commit="HEAD", path=path)
-            )
+        content = candidate.read_bytes() if candidate.is_file() else None
+        findings.update(
+            _path_findings(path, object_id="", commit="HEAD", scope="worktree", content=content)
+        )
+        if content is not None:
+            findings.update(_scan_bytes(content, scope="worktree", commit="HEAD", path=path))
     sorted_findings = sorted(findings)
     return {
         "schema_version": 1,

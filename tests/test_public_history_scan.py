@@ -45,3 +45,61 @@ def test_generalized_user_paths_are_non_blocking_placeholders() -> None:
 
     assert findings[0].category == "test-placeholder"
     assert findings[0].blocking is False
+
+
+def test_typescript_source_is_not_media_but_transport_stream_still_blocks() -> None:
+    typescript = b'import { defineCollection } from "astro:content";\nexport const x = 1;\n'
+    packet = bytes([0x47]) + bytes(187)
+    transport_stream = packet * 4
+
+    source = _path_findings(
+        "site/src/content.config.ts", object_id="", commit="c", scope="t", content=typescript
+    )
+    stream = _path_findings(
+        "input/recording.ts", object_id="", commit="c", scope="t", content=transport_stream
+    )
+    unknown = _path_findings("input/recording.ts", object_id="", commit="c", scope="t")
+
+    assert any(f.category == "source-code" for f in source)
+    assert not any(f.blocking for f in source)
+    assert any(f.category == "media" and f.blocking for f in stream)
+    # Without content the classifier must fail closed.
+    assert any(f.category == "media" and f.blocking for f in unknown)
+
+
+def test_reviewed_media_requires_exact_path_and_blob() -> None:
+    git_blob_id = SCAN["git_blob_id"]
+    reviewed = SCAN["REVIEWED_MEDIA"]
+    assert reviewed, "reviewed media manifest must load"
+    path, blob = sorted(reviewed)[0]
+    content = (Path(__file__).parents[1] / path).read_bytes()
+    assert git_blob_id(content) == blob
+
+    exact = _path_findings(path, object_id="", commit="c", scope="t", content=content)
+    edited = _path_findings(path, object_id="", commit="c", scope="t", content=content + b"\0")
+    moved = _path_findings("input/" + path, object_id="", commit="c", scope="t", content=content)
+
+    assert any(f.category == "reviewed-fixture" for f in exact)
+    assert not any(f.blocking for f in exact)
+    assert any(f.category == "media" and f.blocking for f in edited)
+    assert any(f.category == "media" and f.blocking for f in moved)
+
+
+def test_reviewed_media_manifest_entries_are_current_and_justified() -> None:
+    import json
+    import subprocess
+
+    root = Path(__file__).parents[1]
+    manifest = json.loads(
+        (root / "tools" / "public_scan_reviewed_media.json").read_text(encoding="utf-8")
+    )
+    for entry in manifest["entries"]:
+        assert entry["reason"] and entry["evidence"]
+        current = subprocess.run(
+            ["git", "hash-object", "--", entry["path"]],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert current == entry["git_blob_sha1"], entry["path"]
