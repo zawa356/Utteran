@@ -78,7 +78,7 @@ E2E実行後のcleanup: 各testは`tmp_path`のみを使い、`TestClient`のlif
 | 時点 | blocking | 内訳 |
 |---|---|---|
 | 開始時 | 373 | media 316（3 pathの全commit分）、commit-message e-mail 45、commit-diff e-mail 7、blob e-mail 1、absolute-user-path 4 |
-| 最終（CI run 41595136352、refs 44 / commits 376 / objects 3932、ローカルgc後も同値で再現） | **68** | commit-message e-mail 58、commit-diff e-mail 4、blob e-mail 2、absolute-user-path 4。**media 0** |
+| 最終（CI run 41595136352、HEAD `b83669c`、refs 44 / commits 376 / objects 3932、ローカルgc後も同値で再現）※`51dc90f`では69（下記「PR #34レビュー修正」） | **68** | commit-message e-mail 58、commit-diff e-mail 4、blob e-mail 2、absolute-user-path 4。**media 0** |
 
 残存分類（値は表示せず、ハッシュ・種別のみで判定）:
 
@@ -102,6 +102,85 @@ E2E実行後のcleanup: 各testは`tmp_path`のみを使い、`TestClient`のlif
 
 
 PID-file競合とB6 starvationは**間欠事象**のため、1回の成功で解消と結論しない。Windows CIで毎run反復し、証拠を蓄積する。
+
+## PR #34レビュー修正（2026-11-03、[review 5748662764](https://github.com/zawa356/Utteran/pull/34#pullrequestreview-5748662764)）
+
+開始時: branch HEAD = PR head = `51dc90fa8bbdbe3c80c5e8adc3f96811677c6cb5`、`main` = `e803ecc3dcaff48973342521c8bd77ecf1bbb353`（fetchで再確認、他者commitなし）。
+
+### P3: 全履歴監査 68 → 69
+
+上の「68」は run 41595136352（HEAD `b83669c`）の値で、最終HEAD `51dc90f` の値ではなかった。両方とも、その時点の実測として残す。
+
+| run | event | HEAD | refs / commits / objects | blocking |
+|---|---|---|---|---|
+| [41595136352](https://github.com/zawa356/Utteran/actions/runs/41595136352) | push | `b83669c` | 44 / 376 / 3932 | 68 |
+| [41596365964](https://github.com/zawa356/Utteran/actions/runs/41596365964) | push | `51dc90f` | 44 / 377 / 3938 | 69 |
+| [41596371106](https://github.com/zawa356/Utteran/actions/runs/41596371106) | pull_request | `51dc90f`（仮想merge commitをcheckout） | 44 / 378 / 3939 | 69 |
+| ローカル再現 | — | `51dc90f`（scanner = `51dc90f`の`tools/public_history_scan.py`） | 45 / 377 / 3938 | 69 |
+
+特定方法: `51dc90f`と`b83669c`のredacted JSON reportを、(category, detector, scope, object, commit, path)の集合で比較した。
+
+- 追加されたのは1件だけで、`personal-data/email-address`、scope `commit-message`、commit `51dc90f`。
+- 一致値をmaskして確認すると、そのcommit自身の`Co-Authored-By`行のbot（noreply）アドレスだった。
+- 削除されたfindingは無い。
+
+PR runのcommits 378は、push runより1多い。GitHubの仮想merge commit（`refs/pull/34/merge`）を含むためと考えられる。
+
+- fetch時点のmerge ref（parents `e803ecc3` / `51dc90f`）のmessageは「Merge … into …」だけで、アドレスを含まない。そのためblockingは同じ69になる。
+- ただし、runで使われたmerge commitのSHAとfetch時点のSHAが同一かは確認していない。
+
+再現手順:
+`git checkout 51dc90f && uv run --no-sync python tools/public_history_scan.py --json <out>`を実行し、
+同じ手順で作った`b83669c`のreportとfinding集合を比較する。総数はrefs・objectsの差で変わるため、合否には使わない。
+
+### P2: 新規履歴gate
+
+原因: `privacy-worktree`は最終treeしか見ない。`privacy-history`はreport onlyで、常に成功していた。
+そのため、commit Aで漏洩してcommit Bで削除した場合でもCIが緑になった。
+
+是正:
+- `tools/public_history_delta.py`を追加した（定義は[testing-and-operations.md](testing-and-operations.md#新規履歴privacy-gateprivacy-history-delta)）。
+- 範囲は`git rev-list <candidate> --not <trusted base> 51dc90f`。cutoverは`tools/public_history_baseline.json`に固定した。
+- CIに独立job `privacy-history-delta`を追加し、12 jobにした。
+- 合計件数の比較・前回値との差・全履歴への`--fail-on-findings`は使っていない。
+
+回帰テスト`tests/test_public_history_delta.py`（17件、tmp git repo、合成値は実行時に組立て）:
+
+- 既知履歴のみなら成功
+- A追加・B削除（worktree 0）で失敗
+- 合成のアドレス、user path、`.env`、未レビューmediaは、追加後に削除しても失敗
+- 総件数が同じでも、既知findingの削除と新規findingの追加なら失敗
+- 既知の値を別pathへ置くと失敗し、既知行が残ったままの編集は成功
+- 厳密なbot trailerは成功し、本文中や未登録co-authorのアドレスは失敗
+- 秘密値のない連続commitと、信頼済みmainのmergeは成功
+- cutoverは固定され、それより後のcommitは必ず検査される
+- base・candidate・cutoverの不在、空範囲、shallow clone、壊れたbaselineはexit 2
+- 失敗時の出力とJSONに、合成値やpathが含まれない
+- event解決（PR、branch push、main push、`before`が全0、未対応event）
+- reviewed WAVとTypeScriptの例外が維持される
+
+mutation確認: 次の2つの改変で、テストが失敗することを確かめた。
+- 候補commitだけを走査するよう改変 → 8件失敗
+- `noreply`を含むアドレスを全面的に許可するよう改変 → 1件失敗
+
+実repoでの実行（ローカル、`3f692a6`）: candidate `3f692a6`、trusted base `e803ecc3`、cutover `51dc90f`、new_commits 1、**new_blocking 0**。
+push event形式（branch push → `origin/main`）でも同じ結果だった。
+
+### レビュー修正後のCI（HEAD `8e2e61b`、12 job）
+
+| run | event | worktree blocking | **new-history gate** | full-history report |
+|---|---|---|---|---|
+| [41617288565](https://github.com/zawa356/Utteran/actions/runs/41617288565) | push（branch → trusted base = `origin/main` `e803ecc3`） | 0 | candidate `8e2e61b`、cutover `51dc90f`、new_commits 2、**new_blocking 0** | refs 44 / commits 379 / objects 3950、blocking 71 |
+| [41617297676](https://github.com/zawa356/Utteran/actions/runs/41617297676) | pull_request（base.sha `e803ecc3`、head.sha `8e2e61b`） | 0 | new_commits 2、**new_blocking 0** | report only |
+
+両runとも12/12 job success。Linux/Windows pytest、契約3.11/3.12、Ruff、mypy（linux/win32）、schema 8種、lock、BOM、PowerShellは退行なし。
+
+full-historyの69→71は、ローカルでfinding集合を比較して特定した。
+
+- 追加は2件で、新commit `3f692a6`と`8e2e61b`のcommit messageにあるbot trailer。削除は0件。
+- これは新規履歴gateが例外として扱う、厳密なbot trailerと同じものである。
+- 総数はこのようにcommitの追加ごとに増えるので、合否はnew-history gateで判定する。
+- このdocs commit以降の値は、PR本文に記録する。
 
 ## 未実施（確認済みと扱わない）
 

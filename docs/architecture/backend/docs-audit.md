@@ -27,6 +27,18 @@
 | `tools/public_history_scan.py` / `tools/public_scan_reviewed_media.json` | updated / new | `.ts`内容判定、レビュー済み`(path, blob)`、diff記号の誤検出修正 |
 | `tools/acceptance/*` | reviewed-no-change | 旧CLI経路の実機受入用。v1の根拠ではないことを[testing-and-operations.md](testing-and-operations.md#既存のtoolsacceptance)に明記 |
 
+## PR #34レビュー修正での追補（2026-11-03）
+
+| 文書・ファイル | 判定 | 理由・変更内容 |
+|---|---|---|
+| `tools/public_history_delta.py` / `tools/public_history_baseline.json` / `tests/test_public_history_delta.py` | **new** | P2: 新規commit全系列のprivacy gate、固定cutover、17件の回帰テスト |
+| `.github/workflows/ci.yml` | updated | `privacy-history-delta` jobを追加（12 job）。他jobは不変 |
+| `testing-and-operations.md` | updated | 3つのprivacy検査の役割分担、範囲・cutover・将来PRの基準、fail-closedコード、信頼の限界（branch protection / required check / CODEOWNERS） |
+| `validation.md` | updated | P3: 68（`b83669c`）と69（`51dc90f`）を別時点の実測として記録し、差の1件を特定。P2の結果。過去の表は注記の追加のみ |
+| `AGENTS.md` | updated | 品質ゲートに新規履歴gateを追加 |
+| `変更履歴.md` | updated | 0.1.39のCI節に新規履歴gateを1行追加（versionは0.1.39のまま） |
+| `README.md` / `README.en.md` / `AISTATE.md` / `要件定義.md` / Phase A・B8・B9文書 | reviewed-no-change | 利用者向け機能・API・version（0.1.39）・DBに変更はない。CI/privacyの正本はbackend文書に集約している |
+
 ## リンク検証
 
 `tests/test_docs_links.py`が`AGENTS.md`、`README.md`、`README.en.md`、`docs/architecture/README.md`、

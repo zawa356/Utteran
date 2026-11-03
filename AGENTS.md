@@ -26,7 +26,8 @@ Priority when sources disagree: code → offline schemas (`docs/architecture/b*/
 
 `uv lock --check` · `ruff check` / `ruff format --check` on `src tests tools` · `mypy` and `mypy --platform win32` ·
 `pytest -m "not requires_model"` · the 8 schema `--check` commands · `tools/check_powershell_bom.py` ·
-`tools/public_history_scan.py --worktree --fail-on-findings`.
+`tools/public_history_scan.py --worktree --fail-on-findings` · `tools/public_history_delta.py` (new commits must add no private data,
+even if a later commit removes it; the reviewed cutover in `tools/public_history_baseline.json` changes only by reviewed PR).
 Never mask a failing gate (`continue-on-error`, `|| true`, skipping or deleting tests, broad scan allowlists).
 Every tracked `.ps1` needs a UTF-8 BOM and must be classified in the CI startup allowlist.
 

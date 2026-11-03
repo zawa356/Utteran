@@ -2,7 +2,7 @@
 
 ## CIジョブ（`.github/workflows/ci.yml`）
 
-Issue #27の是正で、各品質ゲートを**`needs:`の無い独立job**に分けた。1つの赤が他のゲートを隠さない。
+Issue #27の是正で、各品質ゲートを**`needs:`の無い独立job**に分けた（PR #34レビュー修正で新規履歴gateを追加し12 job）。1つの赤が他のゲートを隠さない。
 `continue-on-error`・`|| true`・`if: always()`による緑化はしていない。
 
 | job | runner | 検査 | 守備範囲外 |
@@ -16,7 +16,59 @@ Issue #27の是正で、各品質ゲートを**`needs:`の無い独立job**に�
 | `contracts-python-compatibility` | ubuntu 3.11/3.12 | 契約・境界・B5〜B9・**B7〜B9横断E2E**のtestとschema `--check` | — |
 | `powershell-bom` | ubuntu | 全tracked `.ps1`のUTF-8 BOM | — |
 | `privacy-worktree` | ubuntu | tracked fileのscan、blocking 1件以上で失敗 | 履歴 |
-| `privacy-history` | ubuntu | 全reachable履歴のredacted report（`fetch-depth: 0`、report only） | history rewriteはしない |
+| `privacy-history-delta` | ubuntu | **新規commit全系列**のprivate data検出で失敗（下記。`fetch-depth: 0`） | 信頼済み履歴（protected main＋レビュー済みcutover） |
+| `privacy-history` | ubuntu | 全reachable履歴のredacted report（`fetch-depth: 0`、**report only**。合否はdelta gateが持つ） | history rewriteはしない |
+
+### 新規履歴privacy gate（`privacy-history-delta`）
+
+3つのprivacy検査は役割が別で、件数も別々に記録する。
+
+| 検査 | 対象 | 合否 |
+|---|---|---|
+| `privacy-worktree` | 候補HEADのtracked file | blocking 1件以上で失敗 |
+| `privacy-history-delta` | 候補HEADから到達でき、信頼済み履歴から到達できない**全commit**（中間・merge commitを含む） | 新規blocking 1件以上で失敗（exit 1）、入力不備で失敗（exit 2） |
+| `privacy-history` | 全reachable履歴 | report only（既知の過去findingを含む総数。refs・objectの差で変動するので合否に使わない） |
+
+検査範囲は `git rev-list <candidate> --not <trusted base> <reviewed cutover>`。
+
+- **trusted base**（eventから決める。`resolve_range()`、単体テストあり）:
+  `pull_request` = `pull_request.base.sha`／`push`でmain以外 = その時点の`origin/main`／
+  `push`でmain = push**前**のSHA（`before`。全0なら失敗）。候補HEADと同じSHAは使わない（空範囲は失敗）。
+- **reviewed cutover**: `tools/public_history_baseline.json`に固定した`51dc90fa8bbdbe3c80c5e8adc3f96811677c6cb5`
+  （PR #34のレビュー基準。全履歴を分類済み）。CLI・環境変数・候補HEADからは変更できず、自動で進まない。
+  cutoverより後に追加されたcommitは必ず検査される（`test_cutover_never_moves_with_new_commits`）。
+- **将来のPR**: #34がmainへ入るとcutoverはmainの祖先になり、範囲は「保護されたmainのbase SHAより後のcommit」だけで決まる。
+  cutoverは不要になるが、残しても範囲を狭めない。squash merge等でcutover objectが消えた場合はgateが
+  `cutover_missing`で失敗するので、レビュー付きPRでbaselineを更新する。
+
+「新規」の判定: commitが**すべての親**に対して導入した内容だけを見る。
+
+- blob本文: 一致値（1回の実行ごとのランダムHMAC鍵で比較。値は保存しない）が、同じpathの親versionに無い
+- path判定: media・`.env`・path pattern。親versionに無かったもの
+- commit message: すべて。例外は、末尾trailer段落の`Co-authored-by: <name> <addr>`行で、addrがbaselineに列挙された
+  bot専用アドレス（`noreply`の完全一致のみ、最大5件）の場合だけ
+
+この判定により、次のように扱われる。
+
+- 既知findingを含むfileの別の行を変えただけなら再検出しない
+- 同じ値を別pathへ置けば新規
+- 信頼済みmainをmergeしただけなら新規なし
+- diffの内容は新blob本文に含まれるので、blob単位で検査する
+
+**fail closed（exit 2）**: `shallow_repository`、`candidate_missing`、`trusted_base_missing`、`cutover_missing`、
+`baseline_invalid`、`empty_range`、`event_incomplete`、`push_before_missing`、`main_ref_missing`、
+`unsupported_event`、`git_failed`、`scanner_error`。どれも「0件」として成功させない。
+
+**出力**: category・detector・scope・短縮commit SHA・pathのSHA-256先頭16桁・件数のみ。一致値・path・本文は出さない。
+JSON reportも同じ内容で、artifactとしてはuploadしていない。full-history reportにはpathが含まれるが、こちらもuploadしない。
+
+**信頼の限界**: PRはworkflow・gate・baselineそのものを書き換えられるので、CIだけでは完全には防げない。
+次の運用が必要になる（ownerの設定事項）。
+
+- mainのbranch protectionで`privacy-history-delta`をrequired status checkにする
+- `.github/workflows/ci.yml`、`tools/public_history_*.py`、`tools/public_history_baseline.json`、
+  `tools/public_scan_reviewed_media.json`の変更をセキュリティレビュー必須にする（CODEOWNERS等）
+- baselineの変更（cutoverの移動、bot addressの追加）は信頼範囲を広げる操作として扱い、理由をPRに残す
 
 ### PowerShell起動allowlist（`windows-powershell`）
 
@@ -50,6 +102,10 @@ uv run --no-sync pytest -m "not requires_model"
 uv run --no-sync pytest tests/test_backend_foundation_e2e.py
 uv run --no-sync python tools/check_powershell_bom.py
 uv run --no-sync python tools/public_history_scan.py --worktree --fail-on-findings
+```
+
+```bash
+uv run --no-sync python tools/public_history_delta.py --candidate "$(git rev-parse HEAD)" --trusted-base "$(git rev-parse origin/main)"
 ```
 
 ## B7〜B9横断E2E（`tests/test_backend_foundation_e2e.py`）
