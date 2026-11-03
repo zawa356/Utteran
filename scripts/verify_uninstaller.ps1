@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Exercise silent, interactive, and overwrite-recovery uninstall paths safely.
 
