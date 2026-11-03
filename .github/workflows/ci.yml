@@ -115,6 +115,17 @@ jobs:
             if ($LASTEXITCODE -ne 0) { Write-Error "iteration $i failed"; exit 1 }
           }
           Write-Host "20/20 iterations passed"
+      # B6 concurrent-snapshot test: intermittent Windows reader starvation
+      # (store_busy) is now retried within a bound; repeat it to keep evidence.
+      - name: Repeat B6 concurrent snapshot test (reader starvation guard)
+        shell: pwsh
+        run: |
+          $node = 'tests/test_b6_control.py::test_snapshot_is_consistent_under_concurrent_writes'
+          for ($i = 1; $i -le 10; $i++) {
+            uv run --no-sync pytest -q -p no:cacheprovider $node
+            if ($LASTEXITCODE -ne 0) { Write-Error "iteration $i failed"; exit 1 }
+          }
+          Write-Host "10/10 iterations passed"
 
   windows-powershell:
     name: Windows PowerShell 5.1 parse and headless startup
