@@ -78,14 +78,16 @@ E2E実行後のcleanup: 各testは`tmp_path`のみを使い、`TestClient`のlif
 | 時点 | blocking | 内訳 |
 |---|---|---|
 | 開始時 | 373 | media 316（3 pathの全commit分）、commit-message e-mail 45、commit-diff e-mail 7、blob e-mail 1、absolute-user-path 4 |
-| 本ブランチ | 下記CI参照 | media（tracked fixtureの同一blob・TypeScript）は非blocking化。残りは下記分類 |
+| 最終（CI run 41595136352、refs 44 / commits 376 / objects 3932、ローカルgc後も同値で再現） | **68** | commit-message e-mail 58、commit-diff e-mail 4、blob e-mail 2、absolute-user-path 4。**media 0** |
 
 残存分類（値は表示せず、ハッシュ・種別のみで判定）:
 
-- commit-message 45件: すべて`noreply`系botの`Co-Authored-By` trailer。
+- commit-message 58件: 57件は`noreply`系botの`Co-Authored-By` trailerのみ（本ブランチのcommit分を含む）。残る1件は本ブランチの
+  commit `4244916`の本文がデコレータ記法を引用したもので、アドレスではない。
+- `docs/architecture/backend/validation.md`の旧版（`d3633f6`）のblob 1件・diff 2件: 同じデコレータ記法の説明文。現行版では解消（worktree 0）。
 - commit-diff/blobのe-mail: 合成値（`.invalid` TLD、`tests/test_private_history_match.py`）。デコレータ誤検出5件は修正で解消。
 - absolute-user-path 4件: `tests/test_b9_events.py`の旧版にあった合成sentinel（現行は実行時組立てで非該当）。
-- ローカルcloneだけに存在するunreachable tree経由のWAV（同一blob、CIのcloneには無い）。
+- （作業途中のローカル計測では、unreachable tree経由で同一WAV blobが4件出たが、`git gc`後は0件。CIのcloneにも無い。）
 - **実在の秘密値・実ユーザーのアドレス・実録音と判断したものは無い。** history rewriteは行っていない（方針として実施しない）。
 
 ## GitHub Actions
@@ -96,7 +98,8 @@ E2E実行後のcleanup: 各testは`tmp_path`のみを使い、`TestClient`のlif
 | [41592415226](https://github.com/zawa356/Utteran/actions/runs/41592415226) | `0dc0a01` | **failure（10/11）** | Windows pytest 1227 passed / **1 failed** / 9 skipped: `test_b6_control.py::test_snapshot_is_consistent_under_concurrent_writes`（`store_busy`）。新E2EはWindowsでも成功 |
 | [41593297070](https://github.com/zawa356/Utteran/actions/runs/41593297070) | `b535e7d` | **success（11/11 job）** | Windows: PID test 20/20、B6 snapshot test 10/10 |
 | [41594491528](https://github.com/zawa356/Utteran/actions/runs/41594491528) | `d3633f6` | **failure（10/11）** | `privacy-worktree`がblocking 1を検出: 本書の誤検出説明文そのものがe-mail形状だった。文言を修正（gateは正しく機能） |
-| 最終 | 次のpush | — | PR本文とIssue #27コメントに最終HEADのrun URLを記載 |
+| [41595136352](https://github.com/zawa356/Utteran/actions/runs/41595136352) | `b83669c` | **success（11/11 job）** | 最終コードHEAD。Linux/Windows pytest **1240 passed / 9 skipped**、PID test 20/20、B6 snapshot 10/10、worktree blocking 0、history blocking 68（上記分類） |
+
 
 PID-file競合とB6 starvationは**間欠事象**のため、1回の成功で解消と結論しない。Windows CIで毎run反復し、証拠を蓄積する。
 
