@@ -262,6 +262,43 @@ jobs:
           uv run --no-project python tools/public_history_scan.py
           --worktree --fail-on-findings
 
+  # Blocking counterpart of the report-only audit below: fails when ANY commit that is
+  # new relative to trusted history (protected main + the reviewed cutover pinned in
+  # tools/public_history_baseline.json) introduces private data, even if a later commit
+  # removed it. See docs/architecture/backend/testing-and-operations.md.
+  privacy-history-delta:
+    name: Privacy gate for new commits (blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      # Make every comparison commit present; a failed fetch fails the job, and the
+      # gate itself fails closed on any missing SHA or shallow history.
+      - name: Fetch protected main and the event's commits
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            git fetch --no-tags origin "$PUSH_BEFORE"
+          fi
+          echo "event=$EVENT_NAME ref=$GITHUB_REF sha=$GITHUB_SHA main=$(git rev-parse refs/remotes/origin/main)"
+      - name: Reject private data introduced by new commits
+        run: >-
+          uv run --no-project python tools/public_history_delta.py
+          --github-event "$GITHUB_EVENT_NAME" --github-event-path "$GITHUB_EVENT_PATH"
+          --json output/public-history-delta.json
+
   privacy-history:
     name: Privacy audit of reachable history (report only)
     runs-on: ubuntu-latest
