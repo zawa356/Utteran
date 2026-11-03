@@ -1,0 +1,536 @@
+{
+  "$defs": {
+    "DiagnosticEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "anyOf": [
+            {
+              "pattern": "^att_[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Attempt Id"
+        },
+        "code": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "message_key": {
+          "pattern": "^diagnostics\\.[a-z][a-z0-9_]{0,63}$",
+          "title": "Message Key",
+          "type": "string"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Stage"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "timestamp",
+        "code",
+        "message_key",
+        "stage",
+        "attempt_id"
+      ],
+      "title": "DiagnosticEntry",
+      "type": "object"
+    },
+    "DiagnosticEntryList": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/DiagnosticEntry"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Cursor"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "revision",
+        "items",
+        "next_cursor"
+      ],
+      "title": "DiagnosticEntryList",
+      "type": "object"
+    },
+    "EventEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[0-9a-f]{32}:(0|[1-9][0-9]{0,18})$",
+          "title": "Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/EventPayload"
+        },
+        "resource_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "resource_kind": {
+          "enum": [
+            "job",
+            "setup_operation",
+            "refresh_operation",
+            "queue"
+          ],
+          "title": "Resource Kind",
+          "type": "string"
+        },
+        "resource_revision": {
+          "minimum": 1,
+          "title": "Resource Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "state_changed",
+            "queue_changed"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "resource_id",
+        "resource_kind",
+        "resource_revision",
+        "timestamp",
+        "type",
+        "payload"
+      ],
+      "title": "EventEnvelope",
+      "type": "object"
+    },
+    "EventPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "anyOf": [
+            {
+              "pattern": "^att_[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Attempt Id"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReasonCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "queued",
+                "held",
+                "blocked",
+                "running",
+                "waiting_user",
+                "cancelling",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "interrupted",
+                "paused"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Status"
+        }
+      },
+      "required": [
+        "status",
+        "reason_code",
+        "attempt_id"
+      ],
+      "title": "EventPayload",
+      "type": "object"
+    },
+    "OperationStatus": {
+      "enum": [
+        "queued",
+        "held",
+        "blocked",
+        "running",
+        "waiting_user",
+        "cancelling",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "interrupted"
+      ],
+      "title": "OperationStatus",
+      "type": "string"
+    },
+    "QueueItemView": {
+      "additionalProperties": false,
+      "properties": {
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/ReasonCode"
+          },
+          "title": "Blockers",
+          "type": "array"
+        },
+        "held": {
+          "title": "Held",
+          "type": "boolean"
+        },
+        "id": {
+          "pattern": "^qi_[0-9a-f]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Position"
+        },
+        "resource_id": {
+          "pattern": "^(job|setup|refresh)_[0-9a-f]{32}$",
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "resource_kind": {
+          "enum": [
+            "job",
+            "setup_operation"
+          ],
+          "title": "Resource Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "resource_id",
+        "resource_kind",
+        "position",
+        "held",
+        "blockers"
+      ],
+      "title": "QueueItemView",
+      "type": "object"
+    },
+    "QueueView": {
+      "additionalProperties": false,
+      "properties": {
+        "active_item_id": {
+          "anyOf": [
+            {
+              "pattern": "^qi_[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Active Item Id"
+        },
+        "dispatch": {
+          "enum": [
+            "running",
+            "paused"
+          ],
+          "title": "Dispatch",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/QueueItemView"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "revision",
+        "dispatch",
+        "active_item_id",
+        "items"
+      ],
+      "title": "QueueView",
+      "type": "object"
+    },
+    "ReasonCode": {
+      "description": "Fixed reason vocabulary. Free-form caller text is never stored or echoed.",
+      "enum": [
+        "submitted",
+        "user_hold",
+        "user_release",
+        "user_reorder",
+        "user_cancel",
+        "cancel_accepted",
+        "prestart_revalidation_failed",
+        "resources_available",
+        "dispatch_started",
+        "launch_confirmed",
+        "launch_failed",
+        "completion_verified",
+        "classified_failure",
+        "termination_failed",
+        "exit_reconciled",
+        "credential_required",
+        "agreement_required",
+        "explicit_resume",
+        "owner_lost",
+        "recovery_held",
+        "recovery_paused",
+        "recovery_owner_unverified",
+        "recovery_pid_reused",
+        "recovery_launch_unconfirmed",
+        "recovery_child_alive",
+        "queue_paused",
+        "queue_resumed",
+        "step_progress",
+        "reapproval_required"
+      ],
+      "title": "ReasonCode",
+      "type": "string"
+    },
+    "ResyncRequired": {
+      "additionalProperties": false,
+      "description": "SSE control message (sent without an ``id:``) before the server closes the stream.",
+      "properties": {
+        "reason_code": {
+          "enum": [
+            "event_cursor_expired",
+            "stream_limit_reached"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "resync_required",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "type",
+        "reason_code"
+      ],
+      "title": "ResyncRequired",
+      "type": "object"
+    },
+    "SyncResource": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^(job|setup|refresh)_[0-9a-f]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "job",
+            "setup_operation",
+            "refresh_operation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/OperationStatus"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "revision",
+        "status"
+      ],
+      "title": "SyncResource",
+      "type": "object"
+    },
+    "SyncSnapshot": {
+      "additionalProperties": false,
+      "description": "Resources, queue, inventory revision and event watermark from ONE read transaction.\n\n``inventory_revision`` is the B8 setup observation counter, or ``null`` when no setup\nobservation exists (it is never a B4 inventory revision and never invented).",
+      "properties": {
+        "event_cursor": {
+          "maxLength": 52,
+          "pattern": "^[0-9a-f]{32}:(0|[1-9][0-9]{0,18})$",
+          "title": "Event Cursor",
+          "type": "string"
+        },
+        "inventory_revision": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Inventory Revision"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Cursor"
+        },
+        "queue": {
+          "$ref": "#/$defs/QueueView"
+        },
+        "resources": {
+          "items": {
+            "$ref": "#/$defs/SyncResource"
+          },
+          "title": "Resources",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "snapshot_token": {
+          "pattern": "^[0-9a-f]{32}$",
+          "title": "Snapshot Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "snapshot_token",
+        "event_cursor",
+        "resources",
+        "next_cursor",
+        "queue",
+        "inventory_revision"
+      ],
+      "title": "SyncSnapshot",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SyncResource"
+    },
+    {
+      "$ref": "#/$defs/SyncSnapshot"
+    },
+    {
+      "$ref": "#/$defs/ResyncRequired"
+    },
+    {
+      "$ref": "#/$defs/DiagnosticEntry"
+    },
+    {
+      "$ref": "#/$defs/DiagnosticEntryList"
+    },
+    {
+      "$ref": "#/$defs/EventEnvelope"
+    }
+  ],
+  "title": "Utteran B9 v1 events, sync and diagnostics wire contracts (opt-in)"
+}

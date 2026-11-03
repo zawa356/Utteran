@@ -1,5 +1,27 @@
 # AI 作業状態
 
+## Phase B9 Events / Sync / Diagnostics（0.1.38、2026-11-02、Draft）
+
+- B8と同じブランチ・同じDraft PRの後続commit系列（[理由](docs/architecture/b8/compatibility.md)）。
+- 実装: SSE `/events`（commit済みのみ、cursor 400/410、`resync_required`、上限・keepalive）、`/sync`（1 read transaction・
+  snapshot paging）、sanitized diagnostics、layout v5 bounded compaction、純粋EventReducer、既定route golden。
+- 配信しない: progress/inventory_changed/fallback（永続証拠なし）。詳細[B9](docs/architecture/b9/README.md)。
+- PR #33レビュー修正（基準`8264ab1`、他者commitなし、同じDraft PRへ通常push）: B8-P2-1 dual-pipe同時排水、
+  B9-P2-2 layout v6の診断attempt sidecar、B9-P2-3 diagnostics固定snapshot paging。version 0.1.38・lockは不変。
+
+## Phase B8 Setup Plan / Approval / Durable Setup Execution（0.1.37、2026-11-02、Draft）
+
+- 基点main `4fbb4d1`（B7マージ、fetchで再確認、他者commitなし）。push先は環境固定の`claude/funny-cori-9lnbpr`
+  のみのため、B8→B9を同一ブランチ上の分離commit系列として**単一Draft PR**で提出（[理由](docs/architecture/b8/compatibility.md)）。
+- 実装: opt-in v1 Setup API、layout v4、read-only observer/純粋plan builder、承認（hash・fingerprint・期限・同意・credential有無）、
+  単一transactionの開始（plan consumed・operation・queue・Outbox・replay）、固定allowlist executor（共有heavy slot）。
+- 実行可能: faster-whisper/pyannoteモデルのverify/download、Windowsでの新規profile作成、credential preflight、smoke（B4 readyへ昇格しない）。
+  fake child runnerでのunit検証のみ。実機・GPU・実ダウンロードは未検証。
+- 拒否: whisper.cpp（native build）、OpenVINO、既存venv rebuild、force cancel、B4登録。
+- 詳細[B8](docs/architecture/b8/README.md)、検証[validation](docs/architecture/b8/validation.md)。
+
+> 2026-11-02追補: 下記B7節は提出時の記録。B7は[PR #32](https://github.com/zawa356/Utteran/pull/32)でmain統合済み（`4fbb4d1`）。
+
 ## Phase B7 Immutable Job Submission / Durable Queue / Safe Dispatch（0.1.36、2026-11-02、Draft）
 
 - 基点main `3fd187d`（fetchで再確認、新commitなし）。作業ブランチは環境固定の`claude/affectionate-galileo-4dhfpo`、

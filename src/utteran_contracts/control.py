@@ -90,6 +90,9 @@ class ReasonCode(StrEnum):
     RECOVERY_CHILD_ALIVE = "recovery_child_alive"
     QUEUE_PAUSED = "queue_paused"
     QUEUE_RESUMED = "queue_resumed"
+    # B8 setup operations
+    STEP_PROGRESS = "step_progress"
+    REAPPROVAL_REQUIRED = "reapproval_required"
 
 
 Status = Annotated[OperationStatus, Field(strict=False)]

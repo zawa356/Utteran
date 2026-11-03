@@ -136,7 +136,7 @@ class _ListSnapshot:
     id: str
     scope: str
     revision: int
-    items: tuple[Job, ...]
+    items: tuple[Any, ...]  # allowlisted public views only (Job, or B8 SetupOperation)
 
 
 class _ListSnapshots:

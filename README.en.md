@@ -6,11 +6,37 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.36` (unreleased).
+> Current development version: `0.1.38` (unreleased).
 > APIs and configuration may change before 1.0.
 
 
-### Phase B7 immutable job submission, durable queue controls and safe dispatch (Draft, unmerged, unreleased)
+### Phase B9 events, sync and diagnostics (Draft, unmerged, unreleased)
+
+0.1.38 adds SSE `GET /api/v1/events` (committed events only, `epoch:seq` IDs, `Last-Event-ID`
+reconnect, 410 or `resync_required` when a cursor expires), `GET /api/v1/sync` (resources, queue and
+cursor from one read transaction; pages never mix revisions) and sanitized diagnostics (fixed codes,
+timestamps, stage and attempt only). The outbox is compacted only for events older than 7 days and
+beyond the newest 100,000, at explicit activation. **The default GUI/CLI and the legacy SSE are
+unchanged** (opt-in `enable_v1_events=True`); no new UI is wired yet. See
+[Phase B9](docs/architecture/b9/README.md).
+
+
+### Phase B8 setup plan, approval and durable setup execution (Draft, unmerged, unreleased)
+
+0.1.37 adds an experimental v1 Setup API: a read-only plan, an explicit user approval, then execution
+of exactly what was approved. A plan lists the target profile, models, preserved existing
+environments, the step DAG, size estimates (null when unknown) and required agreements/tokens; an
+approval is bound to the plan hash, the environment observation fingerprint, an expiry and the
+agreement IDs the user actually selected. Execution shares the single B7 heavy slot and journals
+intent -> child -> PID -> exit -> verification per step; nothing is recorded as succeeded without
+verification. **The default GUI/CLI and the legacy setup wizard are unchanged**; the API exists only
+with `create_app(..., enable_v1_jobs=True, enable_v1_setup=True, ...)`. Only faster-whisper/pyannote
+models and creating a new profile (Windows) can run; whisper.cpp, OpenVINO and rebuilding an
+existing venv are refused. A setup success is not B4 ready evidence. No real-hardware, GPU or real
+download acceptance has been performed. See [Phase B8](docs/architecture/b8/README.md).
+
+
+### Phase B7 immutable job submission, durable queue controls and safe dispatch (merged into main, unreleased)
 
 0.1.36 adds an experimental v1 Job/Queue API. Validated settings, the input identity (including a
 content SHA-256) and the B4 resolution are frozen per job as an immutable private snapshot, and a

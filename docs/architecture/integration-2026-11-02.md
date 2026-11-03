@@ -35,4 +35,4 @@
 
 - README日英はB5/B6の「main統合済み・未リリース」に訂正。過去PR提出時の検証記録や当時のDraft状態は**歴史的記録として保持**し、後から書き換えず、この統合記録で現在地を明示。
 - 変更履歴・AISTATE・Phase A/B5/B6・UI UX計画の現在地を同期。Issue #17/#18の状態を同期。文書更新も専用PRでmainへ反映する。
-- 次の機能実装はB7から**main HEAD基点**（2026-11-02追補: B7はmain `3fd187d`基点でDraft実装中、開発版0.1.36・未リリース。[B7](b7/README.md)）。CI改善は#27として独立し、実受入は各Issueで追跡する。
+- 次の機能実装はB7から**main HEAD基点**（2026-11-02追補: B7はmain `3fd187d`基点でDraft実装、PR #32で`4fbb4d1`としてmain統合。B8はmain `4fbb4d1`基点でDraft、開発版0.1.37・未リリース。[B7](b7/README.md) / [B8](b8/README.md)）。CI改善は#27として独立し、実受入は各Issueで追跡する。

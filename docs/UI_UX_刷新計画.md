@@ -1,6 +1,6 @@
 # UI/UX刷新計画・次期開発引継ぎ
 
-> **2026-11-02現況**: backend Phase A〜B6はmain統合済み（[統合記録](architecture/integration-2026-11-02.md)）。以下に残るB5/B6のDraft表記は過去時点の記録です。新GUIのU0〜U3・B8〜B9は未着手、UI監査Draft PR #23も未統合です。B7（opt-in Job/Queue API）は[Draft実装](architecture/b7/README.md)のみで、frontendは未接続です。
+> **2026-11-02現況**: backend Phase A〜B6はmain統合済み（[統合記録](architecture/integration-2026-11-02.md)）。以下に残るB5/B6のDraft表記は過去時点の記録です。新GUIのU0〜U3・B8〜B9は未着手、UI監査Draft PR #23も未統合です。B7（opt-in Job/Queue API）はmain統合済み、B8（opt-in Setup API）・B9（events/sync、[Draft](architecture/b9/README.md)）は[Draft実装](architecture/b8/README.md)のみで、いずれもfrontendは未接続です（U0〜U3未着手）。
 
 > ステータス: **計画・引継ぎ確定、実装未着手**（2026-10-30）。
 > GitHub Issuesを残タスクの正本とする。現行の確定仕様は [要件定義.md](../要件定義.md)、開発履歴は [AISTATE.md](../AISTATE.md) を参照。

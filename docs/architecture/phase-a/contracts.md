@@ -18,6 +18,16 @@ PR #32レビュー修正: §list responseの「filter付きsnapshot pagination�
 一致させた（プロセス内snapshot、再起動でも409 `cursor_expired`、上限超過は503）。同key並行POSTの
 処理中は再試行可能な503 `submission_in_progress`を返す（§4の冪等性は維持）。[記録](../b7/pr32-review-fixes-validation.md)。
 
+2026-11-02 B8追補（Draft）: §5のsetup-plans/approve/setup-operationsをopt-inで実装。plan fingerprint・
+`inventory_revision`（store内observation counter）・nullable `attempt_number`等の差異は[B8 contracts](../b8/contracts.md)。
+実行subsetはfaster-whisper/pyannoteと新規profile作成のみ。
+
+2026-11-02 B9追補（Draft）: §6の`/events`・`/sync`とdiagnosticsをopt-inで実装。`progress`等の未配信type、
+`inventory_revision` nullable等の差異は[B9](../b9/README.md)。
+
+2026-11-02 PR #33レビュー修正追補: diagnosticsは固定snapshot paging（`d2` cursor、期限切れ409 `cursor_expired`、
+改ざん・転用400 `cursor_invalid`）。attempt IDはOutbox圧縮に依存しない（layout v6）。[B9 diagnostics](../b9/diagnostics-legacy.md)。
+
 ## 1. 独立した管理概念
 
 | 概念 | 正本・内容 | 他の概念との関係 |
