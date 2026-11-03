@@ -6,11 +6,15 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.38` (unreleased).
+> Current development version: `0.1.39` (unreleased).
 > APIs and configuration may change before 1.0.
 
+> The current backend (Phase A-B9) structure, feature status, limits and test coverage are maintained in
+> [docs/architecture/README.md](docs/architecture/README.md). The B5-B9 v1 APIs are all **merged into main,
+> unreleased and explicit opt-in**; normal GUI/CLI startup does not enable them.
 
-### Phase B9 events, sync and diagnostics (Draft, unmerged, unreleased)
+
+### Phase B9 events, sync and diagnostics (merged into main, unreleased)
 
 0.1.38 adds SSE `GET /api/v1/events` (committed events only, `epoch:seq` IDs, `Last-Event-ID`
 reconnect, 410 or `resync_required` when a cursor expires), `GET /api/v1/sync` (resources, queue and
@@ -21,7 +25,7 @@ unchanged** (opt-in `enable_v1_events=True`); no new UI is wired yet. See
 [Phase B9](docs/architecture/b9/README.md).
 
 
-### Phase B8 setup plan, approval and durable setup execution (Draft, unmerged, unreleased)
+### Phase B8 setup plan, approval and durable setup execution (merged into main, unreleased)
 
 0.1.37 adds an experimental v1 Setup API: a read-only plan, an explicit user approval, then execution
 of exactly what was approved. A plan lists the target profile, models, preserved existing
@@ -58,8 +62,8 @@ never redirected to the legacy CLI. The private DB is unencrypted with no retent
 operations. State, revisions, queue metadata, idempotency records, and a public outbox commit in one
 transaction, and an explicitly invoked startup recovery is conservative (queue paused, waiting items
 held, unverifiable owners flagged `recovery_required`). The default GUI/CLI neither creates nor uses
-it; the existing queue and job execution are unchanged. Setup execution and HTTP exposure such as
-`/api/v1/events` or `/sync` are not provided (B8-B9); job submission/dispatch is the opt-in B7 above. Exactly-once
+it; the existing queue and job execution are unchanged. B6 alone provides no setup execution and no HTTP
+exposure such as `/api/v1/events` or `/sync` (added later by B8-B9, both opt-in); job submission/dispatch is the opt-in B7 above. Exactly-once
 execution of external processes is not guaranteed. Private payloads are stored unencrypted. See
 [Phase B6](docs/architecture/b6/README.md).
 

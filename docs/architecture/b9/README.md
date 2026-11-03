@@ -1,5 +1,10 @@
 # Phase B9 — Events / Sync / Diagnostics / Legacy Compatibility
 
+> **現在の状態（2026-11-03追補）:** 本書は**Draft提出時の記録**。B9は[PR #33](https://github.com/zawa356/Utteran/pull/33)で
+> **main統合済み**（merge `e803ecc3`）・未リリース・opt-in。**現行のruntime storeは layout v6 の`ManagedControlStore`**
+> （PR #33レビュー修正B9-P2-2で追加）で、layout v5のclassは`EventsControlStore`。下表の「layout v5 `ManagedControlStore`」
+> は提出時点の記述。現行は[backend/persistence-recovery.md](../backend/persistence-recovery.md)。
+
 2026-11-02 JST、開発版 **0.1.38（未リリース）**、**Draft・未マージ**。B8（0.1.37）の後続commit系列として
 同一ブランチ・同一Draft PRに含める（[理由](../b8/compatibility.md)）。B8のroute・契約・v4表は書き換えない。
 

@@ -23,6 +23,11 @@ activate時のbackup（`operations-pre-v1-*.sqlite3`、v3のまま）から戻�
 > v1〜v5は1 transactionでv6へ移行し、v5を開いていた旧クラス（`EventsControlStore`）・B6/B7/B8クラスはv6を拒否する。
 > 移行前のDBはactivate時のbackup（`operations-pre-v1-*.sqlite3`）で保全され、DBの削除・初期化・downgradeはしない。
 
+> **2026-11-03訂正（Backend Foundation Hardening、0.1.39）:** 0.1.38までの実装はstoreを構築（=migration）した**後**に
+> backupしていたため、上記の`operations-pre-v1-*.sqlite3`は実際には**v6のコピー**で、「v3のまま戻す」ことはできなかった。
+> 0.1.39で`ControlStore.backup_before_open()`によりmigration前のlayoutのままbackupするよう修正した。現行の正本は
+> [backend/persistence-recovery.md](../backend/persistence-recovery.md#backup-と-restore)。上の記述は提出時の設計意図として残す。
+
 ## 表（追加分）
 
 | 表 | 用途 | 不変性 |

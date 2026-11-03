@@ -2,6 +2,13 @@
 
 更新日: 2026-11-02 JST。**これは開発コードのmain統合であり、リリースや実機受入完了ではありません。**
 
+> **2026-11-03追補（現在地）:** 本書はPhase A〜B6統合時（2026-11-02）の記録として保持する。その後、
+> B7が[PR #32](https://github.com/zawa356/Utteran/pull/32)（merge `4fbb4d1cf834a67e79d1c6e46f8e85f8d1989e8f`）、B8+B9が
+> [PR #33](https://github.com/zawa356/Utteran/pull/33)（merge `e803ecc3dcaff48973342521c8bd77ecf1bbb353`）でmainへ統合された
+> （いずれも未リリース・opt-in）。GitHub Pagesは下記「現在地」のとおり公開成功済み（run 41394884715）で、
+> 本文中の「未有効・公開未確認」は公開前の履歴。Issue #27のCI項目はBackend Foundation Hardeningで是正した
+> （結果は[backend/validation.md](backend/validation.md)）。現行の正本は[README.md](README.md)と[backend/](backend/README.md)。
+
 ## GitHub上の統合実績
 
 | 領域 | PR | main merge commit |

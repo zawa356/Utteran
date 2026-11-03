@@ -1,5 +1,9 @@
 # Phase B8 — Setup Plan / Approval / Durable Setup Execution
 
+> **現在の状態（2026-11-03追補）:** 本書は**Draft提出時の記録**。B8は[PR #33](https://github.com/zawa356/Utteran/pull/33)で
+> **main統合済み**（merge `e803ecc3`）・未リリース・opt-in。現行の構成・制約は[backend/README.md](../backend/README.md)、
+> pre-v1 backupの訂正は[storage.md](storage.md)末尾を参照。
+
 2026-11-02 JST、開発版 **0.1.37（未リリース）**、**Draft・未マージ**。
 基点: `main` `4fbb4d1cf834a67e79d1c6e46f8e85f8d1989e8f`（Phase B7マージ、着手時にremote再確認・他者commitなし）。
 
