@@ -45,17 +45,17 @@ TRANSCRIPT_MARKERS = {
     "受入試験",
     "文字起こし",
 }
-PLACEHOLDER_MARKERS = (
-    "dummy",
-    "example",
-    "fake",
-    "person",
-    "placeholder",
-    "test",
-    "user",
-    "workdir",
-    "xxxx",
+# Placeholder words allowed only as the WHOLE prefix of an otherwise filler token body
+# (e.g. "ghp_example000..."). They never exempt a value merely by appearing in it.
+TOKEN_FILLER_WORDS = ("example", "dummy", "fake", "placeholder", "your")
+# RFC 2606 reserved documentation domains (and their subdomains), exact suffix match.
+RESERVED_EMAIL_DOMAINS = (b"example.com", b"example.net", b"example.org")
+# An explicit bracketed account such as <user> or <名前> (whole segment, 1-32 bytes inside).
+_ACCOUNT_PLACEHOLDER = re.compile(rb"<[^<>\s]{1,32}>")
+_USER_PATH_ACCOUNT = re.compile(
+    rb"(?i)(?:[A-Z]:[\\/](?:Users|UserData)[\\/]|/h[o]me/)(?P<account>[^\\/\s:'\"]+)"
 )
+_FILLER = re.compile(rb"(.)\1*")
 
 
 @dataclass(frozen=True, order=True)
@@ -289,14 +289,41 @@ def _read_blobs(root: Path, object_ids: Iterable[str]) -> dict[str, bytes]:
     return blobs
 
 
-def _is_placeholder(value: bytes) -> bool:
-    lowered = value.lower()
-    return (
-        any(marker.encode() in lowered for marker in PLACEHOLDER_MARKERS)
-        or b"@example.com" in lowered
-        or b"@example.net" in lowered
-        or b"@example.org" in lowered
-        or bool(re.search(rb"([a-z0-9])\1{7,}", lowered))
+def _is_filler(body: bytes) -> bool:
+    """A token body made of one repeated character (``xxxx``, ``0000``), at least 8 long."""
+    return len(body) >= 8 and _FILLER.fullmatch(body) is not None
+
+
+def _is_placeholder(detector: str, value: bytes) -> bool:
+    """Typed, whole-value placeholder rule shared by the worktree, history and delta scans.
+
+    A value is a placeholder only when its detector-specific *shape* is unambiguously
+    synthetic. Marker words appearing somewhere inside a value never exempt it: the fixed
+    ``Users``/``UserData`` path segment, or ``test``/``user`` inside an account name, an
+    address or a token, stay blocking (PR #34 review P2). Unknown detectors never qualify.
+    """
+    if detector == "absolute-user-path":
+        # Only an explicit angle-bracket account such as ``<user>`` is synthetic.
+        match = _USER_PATH_ACCOUNT.fullmatch(value)
+        return match is not None and _ACCOUNT_PLACEHOLDER.fullmatch(match["account"]) is not None
+    if detector == "email-address":
+        domain = value.rpartition(b"@")[2].lower()
+        return any(
+            domain == reserved or domain.endswith(b"." + reserved)
+            for reserved in RESERVED_EMAIL_DOMAINS
+        )
+    if detector in {"hugging-face-token", "github-token"}:
+        body = value.partition(b"_")[2]
+    elif detector == "aws-access-key":
+        body = value[4:]
+    else:
+        return False
+    if _is_filler(body):
+        return True
+    lowered = body.lower()
+    return any(
+        lowered.startswith(word.encode()) and _is_filler(body[len(word) :])
+        for word in TOKEN_FILLER_WORDS
     )
 
 
@@ -316,7 +343,7 @@ def _scan_bytes(
         real_count = sum(
             1
             for match in matches
-            if not (pattern.placeholders_allowed and _is_placeholder(match.group(0)))
+            if not (pattern.placeholders_allowed and _is_placeholder(pattern.name, match.group(0)))
         )
         placeholder_count = len(matches) - real_count
         if real_count:

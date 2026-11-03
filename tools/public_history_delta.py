@@ -213,7 +213,7 @@ def _content_keys(data: bytes, keyed: _Keyed) -> Counter[tuple[str, str, str]]:
             continue
         for match in pattern.regex.finditer(data):
             value = match.group(0)
-            if pattern.placeholders_allowed and SCAN._is_placeholder(value):
+            if pattern.placeholders_allowed and SCAN._is_placeholder(pattern.name, value):
                 continue
             keys[(pattern.category, pattern.name, keyed(pattern.name, value))] += 1
     return keys

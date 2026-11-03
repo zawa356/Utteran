@@ -28,7 +28,7 @@ def test_secret_placeholders_are_non_blocking_but_real_shapes_are_blocking() -> 
     assert placeholder[0].blocking is False
     assert candidate[0].category == "secret"
     assert candidate[0].blocking is True
-    assert _is_placeholder(b"ghp_example000000000000000000000000000")
+    assert _is_placeholder("github-token", b"ghp_example000000000000000000000000000")
 
 
 def test_sensitive_paths_are_classified_without_reading_files() -> None:
@@ -127,3 +127,109 @@ def test_diff_markers_are_not_part_of_matched_values() -> None:
     emails = [f for f in findings if f.detector == "email-address"]
     # Only the real address in the added line is counted, not the decorators.
     assert [(f.category, f.count) for f in emails] == [("personal-data", 1)]
+
+
+# ---------------------------------------------------------------- placeholder rules (PR #34 P2)
+# Every value is assembled at runtime so this file holds no path-, address- or token-shaped
+# literal for the tracked-file scanner. "blocking" means a real finding; "placeholder" means
+# the non-blocking test-placeholder category.
+
+BS = "\\"
+
+
+def _verdict(value: str) -> set[tuple[str, bool]]:
+    findings = _scan_bytes(value.encode(), scope="test")
+    return {(f.detector, f.blocking) for f in findings if f.detector != "media-path-in-content"}
+
+
+def _win(root: str, account: str) -> str:
+    return "C:" + BS + root + BS + account + BS + "notes"
+
+
+def test_t01_windows_users_path_blocks() -> None:
+    assert _verdict(_win("Users", "alice")) == {("absolute-user-path", True)}
+
+
+def test_t02_userdata_with_test_and_user_in_the_account_blocks() -> None:
+    assert _verdict(_win("UserData", "test" + "user")) == {("absolute-user-path", True)}
+    assert _verdict(_win("Users", "user")) == {("absolute-user-path", True)}
+
+
+def test_t03_unix_home_with_marker_substring_blocks() -> None:
+    assert _verdict("/" + "home" + "/" + "person123/x") == {("absolute-user-path", True)}
+    assert _verdict("/" + "home" + "/" + "fake" + "user/x") == {("absolute-user-path", True)}
+
+
+def test_t04_only_explicit_angle_bracket_accounts_are_placeholders() -> None:
+    assert _verdict(_win("Users", "<user>")) == {("absolute-user-path", False)}
+    assert _verdict("/" + "home" + "/" + "<user>" + "/x") == {("absolute-user-path", False)}
+    assert _verdict(_win("Users", "<名前>")) == {("absolute-user-path", False)}
+    # Near misses stay blocking.
+    for account in ("<user", "user>", "<>", "<us er>", "<user>x"):
+        assert ("absolute-user-path", True) in _verdict(_win("Users", account)), account
+
+
+def test_t05_marker_words_in_local_part_or_real_domain_block() -> None:
+    for address in (
+        "test" + "@" + "corp-mail.jp",
+        "example.user" + "@" + "gmail-like.co",
+        "alice" + "@" + "testcorp.com",
+        "bob" + "@" + "example-mail.com",
+    ):
+        assert _verdict(address) == {("email-address", True)}, address
+
+
+def test_t06_reserved_example_domains_are_the_only_email_placeholders() -> None:
+    for address in (
+        "anyone" + "@" + "example.com",
+        "a.b" + "@" + "mail.example.org",
+        "x" + "@" + "EXAMPLE.NET",
+    ):
+        assert _verdict(address) == {("email-address", False)}, address
+    for address in (
+        "anyone" + "@" + "example.co",
+        "anyone" + "@" + "example.com.evil.io",
+        "anyone" + "@" + "myexample.com",
+        "anyone" + "@" + "corp.invalid",
+    ):
+        assert _verdict(address) == {("email-address", True)}, address
+
+
+def test_t07_valid_shaped_tokens_with_marker_substrings_block() -> None:
+    for token, detector in (
+        ("hf_" + "test" + "Q7zLmN4pRs8TuVw2", "hugging-face-token"),
+        ("hf_" + "Q7zLmN" + "user" + "4pRs8TuVw2", "hugging-face-token"),
+        ("ghp_" + "example" + "Q7zLmN4pRs8TuVw2XyZa0123456", "github-token"),
+        ("AKIA" + "TEST" + "Q7ZLMN4PRS8T", "aws-access-key"),
+    ):
+        assert _verdict(token) == {(detector, True)}, detector
+
+
+def test_t08_only_whole_value_filler_tokens_are_placeholders() -> None:
+    for token, detector in (
+        ("hf_" + "x" * 20, "hugging-face-token"),
+        ("ghp_" + "example" + "0" * 30, "github-token"),
+        ("AKIA" + "X" * 16, "aws-access-key"),
+    ):
+        assert _verdict(token) == {(detector, False)}, detector
+    for token, detector in (
+        ("hf_" + "x" * 19 + "A", "hugging-face-token"),  # one real character: not filler
+        ("ghp_" + "examples" + "0" * 30, "github-token"),
+        ("ghp_" + "0" * 15 + "example" + "0" * 15, "github-token"),
+    ):
+        assert _verdict(token) == {(detector, True)}, detector
+
+
+def test_private_keys_never_have_placeholders() -> None:
+    header = "-----BEGIN " + "EXAMPLE PRIVATE KEY" + "-----"
+    assert _verdict(header) == {("private-key", True)}
+
+
+def test_t11_worktree_scan_blocks_a_real_windows_path(tmp_path: Path) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "notes.txt").write_text(_win("Users", "alice") + "\n", encoding="utf-8")
+    subprocess.run(["git", "add", "notes.txt"], cwd=tmp_path, check=True)
+    report = SCAN["scan_worktree"](tmp_path)
+    assert report["summary"]["blocking_findings"] > 0

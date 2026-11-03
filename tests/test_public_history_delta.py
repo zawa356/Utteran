@@ -26,7 +26,7 @@ EMAIL = "private.account" + "@" + "corp.invalid"
 OTHER_EMAIL = "second.account" + "@" + "corp.invalid"
 USER_PATH = "/".join(("", "h" + "ome", "alice", "notes"))
 BOT = "noreply" + "@" + "anthropic.com"
-SECRETS = (TOKEN, EMAIL, OTHER_EMAIL, USER_PATH)
+SECRETS = (TOKEN, EMAIL, OTHER_EMAIL, USER_PATH, "alice")
 ENV = {
     **os.environ,
     "GIT_AUTHOR_NAME": "Synthetic",
@@ -450,3 +450,23 @@ def test_shipped_baseline_pins_the_pr34_review_cutover() -> None:
     loaded = DELTA["load_baseline"](ROOT / "tools" / "public_history_baseline.json")
     assert loaded.cutover == "51dc90fa8bbdbe3c80c5e8adc3f96811677c6cb5"
     assert loaded.bot_addresses == frozenset({BOT.encode()})
+
+
+# PR #34 P2 (placeholder detection): the delta gate shares the scanner's typed rules.
+
+WIN_PATH = "C:" + "\\" + "Users" + "\\" + "alice" + "\\" + "notes"
+MARKER_TOKEN = "hf_" + "test" + "Q7zLmN4pRs8TuVw2"
+
+
+@pytest.mark.parametrize("value", [WIN_PATH, MARKER_TOKEN], ids=["t09-windows-path", "t10-token"])
+def test_t09_t10_marker_substring_values_added_then_deleted_fail(
+    history, tmp_path, capsys, value
+) -> None:
+    repo, root, cutover = history
+    repo.commit("add", leak_DOT_txt=f"{value}\n")
+    repo.commit("delete", leak_DOT_txt=None)
+    head = repo.commit("clean the known pre-cutover file", known_DOT_txt="contact removed\n")
+    assert SCANNER["scan_worktree"](repo.path)["summary"]["blocking_findings"] == 0
+    code, text, data = gate(repo, root, head, cutover, tmp_path, capsys)
+    assert code == 1 and data is not None
+    assert value not in text and value not in json.dumps(data)
