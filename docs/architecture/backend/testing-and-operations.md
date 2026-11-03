@@ -70,6 +70,26 @@ JSON reportも同じ内容で、artifactとしてはuploadしていない。full
   `tools/public_scan_reviewed_media.json`の変更をセキュリティレビュー必須にする（CODEOWNERS等）
 - baselineの変更（cutoverの移動、bot addressの追加）は信頼範囲を広げる操作として扱い、理由をPRに残す
 
+### placeholder判定（3つのprivacy検査で共通）
+
+`tools/public_history_scan.py`の`_is_placeholder(detector, value)`を、worktree・full-history・new-history gateが共有する。
+判定は**detectorごとに値全体**で行い、部分文字列（`user`・`test`・`example`・`person`・`fake`・`xxxx`・`workdir`等）では免除しない
+（PR #34 review P2）。placeholderと判定された値は`test-placeholder`（非blocking）として表示に残る。
+
+| detector | 非blockingになる条件（これ以外はblocking） |
+|---|---|
+| `absolute-user-path` | account部分が`<user>`・`<名前>`のような角括弧表記で、path segment全体と一致するもの（括弧内1〜32 byte） |
+| `email-address` | domainが`example.com`・`example.net`・`example.org`、またはそのsubdomain（RFC 2606） |
+| `hugging-face-token` / `github-token` / `aws-access-key` | 本体が「1種類の文字の繰返し（8文字以上）」か、「`example`・`dummy`・`fake`・`placeholder`・`your`の直後がその繰返しだけ」のもの |
+| `private-key`・その他 | なし |
+
+ルールの要点:
+- `Users`/`UserData`の固定部分は判断に使わない。
+- `testuser`のような実在し得るaccount名はblockingになる。
+- bot co-authorの例外は、new-history gateが扱う末尾trailerの完全一致だけで、メール全般には広げない。
+
+テストfixtureの規則: 合成値でも、実形式のpath・address・tokenはsourceに直書きしない。`"hf_" + "…"`のように実行時に組み立てる。
+
 ### PowerShell起動allowlist（`windows-powershell`）
 
 起動検査は**ソースで副作用が無いと確認した引数だけ**を使う。新しい`.ps1`を追加したら、この表かparse-only表に

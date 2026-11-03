@@ -182,6 +182,62 @@ full-historyの69→71は、ローカルでfinding集合を比較して特定し
 - 総数はこのようにcommitの追加ごとに増えるので、合否はnew-history gateで判定する。
 - このdocs commit以降の値は、PR本文に記録する。
 
+## PR #34追加レビュー修正: placeholder判定（P2、[review 5751453149](https://github.com/zawa356/Utteran/pull/34#pullrequestreview-5751453149)）
+
+開始時: branch HEAD = PR head = `c029a39d52bb625cca174e46371a898c6575a21e`、`main` = `e803ecc3`（fetchで再確認）。
+
+**原因:** `_is_placeholder()`は、一致値に`user`・`test`・`example`等が**部分文字列として**含まれるだけで非blockingにしていた。
+
+- Windowsのuser-path検出式は常に固定部分`Users`/`UserData`を含むため、実在するWindowsユーザーパスはすべて免除されていた。
+- delta gateも同じ関数を使っていたため、同じ見逃しがあった。
+
+**是正:** detector別に値全体で判定する（[testing-and-operations.md](testing-and-operations.md#placeholder判定3つのprivacy検査で共通)）。
+
+**回帰テスト:**
+
+- 追加した12件（`test_public_history_scan.py` 10件、`test_public_history_delta.py` 2件）は、修正前のcodeでT01〜T11がすべて失敗し、修正後はすべて成功した。
+- 旧substring規則に戻すmutationでは11件が失敗した。
+- T09/T10（Windowsパス・marker語入りtokenの追加→削除）では、worktree 0件でもdelta gateがexit 1を返す。
+- 既存のdelta 17件、scan、E2E 11件はそのまま成功した。
+
+**worktreeへの影響:** 新規則で、tracked fileの9件がblockingになった。値は表示せず、形状と文脈で分類した。
+
+- 8件は合成fixture（`synthetic`・`person`・`TestUser`・`.invalid`・`…DummyToken…`）と、scanner自身の正規表現。値を実行時に組み立てる方式に変えた（runtime値は不変）。
+- `ユーザー確認事項.md`の`<名前>`は、segment境界を整えた。
+- **1件は実在の個人のWindowsユーザーパス**（`AISTATE.md`、account名がrepository ownerの名と一致）。現行treeでは`C:\Users\<user>\`に置き換えた。値はcommit・CI・PRに書いていない。
+- 結果: worktree blocking 0。
+
+**full-history（同じHEAD `8b6fab0`、`git gc`後、旧scanner＝`c029a39`版と新scannerで比較）:**
+
+| scanner | refs / commits / objects | blocking |
+|---|---|---|
+| 旧（substring） | 45 / 383 / 3982 | 75 |
+| 新（typed） | 45 / 383 / 3982 | 1931 |
+
+旧scannerでの75は、[CI 41618806086](https://github.com/zawa356/Utteran/actions/runs/41618806086)の72に、新commit 3件のbot trailerを足した値である。
+
+増分はblob・diffの出現箇所単位で数えている。新たにblockingになった**値**（keyed hashで比較、表示なし）は**7種類だけ**だった。
+
+- 実在の個人パス1種（`AISTATE.md`の73版）
+- 合成fixture 6種（上記のfixture群と、`ユーザー確認事項.md`旧版の`<名前>`）
+- diff scopeの増分は、すべてこの7種と同じ値だった。commit-messageは65→65で変化なし。
+- 未分類のfindingは無い。
+
+**要owner判断（値は書かない）:**
+
+実在の個人パスはcommit `f6b6c09`（2026-08-26）で追加され、それ以降の公開履歴に残っている。
+
+- 認証情報ではないため、失効させる対象は無い。個人名を含むアカウント名が公開されていることになる。
+- reviewed cutoverより前のため、new-history gateの対象外（設計どおり）。
+- history rewriteをするか、そのまま受容するかはowner判断とし、本作業では行わない。
+
+**new-history gate（ローカル、`8b6fab0`）:** trusted base `e803ecc3`、cutover `51dc90f`、new_commits 6、**new_blocking 0**。
+
+- 伏せ字にしたcommitは削除だけなので、新規blobに値は無い。
+- cutoverとbot address一覧は変更していない。
+
+CIの実測はPR本文に記録する。
+
 ## 未実施（確認済みと扱わない）
 
 Windows実機・GPU・native build・実モデルDL・長時間音声・installer/portable（`verify_uninstaller.ps1`）・

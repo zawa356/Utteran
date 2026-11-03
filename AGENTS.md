@@ -37,6 +37,8 @@ Every tracked `.ps1` needs a UTF-8 BOM and must be classified in the CI startup 
 - The private DBs store prompts/paths in plain text by design (retention/deletion policy is an open owner decision).
   Public DTOs, SSE, sync, diagnostics, and logs must stay allowlisted and value-free.
 - Scanner exceptions are exact `(path, git blob)` pairs in `tools/public_scan_reviewed_media.json` with evidence.
+- Placeholders are judged per detector on the whole value (e.g. `<user>` account, `example.com` domain, all-filler token),
+  never by substrings. Assemble synthetic path/address/token test values at runtime (`"hf_" + "..."`).
 
 ## Process
 

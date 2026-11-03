@@ -39,6 +39,18 @@
 | `変更履歴.md` | updated | 0.1.39のCI節に新規履歴gateを1行追加（versionは0.1.39のまま） |
 | `README.md` / `README.en.md` / `AISTATE.md` / `要件定義.md` / Phase A・B8・B9文書 | reviewed-no-change | 利用者向け機能・API・version（0.1.39）・DBに変更はない。CI/privacyの正本はbackend文書に集約している |
 
+## PR #34追加レビュー修正（placeholder判定、2026-11-03）
+
+| 文書・ファイル | 判定 | 理由・変更内容 |
+|---|---|---|
+| `tools/public_history_scan.py` / `tools/public_history_delta.py` | updated | `_is_placeholder(detector, value)`をdetector別の値全体判定にした。delta gateも同じ関数を使う |
+| `tests/test_public_history_scan.py` / `tests/test_public_history_delta.py` | updated | T01〜T11等12件を追加 |
+| `tests/test_b6_control.py`、`test_models.py`、`test_private_history_match.py`、`test_acceptance_scenarios.py`、`tools/acceptance/scenarios.py` | updated | 合成値を実行時に組み立てる方式に変えた（値は不変） |
+| `AISTATE.md` | updated | 実在のユーザーパス1件を伏せ字にした（現行treeのみ。過去の記録の他の記述は不変） |
+| `ユーザー確認事項.md` | updated | `<名前>`の後ろにpath区切りを1文字追加 |
+| `testing-and-operations.md` / `validation.md` / `AGENTS.md` / `変更履歴.md` | updated | placeholder基準、計測結果、fixture規則、0.1.39への追補 |
+| README日英・要件定義・Phase A/B8/B9文書 | reviewed-no-change | 利用者向け機能・API・version・DBに変更はない |
+
 ## リンク検証
 
 `tests/test_docs_links.py`が`AGENTS.md`、`README.md`、`README.en.md`、`docs/architecture/README.md`、
