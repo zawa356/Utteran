@@ -34,7 +34,7 @@ Issue #27の是正で、各品質ゲートを**`needs:`の無い独立job**に�
 - **trusted base**（eventから決める。`resolve_range()`、単体テストあり）:
   `pull_request` = `pull_request.base.sha`／`push`でmain以外 = その時点の`origin/main`／
   `push`でmain = push**前**のSHA（`before`。全0なら失敗）。候補HEADと同じSHAは使わない（空範囲は失敗）。
-- **reviewed cutover**: `tools/public_history_baseline.json`に固定した`51dc90fa8bbdbe3c80c5e8adc3f96811677c6cb5`
+- **reviewed cutover**: `tools/public_history_baseline.json`に固定した`e0960bdc4cd53264f214d85844f89742e587d39c`（2026-11-03の履歴書換え後のSHA。書換え前の`51dc90f`に1:1で対応）
   （PR #34のレビュー基準。全履歴を分類済み）。CLI・環境変数・候補HEADからは変更できず、自動で進まない。
   cutoverより後に追加されたcommitは必ず検査される（`test_cutover_never_moves_with_new_commits`）。
 - **将来のPR**: #34がmainへ入るとcutoverはmainの祖先になり、範囲は「保護されたmainのbase SHAより後のcommit」だけで決まる。

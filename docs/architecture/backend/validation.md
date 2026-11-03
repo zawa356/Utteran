@@ -238,6 +238,61 @@ full-historyの69→71は、ローカルでfinding集合を比較して特定し
 
 CIの実測はPR本文に記録する。
 
+## 公開Git履歴の書換え（2026-11-03、ownerの明示承認による）
+
+**この節より前に書かれたcommit SHA・run IDは、すべて履歴書換え前のもの**である。
+
+- それらのSHAは公開branch/tagからは到達できなくなり、参照できない場合がある。
+- 過去CIの記録としてそのまま残す。
+- 現在有効な参照（cutoverなど）は、下表の書換え後SHAを使う。
+
+**目的:** `AISTATE.md`の過去73版に残っていた、実在する個人のWindowsユーザーパス1種を、全公開branch・tagの履歴から除去する。値はどこにも記載しない。
+
+**方法:**
+
+- `git-filter-repo --sensitive-data-removal`（build `a40bce548d2c`）を、新しいmirror cloneに対して実行した。
+- `--replace-text`のbyte-exactなliteral 1規則で、現行treeと同じ`C:\Users\<user>\`に置換した。
+- `--prune-empty never`を指定し、commitを1:1で対応させた。
+- 置換specとbackupは公開repo外の権限0700のディレクトリに置き、CI・PRには出していない。
+
+**事前の確認（値は表示せず、件数のみ）:**
+
+- 該当文字列は73 blobにだけ存在した。
+- 大文字小文字・区切り文字・escapeの異なる表記は0件だった。
+- 姓名を単独で含むblobやcommit/tag messageも0件だった。
+
+**影響範囲:**
+
+| 項目 | 値 |
+|---|---|
+| 書き換えたcommit | 386中197（first changed commit = 書換え前`f6b6c09`、書換え後`7777400`） |
+| 変更されたref | branch 14（全部）、tag 20（`v0.1.8`以降）。`v0.0.1`〜`v0.1.7`の9 tagは不変 |
+| 旧SHAを指すPR ref（GitHub管理、読み取り専用） | PR #23〜#34の11件 |
+| tree差分 | 公開ref 43のうち、10はtree同一、33は`AISTATE.md`の当該literalの置換だけ。その他の差分は0 |
+| commit metadata | author・committer・messageは197件とも同一。62件はGitHubの`gpgsig`署名が外れる（書換えでは不可避。"Verified"表示が消える） |
+| annotated tag | 5件とも、taggerとmessageは同一 |
+| 書換え後の残存 | 公開refから到達できる全object（3990）で、該当literal・姓名のペア・姓の単語はいずれも0件 |
+
+**主なSHAの対応:**
+
+| 対象 | 書換え前 | 書換え後 |
+|---|---|---|
+| `main` | `e803ecc3dcaff48973342521c8bd77ecf1bbb353` | `aef22faf1aaa52ee738e18c4a354e2304fec2aba` |
+| PR #34 head | `f06e2acf1448e953b08ff7b65f93aa9ff0878cf4` | `a0f60d4958c219ee35e51221455ce97948b34095`（このあと調整commitを追加） |
+| reviewed cutover | `51dc90fa8bbdbe3c80c5e8adc3f96811677c6cb5` | `e0960bdc4cd53264f214d85844f89742e587d39c` |
+
+**調整commit:**
+
+- `tools/public_history_baseline.json`のcutoverと、それを固定しているテストを、書換え後SHAへ変更した。
+- 書換え後SHAは自動で決めず、commit-mapの1:1対応で決めた。
+- 上記以外の機能変更は無い。
+
+**GitHub側の残存:**
+
+- force pushで更新できるのは公開branch/tagだけである。
+- `refs/pull/*`、GitHubのキャッシュ、第三者のcloneにある旧SHAは、これでは消えない（[GitHubの手順](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)）。
+- CI実測とremoteの照合結果は、PR本文に記録する。
+
 ## 未実施（確認済みと扱わない）
 
 Windows実機・GPU・native build・実モデルDL・長時間音声・installer/portable（`verify_uninstaller.ps1`）・

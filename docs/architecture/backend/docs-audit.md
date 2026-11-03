@@ -51,6 +51,14 @@
 | `testing-and-operations.md` / `validation.md` / `AGENTS.md` / `変更履歴.md` | updated | placeholder基準、計測結果、fixture規則、0.1.39への追補 |
 | README日英・要件定義・Phase A/B8/B9文書 | reviewed-no-change | 利用者向け機能・API・version・DBに変更はない |
 
+## 公開Git履歴の書換え（2026-11-03）
+
+| 文書・ファイル | 判定 | 理由・変更内容 |
+|---|---|---|
+| 全branch・tagの`AISTATE.md`過去版 | rewritten | 実在の個人パスのliteralだけを`C:\Users\<user>\`に置換（git-filter-repo） |
+| `tools/public_history_baseline.json` / `tests/test_public_history_delta.py` | updated | cutoverを書換え後SHA `e0960bd`へ変更 |
+| `testing-and-operations.md` / `validation.md` / `変更履歴.md` / `AISTATE.md` | updated | 新しいcutover、SHA対応表、旧SHAが書換え前の記録であることの注記 |
+
 ## リンク検証
 
 `tests/test_docs_links.py`が`AGENTS.md`、`README.md`、`README.en.md`、`docs/architecture/README.md`、

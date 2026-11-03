@@ -13,6 +13,7 @@
   Windowsで既存のB6並行snapshot test（`store_busy`）が再発したため、文書化済みのretryableとして有界retryに修正。
 - 欠陥修正: `JobRuntime.activate()`のpre-v1 backupがmigration後（v6）だった問題を、open前backupに修正。
 - 追加: B7〜B9横断E2E（`tests/test_backend_foundation_e2e.py`、11件）。検証は[validation](docs/architecture/backend/validation.md)。
+- 2026-11-03: ownerの承認により、公開Git履歴を書き換えた（`AISTATE.md`過去版の実在の個人パスを除去）。この節より下の旧SHAは書換え前の記録。対応表とcutover（`e0960bd`）は[validation](docs/architecture/backend/validation.md)。
 - 未受入: Windows実機・GPU・native build・実モデルDL・長時間音声・installer/portable・WebView2・実機restore・実smoke provider。
   owner判断待ち: private DBの保持期間・削除・暗号化・ACL。
 

@@ -448,7 +448,8 @@ def test_reviewed_fixture_and_typescript_rules_hold_in_the_delta_gate(
 
 def test_shipped_baseline_pins_the_pr34_review_cutover() -> None:
     loaded = DELTA["load_baseline"](ROOT / "tools" / "public_history_baseline.json")
-    assert loaded.cutover == "51dc90fa8bbdbe3c80c5e8adc3f96811677c6cb5"
+    # Rewritten-history equivalent of the pre-rewrite review base 51dc90f (2026-11-03).
+    assert loaded.cutover == "e0960bdc4cd53264f214d85844f89742e587d39c"
     assert loaded.bot_addresses == frozenset({BOT.encode()})
 
 
