@@ -46,7 +46,14 @@
 
 ## CI（push / PR）
 
-<!-- CI -->
+対象HEAD `25cdc491c6c454f5a524274cfd8a5b4a9df56b36`（Draft PR [#35](https://github.com/zawa356/Utteran/pull/35)）。
+
+| run | event | 結果 |
+|---|---|---|
+| [41753661104](https://github.com/zawa356/Utteran/actions/runs/41753661104) | push | **success**（12 job: lock/schema、Ruff、mypy linux+win32、Linux pytest、Windows pytest＋反復2種、PowerShell 5.1 parse/起動、contracts 3.11/3.12、BOM、privacy worktree、privacy delta（blocking）、履歴監査（report only）） |
+| [41753707283](https://github.com/zawa356/Utteran/actions/runs/41753707283) | pull_request | **success**（同じ12 job） |
+
+skipされたjobはない。このCI記録を追加したcommit自体のCIはPR上で確認する。
 
 ## 未検証（実施していない・合格扱いしない）
 
