@@ -23,7 +23,7 @@
 | `pytest tests/test_ui1_legacy_sse.py` | 実`create_app`＋stub JobManager | 1 passed, 1 xfailed（strict） |
 | スパイク型検査 | TypeScript 6.0.3（vue-tscは3.3.14） | 3案とも0 error |
 | スパイク`vite build` | Vite 8.3.5 | 3案とも成功（サイズは[framework-comparison](framework-comparison.md)） |
-| スパイクE2E（`tools/ui1/spike/e2e/run.mjs`） | Chromium 153 headless | 3案とも**7/7 pass**。repo内コピーから再install→build→E2Eでも同結果 |
+| スパイクE2E（`tools/ui1/spike/e2e/run.mjs`） | Chromium 153 headless | 3案とも**7/7 pass**。初版で「repo内コピーから再現」と記したのは作業ツリーの複製で、未追跡ファイルを含んでいた（**クリーンcheckoutの証拠ではない**）。クリーンcheckoutでの再現は下の「PR #35 レビュー対応」 |
 | vue-tsc × TypeScript 7.0.2 | — | 起動失敗（`ERR_PACKAGE_PATH_NOT_EXPORTED: ./lib/tsc`）。TS 6.0.3へ統一 |
 
 ## 品質ゲート（Linux container、ローカル実行）
@@ -54,6 +54,16 @@
 | [41753707283](https://github.com/zawa356/Utteran/actions/runs/41753707283) | pull_request | **success**（同じ12 job） |
 
 skipされたjobはない。このCI記録を追加したcommit自体のCIはPR上で確認する。
+
+## PR #35 レビュー対応（2026-11-04、HEAD `f41ae3a`へのレビュー）
+
+| 指摘 | 原因・対応 | 検証 |
+|---|---|---|
+| P1 スパイクがクリーンcheckoutから再現できない | リポジトリ直下`.gitignore`の`*.ts`（MPEG-TS動画用）が`core/core.ts`・各`main.ts`/`useCore.ts`/`env.d.ts`/`vite.config.ts`の計11ファイルを無視していた。初版の「repo内コピーから再現」は**作業ツリーの複製**で行ったため検出できなかった（検証方法の誤り）。`tools/ui1/spike/.gitignore`で`!*.ts`を追加して11ファイルを追跡。3案と`e2e/`の`package-lock.json`をcommit（`npm ci`で再現、全依存は`registry.npmjs.org`から解決） | commit `642761c`を`git clone`した**クリーンcheckout**（未追跡ファイル0）で、3案それぞれ`npm ci`・`npm run typecheck`・`npm run build`がexit 0。`e2e`は`npm ci`でPlaywright 1.63.0。`node e2e/run.mjs --out=report.json`は**3案とも7/7、nonce CSP違反0、exit 0** |
+| P2 E2E失敗でもexit 0 | `run.mjs`が結果を検査していなかった。シナリオ失敗・7件未満・nonce CSP違反でexit 1、例外はシナリオ失敗として記録、ハーネス異常はexit 2。失敗は`FAIL ...`と`report.json`の`failures`に出す | クリーンcheckoutで1案（Vuetify）のbuild成果物を意図的に壊すと**exit 1**（`FAIL vue-vuetify: scenario scenario-exception failed`）。再buildで**exit 0** |
+| P2 CIでの実行 | 独立job `ui1-frontend-spike`を追加（`npm ci`→typecheck→build→Playwright Chromium取得→E2E）。既存gateは変更なし | 結果は下の「CI（レビュー対応後）」 |
+| P2 MUI X列リサイズの記述 | 「列リサイズはPro」は誤り。MUI X v7でCommunityへ移動。`@mui/x-data-grid@9.17.0`の型定義でも`disableColumnResize`/`autosizeOnMount`は通常prop、Community強制propは複数列ソート/フィルタ不可・列並べ替え不可・pagination | [framework-comparison](framework-comparison.md)の表・留保・注記を訂正。誤記はMUI案の留保の1項目だった。訂正でVuetify案との差は縮まるが、依存数・JS量・Emotionのnonce必須・Splitterの追加依存の差は残るため、推奨順位は変えない（owner判断の材料として明記） |
+| P2 PrimeUIライセンスの記述 | 5.x以降にも**無料のCommunity License（条件付き）**がある。MIT版4.x／無料Community（条件・key・年次更新）／有料Commercialを分け、OSS配布上の判断理由を追記 | [framework-comparison](framework-comparison.md#primevueのライセンス区分とoss配布上の判断)、ADR-003を訂正 |
 
 ## 未検証（実施していない・合格扱いしない）
 

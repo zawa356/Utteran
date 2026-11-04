@@ -25,7 +25,7 @@
 3. **非同期の正しさはframework非依存のTypeScriptコア**（API client、transport、domain store、純粋reducer）で担保し、
    view（Vue SFC）はkit標準部品とコアのselector/actionのみを使う。Pinia等の追加state libraryは必須にしない。
 4. **代替: React + TypeScript + Vite + MUI（Core＋MIT範囲）**。同じコアをそのまま使う。
-5. **PrimeVueは採用しない**（4.xは新規開発停止・security fixのみ、5.x以降はlicense key必須の商用ライセンス）。
+5. **PrimeVueは採用しない**（MIT版4.xは新規開発停止・security fixのみ。5.x以降はMITではない独自のPrimeUI License: 無料のCommunity版は条件付き・license key必須・年次更新、ほかに有料のCommercial版）。
 6. 旧`app.js`は画面単位で段階移行し、flagで旧UIへ戻せる状態を既定切替まで維持する。
 
 ## Evidence
@@ -35,8 +35,8 @@
   同一Playwright 7シナリオ**7/7 pass**（Chromium 153 headless）。差はframeworkではなくkit・依存・CSPに出た。
 - payload（JS gzip）: PrimeVue 94 KB、Vuetify 120 KB（＋CSS 45 KB）、MUI 143 KB。本番依存: 31 / 50 / 84。
 - 現行CSP（`style-src 'self'`）での違反: PrimeVue 32、Vuetify 2、MUI 5。nonce対応で全て0。
-- ライセンス: 実パッケージ`primevue@5.0.4`の`LICENSE.md`は商用PrimeUI License。`primevue@4.5.5`はMIT。
-  Vuetify・MUI CoreはMIT。MUI Xは列リサイズ・複数ソート（DataGrid）、DnD並べ替え（Tree View）がPro（公式licensing）。
+- ライセンス: 実パッケージ`primevue@5.0.4`の`LICENSE.md`はPrimeUI License（無料Community版＝条件付き、有料Commercial版）。`primevue@4.5.5`はMIT。
+  Vuetify・MUI CoreはMIT。MUI X DataGrid Community（MIT）は列リサイズ・autosize・仮想化を含む。複数列ソート・列並べ替え・列固定・row reorder・tree data（DataGrid）、DnD並べ替え（Tree View）はPro以上。
 - tooling: `vue-tsc@3.3.14`は`typescript@7.0.2`で起動不可、`6.0.3`で動作。
 
 ## Alternatives

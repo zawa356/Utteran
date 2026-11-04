@@ -9,7 +9,7 @@
 - 再現（Chromium headless、現行の実asset・実CSP）: D-01〜D-07を再現、D-08を`tests/test_ui1_legacy_sse.py`で固定。
   「無反応」報告の原因は断定していない。Windows WebView2実機は未実施。
 - 技術候補（**未採択**）: 第一推奨 Vue 3 + TS + Vite + Vuetify 4 ＋ framework非依存の非同期コア、代替 React + MUI、
-  PrimeVueは不推奨（5.x商用ライセンス化・4.x開発停止）。hostはpywebview + WebView2継続。
+  PrimeVueは不推奨（5.x以降は独自PrimeUI License＝無料Community版は条件付き、MIT版4.xは開発停止）。hostはpywebview + WebView2継続。
 - 次（UI-2 #20、owner採択後）: backend小変更（CSP nonce G-11、新資産route＋flag G-12）→ S0基盤 → S1設定 → S2環境…
   （[frontend-architecture](docs/architecture/ui1/frontend-architecture.md#4-段階移行)）。既定GUIは旧UIのまま。
 - PR #23（旧履歴基点のUI監査Draft）は参照のみ・未変更。既定GUI/backend/v1 opt-in境界は変更なし。

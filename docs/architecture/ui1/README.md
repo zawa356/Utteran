@@ -13,7 +13,7 @@
 - 現行GUIの操作・状態・API/SSE経路を棚卸しし、**非同期欠陥7件を現行コードの実行で再現**、旧SSEの再接続再送1件を
   実backendのtestで固定した。ユーザー報告の「無反応」の原因は断定していない。
 - Vue+PrimeVue / Vue+Vuetify / React+MUI を同条件スパイクで比較。**第一推奨: Vue 3 + TS + Vite + Vuetify 4 ＋
-  framework非依存の非同期コア**、代替: React + MUI。PrimeVueはライセンス（5.x商用化）と保守（4.x凍結）で不推奨。
+  framework非依存の非同期コア**、代替: React + MUI。PrimeVueはライセンス（5.x以降は独自のPrimeUI License化（無料Community版は条件付き））と保守（MITの4.xは凍結）で不推奨。
   host は **pywebview + WebView2継続**（Electronは保留、bridgeで隔離）。
 - 通常モードA / Expert 3ペインC、共通設定＋ファイル別override、不成立構成の非表示（backend正本）を設計。
 - backendギャップ15件（G-01〜G-15）を列挙。UI-2の前提となる小変更はCSP nonce（G-11）と新資産配信route（G-12）。
@@ -57,7 +57,7 @@ ADR-001候補1ファイル）は**読み取りのみ**。編集・Ready化・mer
 | 基点 | 旧履歴`1097aef`（書換え前、B5〜B9統合前） | 新履歴`068e62f`（B7〜B9統合後） | 行番号・backend前提を現行で再確認 |
 | `loadEnvironment`競合 | 関数抽出＋mock DOMで巻戻り | **実ファイル・実DOM・実CSP・実`<select>`**で巻戻り（D-01） | 結論一致。知見のみ再利用 |
 | その他の欠陥 | 静的リスクとして列挙（wizard polling、queue catch、settings、cancel、finishJob重複の可能性） | D-02〜D-07を**実行で再現**、D-08をbackend testで固定、R-01〜R-11を区別 | 重複箇所は再検証済み |
-| 技術比較 | Vue+PrimeVueを暫定推奨（PrimeVueをMITと記載） | 3案の同条件スパイク。**PrimeVue 5.x商用化・4.x凍結を確認し不推奨**、Vuetify推奨 | PR #23の採択は前提にしない |
+| 技術比較 | Vue+PrimeVueを暫定推奨（PrimeVueをMITと記載） | 3案の同条件スパイク。**PrimeVue 5.xの独自ライセンス化・MIT版4.xの凍結を確認し不推奨**、Vuetify推奨 | PR #23の採択は前提にしない |
 | backend前提 | B5〜B9以前 | v1 opt-in・409 `execution_unavailable`・progressなし等を反映 | gap表へ |
 | UI要件 | 理想UI（通常A/Expert C）以前 | 2026-11-04合意の要件を反映 | 新規 |
 | ADR番号 | ADR-001 | ADR-003（競合回避） | 両者は別ファイル |

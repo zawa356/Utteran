@@ -4,7 +4,7 @@
 
 ## 1. 比較条件（同条件スパイク）
 
-同一の縦切りを3案で実装し、同一のPlaywrightスクリプトで駆動した。ソースと再実行手順:
+同一の縦切りを3案で実装し、同一のPlaywrightスクリプトで駆動した（lockfile込みでcommitし、クリーンcheckoutとCI job `ui1-frontend-spike`で再実行できる）。ソースと再実行手順:
 [`tools/ui1/spike/`](../../../tools/ui1/spike/README.md)。
 
 - 共通コア（framework非依存TypeScript、`core/core.ts`を3案で同一ファイル共有）: 共通設定＋ファイル別override、
@@ -41,15 +41,21 @@ WebView2上の起動時間・RAM（プロセス全体）は**未計測**。
 
 | 観点 | PrimeVue | Vuetify | MUI |
 |---|---|---|---|
-| ライセンス | **4.x系はMIT（最終4.5.5、2026-04-08）。5.0.0（2026-07-15）以降は商用「PrimeUI License」**（実パッケージ`LICENSE.md`: license key必須、Community版は小規模組織・非商用OSS向けで年次更新、再配布・逆コンパイル制限）。公式GitHubは「security fixes only」と表示し、開発はPrimeUIへ移行 | MIT（実パッケージ・npm metadata） | `@mui/material` MIT。MUI XはCommunity（MIT）＋Pro/Premium（商用・license key、未設定時は透かし） |
+| ライセンス | 3区分（詳細は下の「PrimeVueのライセンス区分」）: **MIT版4.x**（最終4.5.5、2026-04-08）／5.0.0（2026-07-15）以降の**PrimeUI License**のうち**無料のCommunity License**（条件付き）と**有料のCommercial License**。公式GitHubは「security fixes only」と表示し、開発はPrimeUIへ移行 | MIT（実パッケージ・npm metadata） | `@mui/material` MIT。MUI XはCommunity（MIT）＋Pro/Premium（商用・license key、未設定時は透かし） |
 | 保守状況 | 4.xは新機能停止・security fixのみ（公式GitHub） | v4系が活発（4.0.0 2026-02-23 → 4.3.2 2026-11-03） | v9系が活発（9.0.0 2026-04-07 → 9.5.0 2026-10-09） |
-| データテーブル・仮想化 | DataTable（virtual scroller）、TreeTable | VDataTable / **VDataTableVirtual**（core） | 素の`Table`はMIT。DataGrid CommunityはMIT。**列リサイズ・複数ソート・列固定はPro**（公式licensing） |
+| データテーブル・仮想化 | DataTable（virtual scroller）、TreeTable | VDataTable / **VDataTableVirtual**（core） | 素の`Table`はMIT。DataGrid Community（MIT）は**列リサイズ・autosize・行/列仮想化を含む**（MUI X v7でCommunityへ移動。`@mui/x-data-grid@9.17.0`の型定義でも`disableColumnResize`/`autosizeOnMount`は通常prop）。Community版で強制されるのは複数列ソート/フィルタ不可・列の並べ替え不可・pagination有効（`DataGridForcedPropsKey`）。複数列ソート・列固定・row reorder・tree dataはPro以上 |
 | Tree / Inspector | Tree, TreeTable | **VTreeview**（core） | Tree View Community（展開・選択）。**DnD並べ替え・lazy load・仮想化はPro** |
 | Splitter / リサイズ可能ペイン | **Splitter**あり | **なし**（CSS grid＋自作resizer、または別ライブラリ） | **なし**（`react-resizable-panels` 4.17.0 MIT等が必要） |
 | Dialog / Toast / Menu / Tabs / Form | あり | あり（VDialog、VSnackbarQueue、VMenu、VTabs、VForm、VNumberInput） | あり（Dialog、Snackbar、Menu、Tabs） |
-| キュー順序のdrag操作 | OrderList / PickList / DataTable row reorder | 標準部品なし（VList＋別ライブラリ） | 標準部品なし（DataGridのrow reorderはPro） |
+| キュー順序のdrag操作 | OrderList / PickList / DataTable row reorder | 標準部品なし（VList＋別ライブラリ） | 標準部品なし（DataGridのrow reorderはPro以上） |
 | i18n | locale設定 | locale adapter（ja/en同梱） | locale object（jaJP等） |
 | 実行時style注入 | あり（styled mode） | theme変数のみ（本体CSSはファイル） | あり（Emotion） |
+
+MUI Xの列リサイズについて: 初版（HEAD `f41ae3a`）で「列リサイズはPro」と書いたのは誤りで、レビュー指摘により訂正した。
+MUI X v7（2024年）でcolumn resizing/autosizingはCommunityへ移動している（https://mui.com/blog/mui-x-v7/ 、
+https://mui.com/x/react-data-grid/column-dimensions/ ）。採用候補版`@mui/x-data-grid@9.17.0`の型定義でも、
+Community版の強制prop（`DataGridForcedPropsKey`）に列リサイズは含まれない。公式licensingページの概要文には
+Pro機能として列リサイズを挙げる記述が残っていたため、実パッケージと機能ページを正とした。
 
 ## 3. framework（Vue vs React）
 
@@ -60,7 +66,7 @@ WebView2上の起動時間・RAM（プロセス全体）は**未計測**。
 | 型検査ツール | `vue-tsc`が必要。**vue-tsc 3.3.14はTypeScript 7.0.2で起動不可**（`typescript/lib/tsc`が未export）。TS 6.0.3では動作 | `tsc`のみ（TS 7でも理論上可、今回は条件統一のため6.0.3） |
 | テンプレート/責務分離 | SFCで画面単位に分けやすい。HTMLに近く既存`index.html`からの移植が直観的 | JSX。分割は容易だが、Hooks規約（依存配列等）の学習負担 |
 | 依存規模 | 小（PrimeVue 31 / Vuetify 50） | 大（MUI 84） |
-| 長期保守 | Vue本体は安定。キット側はVuetifyが活発、PrimeVueは4.x凍結/5.x商用 | React・MUIとも活発。MUI Xの高機能部品は有償境界がある |
+| 長期保守 | Vue本体は安定。キット側はVuetifyが活発、PrimeVueはMIT版4.x凍結/5.x以降は独自ライセンス | React・MUIとも活発。MUI Xの高機能部品は有償境界がある |
 | Electron移行時の再利用 | コアとviewはhost非依存にできる（`window.pywebview`をhost bridgeへ隔離すれば同等） | 同左 |
 
 **状態の正しさはframework選択では決まらない**: 3案とも同じ非同期コアで7/7を満たし、旧`app.js`の欠陥
@@ -77,10 +83,26 @@ WebView2上の起動時間・RAM（プロセス全体）は**未計測**。
      採択時は2週間以上経過した版へpinする。
 2. **代替: React + TypeScript + Vite + MUI（Coreのみ、MUI X Pro/Premiumは使わない）＋同じコア**。
    - 選ぶ条件: owner/保守者がReactに慣れている、MUIの見た目を好む、Electron/他製品とのReact資産共有を優先する場合。
-   - 留保: 列リサイズ等の業務テーブル機能が無償版に無い、`react-resizable-panels`等の追加依存、JS最大、
+   - 留保: 業務テーブルの一部（複数列ソート・列並べ替え・列固定・row reorder・tree data）は有償版、`react-resizable-panels`等の追加依存、JS最大、
      Emotionのためnonce CSPが必須。
 3. **不推奨: PrimeVue**。部品の充足（Splitter・OrderList・TreeTable）は最良だが、MIT版4.xは新規開発停止、
-   5.x以降はlicense key必須の商用ライセンスで、MITのOSS配布物の依存として長期採用できない。
+   5.x以降はMITではない独自ライセンス（無料Community版はあるが条件付き）で、MITのOSS配布物の依存として
+   長期採用しにくい（理由は下の「PrimeVueのライセンス区分」）。
+
+### PrimeVueのライセンス区分とOSS配布上の判断
+
+| 区分 | 対象 | 費用・条件（実パッケージ`primevue@5.0.4`の`LICENSE.md`と公式 https://primeui.dev/licenses/community 、2026-11-04確認） |
+|---|---|---|
+| MIT | PrimeVue **4.x以前**（最終4.5.5） | 無料・MIT。公式は「既存のMIT版は永久にMIT」とする。新機能開発は停止、security fixのみ |
+| PrimeUI **Community License** | PrimeVue **5.x以降** | **無料**。対象は年間売上100万USD未満・開発者5人未満・従業員10人未満・外部資金300万USD未満の組織、個人・学生・非営利・**非商用OSS**。license key必須、12か月ごとの更新（30日猶予）、Pro部品は含まない |
+| PrimeUI Commercial License | PrimeVue 5.x以降 | 有料（開発者単位、Pro部品・サポートを含む） |
+
+Utteranが5.xを依存に採らない理由（**法的解釈ではなく採用判断**。条文の解釈が必要ならownerが確認する）:
+- UtteranはMITで配布し、第三者がforkしてbuildできることを前提にしている。5.xはcompiled packageの配布で、
+  key・適格性・更新が**利用者（build者）ごと**に必要になり、MITの依存として同等に扱えない。
+- 再配布で第三者が開発に使えるようにする場合は別途OEM Licenseが要るとの制限があり、OSSリポジトリでの扱いに確認事項が残る。
+- keyが無い・期限切れの場合にlicense noticeが表示され得るため、配布物の表示が依存側の状態に左右される。
+- MITの4.xは利用可能だが、新規開発が止まっているため長期の基盤には選ばない。
 
 不採用の追加候補（比較を肥大化させないため要点のみ）:
 - **Svelte 5 + キット**: bundleは最小になり得るが、業務向けUIキット（テーブル仮想化・Tree・Splitter）の
