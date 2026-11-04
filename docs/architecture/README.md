@@ -22,6 +22,11 @@ DTOとAPIの機械可読な正本は、コード（`src/utteran_contracts/`）�
 [b5](b5/preview.schema.json)、[b6](b6/control.schema.json)、[b7](b7/jobs.schema.json)、
 [b8](b8/setup.schema.json)、[b9](b9/events.schema.json)）である。
 
+## UI刷新の設計資料（UI-1、提案）
+
+- [ui1/](ui1/README.md): 現行GUI監査・再現・技術比較・理想UI情報設計・次期frontendアーキテクチャ・backendギャップ（2026-11-04）。
+  技術選定は[ADR-003](../adr/ADR-003-ui-frontend-stack-and-host-boundary.md)（Proposed — owner review required）。新GUIは未実装。
+
 ## 歴史資料（historical, 書き換えない）
 
 - [phase-a/](phase-a/README.md): **2026-10-30時点の提案**。`phase-a/openapi.yaml`はB5〜B9の現行実装を
