@@ -1,14 +1,23 @@
 // Same-condition Playwright run for the three UI-1 spikes.
-// Usage: node e2e/run.mjs [--shots]   (from the spike root; expects <app>/dist built)
+// Usage: node e2e/run.mjs [--shots] [--out=report.json]   (spike root; expects <app>/dist built)
+// Exit codes: 0 = every scenario ok and 0 CSP violations under the nonce policy for every app,
+//             1 = at least one scenario failed or a nonce-policy violation occurred, 2 = harness error.
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { chromium } = require(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright"));
+function loadPlaywright() {
+  try {
+    return require("playwright"); // e2e/node_modules (pinned in e2e/package.json)
+  } catch {
+    return require(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright"));
+  }
+}
+const { chromium } = loadPlaywright();
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const APPS = ["vue-primevue", "vue-vuetify", "react-mui"];
 const NONCE = "ui1spikenonce0123456789";
@@ -192,7 +201,19 @@ async function main() {
     nonce.close();
   }
   await browser.close();
-  console.log(JSON.stringify(report, null, 2));
+  const failures = [];
+  for (const [app, out] of Object.entries(report.apps)) {
+    for (const item of out.scenarios) if (!item.ok) failures.push(`${app}: scenario ${item.name} failed (${item.detail})`);
+    if (out.scenarios.length !== 7) failures.push(`${app}: expected 7 scenarios, ran ${out.scenarios.length}`);
+    if (out.nonceCspViolations !== 0) failures.push(`${app}: ${out.nonceCspViolations} CSP violation(s) under the nonce policy`);
+  }
+  report.failures = failures;
+  const outArg = process.argv.find((item) => item.startsWith("--out="));
+  if (outArg) await writeFile(outArg.slice("--out=".length), JSON.stringify(report, null, 2));
+  else console.log(JSON.stringify(report, null, 2));
+  for (const line of failures) console.error(`FAIL ${line}`);
+  console.error(failures.length ? `${failures.length} failure(s)` : "all apps: 7/7 scenarios ok, 0 nonce-policy CSP violations");
+  process.exit(failures.length ? 1 : 0);
 }
 
 main().catch((e) => {

@@ -14,27 +14,38 @@
 | `react-mui/` | React 19.3.1 + @mui/material 9.5.0 + Emotion 11.14 |
 | `e2e/run.mjs` | 3案を同じ手順で駆動するPlaywright script（CSP厳格/nonce、7シナリオ、ready時間、JS heap、`--shots`で画面保存） |
 
-各`package.json`は版を完全固定（`--save-exact`）。lockfile・`node_modules`・`dist`・画像はcommitしない（`.gitignore`）。
-build toolは3案とも Vite 8.3.5 / TypeScript 6.0.3（`vue-tsc 3.3.14`がTypeScript 7.0.2で起動しないため統一）。
+各`package.json`は版を完全固定（`--save-exact`）し、**`package-lock.json`もcommitする**（`npm ci`で同一の依存木を再現する）。
+`e2e/package.json`はPlaywright 1.63.0を固定する。`node_modules`・`dist`・画像・`report.json`はcommitしない（`.gitignore`）。
+リポジトリ直下の`.gitignore`は`*.ts`（MPEG-TS動画）を無視するため、このディレクトリの`.gitignore`で`!*.ts`として
+TypeScriptソースを再追跡している。build toolは3案とも Vite 8.3.5 / TypeScript 6.0.3（`vue-tsc 3.3.14`がTypeScript 7.0.2で
+起動しないため統一）。
 
-## 再実行
+## 再実行（クリーンcheckoutから）
 
-Node 22以上と、Nodeから`require`できるPlaywright（Chromium同梱）が必要。外部CDNは使わないが、`npm install`には
-npm registryへの接続が要る。作業はリポジトリ外の複製で行うと`node_modules`が混ざらない。
+Node 22以上が必要。外部CDNは使わないが、`npm ci`とChromium取得にはnetworkが要る。作業ツリーの複製ではなく、
+**commitをcloneした場所**で実行する（未追跡ファイルに依存していないことを確かめるため）。
 
 ```bash
-cp -r tools/ui1/spike /tmp/ui1-spike
+git clone --branch <branch> https://github.com/zawa356/Utteran /tmp/ui1-clean
 ```
 
 ```bash
-cd /tmp/ui1-spike && for d in vue-primevue vue-vuetify react-mui; do (cd $d && npm install && npm run typecheck && npm run build); done
+cd /tmp/ui1-clean/tools/ui1/spike && for app in vue-primevue vue-vuetify react-mui; do (cd "$app" && npm ci && npm run typecheck && npm run build) || exit 1; done
 ```
 
 ```bash
-cd /tmp/ui1-spike && node e2e/run.mjs --shots > report.json
+cd /tmp/ui1-clean/tools/ui1/spike/e2e && npm ci && npx playwright install chromium
 ```
 
-`report.json`の`apps.<name>.scenarios[].ok`が全てtrueであること、`nonceCspViolations`が0であることを確認する。
+```bash
+cd /tmp/ui1-clean/tools/ui1/spike && node e2e/run.mjs --out=report.json
+```
+
+`run.mjs`の終了コード: **0** = 3案すべてで7/7シナリオok、かつnonce付きCSPで違反0件。**1** = いずれかのシナリオ失敗、
+シナリオ数の不足、またはnonce付きCSPでの違反。**2** = ハーネス自体のエラー。失敗内容は標準エラーに`FAIL ...`として出し、
+`report.json`の`failures`にも残す。現行CSP（nonceなし）での違反数は比較用の計測値で、合否には使わない。
+
+CIでは`.github/workflows/ci.yml`の独立job `ui1-frontend-spike`が同じ手順（`npm ci`→typecheck→build→E2E）を実行する。
 
 ## ライセンス
 
