@@ -1,5 +1,7 @@
 # UI/UX刷新計画・次期開発引継ぎ
 
+> **2026-11-04現況（UI-1）:** 現行GUI監査・再現・技術比較・理想UI設計を[docs/architecture/ui1/](architecture/ui1/README.md)に提出（Draft PR、採択待ち）。技術選定は[ADR-003](adr/ADR-003-ui-frontend-stack-and-host-boundary.md)（Proposed）。新GUIは未実装。以下の現況行・未決定の記載は当時の記録。
+
 > **2026-11-03現況（Backend Foundation Hardening）:** B7・B8・B9はすべて[PR #32](https://github.com/zawa356/Utteran/pull/32)／[PR #33](https://github.com/zawa356/Utteran/pull/33)でmain統合済み・未リリース・opt-in。CI #27の既知問題は是正済み。U0〜U3は未着手。現行バックエンドの正本は[docs/architecture/README.md](architecture/README.md)で、以下の現況行は当時の記録。
 
 > **2026-11-02現況**: backend Phase A〜B6はmain統合済み（[統合記録](architecture/integration-2026-11-02.md)）。以下に残るB5/B6のDraft表記は過去時点の記録です。新GUIのU0〜U3・B8〜B9は未着手、UI監査Draft PR #23も未統合です。B7（opt-in Job/Queue API）はmain統合済み、B8（opt-in Setup API）・B9（events/sync、[Draft](architecture/b9/README.md)）は[Draft実装](architecture/b8/README.md)のみで、いずれもfrontendは未接続です（U0〜U3未着手）。
@@ -142,3 +144,19 @@ UI-1では技術を**先に決め打ちしない**。現行課題の再現、依
 **提案・レビュー待ちであり、実装済み仕様ではない。** frontend framework/UI kitは未決定。
 Draft PR #23のADR-001候補とは比較のみを行い、無断取り込みや技術採択はしていない。
 後続順序は契約/worker/backend基盤を先行する案を追加したもので、本計画の既存Issueを完了にしない。
+
+## UI-1で確定したユーザーUI要件（2026-11-04）
+
+2026-11-04のユーザー合意をUI設計の拘束条件として記録する（設計への反映は
+[ux-structure.md](architecture/ui1/ux-structure.md)）。実装済みの意味ではない。
+
+- **GUI-first**: CLI/coreは実行・意味検証・設定の正本。普段のセットアップ・文字起こし・結果確認・モデル管理はGUIが主導線。
+- **通常モードA（管理ツール型）**: 入力 → 推奨構成 → 実行 → 進捗 → 結果。CUDA/Vulkan/OpenVINO/Whisper.cpp等の選択を強要しない。
+- **ExpertモードC（統合ワークスペース型）**: 左=入力一覧、中央=工程（入力→ASR→話者分離→出力）と共通Preset/Policy＋ファイル別override・Inspector、右=投入・進捗・キュー・結果。比率・リサイズ・折りたたみは提案対象。
+- **常設サイドバー**で機能を分離し、1枚の巨大フォームにしない。
+- 自動選択された処理経路も実際の採用backend/device/根拠を確認可能にする（通常モードは折りたたみでよい）。
+- **不成立な組合せは表示しない**。可否はB4/B5等のbackend正本に従い、frontendへ互換表を複製しない。ready証拠のない構成を実行可能と偽装しない。
+- 準備不足・未対応は明示的な説明とセットアップ導線で示す。
+- 成熟したUIキットの標準部品を優先し、巨大な単一`app.js`を再作成しない。日英・keyboard・focus・スクリーンリーダー基礎・DPI/ウィンドウサイズ・オフライン同梱・外部CDN不要。
+- **操作の信頼性を見た目より優先**: 押下直後からloading/pending/error/success/retryを観測可能にし、無反応・二重送信・古い応答への巻戻りを防ぐ。
+- hostはpywebview + WebView2を基本方針とし、Electronは将来選択できるようにhost依存を局所化する（移行は対象外）。

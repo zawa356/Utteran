@@ -315,3 +315,30 @@ jobs:
         run: >-
           uv run --no-project python tools/public_history_scan.py
           --json output/public-history-scan-ci.json
+
+  ui1-frontend-spike:
+    name: UI-1 frontend spike (clean install, typecheck, build, E2E)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+      # Investigation spike only (tools/ui1/spike); it is not the product GUI. npm ci
+      # installs exactly the committed lockfiles, and run.mjs exits non-zero when any
+      # scenario fails or the nonce CSP is violated.
+      - name: Install, type-check and build each spike
+        working-directory: tools/ui1/spike
+        run: |
+          set -euo pipefail
+          for app in vue-primevue vue-vuetify react-mui; do
+            (cd "$app" && npm ci --no-audit --no-fund && npm run typecheck && npm run build)
+          done
+      - name: Install pinned Playwright and Chromium
+        working-directory: tools/ui1/spike/e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Same-condition E2E (7 scenarios x 3 spikes)
+        working-directory: tools/ui1/spike
+        run: node e2e/run.mjs --out=report.json

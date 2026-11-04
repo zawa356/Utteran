@@ -1,0 +1,22 @@
+{
+  "name": "ui1-spike-vue-vuetify",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "vue": "3.5.44",
+    "vuetify": "4.3.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.10",
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "vite-plugin-vuetify": "2.1.3",
+    "vue-tsc": "3.3.14"
+  }
+}

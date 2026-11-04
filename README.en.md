@@ -6,7 +6,7 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.39` (unreleased).
+> Current development version: `0.1.40` (unreleased).
 > APIs and configuration may change before 1.0.
 
 > The current backend (Phase A-B9) structure, feature status, limits and test coverage are maintained in
@@ -217,6 +217,10 @@ frontend frameworks, and host alternatives are candidates to evaluate, not decis
 This is **planned work, not implemented yet**. See the [UI/UX modernization plan and
 handoff (Japanese)](docs/UI_UX_刷新計画.md), [Epic #18](https://github.com/zawa356/Utteran/issues/18),
 and the first phase [#19 (audit and technology selection)](https://github.com/zawa356/Utteran/issues/19).
+
+2026-11-04: the UI-1 audit, reproductions and a **proposed** technology choice are in
+[docs/architecture/ui1/](docs/architecture/ui1/README.md) (Japanese). The new GUI is **not implemented**, and
+[ADR-003](docs/adr/ADR-003-ui-frontend-stack-and-host-boundary.md) awaits the owner's decision.
 
 
 ```console
