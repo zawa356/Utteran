@@ -1,6 +1,6 @@
 # UI-2 設計 — backend境界・frontend層・asset packaging
 
-更新: 2026-11-04 JST（0.1.41）。正本は実コード。ここは要点と理由の記録。
+更新: 2026-11-04 JST（0.1.42）。正本は実コード。ここは要点と理由の記録。
 
 ## 1. backendの変更（G-11 CSP nonce / G-12 新資産route＋flag）
 
@@ -36,7 +36,10 @@
   （pywebview 6.2.1、ページ読込ごとに発火）に登録し、読込のたびに`_bind_input_drop_once`で再バインドする。
   これにより「新UI → 旧画面を開く → 旧UI」でもD&Dが効く（PR #36レビューP2）。同じdocumentへの多重登録は、
   document固有のJS global `window.__utteranInputDropBound`とlockで防ぐ（documentが替わるとglobalも消えるので
-  往復ごとに1回だけ結ぶ）。fake windowのunit testのみで、**Windows実機では未確認**。
+  往復ごとに1回だけ結ぶ）。0.1.42でWindows実機の3経路（新→旧、往復後、flagなし旧GUI）とも1 drop＝1通知を確認。
+- **文字選択（0.1.42）**: pywebviewは既定で文字選択禁止用の`<style>`をnonceなしで注入し、WebView2で新UIのCSPに拒否された。
+  `--next-ui`時だけ`create_window(..., text_select=True)`でこの注入を止める（CSPは緩めない）。既定起動では引数を渡さず挙動不変。
+  新UIから旧画面へ移った同じwindowでは文字選択が許可される。
 
 ## 2. frontendの層
 

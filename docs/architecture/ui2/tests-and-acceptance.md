@@ -1,6 +1,7 @@
 # UI-2 試験・受入記録
 
-更新: 2026-11-04 JST（0.1.41）。**Linux（headless Chromium）での実測であり、Windows WebView2の合格ではない。**
+更新: 2026-11-04 JST（0.1.42、HEAD `862870d`）。§1〜§5.1は**0.1.41時点のLinux（headless Chromium）実測**（当時の記録として残す）。
+**Windows WebView2実機の受入結果は§7**（0.1.42、条件付き受入）。
 CI（GitHub Actions）の結果はDraft PRと Issue [#20](https://github.com/zawa356/Utteran/issues/20)のコメントに
 run URLを正本として記録する（この文書へ追記するcommitでCIを再起動し続けないため）。
 
@@ -122,10 +123,10 @@ run URLを正本として記録する（この文書へ追記するcommitでCI�
 
 | 指摘 | 対応 | 検証 |
 |---|---|---|
-| P2: `--next-ui`起動後に「旧画面を開く」で旧UIへ移るとnative D&Dが結ばれない | `--next-ui`時のみ`events.loaded`で読込ごとに再バインド、documentごとに1回（[design](design.md)） | `tests/test_ui2_next_ui.py`のfake window試験（遷移・重複loaded・往復で各documentに1回）。marker判定を外すと失敗することを確認。**Windows実機は未実施** |
+| P2: `--next-ui`起動後に「旧画面を開く」で旧UIへ移るとnative D&Dが結ばれない | `--next-ui`時のみ`events.loaded`で読込ごとに再バインド、documentごとに1回（[design](design.md)） | `tests/test_ui2_next_ui.py`のfake window試験（遷移・重複loaded・往復で各documentに1回）。marker判定を外すと失敗することを確認。Windows実機では§7で3経路とも合格（0.1.42） |
 | B9 epoch跨ぎの`queue_revision` | このPRでは変更しない（B9本体の契約・testと同時に直し、TS/Python parityを維持する）。S5（v1実接続）前のblocking課題 | — |
 
-### Windows実機での最小smoke（マージ前に実施が必要・未実施）
+### Windows実機での最小smoke（手順。0.1.42で実施済み、結果は§7）
 
 1. `utteran-gui --next-ui`でWebView2が起動し、新UIが表示される。DevToolsのConsoleにCSP違反が出ず、
    `style[nonce]`が`<meta name="csp-nonce">`と一致する。
@@ -136,10 +137,38 @@ run URLを正本として記録する（この文書へ追記するcommitでCI�
 
 native file dialogは新UIでは未接続のため、UI-2では受入対象にしない（後続で受入）。installer/portableも未受入。
 
-## 6. 未受入（このPRでは確認していない）
+## 6. 未受入（0.1.42時点でも確認していない）
 
-- **Windows WebView2 / pywebview実機**: 新UIの表示、CSP nonce（WebView2での`<style nonce>`）、`EventSource`、
-  native D&D（新UIには受け口が未実装）、file dialog、IME、DPI 125/150/200%、起動時間、プロセスRAM。
-  次回手順は[UI-1 validation](../ui1/validation.md#windows-webview2-実機での次回試験手順)を新UI（`--next-ui`）に読み替えて実施する。
+Windows実機で確認した範囲は§7。以下は**Windows実機を含め未受入**:
+
+- 新UI自身へのnative D&D（受け口未実装）と新UIからのnative file dialog（未接続）。
+- IME composition（UI-2に自由入力欄が無い。UI-3 #21の受入条件へ繰越）。
+- 実`EventSource`/SSE（新UIはv1を使わない）、起動時間・プロセスRAMの計測。
+- DPI 200%・1920×1200で既定窓（1180×820 DIP）が画面外にはみ出す制約の解消（UI-4 #22の既定切替ゲート、§7）。
 - installer/portable（`build.ps1`未変更。build済みなら`gui.spec`が同梱する設計のみ）、SAC/WDAC。
 - 実GPU・実モデル・実音声、B4 ready証拠、B8実setup、v1 activate（新UIは行わない）。
+
+## 7. Windows実機受入（0.1.42、HEAD `862870deccbc2fc9cd1041b96d8c6ea64800fbfe`）
+
+ownerがWindows実機で実施し、PR #36のコメントに記録した結果。cloud側ではGUIを操作していない。合成データのみ、実推論なし。
+
+| 項目 | 値 |
+|---|---|
+| 環境 | Windows build 26300.9711、WebView2 Runtime 156.0.4314.58、Python 3.12.13、pywebview 6.2.1、Node 22.23.4 / npm 11.21.1 |
+| 修正 | `862870d`: pywebviewが文字選択禁止のために注入するnonceなし`<style>`が、WebView2で新UIのCSP違反を1件起こした。`--next-ui`時だけ`create_window(..., text_select=True)`を渡す。既定旧GUIの起動引数・start callback、`script-src 'self'`は不変、`unsafe-*`なし。新UIから旧画面へ移った同じwindowでは文字選択が許可される |
+| CI | push [41788997600](https://github.com/zawa356/Utteran/actions/runs/41788997600)・PR [41789005424](https://github.com/zawa356/Utteran/actions/runs/41789005424): 各**14/14 success** |
+| Windows pytest | 1293 passed / 8 skipped / 1 xfailed / 0 failed（skip・xfailは既存）。UI-2対象22 passed |
+
+| 試験 | 結果 |
+|---|---|
+| CSP | 修正後の実再読込でCSP違反0、JS例外0、Vuetify theme `<style>`と`<meta name="csp-nonce">`のnonce一致、外部request 0 |
+| 設定・表示 | テーマ3種、ja/en、実APIでの保存・再読込・再起動後の保持、通常/Expert/sidebar、「未検証」表示、合成503での保存失敗表示とretry: PASS |
+| native D&D（Explorerから合成WAV） | 新UI→旧画面、同じwindow/serverでの往復後、flagなし旧GUIの3経路すべてで**trusted DOM drop 1 / アプリ通知1 / 入力欄反映あり**。初回に通知2回を観測したが実drop数を数えていなかったため、counterを追加して再試験し、1回のdropの二重処理は再現しなかった |
+| 最小窓・keyboard | native外枠のドラッグで最小900×660（100%時client 884×621）を実測。横overflow 0、Expert全ペイン切替、Tab/矢印/Enter/Escとfocus |
+| DPI | OS 125/150/200%で各再起動。native DPI 120/144/192、WebView2 DPR 1.25/1.5/2.0、横overflow 0。終了後OS 100%（DPI 96 / DPR 1.0）へ復元 |
+| **DPI 200%の制約** | 1920×1200・200%では既定1180×820 DIPの窓が画面外にはみ出す。最大化すれば画面内に収まり、縦scrollで設定・保存・sidebarを操作できた |
+
+**判定: 条件付き受入。** UI-2は開発者opt-in（`--next-ui`）のみで既定GUIは旧UIのまま、という前提で、200%制約を明記してUI-2を閉じる
+（owner提案）。**200%を完全PASSとは扱わない。** UI-4 #22の既定切替ゲートで、初期window sizeを画面に収める（適応サイズ・画面収容）ことを
+必須とする。IME compositionはUI-3 #21で最初の自由入力フォームを作る際にE2E化して受入する（開始/更新/確定/取消、未確定入力が
+実行・送信を誘発しない、確定文字列が重複しない）。installer/portable、新UI自身のD&D・file dialog、実SSE、実GPU/モデル/推論は対象外。

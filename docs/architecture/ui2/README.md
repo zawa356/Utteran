@@ -1,6 +1,6 @@
 # UI-2 — 次期GUIのfrontend基盤（S0）とopt-in新UI
 
-更新: 2026-11-04 JST。開発版 **0.1.41（未リリース）**。Issue [#20](https://github.com/zawa356/Utteran/issues/20)
+更新: 2026-11-04 JST。開発版 **0.1.42（未リリース）**（0.1.41で基盤、0.1.42でWindows受入修正）。Issue [#20](https://github.com/zawa356/Utteran/issues/20)
 （Epic [#18](https://github.com/zawa356/Utteran/issues/18)）。前段: [UI-1](../ui1/README.md)、
 採択: [ADR-003](../../adr/ADR-003-ui-frontend-stack-and-host-boundary.md)（**Accepted**、2026-11-04 owner）。
 
@@ -15,8 +15,10 @@
   `create_app(..., enable_next_ui=False)`、`utteran-gui --next-ui`。build成果物`src/utteran_gui/web-next/`はcommitしない。
 - 検証: Vitest（unit/contract）、Playwright（実FastAPI経由のE2E、Linux headless Chromium）、pytest、
   B9 reducerのPython/TypeScript共通fixture、隔離venvへのwheel install検査。CI job `ui2-frontend`。
-- **未受入**: Windows WebView2 / pywebview実機（表示・CSP・D&D・file dialog・IME・DPI・起動時間・RAM）、
-  installer/portableへの同梱、実GPU・実モデル。Linux Chromiumの成功はWebView2の合格として扱わない。
+- **Windows実機（0.1.42、`862870d`）: 条件付き受入**（[tests-and-acceptance §7](tests-and-acceptance.md#7-windows実機受入0142head-862870deccbc2fc9cd1041b96d8c6ea64800fbfe)）。
+  WebView2でCSP違反0・nonce一致、設定・表示・keyboard、旧画面でのnative D&D 3経路、最小窓、DPI 125/150/200%を確認。
+  **制約**: DPI 200%・1920×1200で既定窓が画面外にはみ出す（最大化で操作可）。UI-4の既定切替前に解消が必須。
+- **未受入**: IME composition（UI-3へ）、新UI自身のD&D・file dialog、実SSE、起動時間・RAM、installer/portable、実GPU・実モデル。
 
 ## 読む順番
 

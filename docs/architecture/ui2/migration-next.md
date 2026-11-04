@@ -1,6 +1,6 @@
 # UI-2 → UI-3 移行計画・backend gap・rollback・owner判断
 
-更新: 2026-11-04 JST（0.1.41）。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
+更新: 2026-11-04 JST（0.1.42）。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
 
 ## 1. 段階の現状
 
@@ -12,7 +12,7 @@
 | S3 文字起こし・キュー | 旧`/api/jobs*` `/api/queue` | 未着手（`SingleFlightPoller`は用意済み） |
 | S4 モデル・履歴・旧wizard | 旧API | 未着手 |
 | S5 v1接続 | `/api/v1`（opt-in） | 未着手（client・reducer・coordinatorはcontract＋fake testのみ） |
-| S6 既定切替 | — | 未着手。UI-4のWindows実機受入とowner承認が前提 |
+| S6 既定切替 | — | 未着手。UI-4のWindows実機受入とowner承認が前提。**DPI 200%での初期窓の画面収容**（0.1.42で既定1180×820 DIPがはみ出すことを実測）を解消すること |
 
 ## 2. UI-3で移す順序（提案）
 
@@ -29,6 +29,12 @@
 
 各段階で[UI-1 ux-structure §8](../ui1/ux-structure.md#8-旧画面--新画面-対応表機能欠落の管理)の旧→新対応表を更新し、
 機能欠落が無いことを確認してから`SECTION_STATUS`を変える。
+
+### UI-2から引き継ぐ受入条件（0.1.42 Windows受入より）
+
+- **UI-3 #21**: 最初の自由入力フォームでIME compositionをE2E化する（開始/更新/確定/取消、未確定入力が実行・送信を誘発しない、
+  確定文字列が重複しない）。新UI自身のnative D&D受け口とfile dialogを実装し、Windows実機で受入する。
+- **UI-4 #22**: 既定切替の前に、DPI 200%・1920×1200でも初期窓が画面内に収まること（適応的な初期サイズ）。
 
 ## 3. 旧画面 → 新UI 対応（UI-2時点）
 
@@ -80,7 +86,8 @@ UI-2で見つけた追加の論点:
 2. G-15: private DBのretention・ACL・完全削除。
 3. 旧UIのP1欠陥（D-01 profile表示巻戻り、D-04 後続ジョブ追跡停止）の短期hotfixを**別PR**で出すか
    （本PRには含めていない。既定GUIの変更になるため承認後のみ）。
-4. Windows WebView2での実機受入をいつ・どのVM/実機で行うか（新UIの既定化と配布受入の必須ゲート）。
+4. Windows WebView2: UI-2の範囲は0.1.42で条件付き受入済み（[§7](tests-and-acceptance.md#7-windows実機受入0142head-862870deccbc2fc9cd1041b96d8c6ea64800fbfe)）。
+   既定化（UI-4 #22）では200%での初期窓の画面収容、installer/portable、起動時間・RAMの受入が残る。
 5. installer/portableへ新UIを同梱する時期（`build.ps1`に`npm ci && npm run build`を組み込むか）。現在は
    build済みのときだけ`gui.spec`が同梱し、`build.ps1`は変更していない。
 6. B9 reducerの`queue_revision`のepoch跨ぎ（上記4.）。
