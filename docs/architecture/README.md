@@ -1,6 +1,6 @@
 # Architecture documents — where to start
 
-更新: 2026-11-03 JST（Backend Foundation Hardening、開発版 0.1.39・未リリース）
+更新: 2026-11-04 JST（UI-2 次期GUIのfrontend基盤、開発版 0.1.41・未リリース）
 
 このディレクトリには **「現在の実装の正本」** と **「各Phaseの提出・検証記録（歴史資料）」** が混在する。
 UI刷新（U0〜U3）やバックエンド変更を始める前に、まず次の正本を読むこと。
@@ -22,10 +22,12 @@ DTOとAPIの機械可読な正本は、コード（`src/utteran_contracts/`）�
 [b5](b5/preview.schema.json)、[b6](b6/control.schema.json)、[b7](b7/jobs.schema.json)、
 [b8](b8/setup.schema.json)、[b9](b9/events.schema.json)）である。
 
-## UI刷新の設計資料（UI-1、提案）
+## UI刷新（UI-1 設計 → UI-2 基盤）
 
+- [ui2/](ui2/README.md): **次期GUIのfrontend基盤（S0）とopt-in新UI**（2026-11-04、0.1.41）。Vue 3 + Vuetify 4、
+  `utteran-gui --next-ui`のときだけ表示。既定GUIは旧UIのまま。設計・実測・UI-3への移行計画。
 - [ui1/](ui1/README.md): 現行GUI監査・再現・技術比較・理想UI情報設計・次期frontendアーキテクチャ・backendギャップ（2026-11-04）。
-  技術選定は[ADR-003](../adr/ADR-003-ui-frontend-stack-and-host-boundary.md)（Proposed — owner review required）。新GUIは未実装。
+  技術選定は[ADR-003](../adr/ADR-003-ui-frontend-stack-and-host-boundary.md)（**Accepted**、2026-11-04 owner採択）。
 
 ## 歴史資料（historical, 書き換えない）
 

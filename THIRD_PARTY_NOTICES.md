@@ -24,6 +24,9 @@ gated条件をdownload前に確認してください。利用条件への同意�
 | FastAPI | MIT | GUIのloopback APIに利用します。 |
 | Uvicorn | BSD-3-Clause | GUIのloopback ASGI serverに利用します。 |
 | pywebview | BSD-3-Clause | Windows desktop WebView windowに利用します。platform固有runtimeの条件も確認してください。 |
+| Vue (`vue`, `@vue/*` runtime) | MIT | 次期GUI（`--next-ui`）のbundleに含まれます（`frontend/package-lock.json`の版）。 |
+| Vuetify (`vuetify`, `@vuetify/v0`) | MIT | 次期GUIのUI部品。bundleに含まれます。 |
+| Material Design Icons (`@mdi/js`) | Apache-2.0 | 次期GUIで使うSVG icon path。bundleに含まれます（外部font・CDNは使いません）。 |
 | OpenVINO / OpenVINO GenAI | Apache-2.0 | デバイス検出と将来 backend の準備に利用します。 |
 | OpenAI Whisper Python package | MIT | OpenVINO encoder IR生成時に利用します。 |
 | ONNX Script | Apache-2.0 | OpenVINO encoder export時に利用します。 |
@@ -42,5 +45,6 @@ gated条件をdownload前に確認してください。利用条件への同意�
 | FFmpeg | LGPL-2.1-or-later / GPL-2.0-or-later | ビルド構成により異なります。utteran には同梱しません。 |
 | gyan.dev FFmpeg release essentials build | GPLv3 | `setup.ps1` がユーザー領域へ取得する Windows build です。 |
 
-Pythonのtransitive dependenciesにも個別licenseがあります。release時は`uv.lock`の解決結果と
+Pythonのtransitive dependenciesにも個別licenseがあります。次期GUIのbuild tool（Vite、TypeScript、Vitest、Playwright、ESLint等）は
+bundleに含まれず配布されないため、この表には載せていません（`frontend/package-lock.json`参照）。release時は`uv.lock`の解決結果と
 各配布packageのlicense metadataを再確認してください。この一覧は法的助言ではありません。

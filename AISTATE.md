@@ -1,5 +1,18 @@
 # AI 作業状態
 
+## 現在地（2026-11-04、UI-2 次期GUIのfrontend基盤・opt-in新UI、0.1.41・未リリース、Draft PR）
+
+- 基点`main` = `0e07e138`（PR #35 merge、新履歴。`git ls-remote`で確認・旧履歴やPR #23は取り込んでいない）。
+  作業ブランチは環境固定の`claude/lucid-hopper-jd09m0`。開発版0.1.40→**0.1.41**（lock差分はversion行のみ）。
+- ownerが2026-11-04にVue 3 + TS + Vite + Vuetify 4 / pywebview + WebView2継続を採択 → ADR-003を**Accepted**へ。
+- 実装: `frontend/`（host/api/transport/domain/features、ja/en、compact theme）、`next_ui.py`＋`create_app(enable_next_ui=False)`
+  （`/next/`、毎要求CSP nonce、fail closed）、`utteran-gui --next-ui`。実APIの縦切りは環境の読み取り表示とtheme/language設定のみ。
+- 検証（Linux、headless Chromium）: Vitest 77、Playwright E2E 10（実FastAPI経由）、pytest追加2ファイル、wheel隔離install検査。
+  CI job `ui2-frontend`を追加。詳細[ui2/tests-and-acceptance](docs/architecture/ui2/tests-and-acceptance.md)。
+- 未受入: Windows WebView2実機、installer/portable同梱、新UIのnative D&D受け口。旧GUIの欠陥D-01〜D-08は未修正（別PR提案のみ）。
+- owner判断待ち: G-05/G-06（override・入力リストの保存）、G-15（private DB retention/ACL）、旧UI P1 hotfixの要否、
+  B9 reducerのepoch跨ぎ`queue_revision`（[migration-next](docs/architecture/ui2/migration-next.md)）。
+
 ## 現在地（2026-11-04、UI-1 現行GUI監査・技術選定提案、0.1.40・未リリース、Draft PR）
 
 - 基点`main` = `068e62fc`（PR #34 merge、2026-11-04の履歴書換え後の新履歴。fetchで確認・旧履歴の混入なし）。

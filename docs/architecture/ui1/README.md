@@ -4,6 +4,8 @@
 （Epic [#18](https://github.com/zawa356/Utteran/issues/18)）。後続: [#20 UI-2](https://github.com/zawa356/Utteran/issues/20) →
 [#21 UI-3](https://github.com/zawa356/Utteran/issues/21) → [#22 UI-4](https://github.com/zawa356/Utteran/issues/22)。
 
+> **2026-11-04追補:** ADR-003はowner採択により**Accepted**。UI-2の実装は[../ui2/](../ui2/README.md)。以下は提出時の記録。
+
 > **これは調査・設計・提案であり、新GUIは実装していない。** 既定GUIの挙動、backend、v1 opt-in境界は変更していない。
 > 技術選定は**ownerの採択待ち**（[ADR-003](../../adr/ADR-003-ui-frontend-stack-and-host-boundary.md): Proposed）。
 
