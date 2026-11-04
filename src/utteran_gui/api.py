@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -23,6 +29,15 @@ from utteran_gui.environment import EnvironmentService
 from utteran_gui.history import HistoryError, HistoryService
 from utteran_gui.jobs import JobBusyError, JobManager, JobUnknownError
 from utteran_gui.logging_runtime import gui_logging_status
+from utteran_gui.next_ui import (
+    ASSET_CACHE_CONTROL,
+    DEFAULT_ASSET_ROOT,
+    NEXT_UI_PREFIX,
+    NextUiAssetsError,
+    content_security_policy,
+    new_nonce,
+    try_load_bundle,
+)
 from utteran_gui.operation_queue import OperationQueue, QueueClosedError
 from utteran_gui.processes import ProcessSupervisor, build_creation_kwargs
 from utteran_gui.settings import (
@@ -152,8 +167,14 @@ def create_app(
     enable_v1_setup: bool = False,
     enable_v1_events: bool = False,
     v1_events_config: Any = None,
+    enable_next_ui: bool = False,
+    next_ui_root: Path | None = None,
 ) -> FastAPI:
-    """Create one session-scoped application without importing the CLI package."""
+    """Create one session-scoped application without importing the CLI package.
+
+    ``enable_next_ui`` (default off) additionally serves the UI-2 frontend under ``/next/``
+    and makes ``/launch`` redirect there. It never enables any ``/api/v1`` surface.
+    """
     if not session_key:
         raise ValueError("session_key must not be empty")
     supervisor = process_supervisor or ProcessSupervisor()
@@ -237,6 +258,13 @@ def create_app(
 
     app.router.add_event_handler("shutdown", shutdown_processes)
     app.mount("/assets", StaticFiles(directory=web_root), name="assets")
+    next_bundle = try_load_bundle(next_ui_root or DEFAULT_ASSET_ROOT) if enable_next_ui else None
+    if next_bundle is not None and not isinstance(next_bundle, NextUiAssetsError):
+        app.mount(
+            f"{NEXT_UI_PREFIX}/assets",
+            StaticFiles(directory=next_bundle.assets),
+            name="next-assets",
+        )
 
     @app.middleware("http")
     async def secure_api(
@@ -258,9 +286,16 @@ def create_app(
         response.headers["Referrer-Policy"] = "no-referrer"
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; style-src 'self'; script-src 'self'; "
-            "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+        elif (
+            next_bundle is not None
+            and request.url.path.startswith(f"{NEXT_UI_PREFIX}/assets/")
+            and response.status_code == 200
+        ):
+            response.headers["Cache-Control"] = ASSET_CACHE_CONTROL
+        # Only the opt-in next UI page sets a nonce; every other response keeps the
+        # legacy policy byte for byte. script-src is never relaxed.
+        response.headers["Content-Security-Policy"] = content_security_policy(
+            getattr(request.state, "csp_nonce", None)
         )
         return response
 
@@ -269,7 +304,9 @@ def create_app(
         if not secrets.compare_digest(session, session_key):
             logging.getLogger(__name__).warning("GUI launch session-key mismatch")
             raise HTTPException(status_code=401, detail="Unauthorized")
-        response = RedirectResponse("/", status_code=303)
+        # The next UI is chosen only by the explicit create_app flag, never by settings.
+        target = f"{NEXT_UI_PREFIX}/" if enable_next_ui else "/"
+        response = RedirectResponse(target, status_code=303)
         response.set_cookie(
             SESSION_COOKIE,
             session_key,
@@ -282,6 +319,26 @@ def create_app(
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(web_root / "index.html")
+
+    if next_bundle is not None:
+
+        @app.get(NEXT_UI_PREFIX, include_in_schema=False)
+        def next_index_redirect() -> Response:
+            return RedirectResponse(f"{NEXT_UI_PREFIX}/", status_code=307)
+
+        @app.get(f"{NEXT_UI_PREFIX}/", include_in_schema=False)
+        def next_index(request: Request) -> Response:
+            if isinstance(next_bundle, NextUiAssetsError):
+                # Fail closed and diagnosable: never fall back to the legacy page silently.
+                return PlainTextResponse(
+                    f"Utteran next UI is unavailable ({next_bundle.code}). "
+                    "Build it with: npm ci && npm run build (in frontend/).",
+                    status_code=503,
+                    headers={"Cache-Control": "no-store"},
+                )
+            nonce = new_nonce()
+            request.state.csp_nonce = nonce
+            return HTMLResponse(next_bundle.render(nonce), headers={"Cache-Control": "no-store"})
 
     @app.get("/logo", include_in_schema=False)
     def logo() -> FileResponse:

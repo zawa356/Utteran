@@ -165,6 +165,18 @@ def set_windows_app_user_model_id() -> bool:
         return False
 
 
+NEXT_UI_FLAG = "--next-ui"
+
+
+def next_ui_requested(argv: list[str]) -> bool:
+    """The experimental UI-2 frontend is shown only for the exact developer flag.
+
+    There is no setting, environment variable or automatic migration that selects it:
+    without ``--next-ui`` the window opens the legacy GUI exactly as before.
+    """
+    return argv[1:] == [NEXT_UI_FLAG]
+
+
 def main() -> None:
     """Start uvicorn in the background and pywebview on the GUI thread."""
     if len(sys.argv) == 3 and sys.argv[1] == "--diagnose-keyring":
@@ -188,8 +200,13 @@ def main() -> None:
     import webview
 
     session_key = secrets.token_urlsafe(32)
-    app = create_app(session_key, repo_root=project_root())
-    log_stage("fastapi_app_created")
+    next_ui = next_ui_requested(sys.argv)
+    app = (
+        create_app(session_key, repo_root=project_root(), enable_next_ui=True)
+        if next_ui
+        else create_app(session_key, repo_root=project_root())
+    )
+    log_stage("fastapi_app_created", next_ui=next_ui)
     server_socket = bind_loopback_socket()
     port = int(server_socket.getsockname()[1])
     config = uvicorn.Config(app, log_level="warning", access_log=False)

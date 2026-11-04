@@ -1,10 +1,30 @@
 # ADR-003: 次期GUIのfrontend構成とhost境界
 
-- Date: 2026-11-04
-- Status: **Proposed — owner review required**（UI-1 [#19](https://github.com/zawa356/Utteran/issues/19)、Epic [#18](https://github.com/zawa356/Utteran/issues/18)）
-- Examined main: `068e62fce1b35960703b534426adfbe373ff86d8`（2026-11-04の履歴書換え後）
+- Date: 2026-11-04（提案）／**2026-11-04 owner採択**
+- Status: **Accepted**（owner採択 2026-11-04。UI-1 [#19](https://github.com/zawa356/Utteran/issues/19)、
+  UI-2 [#20](https://github.com/zawa356/Utteran/issues/20)、Epic [#18](https://github.com/zawa356/Utteran/issues/18)）
+- 採択の範囲: 技術構成（下記Decision）。**Windows WebView2実機での受入は未実施**であり、採択とは別のゲート
+  （新UIの既定化・配布受入の前提、UI-4 [#22](https://github.com/zawa356/Utteran/issues/22)）として残る。
+- Examined main: `068e62fce1b35960703b534426adfbe373ff86d8`（提案時）、採択反映は`0e07e138aae742244ca387468de62701874a31c9`
+  （PR #35 merge）を基点とするUI-2で実施。
 - 番号: mainには`ADR-002`のみ存在。`ADR-001`はDraft [PR #23](https://github.com/zawa356/Utteran/pull/23)が使用中のため、
   競合を避けて`ADR-003`とした。PR #23のADR-001は参照のみで、本ADRはそれを正本化しない。
+
+## 採択内容（2026-11-04 owner）
+
+| 項目 | 決定 | UI-2で固定した版（`frontend/package-lock.json`） |
+|---|---|---|
+| framework | Vue 3（SFC） | `vue@3.5.44` |
+| 言語・型検査 | TypeScript ＋ `vue-tsc` | `typescript@6.0.3`（`vue-tsc@3.3.14`がTS 7で起動しないため6系）、`vue-tsc@3.3.14` |
+| build | Vite | `vite@8.3.5`、`@vitejs/plugin-vue@6.0.10`、`vite-plugin-vuetify@2.1.3` |
+| UI kit | Vuetify 4（MIT） | `vuetify@4.3.1`（4.3.2は採択前日2026-11-03公開のため見送り、4.3系の1つ前のpatch） |
+| icon | Material Design Icons（SVG path、外部font不使用） | `@mdi/js@7.4.47`（Apache-2.0） |
+| 状態 | framework非依存TypeScriptのdomain/store/api/transport。Pinia等は不採用 | — |
+| host | 現行 FastAPI ＋ pywebview / Windows Edge WebView2 を継続。native依存は`frontend/src/host/`に隔離 | — |
+| Electron | **今は採用しない**。host adapterの差替えで将来選択可能な構造を維持 | — |
+| PrimeVue / React+MUI | 再選定しない（下記Alternativesは提案時の記録） | — |
+
+UI-2の実装・検証は[docs/architecture/ui2/](../architecture/ui2/README.md)。
 
 ## Context
 
@@ -17,14 +37,14 @@
   不成立構成の非表示（backend正本）、成熟UIキット優先、日英・keyboard・DPI・オフライン同梱。
 - backendのv1（B5〜B9）はopt-inで既定GUI未接続。公開能力API・progressイベント等は未実装（[gap](../architecture/ui1/backend-gap-matrix.md)）。
 
-## Decision (proposed)
+## Decision
 
 1. **hostはpywebview＋WebView2を継続**し、frontendからのhost依存を`host bridge`（`pickPath`/`onDroppedPaths`/
    `reportError`/`openFolder`）に閉じ込める。Electronは採用しないが、bridge差替えで移行可能な構造にする。
-2. **frontendは Vue 3 + TypeScript + Vite + Vuetify 4（MIT）を第一候補**とする。
+2. **frontendは Vue 3 + TypeScript + Vite + Vuetify 4（MIT）を採用する**（提案時は第一候補、2026-11-04採択）。
 3. **非同期の正しさはframework非依存のTypeScriptコア**（API client、transport、domain store、純粋reducer）で担保し、
    view（Vue SFC）はkit標準部品とコアのselector/actionのみを使う。Pinia等の追加state libraryは必須にしない。
-4. **代替: React + TypeScript + Vite + MUI（Core＋MIT範囲）**。同じコアをそのまま使う。
+4. 提案時の代替案React + TypeScript + Vite + MUIは**採用しない**（再選定不要とownerが判断）。コアがframework非依存である点は維持する。
 5. **PrimeVueは採用しない**（MIT版4.xは新規開発停止・security fixのみ。5.x以降はMITではない独自のPrimeUI License: 無料のCommunity版は条件付き・license key必須・年次更新、ほかに有料のCommercial版）。
 6. 旧`app.js`は画面単位で段階移行し、flagで旧UIへ戻せる状態を既定切替まで維持する。
 
@@ -67,14 +87,15 @@ S1設定 → S2環境 → S3文字起こし/キュー → S4モデル/履歴/旧
 S0〜S4はflagで旧UIへ戻すだけ（backendデータ形式不変）。S5のv1 activateは一方向migrationを伴うため、既存の
 backup復元手順に従いowner判断の後に行う。S6は設定1か所の切替で戻せるようにする。
 
-## Acceptance & Open questions
+## Acceptance & Open questions（2026-11-04更新）
 
-採択前にownerが判断・確認すること:
+| # | 提案時の論点 | 状態 |
+|---|---|---|
+| 1 | Vue+Vuetify / React+MUI | **既決**: Vue+Vuetify（owner採択） |
+| 2 | Windows VMのWebView2で表示・CSP nonce・`EventSource`・D&D・DPI・起動時間・RAMを計測 | **未実施**（UI-2もLinux headless Chromiumのみ）。新UI既定化・配布受入の必須ゲートとして保持 |
+| 3 | ファイル別overrideの保存先・継承規則（G-05）、入力リスト永続化（G-06） | **未決**（UI-2では永続化しない。UI-3設計時にowner判断） |
+| 4 | CSP nonce（G-11）・新資産route＋flag（G-12）のbackend小変更 | **既決・実装済み**（UI-2、既定off。[design](../architecture/ui2/design.md)） |
+| 5 | build成果物のcommit有無 | **既決**: commitしない。CIでbuildしwheelへ同梱（hatch `artifacts`）、PyInstallerはbuild済みなら同梱 |
+| 6 | 旧UI欠陥D-01〜D-07の延命修正 | **当面据置**: UI-2では旧GUIを修正しない。P1（D-01、D-04）の短期hotfixは別PRの提案のみ（owner承認待ち） |
 
-1. Vue+Vuetify（第一推奨）とReact+MUI（代替）のどちらを採るか。
-2. Windows VMのWebView2で同じスパイクを実行し、表示・CSP nonce・`EventSource`・D&D bridge・DPI 125/150/200%・
-   起動時間・プロセスRAMを計測する（[validation](../architecture/ui1/validation.md#windows-webview2-実機での次回試験手順)）。
-3. ファイル別overrideの保存先と継承規則（G-05）、入力リストの永続化可否（G-06）。
-4. CSP nonce導入（G-11）と新資産配信route（G-12）の小さなbackend変更をUI-2前提として認めるか。
-5. build成果物をcommitするか、CIでbuildして同梱するか（installer/portableの作り方に影響）。
-6. 旧UIの欠陥（D-01〜D-07）を新UI完成まで放置するか、小修正PRで延命するか。
+追加の未決: private DB retention/ACL/完全削除（G-15）はowner判断待ちのまま。新UIはDBに触れない。
