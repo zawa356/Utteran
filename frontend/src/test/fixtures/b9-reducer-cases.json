@@ -1,0 +1,331 @@
+{
+ "description": "Shared B9 EventReducer cases. 'expect' is the authoritative Python outcome (gapPolicy tolerate); 'expect_strict' overrides it for gapPolicy resync, whose replay stops at the first resync it causes.",
+ "cases": [
+  {
+   "name": "b9_reducer_ordering_rules (mirror of tests/test_b9_events.py)",
+   "steps": [
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:1",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 1,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "resync"
+    },
+    {
+     "op": "set_epoch",
+     "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:5",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 3,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "applied",
+     "expect_strict": "resync"
+    }
+   ],
+   "final": {}
+  },
+  {
+   "name": "gap tolerated in filtered mode, then duplicates/stale/other epoch",
+   "steps": [
+    {
+     "op": "sync",
+     "event_cursor": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0",
+     "resources": [],
+     "queue_revision": 1
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:5",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 3,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "applied",
+     "expect_strict": "resync"
+    }
+   ],
+   "final": {}
+  },
+  {
+   "name": "sync then contiguous events, replay is duplicate, slow GET is stale",
+   "steps": [
+    {
+     "op": "sync",
+     "event_cursor": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:2",
+     "resources": [
+      {
+       "id": "job_11111111111111111111111111111111",
+       "kind": "job",
+       "revision": 2,
+       "status": "queued"
+      }
+     ],
+     "queue_revision": 4
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:3",
+     "resource_id": "job_22222222222222222222222222222222",
+     "resource_kind": "job",
+     "resource_revision": 1,
+     "type": "state_changed",
+     "status": "queued",
+     "expect": "applied"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:4",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 3,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "applied"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:5",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 5,
+     "type": "queue_changed",
+     "status": "running",
+     "expect": "applied"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:3",
+     "resource_id": "job_22222222222222222222222222222222",
+     "resource_kind": "job",
+     "resource_revision": 1,
+     "type": "state_changed",
+     "status": "queued",
+     "expect": "duplicate"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:4",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 3,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "duplicate"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:2",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 2,
+     "type": "state_changed",
+     "status": "queued",
+     "expect": "duplicate"
+    },
+    {
+     "op": "resource",
+     "id": "job_22222222222222222222222222222222",
+     "revision": 1,
+     "status": "queued",
+     "expect": "stale"
+    },
+    {
+     "op": "resource",
+     "id": "job_22222222222222222222222222222222",
+     "revision": 2,
+     "status": "cancelled",
+     "expect": "applied"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:6",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 2,
+     "type": "state_changed",
+     "status": "queued",
+     "expect": "stale"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:7",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 5,
+     "type": "queue_changed",
+     "status": "paused",
+     "expect": "stale"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:8",
+     "resource_id": "setup_33333333333333333333333333333333",
+     "resource_kind": "setup_operation",
+     "resource_revision": 1,
+     "type": "state_changed",
+     "status": "queued",
+     "expect": "applied"
+    },
+    {
+     "op": "event",
+     "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:9",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 9,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "resync"
+    }
+   ],
+   "final": {
+    "cursor": "8",
+    "statuses": {
+     "job_11111111111111111111111111111111": "running",
+     "job_22222222222222222222222222222222": "cancelled",
+     "setup_33333333333333333333333333333333": "queued"
+    },
+    "queue_revision": 5
+   }
+  },
+  {
+   "name": "status-less event keeps the known status",
+   "steps": [
+    {
+     "op": "sync",
+     "event_cursor": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0",
+     "resources": [
+      {
+       "id": "job_11111111111111111111111111111111",
+       "kind": "job",
+       "revision": 1,
+       "status": "queued"
+      }
+     ],
+     "queue_revision": 1
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:1",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 2,
+     "type": "state_changed",
+     "status": null,
+     "expect": "applied"
+    }
+   ],
+   "final": {
+    "cursor": "1",
+    "statuses": {
+     "job_11111111111111111111111111111111": "queued"
+    }
+   }
+  },
+  {
+   "name": "sync from another epoch resets resources and cursor",
+   "steps": [
+    {
+     "op": "sync",
+     "event_cursor": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:10",
+     "resources": [
+      {
+       "id": "job_11111111111111111111111111111111",
+       "kind": "job",
+       "revision": 7,
+       "status": "running"
+      }
+     ],
+     "queue_revision": 1
+    },
+    {
+     "op": "sync",
+     "event_cursor": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:3",
+     "resources": [
+      {
+       "id": "job_22222222222222222222222222222222",
+       "kind": "job",
+       "revision": 1,
+       "status": "queued"
+      }
+     ],
+     "queue_revision": 1
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:11",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 8,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "resync"
+    },
+    {
+     "op": "event",
+     "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:4",
+     "resource_id": "job_22222222222222222222222222222222",
+     "resource_kind": "job",
+     "resource_revision": 2,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "applied"
+    }
+   ],
+   "final": {
+    "cursor": "4",
+    "statuses": {
+     "job_22222222222222222222222222222222": "running"
+    }
+   }
+  },
+  {
+   "name": "older sync never moves the cursor back",
+   "steps": [
+    {
+     "op": "sync",
+     "event_cursor": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:5",
+     "resources": [],
+     "queue_revision": 1
+    },
+    {
+     "op": "sync",
+     "event_cursor": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:3",
+     "resources": [],
+     "queue_revision": 1
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:5",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 1,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "duplicate"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:6",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 1,
+     "type": "state_changed",
+     "status": "running",
+     "expect": "applied"
+    }
+   ],
+   "final": {
+    "cursor": "6"
+   }
+  }
+ ]
+}

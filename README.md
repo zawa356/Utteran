@@ -6,11 +6,15 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.40`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.42`（未release）。API・設定は1.0まで変更されます。
 
 > バックエンド（Phase A〜B9）の現在の構成・提供状況・制約・試験範囲は
 > [docs/architecture/README.md](docs/architecture/README.md)を正本とします。B5〜B9のv1 APIはすべて
 > **main統合済み・未リリース・明示opt-in**で、通常のGUI/CLI起動では有効になりません。
+
+> 次期GUI（UI-2、試験版）: Vue 3 + Vuetify 4の新frontend基盤は、`frontend/`をbuildしたうえで開発者flag
+> `utteran-gui --next-ui`を付けたときだけ開きます。既定のGUIは従来の旧UIのままです。移行済みは実行環境の表示と
+> テーマ・表示言語の設定のみです（[docs/architecture/ui2/](docs/architecture/ui2/README.md)）。
 
 
 ### Phase B9 Events・Sync・Diagnostics（main統合済み・未リリース）

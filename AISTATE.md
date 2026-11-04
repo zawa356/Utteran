@@ -1,5 +1,27 @@
 # AI 作業状態
 
+## 現在地（2026-11-04、UI-2 Windows実機受入・CSP修正、0.1.42・未リリース、Draft PR #36）
+
+- 0.1.41（下節）の後続。ownerがWindows実機で受入し、`862870d`（0.1.42）で修正: pywebviewの文字選択禁止用nonceなしstyleが
+  WebView2で新UIのCSP違反を起こすため、`--next-ui`時だけ`text_select=True`。既定旧GUIの起動引数・CSP・v1境界は不変。
+- 実機（Windows build 26300.9711、WebView2 Runtime 156.0.4314.58、Python 3.12.13、pywebview 6.2.1）: CSP違反0・nonce一致、設定/表示/keyboard、旧画面でのnative D&D 3経路（1 drop＝1通知）、最小900×660、
+  DPI 125/150/200%。**条件付き受入**: DPI 200%・1920×1200で既定窓が画面外へはみ出す（最大化で操作可）→ UI-4 #22で解消必須。
+- CI（`862870d`）: push 41788997600・PR 41789005424 各14/14 success。詳細[ui2/tests-and-acceptance §7](docs/architecture/ui2/tests-and-acceptance.md)。
+- 未受入: IME（UI-3 #21へ）、新UI自身のD&D・file dialog、実SSE、起動時間・RAM、installer/portable。B9 `queue_revision`は#37（UI-2外）。
+
+## UI-2 次期GUIのfrontend基盤・opt-in新UI（0.1.41、2026-11-04、Draft PR）
+
+- 基点`main` = `0e07e138`（PR #35 merge、新履歴。`git ls-remote`で確認・旧履歴やPR #23は取り込んでいない）。
+  作業ブランチは環境固定の`claude/lucid-hopper-jd09m0`。開発版0.1.40→**0.1.41**（lock差分はversion行のみ）。
+- ownerが2026-11-04にVue 3 + TS + Vite + Vuetify 4 / pywebview + WebView2継続を採択 → ADR-003を**Accepted**へ。
+- 実装: `frontend/`（host/api/transport/domain/features、ja/en、compact theme）、`next_ui.py`＋`create_app(enable_next_ui=False)`
+  （`/next/`、毎要求CSP nonce、fail closed）、`utteran-gui --next-ui`。実APIの縦切りは環境の読み取り表示とtheme/language設定のみ。
+- 検証（Linux、headless Chromium）: Vitest 77、Playwright E2E 10（実FastAPI経由）、pytest追加2ファイル、wheel隔離install検査。
+  CI job `ui2-frontend`を追加。詳細[ui2/tests-and-acceptance](docs/architecture/ui2/tests-and-acceptance.md)。
+- 未受入: Windows WebView2実機、installer/portable同梱、新UIのnative D&D受け口。旧GUIの欠陥D-01〜D-08は未修正（別PR提案のみ）。
+- owner判断待ち: G-05/G-06（override・入力リストの保存）、G-15（private DB retention/ACL）、旧UI P1 hotfixの要否、
+  B9 reducerのepoch跨ぎ`queue_revision`（[migration-next](docs/architecture/ui2/migration-next.md)）。
+
 ## 現在地（2026-11-04、UI-1 現行GUI監査・技術選定提案、0.1.40・未リリース、Draft PR）
 
 - 基点`main` = `068e62fc`（PR #34 merge、2026-11-04の履歴書換え後の新履歴。fetchで確認・旧履歴の混入なし）。

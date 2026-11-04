@@ -27,6 +27,8 @@ htmlcov/
 build/
 dist/
 site/
+# UI-2 frontend build output (frontend/ `npm run build`); built in CI, never committed
+/src/utteran_gui/web-next/
 
 # utteran runtime data
 /input/*

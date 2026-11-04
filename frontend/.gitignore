@@ -1,0 +1,7 @@
+# The repository root ignores *.ts (MPEG-TS media). This directory is TypeScript
+# source, so re-include it here; media files never belong under frontend/.
+!*.ts
+node_modules/
+test-results/
+playwright-report/
+*.tsbuildinfo

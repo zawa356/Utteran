@@ -16,6 +16,8 @@ Priority when sources disagree: code → offline schemas (`docs/architecture/b*/
 
 - Default GUI/CLI startup (`utteran_gui/app.py` → `create_app(session_key, repo_root=...)`) must stay legacy-only:
   no `/api/v1`, no control/settings v1 DB, no heavy imports. v1 (B5–B9) is explicit opt-in only.
+- The next UI (`/next/`, `docs/architecture/ui2/`) is shown only with `utteran-gui --next-ui` (`enable_next_ui`);
+  it never enables v1, and the legacy CSP/`/launch` stay unchanged by default. Never relax `script-src` or add `unsafe-*`.
 - `utteran_contracts` must not import `utteran`, `utteran_gui`, or inference libraries.
   The GUI process never imports core `utteran`; it talks to profile venvs via subprocesses.
 - Fail closed: no silent fallback to an unsupported backend or the legacy CLI; unknown store schema is refused;
@@ -30,6 +32,7 @@ Priority when sources disagree: code → offline schemas (`docs/architecture/b*/
 even if a later commit removes it; the reviewed cutover in `tools/public_history_baseline.json` changes only by reviewed PR).
 Never mask a failing gate (`continue-on-error`, `|| true`, skipping or deleting tests, broad scan allowlists).
 Every tracked `.ps1` needs a UTF-8 BOM and must be classified in the CI startup allowlist.
+Frontend (`frontend/`, CI job `ui2-frontend`): `npm ci` · `npm run audit:prod` · `lint` · `typecheck` · `test` · `build` · `e2e`.
 
 ## Privacy
 

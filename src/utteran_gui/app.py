@@ -74,6 +74,41 @@ def _bind_input_drop(window: Any) -> None:
     log_stage("input_drop_bound")
 
 
+# Per-document marker: a JS global vanishes with its document, so a navigation (new UI ->
+# "旧画面を開く" -> legacy UI) gets a fresh binding, while the same document is never bound
+# twice (pywebview runs the start function and `loaded` handlers on separate threads).
+_DROP_BOUND_MARKER = "__utteranInputDropBound"
+_DROP_BIND_LOCK = threading.Lock()
+
+
+def _bind_input_drop_once(window: Any) -> None:
+    """Bind the legacy drop target at most once per loaded document (``--next-ui`` only)."""
+
+    with _DROP_BIND_LOCK:
+        if window.evaluate_js(f"Boolean(window.{_DROP_BOUND_MARKER})") is True:
+            return
+        if window.dom.get_element("#input-drop-zone") is None:
+            # The next UI has no drop target yet; it is bound after navigating to "/".
+            log_stage("input_drop_target_absent")
+            return
+        _bind_input_drop(window)
+        window.evaluate_js(f"window.{_DROP_BOUND_MARKER} = true")
+
+
+def _start_next_ui_window(window: Any) -> None:
+    """Start function for ``--next-ui``: rebind native drop after every page load.
+
+    The default legacy startup keeps passing ``_bind_input_drop`` itself to
+    ``webview.start`` and is unaffected by this function.
+    """
+
+    def on_loaded(window: Any) -> None:
+        _bind_input_drop_once(window)
+
+    window.events.loaded += on_loaded
+    _bind_input_drop_once(window)
+
+
 class NativeDialogApi:
     """Small pywebview bridge with no publicly traversable native objects."""
 
@@ -165,6 +200,18 @@ def set_windows_app_user_model_id() -> bool:
         return False
 
 
+NEXT_UI_FLAG = "--next-ui"
+
+
+def next_ui_requested(argv: list[str]) -> bool:
+    """The experimental UI-2 frontend is shown only for the exact developer flag.
+
+    There is no setting, environment variable or automatic migration that selects it:
+    without ``--next-ui`` the window opens the legacy GUI exactly as before.
+    """
+    return argv[1:] == [NEXT_UI_FLAG]
+
+
 def main() -> None:
     """Start uvicorn in the background and pywebview on the GUI thread."""
     if len(sys.argv) == 3 and sys.argv[1] == "--diagnose-keyring":
@@ -188,8 +235,13 @@ def main() -> None:
     import webview
 
     session_key = secrets.token_urlsafe(32)
-    app = create_app(session_key, repo_root=project_root())
-    log_stage("fastapi_app_created")
+    next_ui = next_ui_requested(sys.argv)
+    app = (
+        create_app(session_key, repo_root=project_root(), enable_next_ui=True)
+        if next_ui
+        else create_app(session_key, repo_root=project_root())
+    )
+    log_stage("fastapi_app_created", next_ui=next_ui)
     server_socket = bind_loopback_socket()
     port = int(server_socket.getsockname()[1])
     config = uvicorn.Config(app, log_level="warning", access_log=False)
@@ -217,8 +269,18 @@ def main() -> None:
     url = f"http://127.0.0.1:{port}/launch?session={quote(session_key)}"
     native_api = NativeDialogApi()
     log_stage("webview_window_creating")
+    # pywebview's default text-selection blocker injects a nonce-less style.
+    # Let the opt-in frontend own selection styles without relaxing its CSP.
+    # Omitting the option for legacy startup preserves its existing behavior.
+    selection_options = {"text_select": True} if next_ui else {}
     window = webview.create_window(
-        "utteran", url=url, width=1180, height=820, min_size=(900, 660), js_api=native_api
+        "utteran",
+        url=url,
+        width=1180,
+        height=820,
+        min_size=(900, 660),
+        js_api=native_api,
+        **selection_options,
     )
     native_api._attach_window(window)
     log_stage("webview_window_created", elapsed_seconds=round(time.monotonic() - started, 3))
@@ -232,7 +294,7 @@ def main() -> None:
         # those stages log through utteran_gui.api instead.
         log_stage("webview_start_blocking")
         webview.start(
-            _bind_input_drop,
+            _start_next_ui_window if next_ui else _bind_input_drop,
             window,
             icon=str(icon_path) if icon_path.is_file() else None,
         )

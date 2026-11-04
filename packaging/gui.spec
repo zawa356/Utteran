@@ -38,6 +38,10 @@ from PyInstaller.utils.win32.versioninfo import (
 REPO_ROOT = os.path.dirname(os.path.abspath(SPECPATH))  # noqa: F821  (SPECPATH is packaging/'s own dir)
 SRC_ROOT = os.path.join(REPO_ROOT, "src")
 WEB_ASSETS_DIR = os.path.join(SRC_ROOT, "utteran_gui", "web")
+# UI-2 opt-in frontend (`utteran-gui --next-ui`). Built by `npm ci && npm run build` in
+# frontend/ and git-ignored; bundled only when present. Without it the legacy GUI is
+# unchanged and --next-ui fails closed (503 next_ui_assets_missing).
+NEXT_UI_ASSETS_DIR = os.path.join(SRC_ROOT, "utteran_gui", "web-next")
 APP_ICON = os.path.join(REPO_ROOT, "icon", "utteran.ico")
 BUILD_VERSION = os.environ.get("UTTERAN_BUILD_VERSION", "0.0.0")
 DIST_NAME = os.environ.get("UTTERAN_GUI_DIST_NAME", "utteran-gui")
@@ -95,6 +99,8 @@ datas = [
     # alone therefore leaves a frozen executable with the fail backend.
     *copy_metadata("keyring"),
 ]
+if os.path.isfile(os.path.join(NEXT_UI_ASSETS_DIR, "index.html")):
+    datas.append((NEXT_UI_ASSETS_DIR, os.path.join("utteran_gui", "web-next")))
 
 a = Analysis(  # noqa: F821
     [os.path.join(SRC_ROOT, "utteran_gui", "__main__.py")],

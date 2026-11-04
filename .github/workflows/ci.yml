@@ -342,3 +342,63 @@ jobs:
       - name: Same-condition E2E (7 scenarios x 3 spikes)
         working-directory: tools/ui1/spike
         run: node e2e/run.mjs --out=report.json
+
+  # UI-2 next frontend (frontend/, served only with `utteran-gui --next-ui`). Independent job:
+  # clean `npm ci` from the committed lockfile, blocking production-dependency audit, lint,
+  # vue-tsc, Vitest, Vite build, Python tests that require the real build, Playwright E2E
+  # through the real FastAPI /launch -> /next/ path, and a wheel installed in a new venv.
+  # Headless Chromium on Linux is NOT a Windows WebView2 acceptance (that stays a UI-4 gate).
+  ui2-frontend:
+    name: UI-2 frontend (npm ci, audit, lint, types, unit, build, E2E, wheel)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: frontend/.nvmrc
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      # npm 10 (bundled with Node 22) crashes while resolving vitest's optional peers when
+      # the lockfile is regenerated; the lockfile is produced and installed with this npm.
+      - name: Pin npm (package.json packageManager)
+        run: npm install -g npm@11.21.1 && npm --version
+      - name: Install exactly the committed lockfile
+        working-directory: frontend
+        run: npm ci --no-fund
+      # Policy: production dependencies (shipped in the bundle) must have no high/critical
+      # advisory. A registry/network failure fails this step; it is never reported as clean.
+      - name: Audit production dependencies (blocking, high and above)
+        working-directory: frontend
+        run: npm run audit:prod
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+      - name: Type check (vue-tsc)
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Unit and contract tests (Vitest)
+        working-directory: frontend
+        run: npm test
+      - name: Build into src/utteran_gui/web-next
+        working-directory: frontend
+        run: npm run build
+      - name: Install Python dependencies
+        run: uv sync --extra dev --extra gui --locked
+      - name: Python tests that need the real build (no skip allowed here)
+        env:
+          UTTERAN_UI2_REQUIRE_BUILD: "1"
+        run: uv run --no-sync pytest tests/test_ui2_next_ui.py tests/test_ui2_reducer_parity.py -rfEs
+      - name: Install pinned Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: E2E through /launch -> /next/ (real FastAPI, synthetic services)
+        working-directory: frontend
+        run: npm run e2e
+      - name: Build the wheel and serve /next/ from a new isolated venv
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          uv build --wheel
+          uv run --no-project python tools/ui2/check_wheel_assets.py dist/utteran-*-py3-none-any.whl
