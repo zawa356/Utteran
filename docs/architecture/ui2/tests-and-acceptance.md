@@ -44,6 +44,14 @@ run URLを正本として記録する（この文書へ追記するcommitでCI�
   実build test 1件が加わる）。xfail 1件は既存のD-08（strict）。version bump直後・`uv sync`前の初回実行では、installed metadataが
   0.1.40のままのため`tests/test_version.py`の2件が失敗し、README更新と`uv sync`の後に解消した。
 
+### 2.2 GitHub Actions
+
+| commit | run | 結果 |
+|---|---|---|
+| `e9db9f285f771db317a1ada7b35837a841ea98ce`（実装完了時のHEAD） | PR [41774436232](https://github.com/zawa356/Utteran/actions/runs/41774436232)、push [41774393328](https://github.com/zawa356/Utteran/actions/runs/41774393328) | PR runは**14/14 job success**（`ui2-frontend`、Linux/Windows pytest、mypy、schema、privacy 3種、UI-1 spike等） |
+
+この記録を追加したcommit以降のrunは、PRのchecksとIssue #20のコメントを正本とする。
+
 ## 3. 何を試験したか
 
 ### unit / contract（Vitest、`frontend/src/**/*.test.ts`）
@@ -85,7 +93,8 @@ run URLを正本として記録する（この文書へ追記するcommitでCI�
 ### スクリーンショット
 
 `UI2_SCREENSHOTS=1 npm run e2e`で`frontend/test-results/screenshots/`に出力（合成データのみ、commitしない）。
-PR本文に通常モード・Expert 3ペイン・英語/dark・保存失敗・狭い窓の画像を添付する。
+画像（通常モード・Expert 3ペイン・英語/dark・保存失敗・狭い窓）は作業セッションでownerへ提供した。PRには添付していない
+（必要なら上記コマンドで同じ画像を再生成できる）。
 
 ## 4. 依存監査のpolicy
 
