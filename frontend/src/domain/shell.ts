@@ -1,0 +1,50 @@
+import { Store } from "./store";
+
+export const SECTIONS = ["transcribe", "results", "models", "queue", "setup", "settings"] as const;
+export type SectionId = (typeof SECTIONS)[number];
+export type Mode = "normal" | "expert";
+export type ExpertPane = "inputs" | "inspector" | "queue";
+
+/**
+ * Migration status is explicit so that nothing un-migrated looks operable.
+ * `partial` = a real, limited slice; `not_migrated` = only an explanation is shown.
+ */
+export type MigrationStatus = "partial" | "not_migrated";
+
+export const SECTION_STATUS: Record<SectionId, MigrationStatus> = {
+  transcribe: "partial", // read-only environment panel only (S2 slice); no job submission
+  results: "not_migrated",
+  models: "not_migrated",
+  queue: "not_migrated",
+  setup: "not_migrated",
+  settings: "partial", // theme and language only (S1 slice)
+};
+
+export interface ShellState {
+  mode: Mode;
+  section: SectionId;
+  /** Which Expert pane is shown when the window is too narrow for three columns. */
+  expertPane: ExpertPane;
+  navCollapsed: boolean;
+}
+
+/** Session-only UI state (G-05/G-06: nothing here is persisted in UI-2). */
+export class ShellController {
+  readonly store = new Store<ShellState>({ mode: "normal", section: "transcribe", expertPane: "inspector", navCollapsed: false });
+
+  setMode(mode: Mode): void {
+    this.store.patch({ mode });
+  }
+
+  navigate(section: SectionId): void {
+    this.store.patch({ section });
+  }
+
+  showPane(expertPane: ExpertPane): void {
+    this.store.patch({ expertPane });
+  }
+
+  toggleNav(): void {
+    this.store.patch({ navCollapsed: !this.store.get().navCollapsed });
+  }
+}
