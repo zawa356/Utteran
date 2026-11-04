@@ -1,0 +1,14 @@
+:root { font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px; }
+html, body, #app { height: 100%; margin: 0; }
+.shell { display: grid; grid-template-columns: 200px 1fr; height: 100%; }
+.side { border-right: 1px solid #8884; padding: 8px; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
+.work { min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+.panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 23fr) minmax(280px, 45fr) minmax(220px, 32fr); }
+.pane { min-width: 0; overflow: auto; padding: 8px 12px; border-right: 1px solid #8884; }
+.pane:last-child { border-right: 0; }
+.pane h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; margin: 4px 0 8px; opacity: .8; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.file { padding: 6px 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+.file[aria-selected="true"] { outline: 2px solid #3b82f6; }
+.normal { padding: 16px; max-width: 760px; }
+@media (max-width: 1100px) { .panes { grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr); } .pane.queue { grid-column: 1 / -1; border-top: 1px solid #8884; } }
