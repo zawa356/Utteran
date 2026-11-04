@@ -187,7 +187,13 @@ async function main() {
     out.readyMsMedian = ready.sort((a, b) => a - b)[2];
     const { context, page } = await open(browser, nonce);
     out.heapAfterLoadMb = await heapMb(page);
-    out.scenarios = await scenarios(page);
+    page.setDefaultTimeout(5000);
+    try {
+      out.scenarios = await scenarios(page);
+    } catch (error) {
+      // A scenario that throws (e.g. a missing element) is a failed scenario, not a harness error.
+      out.scenarios = [{ name: "scenario-exception", ok: false, detail: String(error?.message || error).split("\n")[0] }];
+    }
     out.heapAfterScenariosMb = await heapMb(page);
     out.nonceCspViolations = await page.evaluate(() => window.__violations.length);
     await context.close();
