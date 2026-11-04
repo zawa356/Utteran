@@ -74,6 +74,41 @@ def _bind_input_drop(window: Any) -> None:
     log_stage("input_drop_bound")
 
 
+# Per-document marker: a JS global vanishes with its document, so a navigation (new UI ->
+# "旧画面を開く" -> legacy UI) gets a fresh binding, while the same document is never bound
+# twice (pywebview runs the start function and `loaded` handlers on separate threads).
+_DROP_BOUND_MARKER = "__utteranInputDropBound"
+_DROP_BIND_LOCK = threading.Lock()
+
+
+def _bind_input_drop_once(window: Any) -> None:
+    """Bind the legacy drop target at most once per loaded document (``--next-ui`` only)."""
+
+    with _DROP_BIND_LOCK:
+        if window.evaluate_js(f"Boolean(window.{_DROP_BOUND_MARKER})") is True:
+            return
+        if window.dom.get_element("#input-drop-zone") is None:
+            # The next UI has no drop target yet; it is bound after navigating to "/".
+            log_stage("input_drop_target_absent")
+            return
+        _bind_input_drop(window)
+        window.evaluate_js(f"window.{_DROP_BOUND_MARKER} = true")
+
+
+def _start_next_ui_window(window: Any) -> None:
+    """Start function for ``--next-ui``: rebind native drop after every page load.
+
+    The default legacy startup keeps passing ``_bind_input_drop`` itself to
+    ``webview.start`` and is unaffected by this function.
+    """
+
+    def on_loaded(window: Any) -> None:
+        _bind_input_drop_once(window)
+
+    window.events.loaded += on_loaded
+    _bind_input_drop_once(window)
+
+
 class NativeDialogApi:
     """Small pywebview bridge with no publicly traversable native objects."""
 
@@ -249,7 +284,7 @@ def main() -> None:
         # those stages log through utteran_gui.api instead.
         log_stage("webview_start_blocking")
         webview.start(
-            _bind_input_drop,
+            _start_next_ui_window if next_ui else _bind_input_drop,
             window,
             icon=str(icon_path) if icon_path.is_file() else None,
         )

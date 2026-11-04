@@ -61,8 +61,9 @@
 UI-2で見つけた追加の論点:
 
 - **B9 `EventReducer.apply_sync`は別epochのsyncで`queue_revision`をresetしない**（store counterのため）。backup復元等で
-  queue revisionが下がると、以後のqueue eventが`stale`になり得る。frontend portはparityのため同じ挙動にしている。
-  backendの意図確認が必要（B9 Issue候補）。
+  queue revisionが下がると（例: 旧epoch rev=100 → 復元後rev=5）、以後のqueue event（rev 6等）が`stale`になる。
+  frontend portはparityのため同じ挙動。PR #36レビューにより、**S5（v1実接続）前のblocking課題**として、
+  B9本体の契約・testと同時に修正し、TS/Python parityを維持する（UI-2には混ぜない）。
 - `EventSource`はstatus codeを見せないため、`open`前の失敗（400/410/503）を区別できない。現在は一律`/sync`へ戻る。
   heartbeat comment（`: keepalive`）もJSから見えないので、無通信の検出は未実装。WebView2での挙動確認が要る。
 

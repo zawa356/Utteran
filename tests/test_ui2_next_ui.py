@@ -11,6 +11,8 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -227,3 +229,92 @@ def test_real_build_output_is_servable(tmp_path: Path) -> None:
         assert client.get(f"/next/{reference}").status_code == 200, reference
     # No external origin anywhere in the entry page (no CDN, no remote fonts).
     assert not re.search(r"""(?:src|href)=["']?(?:https?:)?//""", page.text)
+
+
+# ------------------------------------------------- PR #36 review P2: native drop after navigation
+
+
+class _Handlers(list[Any]):
+    def __iadd__(self, item: Any) -> _Handlers:  # type: ignore[override,misc]
+        self.append(item)
+        return self
+
+
+class _Element:
+    def __init__(self) -> None:
+        self.events = SimpleNamespace(dragenter=_Handlers(), dragover=_Handlers(), drop=_Handlers())
+
+
+class _Window:
+    """Fake pywebview window: each navigation is a new document with fresh JS globals."""
+
+    def __init__(self) -> None:
+        self.events = SimpleNamespace(loaded=_Handlers())
+        self.documents: list[dict[str, Any]] = []
+        self.navigate(has_target=False)  # --next-ui opens /next/ first
+
+    def navigate(self, *, has_target: bool) -> None:
+        self.documents.append(
+            {"globals": {}, "target": _Element() if has_target else None, "dispatched": []}
+        )
+
+    @property
+    def doc(self) -> dict[str, Any]:
+        return self.documents[-1]
+
+    @property
+    def dom(self) -> SimpleNamespace:
+        return SimpleNamespace(get_element=lambda selector: self.doc["target"])
+
+    def fire_loaded(self) -> None:
+        for handler in list(self.events.loaded):
+            handler(self)
+
+    def evaluate_js(self, script: str) -> Any:
+        marker = "__utteranInputDropBound"
+        if script == f"Boolean(window.{marker})":
+            return bool(self.doc["globals"].get(marker))
+        if script == f"window.{marker} = true":
+            self.doc["globals"][marker] = True
+            return True
+        self.doc["dispatched"].append(script)
+        return None
+
+
+def _bound_count(window: _Window, index: int) -> int:
+    target = window.documents[index]["target"]
+    return 0 if target is None else len(target.events.drop)
+
+
+def test_next_ui_rebinds_native_drop_after_navigating_to_the_legacy_ui() -> None:
+    pytest.importorskip("webview")
+    from utteran_gui.app import _start_next_ui_window
+
+    window = _Window()
+    _start_next_ui_window(window)  # /next/: no drop target, nothing bound
+    assert len(window.events.loaded) == 1
+    window.fire_loaded()  # the initial load event may also arrive: still nothing to bind
+
+    window.navigate(has_target=True)  # "旧画面を開く" -> /
+    window.fire_loaded()
+    window.fire_loaded()  # a duplicate loaded event must not add a second handler
+    assert _bound_count(window, 1) == 1
+    assert len(window.doc["target"].events.dragover) == 1
+
+    # A drop on the legacy page reaches the input field through the existing event.
+    window.doc["target"].events.drop[0].callback(
+        {"dataTransfer": {"files": [{"pywebviewFullPath": ""}]}}
+    )
+    assert any("utteran-input-dropped" in script for script in window.doc["dispatched"])
+
+    window.navigate(has_target=False)  # back to /next/
+    window.fire_loaded()
+    window.navigate(has_target=True)  # and to / again: a new document, bound once
+    window.fire_loaded()
+    assert _bound_count(window, 3) == 1
+    assert _bound_count(window, 1) == 1  # the old document was not touched again
+
+
+def test_default_startup_keeps_the_original_start_function() -> None:
+    source = (ROOT / "src" / "utteran_gui" / "app.py").read_text(encoding="utf-8")
+    assert "_start_next_ui_window if next_ui else _bind_input_drop" in source

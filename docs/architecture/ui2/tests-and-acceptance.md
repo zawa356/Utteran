@@ -118,6 +118,24 @@ run URLを正本として記録する（この文書へ追記するcommitでCI�
 | `frontend/`の`.ts`が全て追跡、lock・NOTICEあり、dist/node_modules非追跡 | ✓ | `git check-ignore -v`、`THIRD_PARTY_NOTICES.md` |
 | 文書/version/Issue一致、Draft PR | PR・Issueコメントで記録 | — |
 
+## 5.1 PR #36レビュー指摘への対応
+
+| 指摘 | 対応 | 検証 |
+|---|---|---|
+| P2: `--next-ui`起動後に「旧画面を開く」で旧UIへ移るとnative D&Dが結ばれない | `--next-ui`時のみ`events.loaded`で読込ごとに再バインド、documentごとに1回（[design](design.md)） | `tests/test_ui2_next_ui.py`のfake window試験（遷移・重複loaded・往復で各documentに1回）。marker判定を外すと失敗することを確認。**Windows実機は未実施** |
+| B9 epoch跨ぎの`queue_revision` | このPRでは変更しない（B9本体の契約・testと同時に直し、TS/Python parityを維持する）。S5（v1実接続）前のblocking課題 | — |
+
+### Windows実機での最小smoke（マージ前に実施が必要・未実施）
+
+1. `utteran-gui --next-ui`でWebView2が起動し、新UIが表示される。DevToolsのConsoleにCSP違反が出ず、
+   `style[nonce]`が`<meta name="csp-nonce">`と一致する。
+2. テーマ（ライト/ダーク/システム）・日英切替・設定保存、通常/Expert、狭い窓、DPI 125/150/200%。
+3. 「旧画面を開く」→ Explorerから合成WAVを入力欄へD&D → 入力欄に反映される。新UIへ戻って再度旧画面へ移り、
+   D&Dが1回だけ反映される（二重に反映されない）。
+4. flagなしの`utteran-gui`で既定の旧GUIが従来どおり起動し、D&Dが効く。
+
+native file dialogは新UIでは未接続のため、UI-2では受入対象にしない（後続で受入）。installer/portableも未受入。
+
 ## 6. 未受入（このPRでは確認していない）
 
 - **Windows WebView2 / pywebview実機**: 新UIの表示、CSP nonce（WebView2での`<style nonce>`）、`EventSource`、

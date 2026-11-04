@@ -30,9 +30,13 @@
   **旧UIへ黙ってfallbackしない**。errorはcodeだけlogに出す（pathは出さない）。
 - **import境界**: `next_ui.py`は標準libraryのみ。flag有効でも`utteran_control`・`utteran_settings`・推論libraryを
   importしない（`tests/test_ui2_next_ui.py`の別process検査）。
-- **host window**: `app.py`のpywebview起動・`NativeDialogApi`・D&D bindingは不変。D&Dの受け口
-  `#input-drop-zone`は旧UIのDOMにしかないため、**新UIではnative D&Dはまだ届かない**（起動logに
-  `Input drop target was not found`が出る）。入力画面を移すUI-3でtarget要素を用意するか、bindingを両UI対応にする。
+- **host window**: `app.py`のpywebview起動・`NativeDialogApi`・D&D bindingは、**既定（flagなし）では不変**
+  （`webview.start(_bind_input_drop, ...)`のまま）。D&Dの受け口`#input-drop-zone`は旧UIのDOMにしかないため、
+  新UI自体ではnative D&Dはまだ届かない。`--next-ui`時だけ`_start_next_ui_window`が`window.events.loaded`
+  （pywebview 6.2.1、ページ読込ごとに発火）に登録し、読込のたびに`_bind_input_drop_once`で再バインドする。
+  これにより「新UI → 旧画面を開く → 旧UI」でもD&Dが効く（PR #36レビューP2）。同じdocumentへの多重登録は、
+  document固有のJS global `window.__utteranInputDropBound`とlockで防ぐ（documentが替わるとglobalも消えるので
+  往復ごとに1回だけ結ぶ）。fake windowのunit testのみで、**Windows実機では未確認**。
 
 ## 2. frontendの層
 
