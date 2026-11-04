@@ -318,3 +318,54 @@ def test_next_ui_rebinds_native_drop_after_navigating_to_the_legacy_ui() -> None
 def test_default_startup_keeps_the_original_start_function() -> None:
     source = (ROOT / "src" / "utteran_gui" / "app.py").read_text(encoding="utf-8")
     assert "_start_next_ui_window if next_ui else _bind_input_drop" in source
+
+
+@pytest.mark.parametrize("next_ui", [False, True])
+def test_native_startup_avoids_host_inline_style_only_for_next_ui(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, next_ui: bool
+) -> None:
+    """Exercise the launcher boundary: host CSS must not bypass the strict CSP."""
+    from unittest.mock import Mock
+
+    import utteran_gui.app as launcher
+
+    captured: dict[str, Any] = {}
+    window = SimpleNamespace()
+
+    def create_window(_title: str, **kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return window
+
+    webview = SimpleNamespace(create_window=create_window, start=Mock())
+    server = SimpleNamespace(started=True, run=Mock(), should_exit=False)
+    server_socket = Mock()
+    server_socket.getsockname.return_value = ("127.0.0.1", 12345)
+    monkeypatch.setitem(sys.modules, "webview", webview)
+    monkeypatch.setitem(
+        sys.modules, "uvicorn", SimpleNamespace(Config=Mock(), Server=lambda _: server)
+    )
+    monkeypatch.setattr(launcher, "threading", SimpleNamespace(Thread=Mock()))
+    monkeypatch.setattr(launcher, "bind_loopback_socket", lambda: server_socket)
+    monkeypatch.setattr(launcher, "project_root", lambda: tmp_path)
+    monkeypatch.setattr(launcher, "set_windows_app_user_model_id", lambda: True)
+    monkeypatch.setattr(
+        launcher, "configure_gui_logging", lambda **_: SimpleNamespace(log_dir=tmp_path)
+    )
+    monkeypatch.setattr(launcher, "create_app", Mock())
+    monkeypatch.setattr(launcher, "log_stage", Mock())
+    monkeypatch.setattr(sys, "argv", ["utteran-gui"] + (["--next-ui"] if next_ui else []))
+    # main sets this for child processes; restore it after exercising the launcher.
+    monkeypatch.setenv("UTTERAN_GUI_CHILD_LOG_DIR", str(tmp_path))
+
+    launcher.main()
+
+    if next_ui:
+        assert captured["text_select"] is True
+        expected_start = launcher._start_next_ui_window
+    else:
+        assert "text_select" not in captured
+        expected_start = launcher._bind_input_drop
+    assert captured["min_size"] == (900, 660)
+    assert webview.start.call_args.args == (expected_start, window)
+    app_kwargs = launcher.create_app.call_args.kwargs  # type: ignore[attr-defined]
+    assert app_kwargs == {"repo_root": tmp_path, **({"enable_next_ui": True} if next_ui else {})}

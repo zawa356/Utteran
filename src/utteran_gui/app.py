@@ -269,8 +269,18 @@ def main() -> None:
     url = f"http://127.0.0.1:{port}/launch?session={quote(session_key)}"
     native_api = NativeDialogApi()
     log_stage("webview_window_creating")
+    # pywebview's default text-selection blocker injects a nonce-less style.
+    # Let the opt-in frontend own selection styles without relaxing its CSP.
+    # Omitting the option for legacy startup preserves its existing behavior.
+    selection_options = {"text_select": True} if next_ui else {}
     window = webview.create_window(
-        "utteran", url=url, width=1180, height=820, min_size=(900, 660), js_api=native_api
+        "utteran",
+        url=url,
+        width=1180,
+        height=820,
+        min_size=(900, 660),
+        js_api=native_api,
+        **selection_options,
     )
     native_api._attach_window(window)
     log_stage("webview_window_created", elapsed_seconds=round(time.monotonic() - started, 3))
