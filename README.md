@@ -6,10 +6,14 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.38`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.39`（未release）。API・設定は1.0まで変更されます。
+
+> バックエンド（Phase A〜B9）の現在の構成・提供状況・制約・試験範囲は
+> [docs/architecture/README.md](docs/architecture/README.md)を正本とします。B5〜B9のv1 APIはすべて
+> **main統合済み・未リリース・明示opt-in**で、通常のGUI/CLI起動では有効になりません。
 
 
-### Phase B9 Events・Sync・Diagnostics（Draft・未マージ・未リリース）
+### Phase B9 Events・Sync・Diagnostics（main統合済み・未リリース）
 
 0.1.38では、v1 APIにSSE `GET /api/v1/events`（commit済みイベントのみ、`epoch:seq` ID、`Last-Event-ID`再接続、
 失効時は410または`resync_required`）、`GET /api/v1/sync`（resource・queue・cursorを1 read transactionで取得、
@@ -19,7 +23,7 @@ Outboxは7日以上かつ最新100,000件を超えた古い部分だけを明示
 新UIへの接続はU1以降です。詳細は[Phase B9](docs/architecture/b9/README.md)。
 
 
-### Phase B8 Setup Plan・承認・永続Setup実行（Draft・未マージ・未リリース）
+### Phase B8 Setup Plan・承認・永続Setup実行（main統合済み・未リリース）
 
 0.1.37では、セットアップを「計画（read-only）→ 利用者の承認 → 承認内容だけを実行」する実験的v1 Setup APIを追加。
 計画には対象profile・モデル・保持される既存環境・工程DAG・容量見積（不明はnull）・必要な同意とtokenが含まれ、
@@ -51,7 +55,7 @@ private DBは暗号化なし・無期限保持です。詳細は[Phase B7](docs/
 状態・revision・queue metadata・冪等性記録・公開Outboxを1 transactionで記録し、
 再起動時の保守的な復旧（queue paused、待機item held、確認できないownerはrecovery_required）を
 明示呼出しで提供します。既定のGUI/CLIは作成も使用もせず、旧queue・job実行は従来のままです。
-Setup実行・`/api/v1/events`/`/sync`等は未提供（B8〜B9）。Job投入/dispatchはB7（上記、opt-in）。
+B6単独ではSetup実行・`/api/v1/events`/`/sync`等を提供しません（B8〜B9で追加済み、いずれもopt-in）。Job投入/dispatchはB7（上記、opt-in）。
 外部processのexactly-once実行は保証しません。private payloadは暗号化せず保存されます。
 詳細は[Phase B6](docs/architecture/b6/README.md)を参照してください。
 

@@ -1,5 +1,10 @@
 name: CI
 
+# Every quality gate is its own job with no `needs:` edges, so one red gate never
+# hides another (Issue #27: a mypy failure used to stop Linux pytest, the BOM check,
+# and both privacy scans from running at all). A failing job stays red: no
+# `continue-on-error`, `|| true`, or `if: always()` is used to mask a result.
+
 on:
   push:
   pull_request:
@@ -8,15 +13,12 @@ permissions:
   contents: read
 
 jobs:
-  linux-quality:
+  linux-lock-schema:
+    name: Linux lock and offline schemas
     runs-on: ubuntu-latest
     steps:
-      - name: Check out full history
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-      - name: Install uv and Python
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -40,44 +42,102 @@ jobs:
         run: uv run --no-sync python -m utteran_contracts.setup_schema --output docs/architecture/b8/setup.schema.json --check
       - name: Check offline B9 events schema
         run: uv run --no-sync python -m utteran_contracts.events_schema --output docs/architecture/b9/events.schema.json --check
+
+  linux-lint:
+    name: Linux Ruff lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install development dependencies
+        run: uv sync --extra dev --extra gui --locked
       - name: Lint
         run: uv run --no-sync ruff check src tests tools
       - name: Check formatting
         run: uv run --no-sync ruff format --check src tests tools
-      - name: Type check
-        run: uv run --no-sync mypy
-      - name: Test without models
-        run: uv run --no-sync pytest -m "not requires_model"
-      - name: Check PowerShell UTF-8 BOM
-        run: uv run --no-sync python tools/check_powershell_bom.py
-      - name: Reject new private data in tracked files
-        run: >-
-          uv run --no-sync python tools/public_history_scan.py
-          --worktree --fail-on-findings
-      - name: Audit complete reachable history
-        run: >-
-          uv run --no-sync python tools/public_history_scan.py
-          --json output/public-history-scan-ci.json
 
-  windows-tests:
-    runs-on: windows-latest
+  linux-types:
+    name: Linux mypy (linux and win32 platforms)
+    runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Install uv and Python
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install development dependencies
+        run: uv sync --extra dev --extra gui --locked
+      - name: Type check (linux platform)
+        run: uv run --no-sync mypy
+      # Windows-only branches (Job Objects, Win32 ctypes) are skipped by the
+      # linux-platform check above; this checks them against the win32 stubs.
+      - name: Type check (win32 platform)
+        run: uv run --no-sync mypy --platform win32
+
+  linux-tests:
+    name: Linux pytest (no models)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           python-version: "3.12"
           enable-cache: true
       - name: Install development dependencies
         run: uv sync --extra dev --extra gui --locked
       - name: Test without models
-        run: uv run --no-sync pytest -m "not requires_model"
+        run: uv run --no-sync pytest -m "not requires_model" -rfEs
+
+  windows-tests:
+    name: Windows pytest (no models)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install development dependencies
+        run: uv sync --extra dev --extra gui --locked
+      - name: Test without models
+        run: uv run --no-sync pytest -m "not requires_model" -rfEs
+      # Issue #27 PID-file race regression: one green run is not evidence of a
+      # fixed race, so the Job Object parent-death test is repeated every run.
+      - name: Repeat Job Object parent-death test (PID-file race guard)
+        shell: pwsh
+        run: |
+          $node = 'tests/test_gui_processes.py::test_supervisor_job_closes_after_forced_parent_exit'
+          for ($i = 1; $i -le 20; $i++) {
+            uv run --no-sync pytest -q -p no:cacheprovider $node
+            if ($LASTEXITCODE -ne 0) { Write-Error "iteration $i failed"; exit 1 }
+          }
+          Write-Host "20/20 iterations passed"
+      # B6 concurrent-snapshot test: intermittent Windows reader starvation
+      # (store_busy) is now retried within a bound; repeat it to keep evidence.
+      - name: Repeat B6 concurrent snapshot test (reader starvation guard)
+        shell: pwsh
+        run: |
+          $node = 'tests/test_b6_control.py::test_snapshot_is_consistent_under_concurrent_writes'
+          for ($i = 1; $i -le 10; $i++) {
+            uv run --no-sync pytest -q -p no:cacheprovider $node
+            if ($LASTEXITCODE -ne 0) { Write-Error "iteration $i failed"; exit 1 }
+          }
+          Write-Host "10/10 iterations passed"
+
+  windows-powershell:
+    name: Windows PowerShell 5.1 parse and headless startup
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Parse every PowerShell script with Windows PowerShell 5.1
         shell: powershell
         run: |
           $failed = $false
-          foreach ($file in (git ls-files '*.ps1')) {
+          $files = @(git ls-files '*.ps1')
+          foreach ($file in $files) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
@@ -89,44 +149,86 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
+          Write-Host "Parsed $($files.Count) tracked PowerShell script(s) without errors"
+      # Only scripts with a source-verified side-effect-free mode are started.
+      # The table is exhaustive: a newly tracked .ps1 must be classified here
+      # (started with a safe mode, or parse-only with a reason) or this step fails.
+      # See docs/architecture/backend/testing-and-operations.md.
       - name: Start headless-safe PowerShell scripts with Windows PowerShell 5.1
         shell: powershell
         run: |
+          # Actions prepends $ErrorActionPreference='stop'; with PS 5.1 that turns a
+          # child's stderr into a terminating error before its exit code can be
+          # checked. Results are tracked explicitly in $failed instead.
+          $ErrorActionPreference = 'Continue'
+          $parseOnly = @{
+            'build.ps1' = 'requires Inno Setup and produces release artifacts'
+            'gui.ps1' = 'opens a native GUI window'
+            'scripts/verify_uninstaller.ps1' = 'installs/uninstalls a lab build with Inno Setup 6 (Windows acceptance only)'
+            'tools/generate_benchmark_fixture.ps1' = 'rewrites a tracked test fixture with a system TTS voice'
+          }
+          $startup = @(
+            @{ File = 'setup.ps1'; Args = @('-List'); Stdin = $null; Exit = @(0); Expect = 'cpu' },
+            @{ File = 'run.ps1'; Args = @('-Profile', 'cpu', '--help'); Stdin = $null; Exit = @(1); Expect = 'win-cpu' },
+            @{ File = 'start.ps1'; Args = @(); Stdin = '0'; Exit = @(0); Expect = $null },
+            @{ File = 'launch-python.ps1'; Args = @('-CheckOnly'); Stdin = $null; Exit = @(0, 1); Expect = 'utteran' },
+            @{ File = 'scripts/reset-env.ps1'; Args = @('-WhatIf'); Stdin = $null; Exit = @(0); Expect = 'openvino-genai-compiled' }
+          )
+          $failed = $false
+          $classified = @($parseOnly.Keys) + @($startup | ForEach-Object { $_.File })
           foreach ($file in (git ls-files '*.ps1')) {
-            if ($file -eq 'build.ps1' -or $file -eq 'gui.ps1') {
-              # build.ps1 requires Inno Setup and gui.ps1 opens a native window;
-              # both are syntax-checked above but have no safe headless startup mode.
-              continue
-            } elseif ($file -eq 'setup.ps1') {
-              $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file -List 2>&1
-            } elseif ($file -eq 'start.ps1') {
-              $output = '0' | & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file 2>&1
-            } elseif ($file -eq 'run.ps1') {
-              $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file `
-                -Profile cpu --help 2>&1
-            } else {
-              $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $file 2>&1
-            }
-            if ($output -match 'ParserError|Unexpected token|FullyQualifiedErrorId.*ParserError') {
-              Write-Error "$file failed Windows PowerShell startup parsing"
-              exit 1
+            if ($classified -notcontains $file) {
+              Write-Error "$file is not classified as headless-safe or parse-only"
+              $failed = $true
             }
           }
+          foreach ($entry in $startup) {
+            $scriptArgs = @($entry.Args)
+            if ($null -ne $entry.Stdin) {
+              $output = $entry.Stdin | & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $entry.File @scriptArgs 2>&1
+            } else {
+              $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $entry.File @scriptArgs 2>&1
+            }
+            $code = $LASTEXITCODE
+            $text = ($output | Out-String)
+            Write-Host "--- $($entry.File) $($scriptArgs -join ' ') -> exit $code"
+            if ($text -match 'ParserError|Unexpected token|FullyQualifiedErrorId.*ParserError') {
+              Write-Error "$($entry.File) failed Windows PowerShell startup parsing"
+              $failed = $true
+            }
+            if ($entry.Exit -notcontains $code) {
+              Write-Host $text
+              Write-Error "$($entry.File) exited $code; expected one of $($entry.Exit -join ', ')"
+              $failed = $true
+            }
+            if ($null -ne $entry.Expect -and $text -notmatch [regex]::Escape($entry.Expect)) {
+              Write-Host $text
+              Write-Error "$($entry.File) output did not contain '$($entry.Expect)'"
+              $failed = $true
+            }
+          }
+          foreach ($file in $parseOnly.Keys) {
+            Write-Host "parse-only: $file ($($parseOnly[$file]))"
+          }
+          if ($failed) { exit 1 }
+          exit 0
 
   contracts-python-compatibility:
+    name: Contracts and backend integration (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - run: uv sync --extra dev --extra gui --locked
-      - name: Contract, schema, and import boundary tests (no models)
-        run: uv run --no-sync pytest tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py tests/test_worker_protocol.py tests/test_capability_inventory.py tests/test_capability_bridge.py tests/test_b5_settings.py tests/test_b6_control.py tests/test_b7_jobs.py tests/test_b7_api.py tests/test_b7_review_fixes.py tests/test_b8_setup.py tests/test_b8_api.py tests/test_b8_review_fixes.py tests/test_b9_events.py tests/test_b9_review_fixes.py
+      - name: Contract, schema, import boundary, and B7-B9 integration tests (no models)
+        run: uv run --no-sync pytest tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py tests/test_worker_protocol.py tests/test_capability_inventory.py tests/test_capability_bridge.py tests/test_b5_settings.py tests/test_b6_control.py tests/test_b7_jobs.py tests/test_b7_api.py tests/test_b7_review_fixes.py tests/test_b8_setup.py tests/test_b8_api.py tests/test_b8_review_fixes.py tests/test_b9_events.py tests/test_b9_review_fixes.py tests/test_backend_foundation_e2e.py
       - run: uv run --no-sync python -m utteran_contracts.schema --output docs/architecture/b1/contracts.schema.json --check
       - run: uv run --no-sync python -m utteran_contracts.capability_schema --output docs/architecture/b4/capabilities.schema.json --check
       - run: uv run --no-sync python -m utteran_contracts.preview_schema --output docs/architecture/b5/preview.schema.json --check
@@ -134,3 +236,82 @@ jobs:
       - run: uv run --no-sync python -m utteran_contracts.job_schema --output docs/architecture/b7/jobs.schema.json --check
       - run: uv run --no-sync python -m utteran_contracts.setup_schema --output docs/architecture/b8/setup.schema.json --check
       - run: uv run --no-sync python -m utteran_contracts.events_schema --output docs/architecture/b9/events.schema.json --check
+
+  powershell-bom:
+    name: PowerShell UTF-8 BOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      - name: Check PowerShell UTF-8 BOM (stdlib only)
+        run: uv run --no-project python tools/check_powershell_bom.py
+
+  privacy-worktree:
+    name: Privacy scan of tracked files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      # Prints counts only; matched values are never printed or written.
+      - name: Reject new private data in tracked files
+        run: >-
+          uv run --no-project python tools/public_history_scan.py
+          --worktree --fail-on-findings
+
+  # Blocking counterpart of the report-only audit below: fails when ANY commit that is
+  # new relative to trusted history (protected main + the reviewed cutover pinned in
+  # tools/public_history_baseline.json) introduces private data, even if a later commit
+  # removed it. See docs/architecture/backend/testing-and-operations.md.
+  privacy-history-delta:
+    name: Privacy gate for new commits (blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      # Make every comparison commit present; a failed fetch fails the job, and the
+      # gate itself fails closed on any missing SHA or shallow history.
+      - name: Fetch protected main and the event's commits
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            git fetch --no-tags origin "$PUSH_BEFORE"
+          fi
+          echo "event=$EVENT_NAME ref=$GITHUB_REF sha=$GITHUB_SHA main=$(git rev-parse refs/remotes/origin/main)"
+      - name: Reject private data introduced by new commits
+        run: >-
+          uv run --no-project python tools/public_history_delta.py
+          --github-event "$GITHUB_EVENT_NAME" --github-event-path "$GITHUB_EVENT_PATH"
+          --json output/public-history-delta.json
+
+  privacy-history:
+    name: Privacy audit of reachable history (report only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      # History is never rewritten by CI; the redacted report records counts and
+      # locations only (see docs/architecture/backend/validation.md).
+      - name: Audit complete reachable history
+        run: >-
+          uv run --no-project python tools/public_history_scan.py
+          --json output/public-history-scan-ci.json

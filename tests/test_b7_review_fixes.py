@@ -17,7 +17,7 @@ from test_b7_api import runtime_for
 from test_b7_jobs import SESSION, Env, FakeRunner, dispatcher
 from utteran_control.errors import ControlError, ErrorCode
 from utteran_control.job_repository import JobControlStore
-from utteran_control.store import IdempotencyScope
+from utteran_control.store import ControlStore, IdempotencyScope
 from utteran_gui.job_admission import AdmissionError, JobAdmission
 from utteran_gui.job_runtime import JobRuntime, RuntimeStateError
 from utteran_gui.operation_queue import OperationQueue
@@ -103,7 +103,8 @@ def test_failed_activation_releases_only_its_own_ownership(
     if stage == "store":
         monkeypatch.setattr(module, "JobControlStore", boom)
     elif stage == "backup":
-        monkeypatch.setattr(JobControlStore, "backup", boom)
+        # The pre-v1 backup is taken before the store is opened (and migrated).
+        monkeypatch.setattr(ControlStore, "backup_before_open", boom)
     elif stage == "recover":
         monkeypatch.setattr(JobControlStore, "recover", boom)
     else:

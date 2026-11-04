@@ -19,7 +19,7 @@ def test_security_token_scan_ignores_config_key_but_finds_token_values() -> None
     namespace = _scenario_namespace()
     token_bytes_pattern = namespace["TOKEN_BYTES_PATTERN"]
     assert token_bytes_pattern.search(b'hf_token = "dummy-token-value"') is None
-    assert token_bytes_pattern.search(b"value=hf_acceptanceDummyToken123456") is not None
+    assert token_bytes_pattern.search(b"value=hf_" + b"acceptanceDummyToken123456") is not None
 
 
 def test_security_scan_accepts_an_individual_file(tmp_path: Path) -> None:

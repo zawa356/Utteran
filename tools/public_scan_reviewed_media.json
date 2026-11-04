@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "description": "Reviewed synthetic media fixtures. An entry exempts only this exact path AND blob; editing the file makes the public scan block again.",
+  "entries": [
+    {
+      "path": "tests/fixtures/benchmark/japanese_reference.wav",
+      "git_blob_sha1": "e8fb29d27fc133bf8a5e956c81033f8e9df1f34d",
+      "reason": "Synthetic Japanese TTS reading of tests/fixtures/benchmark/japanese_reference.txt (Windows system voice); no recording of a person.",
+      "evidence": "tests/fixtures/benchmark/README.md; RIFF chunks are only fmt/data (no LIST/INFO metadata); reviewed 2026-11-03 in Backend Foundation Hardening."
+    },
+    {
+      "path": "tests/fixtures/diarization_quality/meeting.wav",
+      "git_blob_sha1": "2ef1a97417d6b98355d8d57d1809f2e08f54825e",
+      "reason": "Deterministic speech-shaped synthetic signal; no recording or voice model.",
+      "evidence": "Byte-identical regeneration by tools/generate_diarization_fixture.py (sha256 fc286862...0eec16); RIFF chunks fmt/data only; reviewed 2026-11-03."
+    }
+  ]
+}

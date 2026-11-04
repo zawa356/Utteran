@@ -1,5 +1,22 @@
 # AI 作業状態
 
+## 現在地（2026-11-03、Backend Foundation Hardening、0.1.39・未リリース、Draft PR）
+
+- 基点`main` = `e803ecc3`（PR #33 B8+B9 merge、fetchで確認・他者commitなし）。**Phase A〜B9はmain統合済み・未リリース**。
+  B5〜B9のv1 APIは明示opt-inのみで、通常のGUI/CLI起動は有効化しない。**UI U0〜U3は未着手**。
+- 作業ブランチは環境固定の`claude/epic-thompson-ip1ol1`（推奨名`chore/backend-foundation-hardening`は使用不可）。
+  開発版0.1.38→**0.1.39**（lock差分はutteranのversion行のみ）。リリース・タグなし。
+- 正本: [docs/architecture/README.md](docs/architecture/README.md)・[backend/](docs/architecture/backend/README.md)、
+  入口[AGENTS.md](AGENTS.md)。以下の各Phase節（Draft表記を含む）は提出時の履歴で、改変しない。
+- Issue #27是正: mypy 9→0（`--platform win32`もCI化）、Linux pytest既知2件、PID-file競合、BOM、PowerShell起動allowlist、
+  privacy worktree blocking 3→0（TypeScript `.ts`判定、`(path, blob)`一致のレビュー済み合成WAV）、CIを独立jobへ分割。
+  Windowsで既存のB6並行snapshot test（`store_busy`）が再発したため、文書化済みのretryableとして有界retryに修正。
+- 欠陥修正: `JobRuntime.activate()`のpre-v1 backupがmigration後（v6）だった問題を、open前backupに修正。
+- 追加: B7〜B9横断E2E（`tests/test_backend_foundation_e2e.py`、11件）。検証は[validation](docs/architecture/backend/validation.md)。
+- 2026-11-03: ownerの承認により、公開Git履歴を書き換えた（`AISTATE.md`過去版の実在の個人パスを除去）。この節より下の旧SHAは書換え前の記録。対応表とcutover（`e0960bd`）は[validation](docs/architecture/backend/validation.md)。
+- 未受入: Windows実機・GPU・native build・実モデルDL・長時間音声・installer/portable・WebView2・実機restore・実smoke provider。
+  owner判断待ち: private DBの保持期間・削除・暗号化・ACL。
+
 ## Phase B9 Events / Sync / Diagnostics（0.1.38、2026-11-02、Draft）
 
 - B8と同じブランチ・同じDraft PRの後続commit系列（[理由](docs/architecture/b8/compatibility.md)）。
