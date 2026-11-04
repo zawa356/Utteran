@@ -1,0 +1,88 @@
+/* Layout tokens and the few rules Vuetify does not cover. No external fonts: system UI stack. */
+:root {
+  --u-font: system-ui, "Segoe UI", "Yu Gothic UI", "Meiryo UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --u-gap: 12px;
+  --u-pane-min: 240px;
+}
+html,
+body,
+.v-application {
+  font-family: var(--u-font);
+}
+body {
+  margin: 0;
+}
+.u-page {
+  padding: var(--u-gap) calc(var(--u-gap) * 1.5);
+  max-width: 1100px;
+}
+.u-stack > * + * {
+  margin-top: var(--u-gap);
+}
+.u-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.u-heading {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+}
+.u-subheading {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+}
+/* Expert workspace: 23/45/32 three panes, 2 columns + bottom row, then one pane with tabs. */
+.u-panes {
+  display: grid;
+  grid-template-columns: minmax(var(--u-pane-min), 23fr) minmax(320px, 45fr) minmax(var(--u-pane-min), 32fr);
+  gap: var(--u-gap);
+  padding: var(--u-gap);
+  align-items: start;
+}
+.u-pane {
+  min-width: 0;
+  overflow: auto;
+}
+.u-pane-switch {
+  display: none;
+}
+@media (max-width: 1279px) {
+  .u-panes {
+    grid-template-columns: minmax(var(--u-pane-min), 1fr) minmax(320px, 2fr);
+  }
+  .u-pane[data-pane="queue"] {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 1023px) {
+  .u-panes {
+    grid-template-columns: 1fr;
+  }
+  .u-pane-switch {
+    display: flex;
+  }
+  .u-pane:not(.u-pane--current) {
+    display: none;
+  }
+}
+/* Keep keyboard focus visible on every interactive element. */
+:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
+}
+.u-w-sm {
+  max-width: 320px;
+}
+.u-w-md {
+  max-width: 420px;
+}
+/* Business-app density: Alert titles at body size rather than Material's headline size. */
+.v-alert-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
