@@ -26,9 +26,23 @@
 | スパイクE2E（`tools/ui1/spike/e2e/run.mjs`） | Chromium 153 headless | 3案とも**7/7 pass**。repo内コピーから再install→build→E2Eでも同結果 |
 | vue-tsc × TypeScript 7.0.2 | — | 起動失敗（`ERR_PACKAGE_PATH_NOT_EXPORTED: ./lib/tsc`）。TS 6.0.3へ統一 |
 
-## 品質ゲート（作業ブランチ、コミット前のworking tree）
+## 品質ゲート（Linux container、ローカル実行）
 
-<!-- GATES -->
+実行は版更新後・commit前のworking tree（privacy 2件はcommit後のHEAD `0a07061`で再実行）。
+
+| ゲート | 結果 |
+|---|---|
+| `uv lock --check` | exit 0 |
+| `uv run ruff check src tests tools` | exit 0 |
+| `uv run ruff format --check src tests tools` | exit 0 |
+| `uv run mypy` / `uv run mypy --platform win32` | exit 0 / exit 0 |
+| 8種類のoffline schema `--check`（b1/b3/b4/b5/b6/b7/b8/b9） | 8件ともexit 0 |
+| `tools/check_powershell_bom.py` | exit 0 |
+| `tools/public_history_scan.py --worktree --fail-on-findings` | exit 0（tracked 478、findings 105、**blocking 0**） |
+| `tools/public_history_delta.py --candidate <HEAD> --trusted-base <origin/main>` | exit 0（new_commits 4、**new_blocking 0**、cutover `e0960bd`）。shallow cloneでは`shallow_repository`でfail-closedしたため`git fetch --unshallow origin main`後に実行 |
+| `uv run pytest -m "not requires_model"` | **1270 passed, 9 skipped, 1 xfailed**（86.9 s、Python 3.11.18、Linux）。skipはWindows専用8件と`git-filter-repo`不在1件。xfailはUI-1のD-08 strict xfail |
+| frontend build / type check / E2E | スパイクのみ（上表）。本番frontendは無い |
+| Windowsのpytest・PowerShell | この環境では未実施（CIのWindows jobを参照） |
 
 ## CI（push / PR）
 
