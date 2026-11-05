@@ -48,6 +48,9 @@ uv run python ../tools/ui2/serve_next_ui.py --port 8791
 A clickable mock-up of the UI-3 screens with synthetic data only ([docs/architecture/ui3/](../docs/architecture/ui3/README.md)).
 It lives in `src/preview/` + `preview.html`, is **not** part of `npm run build` (only `index.html` is built) and never
 calls the backend, the host bridge or storage (enforced by ESLint and by the E2E). No `uv` needed.
+Iteration 2 ([docs/architecture/ui3/iteration-2.md](../docs/architecture/ui3/iteration-2.md)) adds the Normal top bar with one
+file, the resizable Expert sidebar and panes, a prototype-only green palette (`src/preview/theme.ts`; the production
+`src/styles/theme.ts` is unchanged) and fictional environment examples.
 
 ```bash
 npm run prototype

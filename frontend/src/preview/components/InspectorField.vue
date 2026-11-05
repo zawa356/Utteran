@@ -28,7 +28,7 @@ function onOverride(on: boolean | null) {
 <template>
   <div class="p-field" :data-testid="`field-${field}`">
     <div class="p-field__head">
-      <span class="text-body-2 font-weight-medium">{{ label }}</span>
+      <span class="text-body-medium font-weight-medium">{{ label }}</span>
       <v-chip
         v-if="mode === 'selection'"
         size="x-small"
@@ -64,6 +64,6 @@ function onOverride(on: boolean | null) {
       </template>
     </div>
     <slot :disabled="!editable" :mixed="mode === 'selection' && view.mixed" />
-    <div v-if="mode === 'selection' && view.mixed" class="text-caption" :data-testid="`field-${field}-mixed`">{{ t("inspector.mixed") }}</div>
+    <div v-if="mode === 'selection' && view.mixed" class="text-body-small" :data-testid="`field-${field}-mixed`">{{ t("inspector.mixed") }}</div>
   </div>
 </template>

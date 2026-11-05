@@ -1,5 +1,18 @@
 # AI 作業状態
 
+## 現在地（2026-11-05、UI-3-0 第2イテレーション、0.1.43・未リリース、Draft PR #38）
+
+- PR #38（`claude/blissful-planck-84e59y`、HEAD確認時`fbf9da83`、他者の変更なし）へ通常pushで追加コミット。versionは0.1.43のまま
+  （同一作業単位のレビュー反復で配布物に差分なし、理由は[ui3/iteration-2 §9](docs/architecture/ui3/iteration-2.md#9-versionの判断)）。
+- ownerメモ#1〜#5・配色・環境mockを`frontend/src/preview/`だけで反映: 通常＝topbar 3導線＋1ファイルの2カラム1画面（状態は未開始/未選択/
+  実行中/失敗/完了を切替）、Expert＝上部で折りたためる幅可変sidebar＋drag/キーボードで幅を変える3ペイン（作業領域幅で3→2→1列）、
+  Explorer風の高密度入力一覧と大きな追加ボタン、作業画面右は要約のみ（キュー＝全件管理、結果と履歴＝完了物）、緑配色案（本番theme不変、
+  WCAG AA実測）、架空の環境情報（GPU/CPU/未構成/読み込み失敗、常時「デモ用の架空情報」）。
+- 検証（Linux、headless Chromium）: Vitest 116、UI-2 E2E 10、プロトタイプE2E 26、build出力はUI-2と同一サイズ。画像はcommitしない。
+- 発見（本番は未変更）: Vuetify 4でMD2 typography class（`text-caption`等）が無効、UI-2青ライトの入力欄枠2.68:1（<3:1）。
+- **owner再レビュー待ち。** Ready化・merge・tag・release・#21クローズ・S1以降は未着手。未受入: WebView2・OS DPI実機・native D&D/picker・IME・実backend・
+  画面読み上げ・タッチでのresize。
+
 ## 現在地（2026-11-05、UI-3-0 画面設計・隔離プロトタイプ、0.1.43・未リリース、Draft PR）
 
 - 基点`main` = `dd115085`（PR #36 merge、`git fetch`で確認・先行変更なし）。作業ブランチは環境固定の`claude/blissful-planck-84e59y`

@@ -6,8 +6,9 @@ import { DEMO_MODELS, LANGUAGES, OUTPUT_FORMATS, type ProcessingSettings, SPEAKE
 import InspectorField from "./InspectorField.vue";
 
 /** The processing form shared by the common defaults and the selected-inputs Inspector. */
-const props = withDefaults(defineProps<{ mode: "common" | "selection"; fields?: SettingKey[] }>(), {
+const props = withDefaults(defineProps<{ mode: "common" | "selection"; fields?: SettingKey[]; compact?: boolean }>(), {
   fields: () => ["model", "language", "diarization", "speakers", "formats"],
+  compact: false,
 });
 const { demo, state, t } = usePreview();
 
@@ -28,7 +29,7 @@ const show = (key: SettingKey) => props.fields.includes(key);
 </script>
 
 <template>
-  <div class="u-stack" :data-testid="`settings-fields-${mode}`">
+  <div :class="compact ? 'p-fields--compact' : 'u-stack'" :data-testid="`settings-fields-${mode}`">
     <InspectorField v-if="show('model')" field="model" :label="t('field.model')" :mode="mode">
       <template #default="{ disabled }">
         <v-select
@@ -38,7 +39,7 @@ const show = (key: SettingKey) => props.fields.includes(key);
           :disabled="disabled"
           :aria-label="t('field.model')"
           :hint="t('field.modelHint')"
-          persistent-hint
+          :persistent-hint="!compact"
           :data-testid="`input-model-${mode}`"
           @update:model-value="(v) => v && set('model', v)"
         />
@@ -100,7 +101,7 @@ const show = (key: SettingKey) => props.fields.includes(key);
         >
           <v-chip v-for="f in OUTPUT_FORMATS" :key="f" :value="f" filter label size="small" :disabled="disabled" variant="outlined">{{ f.toUpperCase() }}</v-chip>
         </v-chip-group>
-        <div class="text-caption">{{ t("field.formatsHint") }}</div>
+        <div class="text-body-small">{{ t("field.formatsHint") }}</div>
       </template>
     </InspectorField>
   </div>

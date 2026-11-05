@@ -1,21 +1,23 @@
 <script setup lang="ts">
+import { mdiAlertCircleOutline, mdiCancel, mdiCheckCircleOutline, mdiClockOutline, mdiPlayCircleOutline, mdiProgressWrench } from "@mdi/js";
 import { computed } from "vue";
 import { usePreview } from "../composables";
 import type { JobState } from "../domain/demo";
 
-const props = defineProps<{ state: JobState }>();
+/** State = icon + label (+ colour as a third cue). Colour alone never carries the meaning. */
+const props = withDefaults(defineProps<{ state: JobState; size?: "x-small" | "small" }>(), { size: "small" });
 const { t } = usePreview();
-const COLOR: Record<JobState, string | undefined> = {
-  waiting: undefined,
-  preparing: "info",
-  running: "primary",
-  succeeded: "success",
-  failed: "error",
-  cancelled: "secondary",
+const VIEW: Record<JobState, { color: string | undefined; icon: string }> = {
+  waiting: { color: undefined, icon: mdiClockOutline },
+  preparing: { color: "info", icon: mdiProgressWrench },
+  running: { color: "primary", icon: mdiPlayCircleOutline },
+  succeeded: { color: "success", icon: mdiCheckCircleOutline },
+  failed: { color: "error", icon: mdiAlertCircleOutline },
+  cancelled: { color: "secondary", icon: mdiCancel },
 };
-const color = computed(() => COLOR[props.state]);
+const view = computed(() => VIEW[props.state]);
 </script>
 
 <template>
-  <v-chip size="small" label :color="color" variant="tonal" :data-testid="`job-state-${state}`">{{ t(`job.state.${state}`) }}</v-chip>
+  <v-chip :size="size" label :color="view.color" variant="tonal" :prepend-icon="view.icon" :data-testid="`job-state-${state}`">{{ t(`job.state.${state}`) }}</v-chip>
 </template>

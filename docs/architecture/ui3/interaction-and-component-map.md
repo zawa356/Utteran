@@ -67,11 +67,37 @@ stateDiagram-v2
 | empty | 次の操作を書いた案内 | `AreaState.vue` |
 | ready | 本体 | slot |
 | 失敗ジョブ | 行の状態chip＋同じ行に再試行／詳細に失敗コード | `JobStateChip.vue`・`JobDetail.vue` |
-| 実行不可の操作 | disabled＋理由テキストを常時表示（tooltipだけにしない） | `StepStart.vue`・`StepResult.vue` |
+| 実行不可の操作 | disabled＋理由テキストを常時表示（tooltipだけにしない） | 第1案`StepStart.vue`・`StepResult.vue` → 第2案`NormalRunCard.vue` |
 
-表示状態はレビュー操作帯の「表示状態」で切り替える: 標準／空／読み込み中／エラー／処理中（待機・実行・失敗が混在）／すべて完了。
+表示状態はレビュー操作帯の「表示状態」で切り替える。第1案: 標準／空／読み込み中／エラー／処理中／すべて完了。
+**第2案（[iteration-2](iteration-2.md)）**: 1ファイル・未開始（既定）／未選択／1ファイル・実行中／失敗／完了／複数ファイル／複数ファイル・処理中／読み込み中／読み込みエラー。
 
 ## 5. コンポーネント分割
+
+> **第2案（2026-11-05、[iteration-2](iteration-2.md)）で構成を変更した。** 下の第1案の図は履歴として残す。第2案の現行構成:
+>
+> ```text
+> src/preview/
+>   main.ts / PreviewApp.vue / PreviewShell.vue   モード別の情報設計（通常=topbar、Expert=管理sidebar）、緑テーマ切替
+>   theme.ts (+ theme.test.ts)                    プロトタイプ限定の緑配色（本番theme.tsは不変）とWCAG計測
+>   domain/ demo.ts fixtures.ts                   合成データ（Normal代表1件、queue/results view、架空環境の例の選択）
+>           layout.ts                             LayoutController（mode・section・sidebar幅/rail・ペイン比率）＋純粋関数resolvePanes
+>           envExamples.ts                        架空の実行環境例（GPU/CPU/未構成/読み込み失敗）
+>           contrast.ts                           WCAGコントラスト計算
+>   shell/  NormalTopNav ExpertSidebar ReviewStrip
+>   normal/ NormalHome NormalFileCard NormalSettingsCard NormalRunCard useNormalFile
+>   expert/ ExpertLayout InputsPane InspectorPane QueuePane
+>   environment/ EnvironmentSummary ProfileCard EnvStatusChip DemoInfoChip useEnvironment
+>   sections/ SetupSection QueueSection ResultsSection SettingsSection LaterSection
+>   components/ ResizeHandle InputTable JobStageTrack JobStateChip JobDetail AreaState InspectorField
+>               SettingsFields SyncStatus PrototypeBanner useSnapshotText
+> ```
+>
+> 削除: `PreviewToolbar`（→`shell/ReviewStrip`）、`normal/Step*`・`NormalFlow`（→`normal/Normal*`）、`InputRow`（→`InputTable`）、
+> `QueueList`・`QueueToolbar`（キュー画面の表と作業画面の要約へ分割）。最大のSFCは`ExpertLayout.vue`（約150行）。
+> プロトタイプは本番`domain/shell.ts`の`ShellController`を使わなくなった（`domain/layout.ts`の`LayoutController`）。
+
+第1案（履歴）:
 
 ```text
 frontend/preview.html                 Vite dev serverだけが配信（vite buildの入力ではない）

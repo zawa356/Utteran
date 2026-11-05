@@ -1,4 +1,5 @@
 import { Store } from "../../domain/store";
+import type { EnvExample } from "./envExamples";
 import {
   DEFAULT_COMMON,
   type DemoInput,
@@ -17,6 +18,8 @@ import {
  */
 export type PreviewLanguage = "ja" | "en";
 export type PreviewTheme = "system" | "light" | "dark";
+/** Prototype-only colour proposals: Utteran green (iteration 2) vs. the UI-2 blue for comparison. */
+export type PreviewPalette = "green" | "ui2";
 export type Overrides = Partial<ProcessingSettings>;
 
 export type JobState = "waiting" | "preparing" | "running" | "succeeded" | "failed" | "cancelled";
@@ -37,8 +40,14 @@ export interface DemoJob {
 
 /** Per-area display state, switched explicitly by the reviewer (empty/loading/error/ready). */
 export type AreaState = "ready" | "loading" | "error";
-export type Scenario = "default" | "empty" | "loading" | "error" | "busy" | "success";
-export const SCENARIOS: readonly Scenario[] = ["default", "empty", "loading", "error", "busy", "success"];
+/**
+ * Display scenarios. The first five are the Normal (single file) states; "multi"/"busy" load
+ * several inputs for the Expert views; "loading"/"error" are area states.
+ */
+export type Scenario = "single" | "empty" | "running" | "failed" | "done" | "multi" | "busy" | "loading" | "error";
+export const SCENARIOS: readonly Scenario[] = ["single", "empty", "running", "failed", "done", "multi", "busy", "loading", "error"];
+export type QueueFilter = "all" | "active" | "attention" | "finished";
+export type QueueSort = "order" | "name" | "state";
 /** How the connection indicator is drawn. "none" = honest default (no backend connection at all). */
 export type SyncExample = "none" | "synced" | "resyncing" | "offline";
 export type InspectorTab = "common" | "selection";
@@ -53,6 +62,8 @@ export interface DemoState {
   inputs: DemoInput[];
   poolCursor: number;
   selected: string[];
+  /** Last input the user chose or touched; Normal mode shows this one (see normalInputId). */
+  focusInputId: string | null;
   common: ProcessingSettings;
   overrides: Record<string, Overrides>;
   inspectorTab: InspectorTab;
@@ -64,8 +75,19 @@ export interface DemoState {
   inputsArea: AreaState;
   queueArea: AreaState;
   sync: SyncExample;
+  /** Fictional environment example (never detected) and whether a demo re-detection is shown. */
+  envExample: EnvExample;
+  envChecking: boolean;
+  /** Queue page list controls (search / filter / sort on the synthetic jobs only). */
+  queueQuery: string;
+  queueFilter: QueueFilter;
+  queueSort: QueueSort;
+  /** Results page: search text and the opened result. */
+  resultsQuery: string;
+  selectedResultId: string | null;
   language: PreviewLanguage;
   theme: PreviewTheme;
+  palette: PreviewPalette;
   notice: Notice | null;
 }
 
@@ -140,24 +162,83 @@ export function submittedInputs(state: Pick<DemoState, "jobs">): Set<string> {
   return new Set(state.jobs.map((j) => j.inputId));
 }
 
+/** Latest job of one input (an input has at most one job; retry reuses it). */
+export function jobOf(state: Pick<DemoState, "jobs">, inputId: string): DemoJob | null {
+  const jobs = state.jobs.filter((j) => j.inputId === inputId);
+  return jobs[jobs.length - 1] ?? null;
+}
+
+/**
+ * The one input Normal mode shows. It never changes the list: with several inputs (made in Expert)
+ * Normal shows a representative and only points to Expert for the rest.
+ * Order: the last chosen/touched input → the first selected → the first input.
+ */
+export function normalInputId(state: Pick<DemoState, "inputs" | "selected" | "focusInputId">): string | null {
+  const ids = new Set(state.inputs.map((i) => i.id));
+  if (state.focusInputId && ids.has(state.focusInputId)) return state.focusInputId;
+  const selected = state.selected.find((id) => ids.has(id));
+  return selected ?? state.inputs[0]?.id ?? null;
+}
+
+const STATE_ORDER: Record<JobState, number> = { failed: 0, running: 1, preparing: 2, waiting: 3, cancelled: 4, succeeded: 5 };
+
+/** Queue page view: filter, search and sort over the synthetic jobs (the queue order is kept). */
+export function queueView(state: Pick<DemoState, "jobs" | "queueQuery" | "queueFilter" | "queueSort">): { job: DemoJob; position: number }[] {
+  const query = state.queueQuery.trim().toLowerCase();
+  const rows = state.jobs
+    .map((job, i) => ({ job, position: i + 1 }))
+    .filter(({ job }) => {
+      if (query && !job.inputName.toLowerCase().includes(query)) return false;
+      if (state.queueFilter === "active") return isActive(job);
+      if (state.queueFilter === "attention") return job.state === "failed" || job.state === "cancelled";
+      if (state.queueFilter === "finished") return !isActive(job);
+      return true;
+    });
+  if (state.queueSort === "name") rows.sort((a, b) => a.job.inputName.localeCompare(b.job.inputName));
+  if (state.queueSort === "state") rows.sort((a, b) => STATE_ORDER[a.job.state] - STATE_ORDER[b.job.state] || a.position - b.position);
+  return rows;
+}
+
+/** Results page view: succeeded jobs only, searched by name. */
+export function resultsView(state: Pick<DemoState, "jobs" | "resultsQuery">): DemoJob[] {
+  const query = state.resultsQuery.trim().toLowerCase();
+  return state.jobs.filter((j) => j.state === "succeeded" && (!query || j.inputName.toLowerCase().includes(query)));
+}
+
+/** Example output file names of a finished job (nothing is written). */
+export function outputNames(job: Pick<DemoJob, "inputName" | "snapshot">): string[] {
+  const stem = job.inputName.replace(/\.[^.]+$/, "");
+  return job.snapshot.formats.map((f) => `${stem}.${f}`);
+}
+
+/** Default: one file, nothing submitted (Normal is the default mode and shows one file). */
 function initialState(): DemoState {
   return {
-    inputs: initialInputs(),
+    inputs: initialInputs().slice(0, 1),
     poolCursor: 0,
     selected: ["in-01"],
+    focusInputId: "in-01",
     common: cloneSettings(DEFAULT_COMMON),
-    overrides: { "in-02": { language: "en", speakers: "2" } },
+    overrides: {},
     inspectorTab: "common",
     jobs: [],
     jobSeq: 0,
     selectedJobId: null,
     queuePaused: false,
-    scenario: "default",
+    scenario: "single",
     inputsArea: "ready",
     queueArea: "ready",
     sync: "none",
+    envExample: "gpu",
+    envChecking: false,
+    queueQuery: "",
+    queueFilter: "all",
+    queueSort: "order",
+    resultsQuery: "",
+    selectedResultId: null,
     language: "ja",
     theme: "light",
+    palette: "green",
     notice: null,
   };
 }
@@ -175,10 +256,19 @@ export class DemoController {
     this.store.set((s) => ({ ...s, ...fn(s), ...(key ? { notice: this.notify(key, params) } : {}) }));
   }
 
-  /** Back to the deterministic initial state; language and theme are kept for the reviewer. */
+  /** Reviewer preferences that survive "reset" and scenario changes. */
+  private kept(): Pick<DemoState, "language" | "theme" | "palette" | "envExample"> {
+    const { language, theme, palette, envExample } = this.store.get();
+    return { language, theme, palette, envExample };
+  }
+
+  /** Back to the deterministic initial state; language, theme, palette and env example are kept. */
   reset(): void {
-    const { language, theme } = this.store.get();
-    this.store.set({ ...initialState(), language, theme, notice: this.notify("notice.reset") });
+    this.store.set({ ...initialState(), ...this.kept(), notice: this.notify("notice.reset") });
+  }
+
+  setPalette(palette: PreviewPalette): void {
+    this.update(() => ({ palette }), "notice.palette");
   }
 
   setLanguage(language: PreviewLanguage): void {
@@ -198,7 +288,29 @@ export class DemoController {
   }
 
   toggleSelect(id: string): void {
-    this.update((s) => ({ selected: s.selected.includes(id) ? s.selected.filter((x) => x !== id) : [...s.selected, id] }));
+    this.update((s) => ({ selected: s.selected.includes(id) ? s.selected.filter((x) => x !== id) : [...s.selected, id], focusInputId: id }));
+  }
+
+  /** Explorer-style plain click: select only this row. */
+  selectOnly(id: string): void {
+    this.update(() => ({ selected: [id], focusInputId: id }));
+  }
+
+  /**
+   * Normal mode "choose a file" (demo: the next synthetic name, never a real picker). In the
+   * single-file case an unsubmitted file is replaced, because the user explicitly picked another
+   * one. Otherwise the file is added and shown, and every existing input is kept untouched.
+   */
+  chooseNormalFile(): void {
+    this.update((s) => {
+      const added = poolInput(s.poolCursor);
+      const current = normalInputId(s);
+      const replace = s.inputs.length === 1 && current !== null && !submittedInputs(s).has(current);
+      const inputs = replace ? [added] : [...s.inputs, added];
+      const overrides = replace ? {} : s.overrides;
+      const selected = replace ? [added.id] : s.selected;
+      return { inputs, overrides, selected, focusInputId: added.id, poolCursor: s.poolCursor + 1, inputsArea: "ready" };
+    }, "notice.chosen", { name: poolInput(this.store.get().poolCursor).name });
   }
 
   selectAll(): void {
@@ -398,28 +510,67 @@ export class DemoController {
   }
 
   setScenario(scenario: Scenario): void {
-    const { language, theme } = this.store.get();
-    const base: DemoState = { ...initialState(), language, theme, scenario };
+    const base: DemoState = { ...initialState(), ...this.kept(), scenario };
+    const multi: Partial<DemoState> = { inputs: initialInputs(), overrides: { "in-02": { language: "en", speakers: "2" } } };
     let next: DemoState = base;
-    if (scenario === "empty") next = { ...base, inputs: [], selected: [], overrides: {} };
+    if (scenario === "empty") next = { ...base, inputs: [], selected: [], focusInputId: null };
+    if (scenario === "multi" || scenario === "busy") next = { ...base, ...multi };
     if (scenario === "loading") next = { ...base, inputsArea: "loading", queueArea: "loading" };
     if (scenario === "error") next = { ...base, inputsArea: "error", queueArea: "error" };
     this.store.set({ ...next, notice: this.notify("notice.scenario", { scenario }) });
-    if (scenario === "busy" || scenario === "success") this.fillQueue(scenario);
+    if (scenario === "busy") this.fillQueue({ "in-01": 3, "in-02": 1, "in-03": 2, "in-04": 0 }, "in-03");
+    if (scenario === "running") this.fillQueue({ "in-01": 3 });
+    if (scenario === "failed") this.fillQueue({ "in-01": 2 }, "in-01");
+    if (scenario === "done") this.fillQueue({ "in-01": 9 });
   }
 
-  private fillQueue(scenario: "busy" | "success"): void {
-    const ids = this.store.get().inputs.filter((i) => i.supported).map((i) => i.id);
+  // ---- fictional environment ------------------------------------------------------------------
+  setEnvExample(envExample: EnvExample): void {
+    this.update(() => ({ envExample, envChecking: false }));
+  }
+
+  /** Demo "re-detect": only shows the checking state; nothing is detected (no request, no timer). */
+  redetect(): void {
+    this.update(() => ({ envChecking: true }), "notice.redetect");
+  }
+
+  /** Demo control that ends the checking display with the same fictional example. */
+  finishDetect(): void {
+    this.update(() => ({ envChecking: false }), "notice.detected");
+  }
+
+  // ---- queue / results page list controls -------------------------------------------------------
+  setQueueQuery(queueQuery: string): void {
+    this.update(() => ({ queueQuery }));
+  }
+
+  setQueueFilter(queueFilter: QueueFilter): void {
+    this.update(() => ({ queueFilter }));
+  }
+
+  setQueueSort(queueSort: QueueSort): void {
+    this.update(() => ({ queueSort }));
+  }
+
+  setResultsQuery(resultsQuery: string): void {
+    this.update(() => ({ resultsQuery }));
+  }
+
+  selectResult(id: string | null): void {
+    this.update(() => ({ selectedResultId: id }));
+  }
+
+  private fillQueue(steps: Record<string, number>, failId?: string): void {
+    const ids = this.store.get().inputs.filter((i) => i.supported && i.id in steps).map((i) => i.id);
     const before = this.store.get().notice;
     this.submit(ids);
-    const steps: Record<string, number> = scenario === "success" ? { "in-01": 9, "in-02": 9, "in-03": 9, "in-04": 9 } : { "in-01": 3, "in-02": 1, "in-03": 2 };
     this.store.set((s) => ({
       ...s,
       notice: before,
       jobs: s.jobs.map((j) => {
         let job = j;
         for (let i = 0; i < (steps[j.inputId] ?? 0); i += 1) job = stepJob(job);
-        if (scenario === "busy" && j.inputId === "in-03") job = { ...job, state: "failed", errorCode: "demo_failure" };
+        if (j.inputId === failId) job = { ...job, state: "failed", errorCode: "demo_failure" };
         return job;
       }),
     }));

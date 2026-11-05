@@ -4,11 +4,12 @@ import { aliases, mdi } from "vuetify/iconsets/mdi-svg";
 import "vuetify/styles";
 import "../styles/app.css";
 import "./preview.css";
-import { ShellController } from "../domain/shell";
 import { componentDefaults, darkTheme, lightTheme } from "../styles/theme";
 import { PREVIEW } from "./composables";
 import { DemoController } from "./domain/demo";
+import { LayoutController } from "./domain/layout";
 import PreviewApp from "./PreviewApp.vue";
+import { greenDark, greenLight } from "./theme";
 
 /**
  * UI-3-0 design prototype entry (frontend/preview.html). Reachable only from the Vite dev server:
@@ -18,11 +19,12 @@ import PreviewApp from "./PreviewApp.vue";
 if (!import.meta.env.DEV) throw new Error("The UI-3-0 prototype runs only on the Vite dev server.");
 
 const vuetify = createVuetify({
-  theme: { defaultTheme: "light", themes: { light: lightTheme, dark: darkTheme } },
+  // Prototype-only green proposal next to the unchanged production (UI-2) themes for comparison.
+  theme: { defaultTheme: "greenLight", themes: { light: lightTheme, dark: darkTheme, greenLight, greenDark } },
   icons: { defaultSet: "mdi", aliases, sets: { mdi } },
   defaults: componentDefaults,
 });
 
 const app = createApp(PreviewApp);
-app.provide(PREVIEW, { demo: new DemoController(), shell: new ShellController() });
+app.provide(PREVIEW, { demo: new DemoController(), layout: new LayoutController() });
 app.use(vuetify).mount("#preview");

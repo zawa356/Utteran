@@ -18,6 +18,6 @@ const languages = [
     <v-alert type="info" variant="outlined">{{ t("settings.notSaved") }}</v-alert>
     <v-select :label="t('settings.theme')" :items="themes" :model-value="state.theme" class="u-w-sm" data-testid="settings-theme" @update:model-value="(v) => demo.setTheme(v as PreviewTheme)" />
     <v-select :label="t('settings.language')" :items="languages" :model-value="state.language" class="u-w-sm" data-testid="settings-language" @update:model-value="(v) => demo.setLanguage(v as PreviewLanguage)" />
-    <p class="text-caption">{{ t("settings.later") }}</p>
+    <p class="text-body-small">{{ t("settings.later") }}</p>
   </section>
 </template>

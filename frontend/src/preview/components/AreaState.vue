@@ -14,11 +14,11 @@ const { t } = usePreview();
 <template>
   <div v-if="state === 'loading'" role="status" aria-live="polite" :data-testid="`${testid}-loading`">
     <v-skeleton-loader type="list-item-two-line@3" />
-    <span class="text-body-2">{{ t("area.loading") }}</span>
+    <span class="text-body-medium">{{ t("area.loading") }}</span>
   </div>
   <v-alert v-else-if="state === 'error'" type="error" role="alert" :title="t('area.errorTitle')" :data-testid="`${testid}-error`">
     <div>{{ t("area.errorBody") }}</div>
-    <div class="text-caption">{{ t("area.errorCode", { code: "demo_unavailable" }) }}</div>
+    <div class="text-body-small">{{ t("area.errorCode", { code: "demo_unavailable" }) }}</div>
     <template #append>
       <v-btn variant="text" size="small" :data-testid="`${testid}-retry`" @click="emit('retry')">{{ t("common.retry") }}</v-btn>
     </template>
