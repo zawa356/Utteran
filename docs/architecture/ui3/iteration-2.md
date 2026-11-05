@@ -136,7 +136,12 @@ PR本文に記録する（このcommitではPythonファイルを変更してい
    プロトタイプは`text-body-small/medium/large`へ置換し、これらが既定でRobotoを指定するため`--v-font-body`をシステムUIフォントへ戻した。
    本番の修正はS1以降の小PRで扱う。
 2. UI-2青ライトの入力欄枠は2.68:1で、WCAG 1.4.11（3:1）を満たさない（Vuetify既定の0.38）。本番へ緑案を入れるかどうかに関係なく要修正候補。
-3. dev serverのログにVuetify由来の`ResizeObserver loop completed with undelivered notifications`が出ることがある（第1案から既知、
+3. **CI（PR run 41957851968）で`e2e:prototype`の最初の1件が`504 (Outdated Optimize Dep)`のconsole errorで失敗した**（push run 41957844445は成功）。
+   原因: `vite-plugin-vuetify`のautoImportが部品のimportを変換時に追加するため、Viteの依存scannerが事前に見つけられず、最初のページ読み込み中に
+   再最適化とreloadが起きて処理中の要求が504になる（遅いrunnerで顕在化）。対処: `vite.config.ts`の`optimizeDeps`でVuetifyの全部品を
+   dev server起動時に事前bundleし、`entries`に`preview.html`を加えた（**dev server専用の設定で`vite build`の出力ハッシュは不変**）。
+   E2Eの「console error 0」の条件は緩めていない。
+4. dev serverのログにVuetify由来の`ResizeObserver loop completed with undelivered notifications`が出ることがある（第1案から既知、
    ページのconsole errorではない）。プロトタイプ自身のResizeObserverは次フレームで反映するようにした。
 
 ## 8. 未実装・保留・次回レビュー論点
