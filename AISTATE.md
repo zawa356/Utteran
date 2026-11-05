@@ -1,5 +1,17 @@
 # AI 作業状態
 
+## 現在地（2026-11-05、UI-3-0 第3イテレーション、0.1.43・未リリース、Draft PR #38）
+
+- PR #38（`claude/blissful-planck-84e59y`、開始時HEAD`8b0feac3`、他者の変更なし）へ通常pushで追加コミット。versionは0.1.43のまま
+  （理由は[ui3/iteration-3 §12](docs/architecture/ui3/iteration-3.md#12-versionの判断)）。変更は`frontend/src/preview/`・`frontend/e2e-preview/`・文書のみ。
+- ownerメモ#6〜#14を反映: 可読性の下限（ボタン36px・文字13px以上、E2Eで検査）、上部1行の試作表示と説明文の削減、通常の内部仕様説明の撤去と
+  「別のファイルにする」の置換表示（Expert側は保持）、Expertの①ファイル→②処理設定→③キュー投入（件数一致、右は投入＋簡易キュー）、
+  22/53/25を既定候補に、同期表示の廃止（確認中/取得不可だけを短く）、共通メニュー（ファイル/表示/ツール/ヘルプ）とログ・診断・Aboutのmock、
+  環境画面の単一レイアウト、設定の通常/Expert分離（カテゴリ、保存不可は「後続で実装」）、工程内%・推定残りのmock（G-03提案を文書化）。
+- 検証（Linux、headless Chromium）: Vitest 130（プロトタイプ53）、UI-2 E2E 10、プロトタイプE2E 35、build出力は第2案と同一ハッシュ、Python gates ok。画像はcommitしない。
+- **owner再レビュー待ち。** Ready化・merge・tag・release・#21クローズ・S1以降は未着手。未受入: WebView2・OS DPI実機・Windows日本語フォント・
+  native D&D/picker・IME・実backend・画面読み上げ・タッチ。
+
 ## 現在地（2026-11-05、UI-3-0 第2イテレーション、0.1.43・未リリース、Draft PR #38）
 
 - PR #38（`claude/blissful-planck-84e59y`、HEAD確認時`fbf9da83`、他者の変更なし）へ通常pushで追加コミット。versionは0.1.43のまま

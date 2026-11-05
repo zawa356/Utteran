@@ -27,6 +27,8 @@ DTOとAPIの機械可読な正本は、コード（`src/utteran_contracts/`）�
 - [ui3/](ui3/README.md): **UI-3-0 画面設計と隔離型プロトタイプ**（2026-11-05、0.1.43）。通常A1（縦ステップ）／Expert C1（3ペイン）の推奨案、
   合成データだけで操作できるVite dev server専用のプロトタイプ（production buildに含まれない）、レビュー画像の再現手順、S1–S5への引継ぎ。
   第2イテレーション（[ui3/iteration-2](ui3/iteration-2.md)）で通常＝topbar＋1ファイル、Expert＝リサイズ可能なsidebar＋3ペイン、緑配色案、架空の環境mockへ改めた。
+  第3イテレーション（[ui3/iteration-3](ui3/iteration-3.md)）で可読性の下限、説明文の削減、Expertの①→②→③と簡易キュー、共通メニューとログ・診断・Aboutのmock、
+  設定の通常/Expert分離、工程内進捗・推定残りのmock（G-03の提案）を加えた。
   **owner承認前の設計案で、機能移行ではない。**
 - [ui2/](ui2/README.md): **次期GUIのfrontend基盤（S0）とopt-in新UI**（2026-11-04、0.1.41→0.1.42。Windows WebView2で条件付き受入、DPI 200%の初期窓に制約）。Vue 3 + Vuetify 4、
   `utteran-gui --next-ui`のときだけ表示。既定GUIは旧UIのまま。設計・実測・UI-3への移行計画。
