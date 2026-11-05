@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { columnsFor, HANDLE_PX, LayoutController, PANE_MIN, paneRange, resolvePanes, SIDEBAR, THREE_COLUMNS_AT, TWO_COLUMNS_AT } from "./layout";
+import { AUTO_WIDE_AREA, columnsFor, HANDLE_PX, LayoutController, PANE_MIN, paneRange, ratiosFor, resolvePanes, SIDEBAR, THREE_COLUMNS_AT, TWO_COLUMNS_AT } from "./layout";
 
 describe("prototype layout (mode IA, sidebar and pane sizes)", () => {
   it("Normal offers three destinations; switching back from an Expert-only page goes home", () => {
@@ -17,7 +17,7 @@ describe("prototype layout (mode IA, sidebar and pane sizes)", () => {
     expect(layout.store.get().section).toBe("setup"); // offered in both
   });
 
-  it("columns follow the pane-area width: 3 → 2 → 1", () => {
+  it("columns follow the pane-area width: 3 → 2 → 1 (never stacked: 2 = files + one switched pane)", () => {
     expect(columnsFor(THREE_COLUMNS_AT)).toBe(3);
     expect(columnsFor(THREE_COLUMNS_AT - 1)).toBe(2);
     expect(columnsFor(TWO_COLUMNS_AT)).toBe(2);
@@ -39,6 +39,7 @@ describe("prototype layout (mode IA, sidebar and pane sizes)", () => {
     expect(two.columns).toBe(2);
     expect(two.inputs + two.inspector + HANDLE_PX).toBe(800);
     expect(two.inspector).toBeGreaterThanOrEqual(PANE_MIN.inspector);
+    expect(two.queue).toBe(two.inspector); // the queue takes the same right column, not a row below
   });
 
   it("setPaneWidth clamps to the allowed range; presets and reset restore ratios", () => {
@@ -50,17 +51,25 @@ describe("prototype layout (mode IA, sidebar and pane sizes)", () => {
     expect(r.inputs).toBe(paneRange(1200, layout.store.get().panes, "inputs").max);
     layout.applyPreset("wideInputs");
     expect(layout.store.get().panes).toEqual({ inputs: 0.3, queue: 0.28 });
-    layout.resetPanes(); // iteration 3: the narrower files pane (22/53/25) is the default candidate
+    layout.resetPanes(); // iteration 4: automatic ratios are the default candidate
+    expect(layout.store.get().panes).toBeNull();
+    layout.applyPreset("compactInputs");
     expect(layout.store.get().panes).toEqual({ inputs: 0.22, queue: 0.25 });
+    layout.applyPreset("auto");
+    expect(layout.store.get().panes).toBeNull();
   });
 
-  it("22/53/25 at 1280 px with the default sidebar keeps every pane at or above its minimum", () => {
+  it("automatic ratios: 30/42/28 below the wide area, 22/53/25 above; the files pane keeps ≥ 260 px", () => {
+    expect(ratiosFor(AUTO_WIDE_AREA - 1, null)).toEqual({ inputs: 0.3, queue: 0.28 });
+    expect(ratiosFor(AUTO_WIDE_AREA, null)).toEqual({ inputs: 0.22, queue: 0.25 });
+    expect(ratiosFor(1000, { inputs: 0.4, queue: 0.2 })).toEqual({ inputs: 0.4, queue: 0.2 });
     const area = 1280 - SIDEBAR.default - 2 - 16; // window − sidebar − its border − work-area padding
     const r = resolvePanes(area, new LayoutController().store.get().panes);
     expect(r.columns).toBe(3);
-    expect(r.inputs).toBeGreaterThanOrEqual(PANE_MIN.inputs);
-    expect(r.queue).toBeGreaterThanOrEqual(PANE_MIN.queue);
-    expect(r.inspector).toBeGreaterThan(2 * r.inputs); // the Inspector gets the room
+    expect(r.inputs).toBeGreaterThanOrEqual(300); // was 230 px with 22 % (owner memo #21)
+    expect(r.inspector).toBeGreaterThanOrEqual(PANE_MIN.inspector);
+    expect(resolvePanes(1920 - SIDEBAR.default - 18, null).inputs).toBeGreaterThanOrEqual(PANE_MIN.inputs);
+    expect(PANE_MIN.inputs).toBe(260);
   });
 
   it("menu style, dialogs and settings category are plain UI state", () => {

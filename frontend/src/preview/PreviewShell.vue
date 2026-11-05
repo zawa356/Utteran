@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import AppIcon from "./components/AppIcon.vue";
 import PrototypeBanner from "./components/PrototypeBanner.vue";
 import { usePreview } from "./composables";
 import type { Mode } from "./domain/layout";
@@ -16,14 +17,18 @@ import NormalTopNav from "./shell/NormalTopNav.vue";
 import AppDialogs from "./shell/AppDialogs.vue";
 import AppMenu from "./shell/AppMenu.vue";
 import ReviewStrip from "./shell/ReviewStrip.vue";
+import SetupWizard from "./wizard/SetupWizard.vue";
 
 /**
  * The mode switches the whole information architecture (iteration 2): Normal = app bar with three
  * destinations, no sidebar, one file; Expert = resizable management sidebar with six destinations.
  * Iteration 3 adds the shared application menu (File / View / Tools / Help) at the left of the app
  * bar and keeps one short prototype line under it. The demo data is never changed by the switch.
+ * Iteration 4: while nothing is configured and the setup wizard is open, the wizard IS the window
+ * (no mode switch, no navigation): first run asks one thing at a time instead of offering modes.
  */
-const { layout, layoutState, state, t } = usePreview();
+const { layout, layoutState, setupState, state, t } = usePreview();
+const firstRun = computed(() => !setupState.value.configured && setupState.value.wizardOpen);
 const mode = computed(() => layoutState.value.mode);
 const section = computed(() => layoutState.value.section);
 
@@ -37,16 +42,17 @@ const noticeText = computed(() => {
 </script>
 
 <template>
-  <v-layout class="fill-height" :data-mode="mode">
+  <v-layout class="fill-height" :data-mode="mode" :data-first-run="firstRun">
     <v-app-bar density="compact" height="52" flat border="b" data-testid="app-bar">
-      <div class="p-brand">Utteran</div>
+      <div class="p-brand" data-testid="brand"><AppIcon />Utteran</div>
       <AppMenu />
-      <template v-if="mode === 'normal'">
+      <template v-if="mode === 'normal' && !firstRun">
         <span class="p-appbar-sep" aria-hidden="true"></span>
         <NormalTopNav />
       </template>
       <v-spacer />
       <v-btn-toggle
+        v-if="!firstRun"
         :model-value="mode"
         mandatory
         density="compact"
@@ -62,12 +68,13 @@ const noticeText = computed(() => {
         <v-btn value="expert" data-testid="mode-expert">{{ t("mode.expert") }}</v-btn>
       </v-btn-toggle>
     </v-app-bar>
-    <ExpertSidebar v-if="mode === 'expert'" />
+    <ExpertSidebar v-if="mode === 'expert' && !firstRun" />
     <v-main>
       <div class="p-main">
         <PrototypeBanner />
-        <div class="p-content" :class="{ 'p-content--fill': mode === 'expert' && section === 'transcribe' }" data-testid="content">
-          <template v-if="section === 'transcribe'">
+        <div class="p-content" :class="{ 'p-content--fill': mode === 'expert' && section === 'transcribe' && !firstRun }" data-testid="content">
+          <SetupWizard v-if="firstRun" />
+          <template v-else-if="section === 'transcribe'">
             <ExpertLayout v-if="mode === 'expert'" />
             <NormalHome v-else />
           </template>

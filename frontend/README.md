@@ -54,6 +54,10 @@ file, the resizable Expert sidebar and panes, a prototype-only green palette (`s
 ([docs/architecture/ui3/iteration-3.md](../docs/architecture/ui3/iteration-3.md)) raises the readability floor (prototype-only
 Vuetify defaults `previewDefaults`), adds the shared app menu with mock log/diagnostics/about dialogs, the Expert
 files → settings → submit flow with a short queue, Normal/Expert settings, and a fictional stage progress/ETA mock.
+Iteration 4 ([docs/architecture/ui3/iteration-4.md](../docs/architecture/ui3/iteration-4.md)) adds the categorised Expert
+processing settings (prompt, glossary, engine-specific fields), a mock setup wizard (first run / add / repair, switchable
+in the review strip), log and preset import/export confirmation screens (nothing is written), the green/blue × appearance
+theme setting and the existing app icon (`src/preview/assets/utteran.svg`, a byte-identical copy of `icon/utteran.svg`).
 
 ```bash
 npm run prototype

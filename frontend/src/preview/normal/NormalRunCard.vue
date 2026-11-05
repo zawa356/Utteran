@@ -21,6 +21,7 @@ import JobStatusNotice from "../components/JobStatusNotice.vue";
 import { usePreview } from "../composables";
 import { isActive, outputNames } from "../domain/demo";
 import { useNormalFile } from "./useNormalFile";
+import { useSetupNav } from "../wizard/useSetupNav";
 
 /**
  * Start → progress → result of the ONE file (shortest path; no queue, no history). Short labels
@@ -28,7 +29,8 @@ import { useNormalFile } from "./useNormalFile";
  * that move the fictional job are grouped behind a dashed line.
  */
 const { demo, layout, state, t } = usePreview();
-const { input, job, blocked, slowNote } = useNormalFile();
+const { openSetup } = useSetupNav();
+const { input, job, blocked, slowNote, repairNote } = useNormalFile();
 const active = computed(() => job.value !== null && isActive(job.value));
 const outputs = computed(() => (job.value?.state === "succeeded" ? outputNames(job.value) : []));
 </script>
@@ -49,11 +51,17 @@ const outputs = computed(() => (job.value?.state === "succeeded" ? outputNames(j
         <div v-if="blocked" class="p-reason" role="status" data-testid="normal-start-blocked">
           <v-icon :icon="mdiAlertOutline" size="small" aria-hidden="true" />
           <span>{{ blocked.text }}</span>
+          <v-btn v-if="blocked.diarization && input" variant="text" color="primary" data-testid="normal-diarization-off" @click="demo.setNormalSetting(input.id, { diarization: false })">{{ t("start.diarizationOff") }}</v-btn>
           <v-btn v-if="blocked.setup" variant="text" color="primary" :append-icon="mdiArrowRight" data-testid="normal-blocked-setup" @click="layout.navigate('setup')">{{ t("section.setup") }}</v-btn>
         </div>
         <div v-else-if="slowNote" class="p-reason" data-testid="normal-slow-note">
           <v-icon :icon="mdiInformationOutline" size="small" aria-hidden="true" />
           <span>{{ slowNote }}</span>
+        </div>
+        <div v-if="!blocked && repairNote" class="p-reason" data-testid="normal-repair-note">
+          <v-icon :icon="mdiInformationOutline" size="small" aria-hidden="true" />
+          <span>{{ repairNote }}</span>
+          <v-btn variant="text" color="primary" data-testid="normal-repair" @click="openSetup('repair')">{{ t("env.action.repair") }}</v-btn>
         </div>
       </div>
 

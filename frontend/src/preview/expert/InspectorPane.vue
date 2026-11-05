@@ -2,19 +2,20 @@
 import { mdiUndoVariant } from "@mdi/js";
 import { computed } from "vue";
 import PaneHeading from "../components/PaneHeading.vue";
-import SettingsFields from "../components/SettingsFields.vue";
 import { usePreview } from "../composables";
-import { type InspectorTab, selectionField } from "../domain/demo";
-import { SETTING_KEYS } from "../domain/fixtures";
+import { type InspectorTab, overrideCount } from "../domain/demo";
+import PresetApply from "../settings/PresetApply.vue";
+import SettingsEditor from "../settings/SettingsEditor.vue";
 
 /**
  * Step 2 (centre pane): settings for the jobs — the common defaults, or individual values for the
- * files selected in step 1 (same count as the step-1 heading and the step-3 button). Per-job
- * settings live here, not on the Settings page.
+ * files selected in step 1 (same count as the step-1 heading and the step-3 button). Iteration 4:
+ * the editor has categories (ASR, prompt & glossary, diarization, output, advanced) and a preset
+ * can be applied to the current target. The pane body scrolls; the target switch stays on top.
  */
 const { demo, state, t } = usePreview();
 const count = computed(() => state.value.selected.length);
-const anyOverride = computed(() => SETTING_KEYS.some((k) => selectionField(state.value, k).coverage !== "none"));
+const anyOverride = computed(() => state.value.selected.some((id) => overrideCount(state.value, id) > 0));
 // The full name of a single selected input (the list may cut it).
 const target = computed(() => {
   const sel = state.value.inputs.filter((i) => state.value.selected.includes(i.id));
@@ -24,18 +25,23 @@ const target = computed(() => {
 </script>
 
 <template>
-  <div class="p-pane__body">
+  <div class="p-pane__body p-inspector">
     <PaneHeading id="pane-inspector-heading" :step="2" :title="t('expert.inspector')" :meta="t('inputs.selectedShort', { count })" />
-    <v-tabs
+    <v-btn-toggle
       :model-value="state.inspectorTab"
+      mandatory
+      divided
+      variant="outlined"
+      density="compact"
       color="primary"
+      class="p-inspector__target"
       :aria-label="t('inspector.tabs')"
       data-testid="inspector-tabs"
-      @update:model-value="(v) => demo.setInspectorTab(v as InspectorTab)"
+      @update:model-value="(v: InspectorTab) => demo.setInspectorTab(v)"
     >
-      <v-tab value="common" data-testid="inspector-tab-common">{{ t("inspector.common") }}</v-tab>
-      <v-tab value="selection" data-testid="inspector-tab-selection">{{ t("inspector.selection", { count }) }}</v-tab>
-    </v-tabs>
+      <v-btn value="common" data-testid="inspector-tab-common">{{ t("inspector.common") }}</v-btn>
+      <v-btn value="selection" data-testid="inspector-tab-selection">{{ t("inspector.selection", { count }) }}</v-btn>
+    </v-btn-toggle>
 
     <template v-if="state.inspectorTab === 'common'">
       <div class="u-row">
@@ -43,7 +49,8 @@ const target = computed(() => {
         <v-spacer />
         <v-btn variant="text" :prepend-icon="mdiUndoVariant" data-testid="common-reset" @click="demo.resetCommon()">{{ t("inspector.resetCommon") }}</v-btn>
       </div>
-      <SettingsFields mode="common" />
+      <PresetApply target="common" />
+      <SettingsEditor mode="common" />
     </template>
     <template v-else>
       <p v-if="count === 0" class="text-body-medium" data-testid="inspector-no-selection">{{ t("inspector.noSelection") }}</p>
@@ -55,7 +62,8 @@ const target = computed(() => {
             {{ t("inspector.resetAll") }}
           </v-btn>
         </div>
-        <SettingsFields mode="selection" />
+        <PresetApply target="selection" />
+        <SettingsEditor mode="selection" />
       </template>
     </template>
   </div>

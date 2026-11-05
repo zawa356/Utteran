@@ -14,13 +14,15 @@ export type NormalSection = (typeof NORMAL_SECTIONS)[number];
 export type ExpertPane = "inputs" | "inspector" | "queue";
 export type PaneColumns = 1 | 2 | 3;
 /**
- * Example pane splits the reviewer can compare (owner memo: do not fix one ratio yet). Iteration 3
- * starts with the narrower inputs pane (22/53/25) as the default CANDIDATE; 30/42/28 (iteration 2)
- * stays one click away in the review strip.
+ * Pane splits (owner memos: do not fix one ratio yet; #21 file names were cut at 1280 px with
+ * 22/53/25). Iteration 4 default CANDIDATE is "auto": 30/42/28 while the pane area is narrower
+ * than AUTO_WIDE_AREA, 22/53/25 above it, and the files pane never below PANE_MIN.inputs. A drag
+ * or a fixed preset replaces "auto" until "reset pane widths".
  */
-export type PanePreset = "compactInputs" | "wideInputs";
-export const PANE_PRESET_IDS: readonly PanePreset[] = ["compactInputs", "wideInputs"];
-export const DEFAULT_PRESET: PanePreset = "compactInputs";
+export type PanePreset = "auto" | "compactInputs" | "wideInputs";
+export const PANE_PRESET_IDS: readonly PanePreset[] = ["auto", "compactInputs", "wideInputs"];
+export const DEFAULT_PRESET: PanePreset = "auto";
+export const AUTO_WIDE_AREA = 1400;
 /** App menu presentation the reviewer compares: Windows-like menu bar vs. one menu button. */
 export type MenuStyle = "bar" | "button";
 /** Below this window width the menu bar always folds into the single menu button. */
@@ -28,7 +30,7 @@ export const MENU_BAR_MIN_WIDTH = 1100;
 /** Below this window width the Normal destinations fold into one menu (no text is shrunk). */
 export const TOPNAV_MIN_WIDTH = 760;
 /** Mock dialogs opened from the app menu (Tools / Help). Nothing is read, written or sent. */
-export type AppDialog = "systemLog" | "jobLog" | "diagnostics" | "about";
+export type AppDialog = "systemLog" | "jobLog" | "setupLog" | "diagnostics" | "about";
 export const SETTINGS_CATEGORIES = ["general", "logs", "advanced", "presets"] as const;
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 
@@ -37,20 +39,34 @@ export interface PaneRatios {
   inputs: number;
   queue: number;
 }
-export const PANE_PRESETS: Record<PanePreset, PaneRatios> = {
+export const PANE_PRESETS: Record<Exclude<PanePreset, "auto">, PaneRatios> = {
   compactInputs: { inputs: 0.22, queue: 0.25 },
   wideInputs: { inputs: 0.3, queue: 0.28 },
 };
 
+/** Ratios for an area width: the stored ones, or the automatic choice when none are stored. */
+export function ratiosFor(areaWidth: number, stored: PaneRatios | null): PaneRatios {
+  if (stored) return stored;
+  return areaWidth < AUTO_WIDE_AREA ? PANE_PRESETS.wideInputs : PANE_PRESETS.compactInputs;
+}
+
 export const SIDEBAR = { min: 168, max: 360, default: 200, rail: 56 } as const;
-/** Minimum pane widths in CSS px. Below these the layout drops a column instead of overflowing. */
-export const PANE_MIN = { inputs: 220, inspector: 340, queue: 240 } as const;
+/**
+ * Minimum pane widths in CSS px. Below these the layout drops a column instead of overflowing.
+ * 260 px for the files pane keeps ~20 characters of a name next to the checkbox and state icon
+ * (measured in the E2E at 1280 px); 380 px fits the Inspector's category tabs and field rows.
+ */
+export const PANE_MIN = { inputs: 260, inspector: 380, queue: 240 } as const;
 /** Upper bound for a side pane as a fraction of the pane area. */
 export const PANE_MAX_FRACTION = 0.45;
 export const HANDLE_PX = 8;
-/** Pane-area width (not viewport width) at which 3 and 2 columns fit. */
-export const THREE_COLUMNS_AT = PANE_MIN.inputs + PANE_MIN.inspector + PANE_MIN.queue + 2 * HANDLE_PX + 120;
-export const TWO_COLUMNS_AT = PANE_MIN.inputs + PANE_MIN.inspector + HANDLE_PX + 120;
+/**
+ * Pane-area width (not viewport width) at which 3 and 2 columns fit. Iteration 4 (owner memo #21):
+ * panes are NEVER stacked vertically. Two columns = files on the left and ONE of Inspector / queue
+ * on the right (switched by a segmented control); one column = one pane at a time.
+ */
+export const THREE_COLUMNS_AT = PANE_MIN.inputs + PANE_MIN.inspector + PANE_MIN.queue + 2 * HANDLE_PX + 40;
+export const TWO_COLUMNS_AT = PANE_MIN.inputs + PANE_MIN.inspector + HANDLE_PX + 40;
 /** Narrow windows start with the rail; the expand button stays visible and works at any width. */
 export const NARROW_WINDOW = 1024;
 
@@ -64,7 +80,8 @@ export interface LayoutState {
   sidebarCollapsed: boolean;
   /** User choice for narrow windows (they start as a rail). */
   sidebarExpandedNarrow: boolean;
-  panes: PaneRatios;
+  /** null = automatic ratios (see ratiosFor). */
+  panes: PaneRatios | null;
   reviewStripOpen: boolean;
   menuStyle: MenuStyle;
   dialog: AppDialog | null;
@@ -99,10 +116,11 @@ export interface PaneWidths {
 /**
  * Concrete pixel widths for a pane-area width. Side panes are clamped to their minimum and to
  * PANE_MAX_FRACTION, and the Inspector never goes below its minimum, so the sum always fits the
- * area (no horizontal overflow whatever the stored ratios are). In two columns the queue moves
- * below at full width; in one column every pane is full width.
+ * area (no horizontal overflow whatever the stored ratios are). In two columns the right column
+ * shows the Inspector OR the queue at the same width; in one column every pane is full width.
  */
-export function resolvePanes(areaWidth: number, ratios: PaneRatios): PaneWidths {
+export function resolvePanes(areaWidth: number, stored: PaneRatios | null): PaneWidths {
+  const ratios = ratiosFor(areaWidth, stored);
   const columns = columnsFor(areaWidth);
   const width = Math.max(0, Math.floor(areaWidth));
   if (columns === 1) return { columns, inputs: width, inspector: width, queue: width };
@@ -110,7 +128,7 @@ export function resolvePanes(areaWidth: number, ratios: PaneRatios): PaneWidths 
   const maxSide = Math.floor(content * PANE_MAX_FRACTION);
   if (columns === 2) {
     const inputs = clamp(Math.round(content * ratios.inputs), PANE_MIN.inputs, Math.min(maxSide, content - PANE_MIN.inspector));
-    return { columns, inputs, inspector: content - inputs, queue: width };
+    return { columns, inputs, inspector: content - inputs, queue: content - inputs };
   }
   let inputs = clamp(Math.round(content * ratios.inputs), PANE_MIN.inputs, maxSide);
   let queue = clamp(Math.round(content * ratios.queue), PANE_MIN.queue, maxSide);
@@ -127,7 +145,7 @@ export function resolvePanes(areaWidth: number, ratios: PaneRatios): PaneWidths 
 }
 
 /** Allowed range of one side pane (px) for the current area, used by the separator's ARIA values. */
-export function paneRange(areaWidth: number, ratios: PaneRatios, pane: "inputs" | "queue"): { min: number; max: number } {
+export function paneRange(areaWidth: number, ratios: PaneRatios | null, pane: "inputs" | "queue"): { min: number; max: number } {
   const resolved = resolvePanes(areaWidth, ratios);
   const content = Math.max(0, Math.floor(areaWidth)) - (resolved.columns - 1) * HANDLE_PX;
   const other = resolved.columns === 3 ? (pane === "inputs" ? resolved.queue : resolved.inputs) : 0;
@@ -144,7 +162,7 @@ function initialLayout(): LayoutState {
     sidebarWidth: SIDEBAR.default,
     sidebarCollapsed: false,
     sidebarExpandedNarrow: false,
-    panes: { ...PANE_PRESETS[DEFAULT_PRESET] },
+    panes: null,
     reviewStripOpen: true,
     menuStyle: "bar",
     dialog: null,
@@ -201,11 +219,11 @@ export class LayoutController {
     const columns = columnsFor(areaWidth);
     const content = Math.max(1, Math.floor(areaWidth) - (columns - 1) * HANDLE_PX);
     const value = clamp(Math.round(px), min, max) / content;
-    this.store.patch({ panes: { ...s.panes, [pane]: value } });
+    this.store.patch({ panes: { ...ratiosFor(areaWidth, s.panes), [pane]: value } });
   }
 
   applyPreset(preset: PanePreset): void {
-    this.store.patch({ panes: { ...PANE_PRESETS[preset] } });
+    this.store.patch({ panes: preset === "auto" ? null : { ...PANE_PRESETS[preset] } });
   }
 
   resetPanes(): void {

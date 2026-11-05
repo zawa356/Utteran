@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { blend, contrastRatio } from "./domain/contrast";
-import { greenDark, greenLight } from "./theme";
+import { blueDark, blueLight, greenDark, greenLight } from "./theme";
 
 /**
  * WCAG 2.2 AA checks of the prototype "Utteran green" palette (1.4.3 text 4.5:1, 1.4.11 non-text
@@ -9,9 +9,13 @@ import { greenDark, greenLight } from "./theme";
  * selected rows = on-surface on a 12 % primary tint; outlined fields = on-surface at the field
  * border opacity (raised to 0.6 in preview.css); focus ring = primary.
  */
+const LIGHT = { high: 0.87, medium: Number(greenLight.variables?.["medium-emphasis-opacity"]), disabled: 0.38 };
+const DARK = { high: 1, medium: 0.7, disabled: 0.5 };
 const THEMES = [
-  { name: "light", t: greenLight, emphasis: { high: 0.87, medium: Number(greenLight.variables?.["medium-emphasis-opacity"]), disabled: 0.38 } },
-  { name: "dark", t: greenDark, emphasis: { high: 1, medium: 0.7, disabled: 0.5 } },
+  { name: "green light", t: greenLight, emphasis: LIGHT },
+  { name: "green dark", t: greenDark, emphasis: DARK },
+  { name: "blue light", t: blueLight, emphasis: LIGHT },
+  { name: "blue dark", t: blueDark, emphasis: DARK },
 ] as const;
 const SEMANTIC = ["primary", "secondary", "error", "warning", "info", "success"] as const;
 const FIELD_BORDER_OPACITY = 0.6;
@@ -25,7 +29,16 @@ function color(t: (typeof THEMES)[number]["t"], key: string): string {
   return value;
 }
 
-describe("prototype green palette — WCAG 2.2 AA", () => {
+describe("prototype accent themes (green / blue × light / dark) — WCAG 2.2 AA", () => {
+  it("semantic colours do not change with the accent (a state keeps its meaning)", () => {
+    for (const key of ["error", "warning", "info", "success"]) {
+      expect(blueLight.colors?.[key], key).toBe(greenLight.colors?.[key]);
+      expect(blueDark.colors?.[key], key).toBe(greenDark.colors?.[key]);
+    }
+    expect(blueLight.colors?.primary).toBe("#2f5d8a"); // the UI-2 hue
+    expect(greenLight.colors?.primary).toBe("#1f6b4f");
+  });
+
   for (const { name, t, emphasis } of THEMES) {
     const surface = color(t, "surface");
     const background = color(t, "background");
@@ -65,8 +78,8 @@ describe("prototype green palette — WCAG 2.2 AA", () => {
       expect(contrastRatio(color(t, "on-primary"), color(t, "primary"))).toBeGreaterThanOrEqual(4.5);
     });
 
-    it(`${name}: the brand green is not the success colour (states also carry an icon and a label)`, () => {
-      expect(color(t, "primary")).not.toBe(color(t, "success"));
+    it(`${name}: the accent is not the success / warning / error colour (states also carry an icon and a label)`, () => {
+      for (const key of ["success", "warning", "error"]) expect(color(t, "primary")).not.toBe(color(t, key));
       expect(contrastRatio(color(t, "primary"), color(t, "success"))).toBeGreaterThan(1);
     });
 

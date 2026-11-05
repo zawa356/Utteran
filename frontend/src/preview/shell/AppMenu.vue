@@ -6,6 +6,7 @@ import { usePreview } from "../composables";
 import { type AppDialog, MENU_BAR_MIN_WIDTH } from "../domain/layout";
 import { ABOUT } from "../domain/about";
 import type { PreviewKey } from "../i18n";
+import { useSetupNav } from "../wizard/useSetupNav";
 
 /**
  * Application menu shared by Normal and Expert (iteration 3, owner memo #12). Two presentations are
@@ -14,11 +15,12 @@ import type { PreviewKey } from "../i18n";
  * Every entry is a mock: logs, diagnostics and "about" open sample dialogs; nothing is read, saved
  * or sent. The only real link is the verified official repository.
  */
-const { demo, layout, layoutState, t } = usePreview();
+const { demo, layout, layoutState, setupState, t } = usePreview();
 const display = useDisplay();
+const { openSetup } = useSetupNav();
+const firstRun = computed(() => !setupState.value.configured && setupState.value.wizardOpen);
 
-
-type Action = "open" | "openFolder" | "modeNormal" | "modeExpert" | "resetPanes" | AppDialog | "repo";
+type Action = "open" | "openFolder" | "modeNormal" | "modeExpert" | "resetPanes" | "setup" | AppDialog | "repo";
 interface Item {
   action: Action;
   title: string;
@@ -46,13 +48,14 @@ const groups = computed<Group[]>(() => {
     { action: "modeExpert", title: k("menu.view.expert"), checked: expert.value },
   ];
   if (expert.value) view.push({ action: "resetPanes", title: k("menu.view.resetPanes") });
-  return [
+  const all: Group[] = [
     { id: "file", title: k("menu.file"), items: file },
     { id: "view", title: k("menu.view"), items: view },
     {
       id: "tools",
       title: k("menu.tools"),
       items: [
+        ...(firstRun.value ? [] : [{ action: "setup" as const, title: k("menu.tools.setup") }]),
         { action: "systemLog", title: k("menu.tools.systemLog") },
         { action: "jobLog", title: k("menu.tools.jobLog") },
         { action: "diagnostics", title: k("menu.tools.diagnostics") },
@@ -67,6 +70,8 @@ const groups = computed<Group[]>(() => {
       ],
     },
   ];
+  // First run: the wizard is the whole window; only Tools and Help stay available.
+  return firstRun.value ? all.filter((g) => g.id === "tools" || g.id === "help") : all;
 });
 
 function run(action: Action) {
@@ -89,6 +94,9 @@ function run(action: Action) {
     case "resetPanes":
       layout.navigate("transcribe");
       layout.resetPanes();
+      return;
+    case "setup":
+      openSetup("add");
       return;
     case "repo":
       return; // a plain link (opens in the browser); no handler

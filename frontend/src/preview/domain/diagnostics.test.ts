@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DemoController } from "./demo";
-import { DIAGNOSTICS_EXCLUDED, jobLog, maskForDiagnostics, SYSTEM_LOG } from "./diagnostics";
+import { DIAGNOSTICS_EXCLUDED, jobLog, logFileName, maskForDiagnostics, setupLog, SYSTEM_LOG } from "./diagnostics";
+import { exampleState } from "./setup";
 
 describe("mock logs and diagnostics (no real data)", () => {
   it("masks paths and tokens (values assembled at runtime, never real)", () => {
@@ -27,5 +28,14 @@ describe("mock logs and diagnostics (no real data)", () => {
     const demo = new DemoController();
     demo.setScenario("failed");
     expect(jobLog(demo.store.get().jobs[0]!).at(-1)).toMatchObject({ level: "ERROR", key: "log.job.failed" });
+  });
+
+  it("log export targets: system / one job / setup, .log or .txt; the setup log follows the stages", () => {
+    expect(logFileName("system", "log")).toBe("utteran-system-20261105.log");
+    expect(logFileName("job", "txt", "demo-job-001")).toBe("utteran-demo-job-001-20261105.txt");
+    const failed = setupLog(exampleState("failed"));
+    expect(failed.at(-1)).toMatchObject({ level: "ERROR", key: "log.setup.stageFailed", params: { stage: "asr_model", code: "demo_download_failed" } });
+    expect(setupLog(exampleState("incomplete")).at(-1)).toMatchObject({ level: "WARN", key: "log.setup.stageInterrupted" });
+    expect(DIAGNOSTICS_EXCLUDED).toContain("diag.out.prompts");
   });
 });

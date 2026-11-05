@@ -2,28 +2,7 @@
  * Deterministic synthetic fixtures for the UI-3-0 prototype. Nothing here refers to a real file,
  * path, recording, transcript, model inventory or device. Names are plain file names (no folders).
  */
-export const OUTPUT_FORMATS = ["srt", "vtt", "json", "md", "txt"] as const;
-export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
-
-/** Example labels only. The real candidates come from the backend (B4/B7), never from this list. */
-export const DEMO_MODELS = ["demo-model-accurate", "demo-model-balanced", "demo-model-fast"] as const;
-export type DemoModel = (typeof DEMO_MODELS)[number];
-
-export const LANGUAGES = ["auto", "ja", "en"] as const;
-export type InputLanguage = (typeof LANGUAGES)[number];
-
-export const SPEAKER_COUNTS = ["auto", "1", "2", "3", "4", "5", "6"] as const;
-export type SpeakerCount = (typeof SPEAKER_COUNTS)[number];
-
-export interface ProcessingSettings {
-  model: DemoModel;
-  language: InputLanguage;
-  diarization: boolean;
-  speakers: SpeakerCount;
-  formats: OutputFormat[];
-}
-export type SettingKey = keyof ProcessingSettings;
-export const SETTING_KEYS: readonly SettingKey[] = ["model", "language", "diarization", "speakers", "formats"];
+export { DEFAULT_COMMON, type ProcessingSettings, SETTING_KEYS, type SettingKey } from "./settingsSchema";
 
 export interface DemoInput {
   id: string;
@@ -34,14 +13,6 @@ export interface DemoInput {
   durationSec: number | null;
   supported: boolean;
 }
-
-export const DEFAULT_COMMON: ProcessingSettings = {
-  model: "demo-model-balanced",
-  language: "ja",
-  diarization: true,
-  speakers: "auto",
-  formats: ["srt", "json"],
-};
 
 const SUPPORTED = new Set(["wav", "mp3", "m4a", "flac", "mp4", "mkv", "mov"]);
 

@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { mdiAlertOctagonOutline, mdiCheckAll, mdiInformationOutline, mdiRadar } from "@mdi/js";
+import { mdiAlertOctagonOutline, mdiCheckAll, mdiInformationOutline, mdiRadar, mdiWrenchOutline } from "@mdi/js";
 import { computed, ref } from "vue";
 import { usePreview } from "../composables";
 import ProfileCard from "../environment/ProfileCard.vue";
 import { useEnvironment } from "../environment/useEnvironment";
+import SetupNotice from "../wizard/SetupNotice.vue";
+import SetupWizard from "../wizard/SetupWizard.vue";
+import { useSetupNav } from "../wizard/useSetupNav";
 
 /**
  * Execution environment with FICTIONAL information (switch the example in the review strip).
- * Iteration 3 (owner memo #13): one readable layout — no density switch, no expand/collapse-all.
- * Normal: the recommended profile and whether it can run, in brief. Expert: every candidate with
- * its technical evidence behind "details". The fact that everything here is fictional is stated
- * once, at the top. Nothing is detected or verified; B4 (backend) stays the source of truth.
+ * Iteration 4 (owner memos #16/#23): "Re-detect" only refreshes this view; "Set up…" installs,
+ * adds or repairs (it opens the wizard, shown here in place of the page). Cards offer "Set up…" /
+ * "Repair…" only where something is missing or broken; a working profile is never reinstalled.
+ * Nothing is detected or verified; B4 (backend) stays the source of truth.
  */
-const { demo, layoutState, t } = usePreview();
+const { demo, layoutState, setupState, t } = usePreview();
 const { view, primary, checking } = useEnvironment();
+const { openSetup } = useSetupNav();
 const expert = computed(() => layoutState.value.mode === "expert");
 const open = ref<Record<string, boolean>>({});
 const profiles = computed(() => (expert.value ? view.value.profiles : primary.value ? [primary.value] : []));
@@ -21,12 +25,15 @@ const isOpen = (name: string) => open.value[name] ?? false;
 </script>
 
 <template>
-  <section class="u-page p-page-wide u-stack" aria-labelledby="setup-heading" data-testid="section-setup">
+  <SetupWizard v-if="setupState.wizardOpen" />
+  <section v-else class="u-page p-page-wide u-stack" aria-labelledby="setup-heading" data-testid="section-setup">
     <div class="u-row">
       <h1 id="setup-heading" class="u-heading">{{ t(expert ? "setup.titleExpert" : "section.setup") }}</h1>
       <v-spacer />
       <v-btn variant="tonal" :prepend-icon="mdiRadar" :disabled="checking" data-testid="env-redetect" @click="demo.redetect()">{{ t("env.redetect") }}</v-btn>
+      <v-btn variant="tonal" color="primary" :prepend-icon="mdiWrenchOutline" data-testid="env-setup" @click="openSetup('add')">{{ t("env.setup") }}</v-btn>
     </div>
+    <SetupNotice />
     <div class="p-feedback" role="note" data-testid="env-demo-note">
       <v-icon :icon="mdiInformationOutline" size="small" color="warning" aria-hidden="true" />
       <span>{{ t("env.demoNote") }}</span>

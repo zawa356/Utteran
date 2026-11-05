@@ -1,6 +1,6 @@
 import { computed } from "vue";
 import { usePreview } from "../composables";
-import { jobOf, normalInputId } from "../domain/demo";
+import { inputIssues, jobOf, needsDiarization, normalInputId } from "../domain/demo";
 import { environmentView, exampleAllowsStart, primaryProfile } from "../domain/envExamples";
 
 /**
@@ -12,13 +12,17 @@ export function useNormalFile() {
   const inputId = computed(() => normalInputId(state.value));
   const input = computed(() => state.value.inputs.find((i) => i.id === inputId.value) ?? null);
   const job = computed(() => (input.value ? jobOf(state.value, input.value.id) : null));
-  const env = computed(() => environmentView(state.value.envExample));
+  const env = computed(() => environmentView(state.value.envExample, state.value.diarizationReady));
+  /** `setup`: offer the way to the setup page; `diarization`: offer "turn diarization off" as well. */
   const blocked = computed(() => {
-    if (state.value.inputsArea !== "ready") return { text: t("start.blocked.area"), setup: false };
-    if (!input.value) return { text: t("start.blocked.noFile"), setup: false };
-    if (!input.value.supported) return { text: t("start.blocked.unsupported"), setup: false };
-    if (state.value.envChecking) return { text: t("start.blocked.envChecking"), setup: false };
-    if (!exampleAllowsStart(env.value)) return { text: t("start.blocked.env"), setup: true };
+    const none = { setup: false, diarization: false };
+    if (state.value.inputsArea !== "ready") return { text: t("start.blocked.area"), ...none };
+    if (!input.value) return { text: t("start.blocked.noFile"), ...none };
+    if (!input.value.supported) return { text: t("start.blocked.unsupported"), ...none };
+    if (state.value.envChecking) return { text: t("start.blocked.envChecking"), ...none };
+    if (!exampleAllowsStart(env.value)) return { text: t("start.blocked.env"), ...none, setup: true };
+    if (inputIssues(state.value, input.value.id).length > 0) return { text: t("start.blocked.invalid"), ...none };
+    if (needsDiarization(state.value, input.value.id)) return { text: t("start.blocked.diarization"), setup: true, diarization: true };
     return null;
   });
   /** Decision-relevant only: the recommended (fictional) profile runs on the CPU, i.e. slowly. */
@@ -26,5 +30,7 @@ export function useNormalFile() {
     const p = primaryProfile(env.value);
     return p && p.name === "cpu" && p.status !== "unavailable" ? t("start.cpuNote") : null;
   });
-  return { inputId, input, job, blocked, slowNote };
+  /** A profile needs repair while another still works: say so once, with the way to repair it. */
+  const repairNote = computed(() => (env.value.profiles.some((p) => p.status === "repair") ? t("start.repairNote") : null));
+  return { inputId, input, job, blocked, slowNote, repairNote };
 }

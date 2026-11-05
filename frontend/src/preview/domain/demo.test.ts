@@ -16,6 +16,9 @@ import {
   submitBlock,
 } from "./demo";
 import { formatDuration } from "./fixtures";
+import { allPresets, overrideCount, skipReason } from "./demo";
+import { engineCandidates } from "./settingsSchema";
+import { jobLog } from "./diagnostics";
 
 /** The several-files state the Expert views start from (scenario "multi"). */
 function multi(): DemoController {
@@ -32,7 +35,8 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
     expect(s.jobs).toEqual([]);
     expect(s.sync).toBe("ok");
     expect(s.envExample).toBe("gpu");
-    expect(s.palette).toBe("green");
+    expect(s.accentTheme).toBe("green");
+    expect(s.appearance).toBe("light");
     expect(s.overrides).toEqual({});
   });
 
@@ -55,11 +59,15 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
     const demo = multi();
     demo.selectAll();
     expect(selectionField(demo.store.get(), "language")).toMatchObject({ mixed: true, coverage: "some" });
-    demo.startOverride("language"); // copies the first effective value to every selected input
+    // Iteration 4: switching "individual" on keeps EACH file's own value (never the first file's).
+    demo.startOverride("language");
+    expect(selectionField(demo.store.get(), "language")).toMatchObject({ mixed: true, coverage: "all" });
+    expect(effectiveSettings(demo.store.get(), "in-02").language).toBe("en");
+    demo.setOverride("language", "ja"); // an explicit edit sets them all
     expect(selectionField(demo.store.get(), "language")).toMatchObject({ mixed: false, coverage: "all", value: "ja" });
     demo.resetOverride("language");
     expect(selectionField(demo.store.get(), "language").coverage).toBe("none");
-    expect(demo.store.get().overrides["in-02"]).toEqual({ speakers: "2" });
+    expect(demo.store.get().overrides["in-02"]).toEqual({ speakerMode: "fixed", numSpeakers: 2, minSpeakers: 1, maxSpeakers: 4 });
     demo.resetAllOverrides();
     expect(demo.store.get().overrides).toEqual({});
   });
@@ -129,8 +137,8 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
   it("scenarios: single-file states, empty, error (recoverable), busy; reset keeps reviewer choices", () => {
     const demo = new DemoController();
     demo.setLanguage("en");
-    demo.setTheme("dark");
-    demo.setPalette("ui2");
+    demo.setAppearance("dark");
+    demo.setAccentTheme("blue");
     demo.setEnvExample("cpu");
     demo.setScenario("empty");
     expect(demo.store.get().inputs).toEqual([]);
@@ -148,7 +156,7 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
     demo.setScenario("busy");
     expect(new Set(demo.store.get().jobs.map((j) => j.state))).toEqual(new Set(["running", "preparing", "failed", "waiting"]));
     demo.reset();
-    expect(demo.store.get()).toMatchObject({ scenario: "single", language: "en", theme: "dark", palette: "ui2", envExample: "cpu", jobs: [] });
+    expect(demo.store.get()).toMatchObject({ scenario: "single", language: "en", appearance: "dark", accentTheme: "blue", envExample: "cpu", jobs: [] });
   });
 
   it("Normal shows one representative and never changes the other inputs", () => {
@@ -221,17 +229,22 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
     expect(new Set(seqs).size).toBe(seqs.length);
   });
 
-  it("Normal 'choose another file' never drops an input that carries Expert settings or a job", () => {
+  it("Normal 'choose another file' carries the shown file's settings; a submitted file is kept", () => {
     const demo = new DemoController();
     demo.selectAll();
-    demo.setOverride("language", "en"); // set in Expert on the only input
+    demo.setOverride("language", "en"); // the only input, not submitted
     demo.chooseNormalFile();
-    const s = demo.store.get();
-    expect(s.inputs.map((i) => i.id)).toEqual(["in-01", "add-01"]); // kept, just not shown
-    expect(s.overrides["in-01"]).toEqual({ language: "en" });
-    expect(normalInputId(s)).toBe("add-01");
-    expect(s.selected).toEqual(["add-01"]); // the selection followed the shown file (it was that file only)
-    expect(s.jobs).toEqual([]);
+    let s = demo.store.get();
+    expect(s.inputs.map((i) => i.id)).toEqual(["add-01"]); // replaced: nothing is lost …
+    expect(s.overrides["add-01"]).toEqual({ language: "en" }); // … because its settings moved along
+    expect(s.overrides["in-01"]).toBeUndefined();
+    expect(s.selected).toEqual(["add-01"]);
+    demo.submit(["add-01"]);
+    demo.chooseNormalFile();
+    s = demo.store.get();
+    expect(s.inputs.map((i) => i.id)).toEqual(["add-01", "add-02"]); // the submitted one stays
+    expect(effectiveSettings(s, "add-02").language).toBe("en");
+    expect(s.jobs[0]!.snapshot.language).toBe("en");
   });
 
   it("Normal 'choose' keeps an explicit Expert multi-selection", () => {
@@ -243,17 +256,20 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
     expect(normalInputId(s)).toBe("add-01");
   });
 
-  it("Normal settings edit what the shown file runs with (its override, else the common default)", () => {
+  it("Normal settings edit ONLY the shown file — never the common defaults other files inherit", () => {
     const demo = multi();
-    demo.selectOnly("in-02"); // in-02 overrides language=en, speakers=2
-    demo.setNormalSetting("in-02", "language", "auto");
-    let s = demo.store.get();
-    expect(s.overrides["in-02"]).toEqual({ language: "auto", speakers: "2" });
-    expect(s.common.language).toBe("ja");
-    demo.setNormalSetting("in-02", "diarization", false); // not overridden → common
-    s = demo.store.get();
-    expect(s.common.diarization).toBe(false);
-    expect(effectiveSettings(s, "in-02")).toMatchObject({ language: "auto", diarization: false, speakers: "2" });
+    demo.selectOnly("in-02"); // in-02 overrides language=en and a fixed speaker count
+    demo.setNormalSetting("in-02", { language: "auto" });
+    demo.setNormalSetting("in-02", { diarization: false }); // not overridden before: still only this file
+    const s = demo.store.get();
+    expect(s.common).toMatchObject({ language: "ja", diarization: true });
+    expect(effectiveSettings(s, "in-02")).toMatchObject({ language: "auto", diarization: false, speakerMode: "fixed" });
+    for (const id of ["in-01", "in-03", "in-04"]) expect(effectiveSettings(s, id)).toMatchObject({ language: "ja", diarization: true });
+    // With no file at all there is nothing else to affect: the common default changes.
+    const empty = new DemoController();
+    empty.setScenario("empty");
+    empty.setNormalSetting(null, { language: "en" });
+    expect(empty.store.get().common.language).toBe("en");
   });
 
   it("submit feedback: created / skipped counts, cleared when the selection changes", () => {
@@ -329,5 +345,89 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
     expect(formatDuration(754)).toBe("12:34");
     expect(formatDuration(3605)).toBe("1:00:05");
     expect(formatDuration(null)).toBe("—");
+  });
+
+  // ---- iteration 4 -----------------------------------------------------------------------------
+  it("engine group: a per-file backend change keeps that file's model valid and never touches the others", () => {
+    const demo = multi();
+    demo.selectOnly("in-03");
+    demo.setOverride("backend", "whisper-cpp");
+    let s = demo.store.get();
+    expect(engineCandidates("whisper-cpp").models).toContain(effectiveSettings(s, "in-03").model);
+    expect(Object.keys(s.overrides["in-03"]!).sort()).toEqual(["backend", "computeType", "device", "model"]);
+    expect(overrideCount(s, "in-03")).toBe(1); // one linked item
+    demo.setCommon("backend", "faster-whisper"); // the common change does not reach the overridden file
+    s = demo.store.get();
+    expect(effectiveSettings(s, "in-03").backend).toBe("whisper-cpp");
+    expect(engineCandidates("faster-whisper").models).toContain(s.common.model);
+    expect(effectiveSettings(s, "in-01").backend).toBe("faster-whisper");
+  });
+
+  it("categories never lose input: values live in the store; the chosen category is kept", () => {
+    const demo = multi();
+    demo.setCommon("initialPrompt", "定例会議");
+    demo.setCommon("glossary", ["Utteran"]);
+    demo.setInspectorCategory("advanced");
+    demo.setCommon("backend", "whisper-cpp");
+    demo.setCommon("wcThreads", 4);
+    demo.setInspectorCategory("prompt");
+    expect(demo.store.get()).toMatchObject({ inspectorCategory: "prompt", common: { initialPrompt: "定例会議", glossary: ["Utteran"], wcThreads: 4 } });
+  });
+
+  it("submit skips files whose settings are invalid or that need diarization that is not set up", () => {
+    const demo = multi();
+    demo.selectOnly("in-01");
+    demo.setOverride("beamSize", 0);
+    demo.setEnvironment("gpu", false);
+    demo.selectOnly("in-04");
+    demo.setOverride("diarization", false);
+    const s = demo.store.get();
+    expect(skipReason(s, s.inputs[0]!)).toBe("invalid");
+    expect(skipReason(s, s.inputs[1]!)).toBe("diarization"); // in-02 inherits diarization on
+    expect(skipReason(s, s.inputs[3]!)).toBeNull();
+    demo.selectAll();
+    expect(submitBlock(demo.store.get())).toBeNull();
+    demo.submit(demo.store.get().selected);
+    expect(demo.store.get().lastSubmit).toMatchObject({ created: 1, invalid: 1, diarization: 2, unsupported: 1 });
+    demo.selectOnly("in-01");
+    expect(submitBlock(demo.store.get())).toBe("invalid");
+  });
+
+  it("the snapshot is frozen at submit: later prompt / glossary / engine edits do not change it, and logs carry no prompt", () => {
+    const demo = multi();
+    demo.setCommon("initialPrompt", "社外秘の議題");
+    demo.setCommon("glossary", ["機密語"]);
+    demo.submit(["in-01"]);
+    demo.setCommon("initialPrompt", "別の文章");
+    demo.setCommon("glossary", []);
+    demo.setCommon("backend", "whisper-cpp");
+    const job = demo.store.get().jobs[0]!;
+    expect(job.snapshot).toMatchObject({ initialPrompt: "社外秘の議題", glossary: ["機密語"], backend: "auto" });
+    expect(JSON.stringify(jobLog(job))).not.toMatch(/社外秘|機密語/);
+  });
+
+  it("presets: apply to common or as individual settings of the selection; built-ins are read-only", () => {
+    const demo = multi();
+    demo.applyPreset("builtin-subtitles", "common");
+    expect(demo.store.get().common).toMatchObject({ diarization: false, formats: ["srt", "vtt"], wordTimestamps: "always" });
+    expect(demo.store.get().overrides["in-01"]).toBeUndefined();
+    demo.selectOnly("in-04");
+    demo.applyPreset("user-01", "selection");
+    let s = demo.store.get();
+    expect(effectiveSettings(s, "in-04")).toMatchObject({ speakerMode: "range", minSpeakers: 2, maxSpeakers: 6, glossary: ["Utteran", "議事録", "アクションアイテム"] });
+    expect(effectiveSettings(s, "in-01").glossary).toEqual([]);
+    const copy = demo.duplicatePreset("builtin-standard", "標準のコピー")!;
+    demo.renamePreset(copy, "社内用");
+    demo.renamePreset("builtin-standard", "壊す"); // ignored
+    demo.deletePreset("builtin-standard"); // ignored
+    const created = demo.createPresetFromCommon("今の既定値");
+    s = demo.store.get();
+    expect(allPresets(s).map((p) => p.name || p.nameKey)).toEqual(["preset.builtin.standard", "preset.builtin.meeting", "preset.builtin.subtitles", "定例会議（用語集つき）", "社内用", "今の既定値"]);
+    expect("device" in allPresets(s).find((p) => p.id === created)!.values).toBe(false);
+    expect("initialPrompt" in allPresets(s).find((p) => p.id === created)!.values).toBe(false);
+    demo.deletePreset(copy);
+    expect(allPresets(demo.store.get()).some((p) => p.id === copy)).toBe(false);
+    const imported = demo.importPreset("定例会議（用語集つき）", { language: "en" });
+    expect(allPresets(demo.store.get()).find((p) => p.id === imported)!.name).toBe("定例会議（用語集つき） (2)");
   });
 });

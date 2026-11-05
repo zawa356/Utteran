@@ -1,14 +1,21 @@
 import { Store } from "../../domain/store";
 import type { EnvExample } from "./envExamples";
+import { type DemoInput, initialInputs, poolInput } from "./fixtures";
+import { initialUserPresets, type PresetDef, BUILTIN_PRESETS, presetKeys, uniqueName } from "./presets";
 import {
+  cloneSettings,
+  cloneValue,
   DEFAULT_COMMON,
-  type DemoInput,
-  initialInputs,
+  GROUPS,
+  groupOf,
+  normalizeEngine,
   type ProcessingSettings,
-  poolInput,
-  SETTING_KEYS,
+  type SettingIssue,
   type SettingKey,
-} from "./fixtures";
+  type SettingsCategoryId,
+  sameValue,
+  validateSettings,
+} from "./settingsSchema";
 
 /**
  * In-memory state of the UI-3-0 prototype. Framework-independent (like `domain/`), so mode
@@ -17,9 +24,12 @@ import {
  * A reload loses everything by design (G-05/G-06 are open owner decisions).
  */
 export type PreviewLanguage = "ja" | "en";
-export type PreviewTheme = "system" | "light" | "dark";
-/** Prototype-only colour proposals: Utteran green (iteration 2) vs. the UI-2 blue for comparison. */
-export type PreviewPalette = "green" | "ui2";
+/** Light/dark appearance, independent of the accent colour (iteration 4, owner memo #22). */
+export type Appearance = "system" | "light" | "dark";
+export const APPEARANCES: readonly Appearance[] = ["system", "light", "dark"];
+/** Accent colour theme: Utteran green (UI-3) or blue (UI-2). Semantic colours do not change with it. */
+export type AccentTheme = "green" | "blue";
+export const ACCENT_THEMES: readonly AccentTheme[] = ["green", "blue"];
 export type Overrides = Partial<ProcessingSettings>;
 
 export type JobState = "waiting" | "preparing" | "running" | "succeeded" | "failed" | "cancelled";
@@ -75,6 +85,10 @@ export interface SubmitResult {
   created: number;
   unsupported: number;
   alreadySubmitted: number;
+  /** Skipped because their effective settings have an error. */
+  invalid: number;
+  /** Skipped because they use speaker diarization, which is not set up. */
+  diarization: number;
   jobIds: string[];
 }
 
@@ -93,6 +107,11 @@ export interface DemoState {
   common: ProcessingSettings;
   overrides: Record<string, Overrides>;
   inspectorTab: InspectorTab;
+  /** Category shown in the Inspector (kept across pane / mode switches). */
+  inspectorCategory: SettingsCategoryId;
+  /** User presets (built-ins are constants). In memory only. */
+  userPresets: PresetDef[];
+  presetSeq: number;
   jobs: DemoJob[];
   jobSeq: number;
   selectedJobId: string | null;
@@ -105,6 +124,8 @@ export interface DemoState {
   /** Fictional environment example (never detected) and whether a demo re-detection is shown. */
   envExample: EnvExample;
   envChecking: boolean;
+  /** Speaker diarization is set up in the (fictional) environment. */
+  diarizationReady: boolean;
   /** Queue page list controls (search / filter / sort on the synthetic jobs only). */
   queueQuery: string;
   queueFilter: QueueFilter;
@@ -113,28 +134,35 @@ export interface DemoState {
   resultsQuery: string;
   selectedResultId: string | null;
   language: PreviewLanguage;
-  theme: PreviewTheme;
-  palette: PreviewPalette;
+  appearance: Appearance;
+  accentTheme: AccentTheme;
   notice: Notice | null;
-}
-
-function cloneSettings(s: ProcessingSettings): ProcessingSettings {
-  return { ...s, formats: [...s.formats] };
-}
-
-function sameValue(a: unknown, b: unknown): boolean {
-  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && [...a].sort().join() === [...b].sort().join();
-  return a === b;
 }
 
 /** Effective settings of one input = common defaults with that input's overrides on top. */
 export function effectiveSettings(state: Pick<DemoState, "common" | "overrides">, inputId: string): ProcessingSettings {
-  const o = state.overrides[inputId] ?? {};
-  return cloneSettings({ ...state.common, ...o, formats: o.formats ?? state.common.formats });
+  return cloneSettings({ ...state.common, ...(state.overrides[inputId] ?? {}) });
 }
 
+/** Number of individually set ITEMS (a linked group such as the engine counts once). */
 export function overrideCount(state: Pick<DemoState, "overrides">, inputId: string): number {
-  return Object.keys(state.overrides[inputId] ?? {}).length;
+  const keys = Object.keys(state.overrides[inputId] ?? {}) as SettingKey[];
+  return new Set(keys.map((k) => groupOf(k)[0])).size;
+}
+
+/** Problems of the settings one input would run with (empty = it can be submitted). */
+export function inputIssues(state: Pick<DemoState, "common" | "overrides">, inputId: string): SettingIssue[] {
+  return validateSettings(effectiveSettings(state, inputId));
+}
+
+/** Whether an input would need speaker diarization that is not set up. */
+export function needsDiarization(state: Pick<DemoState, "common" | "overrides" | "diarizationReady">, inputId: string): boolean {
+  return !state.diarizationReady && effectiveSettings(state, inputId).diarization;
+}
+
+/** Built-in and user presets in display order. */
+export function allPresets(state: Pick<DemoState, "userPresets">): PresetDef[] {
+  return [...BUILTIN_PRESETS, ...state.userPresets];
 }
 
 export type OverrideCoverage = "none" | "some" | "all";
@@ -146,17 +174,27 @@ export interface FieldView<K extends SettingKey = SettingKey> {
 }
 
 /** What the "selected inputs" Inspector shows for one field across the current selection. */
-export function selectionField<K extends SettingKey>(state: DemoState, key: K): FieldView<K> {
+export function selectionField<K extends SettingKey>(state: Pick<DemoState, "selected" | "common" | "overrides">, key: K): FieldView<K> {
   const ids = state.selected;
   if (ids.length === 0) return { value: state.common[key], mixed: false, coverage: "none" };
   const values = ids.map((id) => effectiveSettings(state, id)[key]);
-  const overridden = ids.filter((id) => key in (state.overrides[id] ?? {})).length;
+  // A linked group (engine, speaker count) is always overridden as a whole.
+  const overridden = ids.filter((id) => groupOf(key).some((k) => k in (state.overrides[id] ?? {}))).length;
   const first = values[0] as ProcessingSettings[K];
   return {
     value: first,
-    mixed: values.some((v) => !sameValue(v, first)),
+    mixed: values.some((v) => !sameValue(key, v, first)),
     coverage: overridden === 0 ? "none" : overridden === ids.length ? "all" : "some",
   };
+}
+
+/** Writes `patch` into one input's override, keeping linked groups whole and the engine consistent. */
+function withOverride(state: Pick<DemoState, "common" | "overrides">, inputId: string, patch: Partial<ProcessingSettings>): Overrides {
+  let next: ProcessingSettings = { ...effectiveSettings(state, inputId), ...patch };
+  if (Object.keys(patch).some((k) => (GROUPS.engine as readonly string[]).includes(k))) next = normalizeEngine(next);
+  const o: Overrides = { ...state.overrides[inputId] };
+  for (const key of Object.keys(patch) as SettingKey[]) for (const k of groupOf(key)) (o as Record<string, unknown>)[k] = cloneValue(next[k]);
+  return o;
 }
 
 const NEXT: Record<JobState, JobState | null> = {
@@ -266,16 +304,30 @@ export function normalInputId(state: Pick<DemoState, "inputs" | "selected" | "fo
   return selected ?? state.inputs[0]?.id ?? null;
 }
 
-export type SubmitBlock = "noSelection" | "allSubmitted" | "unsupported" | "area";
+export type SubmitBlock = "noSelection" | "allSubmitted" | "unsupported" | "invalid" | "diarization" | "area";
+type SubmitState = Pick<DemoState, "inputs" | "selected" | "jobs" | "inputsArea" | "common" | "overrides" | "diarizationReady">;
+export type SkipReason = "unsupported" | "alreadySubmitted" | "invalid" | "diarization";
+
+/** Why one input cannot be submitted now (null = it can). */
+export function skipReason(state: Omit<SubmitState, "selected" | "inputsArea">, input: DemoInput): SkipReason | null {
+  if (!input.supported) return "unsupported";
+  if (submittedInputs(state).has(input.id)) return "alreadySubmitted";
+  if (inputIssues(state, input.id).length > 0) return "invalid";
+  if (needsDiarization(state, input.id)) return "diarization";
+  return null;
+}
 
 /** Why the selection cannot be submitted (null = at least one selected input can be). */
-export function submitBlock(state: Pick<DemoState, "inputs" | "selected" | "jobs" | "inputsArea">): SubmitBlock | null {
+export function submitBlock(state: SubmitState): SubmitBlock | null {
   if (state.inputsArea !== "ready") return "area";
   const selected = state.inputs.filter((i) => state.selected.includes(i.id));
   if (selected.length === 0) return "noSelection";
-  const submitted = submittedInputs(state);
-  if (selected.some((i) => i.supported && !submitted.has(i.id))) return null;
-  return selected.every((i) => !i.supported) ? "unsupported" : "allSubmitted";
+  const reasons = selected.map((i) => skipReason(state, i));
+  if (reasons.some((r) => r === null)) return null;
+  for (const r of ["invalid", "diarization", "allSubmitted", "unsupported"] as const) {
+    if (reasons.includes(r === "allSubmitted" ? "alreadySubmitted" : r)) return r;
+  }
+  return "unsupported";
 }
 
 const MINI_ORDER: Record<JobState, number> = { running: 1, preparing: 2, failed: 3, cancelled: 4, waiting: 5, succeeded: 6 };
@@ -335,6 +387,9 @@ function initialState(): DemoState {
     common: cloneSettings(DEFAULT_COMMON),
     overrides: {},
     inspectorTab: "common",
+    inspectorCategory: "asr",
+    userPresets: initialUserPresets(),
+    presetSeq: 1,
     jobs: [],
     jobSeq: 0,
     selectedJobId: null,
@@ -346,14 +401,15 @@ function initialState(): DemoState {
     sync: "ok",
     envExample: "gpu",
     envChecking: false,
+    diarizationReady: true,
     queueQuery: "",
     queueFilter: "all",
     queueSort: "order",
     resultsQuery: "",
     selectedResultId: null,
     language: "ja",
-    theme: "light",
-    palette: "green",
+    appearance: "light",
+    accentTheme: "green",
     notice: null,
   };
 }
@@ -372,26 +428,31 @@ export class DemoController {
   }
 
   /** Reviewer preferences that survive "reset" and scenario changes. */
-  private kept(): Pick<DemoState, "language" | "theme" | "palette" | "envExample"> {
-    const { language, theme, palette, envExample } = this.store.get();
-    return { language, theme, palette, envExample };
+  private kept(): Pick<DemoState, "language" | "appearance" | "accentTheme" | "envExample" | "diarizationReady"> {
+    const { language, appearance, accentTheme, envExample, diarizationReady } = this.store.get();
+    return { language, appearance, accentTheme, envExample, diarizationReady };
   }
 
-  /** Back to the deterministic initial state; language, theme, palette and env example are kept. */
+  /** Back to the deterministic initial state; language, theme and the environment are kept. */
   reset(): void {
     this.store.set({ ...initialState(), ...this.kept(), notice: this.notify("notice.reset") });
   }
 
-  setPalette(palette: PreviewPalette): void {
-    this.update(() => ({ palette }), "notice.palette");
+  /** Public so that the setup controller can report its own outcomes in the same snackbar. */
+  say(key: string, params: Record<string, string | number> = {}): void {
+    this.update(() => ({}), key, params);
+  }
+
+  setAccentTheme(accentTheme: AccentTheme): void {
+    this.update(() => ({ accentTheme }), "notice.accentTheme");
   }
 
   setLanguage(language: PreviewLanguage): void {
     this.update(() => ({ language }));
   }
 
-  setTheme(theme: PreviewTheme): void {
-    this.update(() => ({ theme }), "notice.theme");
+  setAppearance(appearance: Appearance): void {
+    this.update(() => ({ appearance }), "notice.appearance");
   }
 
   // ---- inputs -------------------------------------------------------------------------------
@@ -417,31 +478,40 @@ export class DemoController {
    * that loses nothing: it is the only input, never submitted and has no individual settings.
    * Otherwise it stays (Expert still lists it, with its jobs and settings) and is just not shown.
    */
+  /**
+   * Normal "choose a file" (demo: the next synthetic name, never a real picker). The new file
+   * becomes the one Normal shows and CARRIES the settings of the file shown before (iteration 4:
+   * Normal edits belong to the shown file, so "the next file" keeps what the user just chose). The
+   * old input is dropped only when that loses nothing: it is the only input and never submitted
+   * (its settings move to the new file). Otherwise it stays (Expert still lists it) and is not shown.
+   */
   chooseNormalFile(): void {
     this.update((s) => {
       const added = poolInput(s.poolCursor);
       const current = normalInputId(s);
-      const replace = s.inputs.length === 1 && current !== null && !submittedInputs(s).has(current) && overrideCount(s, current) === 0;
+      const carried = current ? s.overrides[current] : undefined;
+      const replace = s.inputs.length === 1 && current !== null && !submittedInputs(s).has(current);
       const inputs = replace ? [added] : [...s.inputs, added];
       const selected = replace || s.selected.length === 0 || (s.selected.length === 1 && s.selected[0] === current) ? [added.id] : s.selected;
-      return { inputs, selected, focusInputId: added.id, poolCursor: s.poolCursor + 1, inputsArea: "ready" };
+      const overrides = { ...s.overrides };
+      if (replace && current) delete overrides[current];
+      if (carried && Object.keys(carried).length > 0) overrides[added.id] = { ...carried, ...(carried.formats ? { formats: [...carried.formats] } : {}), ...(carried.glossary ? { glossary: [...carried.glossary] } : {}) };
+      return { inputs, selected, overrides, focusInputId: added.id, poolCursor: s.poolCursor + 1, inputsArea: "ready" };
     }, "notice.chosen", { name: poolInput(this.store.get().poolCursor).name });
   }
 
   /**
-   * Normal settings edit what the shown file will run with: a field this file overrides (set in
-   * Expert) changes that override; any other field changes the common defaults. So the form always
-   * shows the effective value and never needs to explain the two levels.
+   * Normal settings edit ONLY the shown file (iteration 4, owner concern on iteration 3): the change
+   * becomes that file's individual setting and never the common defaults, so files prepared in
+   * Expert are not changed behind the user's back. With no file at all, the common defaults change
+   * (there is nothing else they could affect).
    */
-  setNormalSetting<K extends SettingKey>(inputId: string | null, key: K, value: ProcessingSettings[K]): void {
-    const s = this.store.get();
-    if (!inputId || !(key in (s.overrides[inputId] ?? {}))) {
-      this.setCommon(key, value);
+  setNormalSetting(inputId: string | null, patch: Partial<ProcessingSettings>): void {
+    if (!inputId || !this.store.get().inputs.some((i) => i.id === inputId)) {
+      this.setCommonPatch(patch);
       return;
     }
-    this.update((cur) => ({
-      overrides: { ...cur.overrides, [inputId]: { ...cur.overrides[inputId], [key]: Array.isArray(value) ? [...value] : value } },
-    }), "notice.settingChanged");
+    this.update((cur) => ({ overrides: { ...cur.overrides, [inputId]: withOverride(cur, inputId, patch) } }), "notice.settingChanged");
   }
 
   selectAll(): void {
@@ -472,8 +542,21 @@ export class DemoController {
     this.update(() => ({ inspectorTab }));
   }
 
+  setInspectorCategory(inspectorCategory: SettingsCategoryId): void {
+    this.update(() => ({ inspectorCategory }));
+  }
+
   setCommon<K extends SettingKey>(key: K, value: ProcessingSettings[K]): void {
-    this.update((s) => ({ common: { ...s.common, [key]: value } }), "notice.commonChanged");
+    this.setCommonPatch({ [key]: value } as Partial<ProcessingSettings>);
+  }
+
+  /** Common defaults; a backend change keeps model / device / compute type valid for it. */
+  setCommonPatch(patch: Partial<ProcessingSettings>): void {
+    this.update((s) => {
+      let common: ProcessingSettings = cloneSettings({ ...s.common, ...patch });
+      if (Object.keys(patch).some((k) => (GROUPS.engine as readonly string[]).includes(k))) common = normalizeEngine(common);
+      return { common };
+    }, "notice.commonChanged");
   }
 
   resetCommon(): void {
@@ -482,23 +565,39 @@ export class DemoController {
 
   /** Sets an override on every selected input (the field becomes "individual" for all of them). */
   setOverride<K extends SettingKey>(key: K, value: ProcessingSettings[K]): void {
+    this.setOverridePatch({ [key]: value } as Partial<ProcessingSettings>);
+  }
+
+  setOverridePatch(patch: Partial<ProcessingSettings>): void {
     const count = this.store.get().selected.length;
     if (count === 0) return;
     this.update((s) => {
       const overrides = { ...s.overrides };
-      for (const id of s.selected) overrides[id] = { ...overrides[id], [key]: Array.isArray(value) ? [...value] : value };
+      for (const id of s.selected) overrides[id] = withOverride(s, id, patch);
       return { overrides };
     }, "notice.overrideSet", { count });
   }
 
-  /** Turns an override on with the currently effective value, so nothing changes visually yet. */
+  /**
+   * Turns an override on with EACH input's own effective value (iteration 4: a multi-selection is
+   * never overwritten with the first file's value just by switching "individual" on).
+   */
   startOverride(key: SettingKey): void {
     const s = this.store.get();
     if (s.selected.length === 0) return;
-    this.setOverride(key, selectionField(s, key).value);
+    this.update((cur) => {
+      const overrides = { ...cur.overrides };
+      for (const id of cur.selected) {
+        const eff = effectiveSettings(cur, id);
+        const o: Overrides = { ...overrides[id] };
+        for (const k of groupOf(key)) (o as Record<string, unknown>)[k] = cloneValue(eff[k]);
+        overrides[id] = o;
+      }
+      return { overrides };
+    }, "notice.overrideSet", { count: s.selected.length });
   }
 
-  /** "Back to common" for one field of the selected inputs. */
+  /** "Back to common" for one field (its whole linked group) of the selected inputs. */
   resetOverride(key: SettingKey): void {
     const count = this.store.get().selected.length;
     if (count === 0) return;
@@ -510,7 +609,7 @@ export class DemoController {
           continue;
         }
         const rest = { ...o };
-        delete rest[key];
+        for (const k of groupOf(key)) delete rest[k];
         if (Object.keys(rest).length > 0) overrides[id] = rest;
       }
       return { overrides };
@@ -518,8 +617,80 @@ export class DemoController {
   }
 
   resetAllOverrides(): void {
+    const count = this.store.get().selected.length;
+    if (count === 0) return;
+    this.update((s) => ({ overrides: Object.fromEntries(Object.entries(s.overrides).filter(([id]) => !s.selected.includes(id))) }), "notice.overrideReset", { count });
+  }
+
+  // ---- presets (in memory; no file, no B5 CRUD) -----------------------------------------------
+  /**
+   * Applies a preset to the common defaults or, as individual settings, to the selected inputs.
+   * Exactly the preset's keys change; everything else is kept.
+   */
+  applyPreset(presetId: string, target: InspectorTab): void {
+    const preset = allPresets(this.store.get()).find((p) => p.id === presetId);
+    if (!preset) return;
+    const patch = Object.fromEntries(presetKeys(preset).map((k) => [k, cloneValue(preset.values[k])])) as Partial<ProcessingSettings>;
+    if (target === "common") this.setCommonPatch(patch);
+    else this.setOverridePatch(patch);
+    this.update(() => ({}), "notice.presetApplied");
+  }
+
+  private addUserPreset(name: string, values: Partial<ProcessingSettings>): string {
     const s = this.store.get();
-    for (const key of SETTING_KEYS) if (selectionField(s, key).coverage !== "none") this.resetOverride(key);
+    const id = `user-${String(s.presetSeq + 1).padStart(2, "0")}`;
+    const taken = s.userPresets.map((p) => p.name);
+    const copy = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, cloneValue(v)])) as Partial<ProcessingSettings>;
+    this.update((cur) => ({ userPresets: [...cur.userPresets, { id, name: uniqueName(name, taken), nameKey: null, builtIn: false, values: copy }], presetSeq: cur.presetSeq + 1 }));
+    return id;
+  }
+
+  /** New preset from the current common defaults (prompt and glossary only if not empty). */
+  createPresetFromCommon(name: string): string {
+    const { common } = this.store.get();
+    const values: Partial<ProcessingSettings> = { ...cloneSettings(common) };
+    delete values.device; // PC-specific
+    if (!common.initialPrompt) delete values.initialPrompt;
+    if (common.glossary.length === 0) delete values.glossary;
+    const id = this.addUserPreset(name, values);
+    this.update(() => ({}), "notice.presetCreated");
+    return id;
+  }
+
+  duplicatePreset(id: string, name: string): string | null {
+    const preset = allPresets(this.store.get()).find((p) => p.id === id);
+    if (!preset) return null;
+    const created = this.addUserPreset(name, preset.values);
+    this.update(() => ({}), "notice.presetCreated");
+    return created;
+  }
+
+  renamePreset(id: string, name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    this.update((s) => ({ userPresets: s.userPresets.map((p) => (p.id === id && !p.builtIn ? { ...p, name: trimmed } : p)) }), "notice.presetSaved");
+  }
+
+  /** Replaces a user preset's content with the current common defaults (built-ins are never changed). */
+  replacePresetWithCommon(id: string): void {
+    const { common } = this.store.get();
+    this.update((s) => ({
+      userPresets: s.userPresets.map((p) => {
+        if (p.id !== id) return p;
+        const values = Object.fromEntries(Object.keys(p.values).filter((k) => k !== "device").map((k) => [k, cloneValue(common[k as SettingKey])])) as Partial<ProcessingSettings>;
+        return { ...p, values };
+      }),
+    }), "notice.presetSaved");
+  }
+
+  deletePreset(id: string): void {
+    this.update((s) => ({ userPresets: s.userPresets.filter((p) => p.id !== id || p.builtIn) }), "notice.presetDeleted");
+  }
+
+  importPreset(name: string, values: Partial<ProcessingSettings>): string {
+    const id = this.addUserPreset(name, values);
+    this.update(() => ({}), "notice.presetImported");
+    return id;
   }
 
   // ---- jobs (synthetic only; nothing is created anywhere but in this store) -------------------
@@ -531,10 +702,11 @@ export class DemoController {
    */
   submit(inputIds: string[]): number {
     const s = this.store.get();
-    const submitted = submittedInputs(s);
     const asked = s.inputs.filter((i) => inputIds.includes(i.id));
-    const targets = asked.filter((i) => i.supported && !submitted.has(i.id));
-    const skipped = { unsupported: asked.filter((i) => !i.supported).length, alreadySubmitted: asked.filter((i) => i.supported && submitted.has(i.id)).length };
+    const reasons = asked.map((i) => ({ input: i, reason: skipReason(s, i) }));
+    const targets = reasons.filter((r) => r.reason === null).map((r) => r.input);
+    const count = (reason: SkipReason) => reasons.filter((r) => r.reason === reason).length;
+    const skipped = { unsupported: count("unsupported"), alreadySubmitted: count("alreadySubmitted"), invalid: count("invalid"), diarization: count("diarization") };
     if (targets.length === 0) {
       this.update(() => ({ lastSubmit: { created: 0, ...skipped, jobIds: [] } }), "notice.nothingToSubmit");
       return 0;
@@ -663,7 +835,7 @@ export class DemoController {
 
   setScenario(scenario: Scenario): void {
     const base: DemoState = { ...initialState(), ...this.kept(), scenario };
-    const multi: Partial<DemoState> = { inputs: initialInputs(), overrides: { "in-02": { language: "en", speakers: "2" } } };
+    const multi: Partial<DemoState> = { inputs: initialInputs(), overrides: { "in-02": { language: "en", speakerMode: "fixed", numSpeakers: 2, minSpeakers: 1, maxSpeakers: 4 } } };
     let next: DemoState = base;
     if (scenario === "empty") next = { ...base, inputs: [], selected: [], focusInputId: null };
     if (scenario === "multi" || scenario === "busy") next = { ...base, ...multi };
@@ -679,6 +851,11 @@ export class DemoController {
   // ---- fictional environment ------------------------------------------------------------------
   setEnvExample(envExample: EnvExample): void {
     this.update(() => ({ envExample, envChecking: false }));
+  }
+
+  /** Used by the setup wizard and its examples (never by detection: nothing is detected). */
+  setEnvironment(envExample: EnvExample, diarizationReady: boolean): void {
+    this.update(() => ({ envExample, diarizationReady, envChecking: false }));
   }
 
   /** Demo "re-detect": only shows the checking state; nothing is detected (no request, no timer). */

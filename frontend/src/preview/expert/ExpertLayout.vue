@@ -10,9 +10,10 @@ import QueuePane from "./QueuePane.vue";
 /**
  * Expert work area: inputs | Inspector | submit & status, with draggable (and keyboard-operable)
  * separators. Column count follows the WIDTH OF THIS AREA (not the viewport), so a wide sidebar
- * also drops columns: 3 → 2 (queue below) → 1 (pane switcher). Widths are clamped to minimums,
- * so nothing overflows horizontally. F6 / Shift+F6 move between panes. Iteration 3: no header row
- * of hints; "reset pane widths" lives in the View menu and on the separators (double-click / Enter).
+ * also drops columns. Iteration 4 (owner memo #21): panes are never stacked vertically —
+ * 3 columns; 2 columns = files + ONE of Inspector / queue (segmented switch); 1 column = one pane
+ * at a time (switch of all three). Every pane keeps the full height and scrolls inside, and a
+ * switch never unmounts a pane, so nothing typed is lost. F6 / Shift+F6 move between panes.
  */
 const { layout, layoutState, t } = usePreview();
 const ORDER: ExpertPane[] = ["inputs", "inspector", "queue"];
@@ -47,9 +48,15 @@ const gridStyle = computed(() => {
   if (w.columns === 2) return { gridTemplateColumns: `${w.inputs}px ${HANDLE_PX}px minmax(0, 1fr)` };
   return { gridTemplateColumns: "minmax(0, 1fr)" };
 });
-const panes = computed(() => ORDER.map((value, i) => ({ value, title: `${i + 1} ${t(`expert.${value}`)}` })));
+const rightPane = computed<ExpertPane>(() => (layoutState.value.expertPane === "queue" ? "queue" : "inspector"));
+const switchable = computed<ExpertPane[]>(() => (columns.value === 2 ? ["inspector", "queue"] : ORDER));
+const panes = computed(() => switchable.value.map((value) => ({ value, title: `${ORDER.indexOf(value) + 1} ${t(`expert.${value}`)}` })));
 const refs = ref<Record<ExpertPane, HTMLElement | null>>({ inputs: null, inspector: null, queue: null });
-const visible = (pane: ExpertPane) => columns.value > 1 || layoutState.value.expertPane === pane;
+const visible = (pane: ExpertPane) => {
+  if (columns.value === 3) return true;
+  if (columns.value === 2) return pane === "inputs" || pane === rightPane.value;
+  return layoutState.value.expertPane === pane;
+};
 
 async function nextPane(event: KeyboardEvent) {
   if (event.key !== "F6") return;
@@ -68,9 +75,10 @@ async function nextPane(event: KeyboardEvent) {
   <div class="p-expert" :class="`p-expert--cols-${columns}`" :data-columns="columns" data-testid="expert-layout" @keydown="nextPane">
     <h1 class="p-sr-only">{{ t("section.transcribe") }}</h1>
     <v-btn-toggle
-      v-if="columns === 1"
-      class="mb-2"
-      :model-value="layoutState.expertPane"
+      v-if="columns < 3"
+      class="mb-2 p-expert__switch"
+      :class="{ 'p-expert__switch--right': columns === 2 }"
+      :model-value="columns === 2 ? rightPane : layoutState.expertPane"
       mandatory
       density="compact"
       variant="outlined"

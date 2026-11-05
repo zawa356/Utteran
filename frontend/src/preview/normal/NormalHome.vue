@@ -3,6 +3,7 @@ import { usePreview } from "../composables";
 import NormalFileCard from "./NormalFileCard.vue";
 import NormalRunCard from "./NormalRunCard.vue";
 import NormalSettingsCard from "./NormalSettingsCard.vue";
+import SetupNotice from "../wizard/SetupNotice.vue";
 
 /**
  * Normal mode home: choose a file → the few settings → start → result, on one screen.
@@ -15,6 +16,7 @@ const { t } = usePreview();
 <template>
   <section class="p-home" aria-labelledby="normal-heading" data-testid="normal-home">
     <h1 id="normal-heading" class="p-sr-only">{{ t("section.transcribe") }}</h1>
+    <SetupNotice class="mb-4" />
     <div class="p-home__grid">
       <div class="p-home__col">
         <NormalFileCard />

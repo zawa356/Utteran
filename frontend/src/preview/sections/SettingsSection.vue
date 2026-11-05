@@ -2,12 +2,15 @@
 import { mdiCogOutline, mdiFileDocumentOutline, mdiFolderOutline, mdiInformationOutline, mdiStarOutline, mdiTune } from "@mdi/js";
 import { computed } from "vue";
 import { usePreview } from "../composables";
-import type { PreviewLanguage, PreviewTheme } from "../domain/demo";
+import { ACCENT_THEMES, type AccentTheme, type Appearance, APPEARANCES, type PreviewLanguage } from "../domain/demo";
 import { SETTINGS_CATEGORIES, type SettingsCategory } from "../domain/layout";
+import PresetManager from "../settings/PresetManager.vue";
+import { ACCENT_SWATCH } from "../theme";
 
 /**
  * Settings (iteration 3, owner memo #14). An information-design MOCK, not a working settings page:
- * only theme and language change (in memory, never saved). Every other item is shown disabled and
+ * only the colour theme, appearance and language change (in memory, never saved), and presets can
+ * be managed in memory (iteration 4, #20/#22). Every other item is shown disabled and
  * labelled "later", because no API stores it yet (production GUI settings, B5 presets/policy and
  * the core config are three different sources of truth — see iteration-3.md §7).
  * Normal: a few app-wide items on one page. Expert: the same plus categories. Per-job settings
@@ -16,14 +19,14 @@ import { SETTINGS_CATEGORIES, type SettingsCategory } from "../domain/layout";
 const { demo, layout, layoutState, state, t } = usePreview();
 const expert = computed(() => layoutState.value.mode === "expert");
 const category = computed(() => layoutState.value.settingsCategory);
-const themes = computed(() => (["system", "light", "dark"] as const).map((v) => ({ value: v, title: t(`theme.${v}`) })));
+const appearances = computed(() => APPEARANCES.map((v) => ({ value: v, title: t(`theme.${v}`) })));
+const accents = computed(() => ACCENT_THEMES.map((v) => ({ value: v, title: t(`accent.${v}`) })));
 const languages = [
   { value: "ja", title: "日本語" },
   { value: "en", title: "English" },
 ];
 const ICONS: Record<SettingsCategory, string> = { general: mdiCogOutline, logs: mdiFileDocumentOutline, advanced: mdiTune, presets: mdiStarOutline };
 const categories = computed(() => SETTINGS_CATEGORIES.map((id) => ({ id, icon: ICONS[id], title: t(`settings.cat.${id}`) })));
-const presets = computed(() => (["standard", "meeting", "subtitles"] as const).map((id) => ({ id, title: t(`settings.preset.${id}`), sub: t(`settings.preset.${id}.sub`) })));
 </script>
 
 <template>
@@ -49,11 +52,19 @@ const presets = computed(() => (["standard", "meeting", "subtitles"] as const).m
         />
       </v-list>
 
-      <div class="p-settings__body" :data-testid="`settings-body-${expert ? category : 'normal'}`">
+      <div class="p-settings__body" :class="{ 'p-settings__body--wide': expert && category === 'presets' }" :data-testid="`settings-body-${expert ? category : 'normal'}`">
         <!-- general (Normal shows only this) -->
         <template v-if="!expert || category === 'general'">
           <h2 v-if="expert" class="u-subheading">{{ t("settings.cat.general") }}</h2>
-          <v-select :label="t('settings.theme')" :items="themes" :model-value="state.theme" data-testid="settings-theme" @update:model-value="(v) => demo.setTheme(v as PreviewTheme)" />
+          <div class="u-stack" data-testid="settings-accent">
+            <span id="settings-accent-label" class="text-body-medium font-weight-medium">{{ t("settings.accent") }}</span>
+            <v-btn-toggle :model-value="state.accentTheme" mandatory divided variant="outlined" color="primary" aria-labelledby="settings-accent-label" @update:model-value="(v: AccentTheme) => demo.setAccentTheme(v)">
+              <v-btn v-for="a in accents" :key="a.value" :value="a.value" :data-testid="`settings-accent-${a.value}`">
+                <span class="p-swatch" :style="{ background: ACCENT_SWATCH[a.value] }" aria-hidden="true"></span>{{ a.title }}
+              </v-btn>
+            </v-btn-toggle>
+          </div>
+          <v-select :label="t('settings.theme')" :items="appearances" :model-value="state.appearance" data-testid="settings-theme" @update:model-value="(v) => demo.setAppearance(v as Appearance)" />
           <v-select :label="t('settings.language')" :items="languages" :model-value="state.language" data-testid="settings-language" @update:model-value="(v) => demo.setLanguage(v as PreviewLanguage)" />
           <div class="u-row" data-testid="settings-output">
             <v-text-field :label="t('settings.output')" :model-value="t('settings.outputValue')" readonly :prepend-inner-icon="mdiFolderOutline" hide-details class="flex-grow-1" />
@@ -85,19 +96,7 @@ const presets = computed(() => (["standard", "meeting", "subtitles"] as const).m
 
         <template v-else>
           <h2 class="u-subheading">{{ t("settings.cat.presets") }}</h2>
-          <p class="text-body-medium">{{ t("settings.presets.lead") }}</p>
-          <v-card>
-            <v-list lines="two" data-testid="settings-presets">
-              <v-list-item v-for="p in presets" :key="p.id" :title="p.title" :subtitle="p.sub">
-                <template v-if="p.id === 'standard'" #append><v-chip label variant="outlined">{{ t("settings.preset.default") }}</v-chip></template>
-              </v-list-item>
-            </v-list>
-          </v-card>
-          <div class="u-row">
-            <v-btn variant="tonal" disabled>{{ t("settings.preset.new") }}</v-btn>
-            <v-btn variant="text" disabled>{{ t("settings.preset.edit") }}</v-btn>
-            <span class="text-body-medium">{{ t("settings.later") }}</span>
-          </div>
+          <PresetManager />
         </template>
       </div>
     </div>

@@ -7,7 +7,7 @@ import JobStateChip from "../components/JobStateChip.vue";
 import JobStatusNotice from "../components/JobStatusNotice.vue";
 import PaneHeading from "../components/PaneHeading.vue";
 import { usePreview } from "../composables";
-import { isActive, miniQueue, submitBlock, submittedInputs } from "../domain/demo";
+import { isActive, miniQueue, skipReason, submitBlock } from "../domain/demo";
 
 /**
  * Step 3 (right pane), split in two (iteration 3, owner memos #9/#10):
@@ -19,10 +19,7 @@ import { isActive, miniQueue, submitBlock, submittedInputs } from "../domain/dem
  */
 const { demo, layout, state, t } = usePreview();
 const MINI = 5;
-const open = computed(() => {
-  const submitted = submittedInputs(state.value);
-  return state.value.inputs.filter((i) => i.supported && !submitted.has(i.id));
-});
+const open = computed(() => state.value.inputs.filter((i) => skipReason(state.value, i) === null));
 const openSelected = computed(() => open.value.filter((i) => state.value.selected.includes(i.id)));
 const block = computed(() => submitBlock(state.value));
 const skippedBefore = computed(() => state.value.selected.length - openSelected.value.length);
@@ -37,6 +34,8 @@ const result = computed(() => {
   if (r.created > 0) parts.push(t("submit.added", { count: r.created }));
   if (r.alreadySubmitted > 0) parts.push(t("submit.skippedSubmitted", { count: r.alreadySubmitted }));
   if (r.unsupported > 0) parts.push(t("submit.skippedUnsupported", { count: r.unsupported }));
+  if (r.invalid > 0) parts.push(t("submit.skippedInvalid", { count: r.invalid }));
+  if (r.diarization > 0) parts.push(t("submit.skippedDiarization", { count: r.diarization }));
   return { ok: r.created > 0, text: parts.join(" ") || t("submit.nothing") };
 });
 </script>

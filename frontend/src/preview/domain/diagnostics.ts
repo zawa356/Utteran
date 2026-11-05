@@ -1,4 +1,5 @@
 import type { DemoJob } from "./demo";
+import type { SetupState, StageId } from "./setup";
 
 /**
  * Sample logs and the diagnostics outline for the mock Tools dialogs (iteration 3, owner memo #12).
@@ -47,7 +48,36 @@ export function jobLog(job: Pick<DemoJob, "id" | "state" | "stage" | "attempt" |
   return lines;
 }
 
-/** What a diagnostics export would contain vs. leave out (i18n keys). */
+/** Synthetic log of the (fictional) setup operation, derived from its stage states only. */
+export function setupLog(s: Pick<SetupState, "stages" | "attempt" | "errorCode">): LogLine[] {
+  const lines: LogLine[] = [{ time: "09:30:00", level: "INFO", source: "setup", key: "log.setup.approved", params: { attempt: Math.max(1, s.attempt) } }];
+  let minute = 30;
+  for (const st of s.stages) {
+    if (st.status === "pending") continue;
+    minute += 1;
+    const time = `09:${String(minute).padStart(2, "0")}:00`;
+    const stage = st.id as StageId;
+    lines.push({ time, level: "INFO", source: "setup", key: "log.setup.stageStarted", params: { stage } });
+    if (st.status === "done") lines.push({ time, level: "INFO", source: "setup", key: "log.setup.stageDone", params: { stage } });
+    if (st.status === "failed") lines.push({ time, level: "ERROR", source: "setup", key: "log.setup.stageFailed", params: { stage, code: s.errorCode ?? "—" } });
+    if (st.status === "interrupted") lines.push({ time, level: "WARN", source: "setup", key: "log.setup.stageInterrupted", params: { stage } });
+  }
+  return lines;
+}
+
+/** Log export (iteration 4, owner memo #17): what would be saved. Nothing is written. */
+export type LogExportFormat = "log" | "txt";
+export const LOG_EXPORT_FORMATS: readonly LogExportFormat[] = ["log", "txt"];
+
+/** Suggested file name; the date is the synthetic log date, not the clock. */
+export function logFileName(kind: "system" | "job" | "setup", format: LogExportFormat, jobId?: string): string {
+  const stem = kind === "job" && jobId ? `utteran-${jobId}` : `utteran-${kind}`;
+  return `${stem}-20261105.${format}`;
+}
+
+export const DIAGNOSTICS_FILE_NAME = "utteran-diagnostics-20261105.zip";
+
+/** What a diagnostics export would contain vs. leave out (i18n keys; behind "details" in the dialog). */
 export const DIAGNOSTICS_INCLUDED = ["diag.in.version", "diag.in.os", "diag.in.env", "diag.in.logs", "diag.in.settings"] as const;
 export const DIAGNOSTICS_EXCLUDED = ["diag.out.paths", "diag.out.media", "diag.out.text", "diag.out.tokens", "diag.out.prompts"] as const;
 

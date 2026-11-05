@@ -96,6 +96,9 @@ CI（GitHub Actions）の結果はDraft PRのchecksを正本とする（この�
 7. **G-15**: private DBの保持期間・ACL・消去方針（案3を選ぶ場合は先に必要）。
 8. **用語**: 「共通デフォルト」「個別に設定」「共通に戻す」「投入時の設定」「未投入をすべて投入」の言い回し（ja/en）。
 
+> **第4イテレーションの確認事項**は[iteration-4 §13](iteration-4.md#13-未検証残る判断)（通常の設定の適用先、Wizardの粒度、処理設定の範囲、プリセット形式、狭幅と最小サイズ）。
+> 上の6（G-05/G-06）は未決のまま。第4案もプリセット・Wizardの途中状態を含め何も保存しない。
+
 ## 5. 未受入・既知の制約
 
 - WebView2、OS DPI 125/150/200%実機、native D&D・file dialog、IME、実backend・SSE・ready判定、GPU/モデル/推論、起動時間・RAM、installer/portable。

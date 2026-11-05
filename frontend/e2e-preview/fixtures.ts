@@ -154,3 +154,64 @@ export async function appBarOverlaps(page: Page): Promise<string[]> {
     return out;
   });
 }
+
+/**
+ * Text contrast of visible product text against the colour behind it (WCAG 1.4.3, 4.5:1; large
+ * text 3:1). Disabled controls, placeholders, the review strip and snackbars are skipped. Returns
+ * findings that name the element. Approximation: the first opaque ancestor background, with
+ * translucent layers blended over it.
+ */
+export async function lowContrastText(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    // Chromium reports colours with relative-colour syntax as `color(srgb r g b / a)` (0–1 channels).
+    const parse = (c: string) => {
+      const n = (c.match(/[\d.]+/g) ?? []).map(Number);
+      return c.startsWith("color(srgb") ? [n[0]! * 255, n[1]! * 255, n[2]! * 255, n[3] ?? 1] : n;
+    };
+    const lum = (rgb: number[]) => {
+      const [R, G, B] = rgb.map((v) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * R! + 0.7152 * G! + 0.0722 * B!;
+    };
+    const background = (el: Element | null): number[] => {
+      const layers: number[][] = [];
+      for (let n = el; n; n = n.parentElement) {
+        const [r = 0, g = 0, b = 0, a = 1] = parse(getComputedStyle(n).backgroundColor);
+        if (getComputedStyle(n).backgroundColor === "rgba(0, 0, 0, 0)" || a === 0) continue;
+        layers.push([r, g, b, a]);
+        if (a >= 1) break;
+      }
+      let base = [255, 255, 255];
+      for (const [r, g, b, a] of layers.reverse()) base = [r!, g!, b!].map((c, i) => c * a! + base[i]! * (1 - a!));
+      return base;
+    };
+    const out: string[] = [];
+    for (const el of Array.from(document.querySelectorAll("body *"))) {
+      if (el.closest(".p-sr-only, [data-testid=prototype-toolbar], .v-snackbar, .v-btn--disabled, .v-field--disabled, .v-input--disabled, [aria-disabled=true], [disabled], .v-selection-control--disabled")) continue;
+      if (!Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() !== "")) continue;
+      const rect = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      if (rect.width === 0 || rect.height === 0 || cs.visibility === "hidden" || Number(cs.opacity) === 0) continue;
+      const [r = 0, g = 0, b = 0, a = 1] = parse(cs.color);
+      const bg = background(el);
+      const fg = [r, g, b].map((c, i) => c * a + bg[i]! * (1 - a));
+      const [l1, l2] = [lum(fg), lum(bg)].sort((x, y) => y - x);
+      const ratio = (l1! + 0.05) / (l2! + 0.05);
+      const large = parseFloat(cs.fontSize) >= 24 || (parseFloat(cs.fontSize) >= 18.66 && Number(cs.fontWeight) >= 700);
+      if (ratio < (large ? 3 : 4.5)) out.push(`${ratio.toFixed(2)} ${el.tagName.toLowerCase()}.${String(el.className).split(" ")[0]} "${(el.textContent ?? "").trim().slice(0, 24)}"`);
+    }
+    return out;
+  });
+}
+
+/** Tops of the visible Expert panes (one row = no vertical stacking). */
+export async function paneTops(page: Page): Promise<number[]> {
+  await settled(page);
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll("[data-pane]"))
+      .filter((el) => (el as HTMLElement).offsetParent !== null && el.getBoundingClientRect().width > 0)
+      .map((el) => Math.round(el.getBoundingClientRect().top)),
+  );
+}

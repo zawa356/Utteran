@@ -2,14 +2,19 @@
  * Fictional execution-environment examples for the UI-3-0 prototype (owner memo: "a mock with
  * information"). NOTHING here is detected: no GPU, driver, model or backend is queried, and the
  * values do not claim that such a configuration works. In the product the matrix, automatic
- * selection and device decision come from the backend (B4 is the source of truth); the frontend
+ * selection and ready decision come from the backend (B4 is the source of truth); the frontend
  * only renders what the backend returns. Product names are used as plausible labels only.
+ *
+ * Iteration 4 (owner memos #16/#23): "evidence" is shown as plain detection results, and what used
+ * to be a list of "needed actions" in prose became actions the card offers as buttons
+ * ("Set up…", "Repair…", "Set up speaker diarization…"). A detected GPU is a detection result; whether
+ * a profile is READY is a separate status (never inferred from the detection alone).
  */
-export type EnvExample = "gpu" | "cpu" | "unconfigured" | "error";
-export const ENV_EXAMPLES: readonly EnvExample[] = ["gpu", "cpu", "unconfigured", "error"];
+export type EnvExample = "gpu" | "cpu" | "unconfigured" | "repair" | "error";
+export const ENV_EXAMPLES: readonly EnvExample[] = ["gpu", "cpu", "unconfigured", "repair", "error"];
 
-/** "ready" / "warning" / "unavailable" as shown for one example profile (never computed here). */
-export type ProfileStatus = "ready" | "warning" | "unavailable";
+/** Shown per example profile (never computed here). */
+export type ProfileStatus = "ready" | "warning" | "repair" | "unavailable";
 
 export interface EnvFact {
   /** i18n key suffix of the label (env.fact.<label>). */
@@ -18,6 +23,9 @@ export interface EnvFact {
   value: string;
 }
 
+/** What a card offers. All open the (mock) setup wizard in the matching starting mode. */
+export type EnvAction = "setup" | "addGpu" | "repair" | "diarization";
+
 export interface EnvProfile {
   id: string;
   /** i18n key suffix (env.profile.<name>). */
@@ -25,11 +33,10 @@ export interface EnvProfile {
   status: ProfileStatus;
   recommended: boolean;
   facts: EnvFact[];
-  /** i18n keys of the "why ready / why not" evidence lines. */
-  evidence: string[];
+  /** i18n keys of the detection results (shown under "Details"). */
+  detection: string[];
   warnings: string[];
-  /** i18n keys of the steps that would be needed (unconfigured / CPU guidance). */
-  actions: string[];
+  actions: EnvAction[];
 }
 
 export interface EnvView {
@@ -39,42 +46,46 @@ export interface EnvView {
   profiles: EnvProfile[];
 }
 
-const GPU: EnvProfile = {
-  id: "demo-profile-gpu",
-  name: "gpu",
-  status: "ready",
-  recommended: true,
-  facts: [
-    { label: "asr", value: "faster-whisper" },
-    { label: "model", value: "large-v3-turbo" },
-    { label: "device", value: "CUDA" },
-    { label: "compute", value: "float16" },
-    { label: "diarization", value: "pyannote" },
-    { label: "memory", value: "key:env.value.vram" },
-    { label: "speed", value: "key:env.value.speedFast" },
-  ],
-  evidence: ["env.evidence.gpuDevice", "env.evidence.modelCached", "env.evidence.diarizationToken"],
-  warnings: [],
-  actions: [],
-};
+function gpuReady(diarization: boolean): EnvProfile {
+  return {
+    id: "demo-profile-gpu",
+    name: "gpu",
+    status: "ready",
+    recommended: true,
+    facts: [
+      { label: "asr", value: "faster-whisper" },
+      { label: "model", value: "large-v3-turbo" },
+      { label: "device", value: "CUDA" },
+      { label: "compute", value: "float16" },
+      { label: "diarization", value: diarization ? "pyannote" : "key:env.value.notSetUp" },
+      { label: "memory", value: "key:env.value.vram" },
+      { label: "speed", value: "key:env.value.speedFast" },
+    ],
+    detection: ["env.detect.gpuDevice", "env.detect.modelCached", diarization ? "env.detect.diarizationToken" : "env.detect.noDiarizationToken"],
+    warnings: diarization ? [] : ["env.warning.noDiarization"],
+    actions: diarization ? [] : ["diarization"],
+  };
+}
 
-const CPU_READY: EnvProfile = {
-  id: "demo-profile-cpu",
-  name: "cpu",
-  status: "warning",
-  recommended: false,
-  facts: [
-    { label: "asr", value: "faster-whisper" },
-    { label: "model", value: "small" },
-    { label: "device", value: "CPU" },
-    { label: "compute", value: "int8" },
-    { label: "diarization", value: "key:env.value.off" },
-    { label: "speed", value: "key:env.value.speedSlow" },
-  ],
-  evidence: ["env.evidence.cpuOnly", "env.evidence.modelCachedSmall"],
-  warnings: ["env.warning.cpuSlow", "env.warning.noDiarization"],
-  actions: ["env.action.gpuSetup", "env.action.diarizationToken"],
-};
+function cpuProfile(opts: { recommended: boolean; diarization: boolean; ready: boolean }): EnvProfile {
+  return {
+    id: "demo-profile-cpu",
+    name: "cpu",
+    status: opts.ready ? "ready" : "warning",
+    recommended: opts.recommended,
+    facts: [
+      { label: "asr", value: "faster-whisper" },
+      { label: "model", value: "small" },
+      { label: "device", value: "CPU" },
+      { label: "compute", value: "int8" },
+      { label: "diarization", value: opts.diarization ? "pyannote (CPU)" : "key:env.value.off" },
+      { label: "speed", value: "key:env.value.speedSlow" },
+    ],
+    detection: ["env.detect.cpuOnly", "env.detect.modelCachedSmall"],
+    warnings: ["env.warning.cpuSlow"],
+    actions: opts.diarization ? [] : ["diarization"],
+  };
+}
 
 const GPU_UNAVAILABLE: EnvProfile = {
   id: "demo-profile-gpu",
@@ -84,11 +95,27 @@ const GPU_UNAVAILABLE: EnvProfile = {
   facts: [
     { label: "asr", value: "faster-whisper" },
     { label: "model", value: "large-v3-turbo" },
-    { label: "device", value: "key:env.value.notFound" },
+    { label: "device", value: "key:env.value.notSetUp" },
   ],
-  evidence: ["env.evidence.noGpu"],
+  detection: ["env.detect.gpuNotSetUp"],
   warnings: [],
-  actions: ["env.action.gpuSetup"],
+  actions: ["addGpu"],
+};
+
+const GPU_REPAIR: EnvProfile = {
+  id: "demo-profile-gpu",
+  name: "gpu",
+  status: "repair",
+  recommended: false,
+  facts: [
+    { label: "asr", value: "faster-whisper" },
+    { label: "model", value: "large-v3-turbo" },
+    { label: "device", value: "CUDA" },
+    { label: "runtime", value: "key:env.value.broken" },
+  ],
+  detection: ["env.detect.gpuDevice", "env.detect.runtimeBroken"],
+  warnings: ["env.warning.repair"],
+  actions: ["repair"],
 };
 
 const NONE: EnvProfile = {
@@ -100,17 +127,20 @@ const NONE: EnvProfile = {
     { label: "runtime", value: "key:env.value.notInstalled" },
     { label: "model", value: "key:env.value.notDownloaded" },
   ],
-  evidence: ["env.evidence.noRuntime", "env.evidence.noModel"],
+  detection: ["env.detect.noRuntime", "env.detect.noModel"],
   warnings: [],
-  actions: ["env.action.runSetup", "env.action.downloadModel", "env.action.redetect"],
+  actions: ["setup"],
 };
 
-export function environmentView(example: EnvExample): EnvView {
+/** `diarizationReady` = a diarization credential/model exists in this (fictional) setup. */
+export function environmentView(example: EnvExample, diarizationReady = true): EnvView {
   switch (example) {
     case "gpu":
-      return { example, loadFailed: false, profiles: [GPU, { ...CPU_READY, warnings: ["env.warning.cpuSlow"] }] };
+      return { example, loadFailed: false, profiles: [gpuReady(diarizationReady), { ...cpuProfile({ recommended: false, diarization: diarizationReady, ready: false }), actions: [] }] };
     case "cpu":
-      return { example, loadFailed: false, profiles: [{ ...CPU_READY, recommended: true }, GPU_UNAVAILABLE] };
+      return { example, loadFailed: false, profiles: [cpuProfile({ recommended: true, diarization: diarizationReady, ready: false }), GPU_UNAVAILABLE] };
+    case "repair":
+      return { example, loadFailed: false, profiles: [GPU_REPAIR, cpuProfile({ recommended: true, diarization: diarizationReady, ready: true })] };
     case "unconfigured":
       return { example, loadFailed: false, profiles: [NONE] };
     default:
@@ -125,5 +155,5 @@ export function primaryProfile(view: EnvView): EnvProfile | null {
 
 /** Whether the (fictional) example lets the demo "start" button be pressed. */
 export function exampleAllowsStart(view: EnvView): boolean {
-  return !view.loadFailed && view.profiles.some((p) => p.status !== "unavailable");
+  return !view.loadFailed && view.profiles.some((p) => p.status === "ready" || p.status === "warning");
 }

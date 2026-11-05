@@ -5,8 +5,8 @@ import { useNormalFile } from "./useNormalFile";
 
 /**
  * Everyday settings (language, diarization, formats); model and speaker count behind "details".
- * The fields show what THIS file will run with, and an edit applies to it (see
- * DemoController.setNormalSetting) — so no "common vs individual" explanation is needed here.
+ * The fields show what THIS file will run with, and an edit applies to THIS file only (iteration 4,
+ * DemoController.setNormalSetting) — files prepared in Expert are never changed from here.
  */
 const { t } = usePreview();
 const { inputId } = useNormalFile();
@@ -15,12 +15,12 @@ const { inputId } = useNormalFile();
 <template>
   <v-card class="p-card" tag="section" aria-labelledby="normal-settings-heading" data-testid="normal-settings">
     <div class="p-card__head"><h2 id="normal-settings-heading" class="p-card__title">{{ t("normal.settings") }}</h2></div>
-    <SettingsFields mode="normal" :input-id="inputId" :fields="['language', 'diarization', 'formats']" compact />
+    <SettingsFields :input-id="inputId" :fields="['language', 'diarization', 'formats']" />
     <v-expansion-panels variant="accordion" flat>
       <v-expansion-panel data-testid="config-details">
         <v-expansion-panel-title>{{ t("config.details") }}</v-expansion-panel-title>
         <v-expansion-panel-text>
-          <SettingsFields mode="normal" :input-id="inputId" :fields="['model', 'speakers']" compact />
+          <SettingsFields :input-id="inputId" :fields="['model', 'speakerMode']" />
         </v-expansion-panel-text>
       </v-expansion-panel>
     </v-expansion-panels>

@@ -1,5 +1,19 @@
 # AI 作業状態
 
+## 現在地（2026-11-05、UI-3-0 第4イテレーション、0.1.43・未リリース、Draft PR #38の続き）
+
+- 開始HEAD`c6dc8cc0`（PR #38のブランチ`claude/blissful-planck-84e59y`の最新と一致を確認）。セッションの指定ブランチ`claude/festive-shannon-9ksc36`を
+  このHEADから作り、通常pushで追加コミット（fast-forward可能。PR #38のブランチへは未push、Draft・merge・tagに触れていない）。versionは0.1.43のまま
+  （理由は[ui3/iteration-4 §12](docs/architecture/ui3/iteration-4.md#12-versionの判断)）。変更は`frontend/src/preview/`・`frontend/e2e-preview/`・文書のみ。
+- ownerメモ#15〜#24を反映: Expertの処理設定5カテゴリ（`initial_prompt`・用語集・VAD・beam・エンジン固有項目は選んだエンジンだけ、連動グループ、検証で投入を止める、
+  プリセット適用）、セットアップウィザード（初回／途中／失敗／要修復／CPUのみ／トークンなし、plan→承認→工程→完了、B8対応表）、「再検出」と別の「セットアップ…」と
+  カードの修復/追加ボタン、Expertの縦積み廃止（2列＝ファイル＋切替、1列＝切替）・自動比率・ファイル下限260px、ログ/プリセットの入出力確認画面（保存しない）、
+  診断の簡素化、「判定の根拠」等の文言、既存アイコン、緑/青×外観の独立設定。通常の設定編集は表示中ファイルだけに適用（次のファイルへ引継ぎ）。
+- 検証（Linux、headless Chromium）: Vitest 169（プロトタイプ92）、UI-2 E2E 10、プロトタイプE2E 70、
+  build出力は第3案と同一ハッシュ。画像はcommitしない。
+- **owner再レビュー待ち。** Ready化・merge・tag・release・S1以降は未着手。未受入: WebView2・OS DPI実機・Windows日本語フォント・実IME・
+  実OSのファイル/保存ダイアログ・実backend（B4/B5/B8）・画面読み上げ・タッチ。Windowsの最小サイズは設計のみ。
+
 ## 現在地（2026-11-05、UI-3-0 第3イテレーション、0.1.43・未リリース、Draft PR #38）
 
 - PR #38（`claude/blissful-planck-84e59y`、開始時HEAD`8b0feac3`、他者の変更なし）へ通常pushで追加コミット。versionは0.1.43のまま

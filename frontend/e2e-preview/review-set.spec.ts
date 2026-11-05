@@ -1,7 +1,7 @@
 import { appBarOverlaps, choose, columns, expect, horizontalOverflow, readability, settled, setup, shot, test } from "./fixtures";
 
 /**
- * Owner review set for iteration 3 (docs/architecture/ui3/iteration-3.md §6). Each case asserts
+ * Owner review set for iterations 3 and 4 (docs/architecture/ui3/iteration-3.md §9, iteration-4.md §9). Each case asserts
  * the layout (no horizontal overflow, expected columns, no small text) and, with UI3_SCREENSHOTS=1,
  * writes test-results/ui3-screenshots/<name>.png. Synthetic and fictional data only.
  * Viewport/zoom emulation in Chromium is NOT a Windows WebView2 / OS DPI acceptance (UI-4 #22).
@@ -171,4 +171,157 @@ for (const d of DPI) {
     expect(errors).toEqual([]);
     await context.close();
   });
+}
+
+// ---- iteration 4 review set (docs/architecture/ui3/iteration-4.md §9) --------------------------------
+test("⑥ Expert settings: 1280 recognition, prompt & glossary, whisper.cpp details, 1920, narrow switch", async ({ preview }) => {
+  await setup(preview, { scenario: /^複数ファイル・未投入/ });
+  await preview.getByTestId("toolbar-toggle").click();
+  await preview.getByTestId("mode-expert").click();
+  await preview.getByTestId("input-row-in-02").click();
+  await shot(preview, "6a-expert-1280-recognition");
+  await preview.getByTestId("category-prompt").click();
+  await preview.getByTestId("input-initialPrompt").locator("textarea").fill("社内の定例会議です。話題は製品の開発計画です。");
+  for (const term of ["議事録", "アクションアイテム", "Utteran"]) {
+    await preview.getByTestId("glossary-new").locator("input").fill(term);
+    await preview.getByTestId("glossary-add").click();
+  }
+  await shot(preview, "6b-expert-prompt-glossary");
+  await preview.getByTestId("category-asr").click();
+  await choose(preview, "input-backend-common", "whisper.cpp");
+  await preview.getByTestId("category-advanced").click();
+  await preview.getByTestId("section-whisperCppThresholds").click();
+  await shot(preview, "6c-expert-whispercpp-details");
+  await preview.getByTestId("inspector-tab-selection").click();
+  await preview.getByTestId("category-diarization").click();
+  await expect(preview.getByTestId("field-speakerMode-source")).toHaveText("個別"); // in-02 has its own speaker count
+  await preview.getByTestId("speakers-mode-range").click();
+  await shot(preview, "6d-expert-selection-speaker-range");
+  await preview.setViewportSize({ width: 1920, height: 1080 });
+  expect(await columns(preview)).toBe(3);
+  await shot(preview, "6e-expert-1920");
+  await preview.setViewportSize({ width: 900, height: 660 });
+  expect(await columns(preview)).toBe(2);
+  expect(await horizontalOverflow(preview)).toBeLessThanOrEqual(0);
+  await shot(preview, "6f-expert-900-two-columns");
+  await preview.setViewportSize({ width: 640, height: 600 });
+  expect(await columns(preview)).toBe(1);
+  await shot(preview, "6g-expert-640-one-pane");
+});
+
+test("⑦ Wizard: welcome, environment, plan, running, failed, done, interrupted", async ({ preview }) => {
+  await preview.getByTestId("toolbar-toggle").click();
+  await preview.getByTestId("toolbar-toggle").click();
+  await choose(preview, "toolbar-setup", /^初回起動/);
+  await preview.getByTestId("toolbar-toggle").click();
+  await shot(preview, "7a-wizard-welcome");
+  await preview.getByTestId("wizard-next").click();
+  await shot(preview, "7b-wizard-environment");
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-diarization").locator("input").click();
+  await preview.getByTestId("wizard-next").click();
+  await shot(preview, "7c-wizard-credentials");
+  await preview.getByTestId("wizard-register-credential").click();
+  await preview.getByTestId("wizard-agreement").locator("input").click();
+  await preview.getByTestId("wizard-next").click();
+  await shot(preview, "7d-wizard-plan");
+  await preview.getByTestId("wizard-approve").click();
+  for (let i = 0; i < 4; i += 1) await preview.getByTestId("wizard-demo-advance").click();
+  await shot(preview, "7e-wizard-running");
+  await preview.getByTestId("wizard-demo-fail").click();
+  await shot(preview, "7f-wizard-failed");
+  await preview.getByTestId("wizard-continue").click();
+  for (let i = 0; i < 12 && (await preview.getByTestId("wizard-demo-advance").count()) > 0; i += 1) await preview.getByTestId("wizard-demo-advance").click();
+  await shot(preview, "7g-wizard-done");
+  await preview.getByTestId("toolbar-toggle").click();
+  await choose(preview, "toolbar-setup", /^途中で中断/);
+  await preview.getByTestId("toolbar-toggle").click();
+  await shot(preview, "7h-wizard-interrupted-resume");
+  await preview.getByTestId("toolbar-toggle").click();
+  await choose(preview, "toolbar-setup", /^初回・GPUなし/);
+  await preview.getByTestId("toolbar-toggle").click();
+  await preview.getByTestId("wizard-next").click();
+  await shot(preview, "7i-wizard-cpu-only");
+});
+
+test("⑧ Setup page: usable / needs repair, the set-up entry, missing diarization token", async ({ preview }) => {
+  await preview.getByTestId("toolbar-toggle").click();
+  await preview.getByTestId("mode-expert").click();
+  await preview.getByTestId("nav-setup").click();
+  await preview.getByTestId("env-toggle-gpu").click();
+  await shot(preview, "8a-setup-expert-ready-details");
+  await preview.getByTestId("toolbar-toggle").click();
+  await choose(preview, "toolbar-setup", /^構成に問題/);
+  await preview.getByTestId("toolbar-toggle").click();
+  await shot(preview, "8b-setup-expert-needs-repair");
+  await preview.getByTestId("mode-normal").click();
+  await shot(preview, "8c-setup-normal-needs-repair");
+  await preview.getByTestId("topnav-transcribe").click();
+  await shot(preview, "8d-normal-repair-note");
+  await preview.getByTestId("toolbar-toggle").click();
+  await choose(preview, "toolbar-setup", /^話者分離のトークンなし/);
+  await preview.getByTestId("toolbar-toggle").click();
+  await shot(preview, "8e-normal-diarization-not-set-up");
+  await preview.getByTestId("mode-expert").click();
+  await preview.getByTestId("nav-setup").click();
+  await preview.getByTestId("env-setup").click();
+  await shot(preview, "8f-wizard-add-from-setup");
+});
+
+test("⑨ Exports and presets: log export, diagnostics, preset import / export, About icon", async ({ preview }) => {
+  await setup(preview, { scenario: /^複数ファイル・処理中/ });
+  await preview.getByTestId("toolbar-toggle").click();
+  await preview.getByTestId("menu-tools").click();
+  await preview.getByTestId("menu-item-jobLog").click();
+  await shot(preview, "9a-job-log");
+  await preview.getByTestId("log-export").click();
+  await preview.getByTestId("log-save-button").click();
+  await shot(preview, "9b-log-export-cannot-save");
+  await preview.getByTestId("dialog-close").click();
+  await preview.getByTestId("menu-tools").click();
+  await preview.getByTestId("menu-item-diagnostics").click();
+  await shot(preview, "9c-diagnostics-simple");
+  await preview.getByTestId("diag-details").click();
+  await shot(preview, "9d-diagnostics-details-open");
+  await preview.getByTestId("dialog-close").click();
+  await preview.getByTestId("mode-expert").click();
+  await preview.getByTestId("nav-settings").click();
+  await preview.getByTestId("settings-cat-presets").click();
+  await preview.getByTestId("preset-row-user-01").click();
+  await shot(preview, "9e-presets");
+  await preview.getByTestId("preset-import").click();
+  await preview.getByTestId("import-sample-duplicate").click();
+  await shot(preview, "9f-preset-import-duplicate");
+  await preview.getByTestId("import-other").click();
+  await preview.getByTestId("import-sample-unsupported").click();
+  await shot(preview, "9g-preset-import-unsupported");
+  await preview.getByTestId("import-cancel").click();
+  await preview.getByTestId("preset-export").click();
+  await preview.getByTestId("export-include-text").locator("input").click();
+  await shot(preview, "9h-preset-export");
+  await preview.keyboard.press("Escape");
+  await preview.getByTestId("nav-transcribe").click();
+  await choose(preview, "preset-apply-select", "字幕づくり");
+  await shot(preview, "9i-preset-apply-preview");
+  await preview.getByTestId("menu-help").click();
+  await preview.getByTestId("menu-item-about").click();
+  await shot(preview, "9j-about-icon");
+});
+
+for (const accent of ["green", "blue"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`⑩ theme ${accent}/${theme}: Normal and Expert`, async ({ preview }) => {
+      await preview.getByTestId(`palette-${accent}`).click();
+      await setup(preview, { theme, scenario: /^複数ファイル・処理中/ });
+      await preview.getByTestId("toolbar-toggle").click();
+      expect(await horizontalOverflow(preview)).toBeLessThanOrEqual(0);
+      await shot(preview, `10-${accent}-${theme}-normal`);
+      await preview.getByTestId("mode-expert").click();
+      await preview.getByTestId("input-row-in-02").click();
+      await preview.getByTestId("inspector-tab-selection").click();
+      await shot(preview, `10-${accent}-${theme}-expert`);
+      await preview.getByTestId("nav-settings").click();
+      await shot(preview, `10-${accent}-${theme}-settings`);
+    });
+  }
 }

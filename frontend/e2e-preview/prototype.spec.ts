@@ -293,27 +293,27 @@ test("sidebar: collapse from the top, re-expand from the rail, drag and keyboard
   expect(await horizontalOverflow(preview)).toBeLessThanOrEqual(0);
 });
 
-test("panes: 22/53/25 default candidate, drag and keyboard resize, clamped bounds, presets, View-menu reset", async ({ preview }) => {
+test("panes: automatic ratios by default, drag and keyboard resize, clamped bounds, presets, View-menu reset", async ({ preview }) => {
   await setup(preview, { scenario: /^複数ファイル・未投入/ });
   await preview.getByTestId("mode-expert").click();
   expect(await columns(preview)).toBe(3);
   const initial = await paneWidth(preview, "inputs");
-  expect(initial).toBeLessThan(await paneWidth(preview, "queue") + 10);
-  expect(await paneWidth(preview, "inspector")).toBeGreaterThan(2 * initial);
+  expect(initial).toBeGreaterThanOrEqual(300); // 1280 px: automatic 30/42/28 (iteration 4, owner memo #21)
+  expect(await paneWidth(preview, "inspector")).toBeGreaterThan(initial);
   await drag(preview, "resize-inputs", 60);
   expect(await paneWidth(preview, "inputs")).toBe(initial + 60);
   await drag(preview, "resize-inputs", -400);
-  expect(await paneWidth(preview, "inputs")).toBe(220); // minimum
+  expect(await paneWidth(preview, "inputs")).toBe(260); // minimum
   const separator = preview.getByTestId("resize-inputs");
   await expect(separator).toHaveAttribute("role", "separator");
-  await expect(separator).toHaveAttribute("aria-valuenow", "220");
+  await expect(separator).toHaveAttribute("aria-valuenow", "260");
   await separator.focus();
   await preview.keyboard.press("ArrowRight");
-  expect(await paneWidth(preview, "inputs")).toBe(236);
+  expect(await paneWidth(preview, "inputs")).toBe(276);
   await preview.keyboard.press("End");
   const max = Number(await separator.getAttribute("aria-valuemax"));
   expect(await paneWidth(preview, "inputs")).toBe(max);
-  expect(await paneWidth(preview, "inspector")).toBeGreaterThanOrEqual(340);
+  expect(await paneWidth(preview, "inspector")).toBeGreaterThanOrEqual(380);
   const queueAtMax = await paneWidth(preview, "queue");
   await drag(preview, "resize-queue", -80); // the Inspector keeps its minimum
   expect(await paneWidth(preview, "queue")).toBe(queueAtMax);
@@ -325,8 +325,8 @@ test("panes: 22/53/25 default candidate, drag and keyboard resize, clamped bound
   expect(await paneWidth(preview, "queue")).toBe(queueBefore + 50);
   expect(await horizontalOverflow(preview)).toBeLessThanOrEqual(0);
 
-  await preview.getByTestId("preset-wideInputs").click();
-  expect(await paneWidth(preview, "inputs")).toBeGreaterThan(initial + 50);
+  await preview.getByTestId("preset-compactInputs").click();
+  expect(await paneWidth(preview, "inputs")).toBeLessThan(initial - 40); // 22 % (clamped to 260 px)
   await preview.getByTestId("menu-view").click();
   await preview.getByTestId("menu-item-resetPanes").click();
   expect(await paneWidth(preview, "inputs")).toBe(initial);
@@ -352,6 +352,16 @@ test("3 → 2 → 1 columns follow the work-area width; F6 moves panes; no overf
   await expect(preview.getByTestId("sidebar")).toHaveAttribute("data-rail", "true"); // narrow windows start as a rail
   expect(await columns(preview)).toBe(2);
   await expect(preview.getByTestId("resize-inputs")).toBeVisible();
+  // Two columns (iteration 4): files on the left, Inspector OR queue on the right — never a row below.
+  await expect(preview.getByTestId("pane-queue")).toBeHidden();
+  await expect(preview.getByTestId("expert-pane-switch").getByRole("button")).toHaveCount(2);
+  await preview.getByTestId("pane-switch-queue").click();
+  await expect(preview.getByTestId("pane-inspector")).toBeHidden();
+  const [inputsBox, queueBox] = [await preview.getByTestId("pane-inputs").boundingBox(), await preview.getByTestId("pane-queue").boundingBox()];
+  expect(Math.abs(inputsBox!.y - queueBox!.y)).toBeLessThan(2);
+  expect(queueBox!.x).toBeGreaterThan(inputsBox!.x + inputsBox!.width);
+  await expect(preview.getByTestId("submit-selected")).toBeInViewport();
+  await preview.getByTestId("pane-switch-inspector").click();
   await preview.getByTestId("nav-toggle").click(); // expanding the sidebar leaves room for one column
   expect(await columns(preview)).toBe(1);
   await expect(preview.getByTestId("expert-pane-switch")).toBeVisible();
@@ -424,8 +434,11 @@ test("environment: one layout, no density / expand-all; Normal brief, Expert can
   await choose(preview, "toolbar-env", /^CPUのみの例/);
   await expect(preview.getByTestId("env-profile-cpu").getByTestId("env-recommended")).toBeVisible();
   await preview.getByTestId("env-toggle-cpu").click();
-  await expect(preview.getByTestId("env-evidence-cpu")).toContainText("CPUでは時間がかかります");
-  await expect(preview.getByTestId("env-evidence-gpu")).toHaveCount(0); // each candidate opens on its own
+  await expect(preview.getByTestId("env-details-cpu")).toContainText("CPUでは時間がかかります");
+  await expect(preview.getByTestId("env-details-cpu")).toContainText("検出結果");
+  await expect(preview.getByTestId("section-setup")).not.toContainText("判定の根拠"); // owner memo #16
+  await expect(preview.getByTestId("env-details-gpu")).toHaveCount(0); // each candidate opens on its own
+  await expect(preview.getByTestId("env-action-addGpu-gpu")).toBeVisible(); // an action, not an instruction
 
   await choose(preview, "toolbar-env", /^未構成の例/);
   await expect(preview.getByTestId("env-profile-none")).toContainText("未インストール");
@@ -443,7 +456,7 @@ test("app menu: Tools opens sample logs and a diagnostics outline, Help shows 'A
   await preview.getByTestId("menu-item-systemLog").click();
   const dialog = preview.getByTestId("dialog-systemLog");
   await expect(dialog).toContainText("システムログ");
-  await expect(dialog.getByTestId("dialog-demo-chip")).toBeVisible();
+  await expect(dialog.getByTestId("dialog-demo-chip")).toHaveCount(0); // iteration 4: the banner says it once
   await expect(dialog.getByTestId("log-lines")).toContainText("値は記録しません");
   await preview.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
@@ -458,9 +471,10 @@ test("app menu: Tools opens sample logs and a diagnostics outline, Help shows 'A
   await preview.getByTestId("menu-tools").click();
   await preview.getByTestId("menu-item-diagnostics").click();
   const diag = preview.getByTestId("dialog-diagnostics");
+  await expect(diag.getByTestId("diag-excluded")).toBeHidden(); // behind "What is included" (owner memo #15)
+  await diag.getByTestId("diag-details").click();
   await expect(diag.getByTestId("diag-excluded")).toContainText("フルパス");
   await expect(diag.getByTestId("diag-excluded")).toContainText("文字起こしの本文");
-  await expect(diag.getByTestId("diag-export")).toBeDisabled();
   await diag.getByTestId("dialog-ok").click();
 
   await preview.getByTestId("menu-help").click();
@@ -501,8 +515,10 @@ test("settings: Normal = a few app-wide items; Expert = categories; nothing per-
   await expect(preview.getByTestId("settings-token").locator("input")).toHaveValue("設定済み（値は表示しません）");
   await expect(preview.getByTestId("settings-body-advanced")).toContainText("同時実行数");
   await preview.getByTestId("settings-cat-presets").click();
-  await expect(preview.getByTestId("settings-presets").locator(".v-list-item")).toHaveCount(3);
-  await expect(preview.getByTestId("settings-body-presets").getByRole("button", { disabled: true })).toHaveCount(2);
+  await expect(preview.getByTestId("settings-presets").locator(".v-list-item")).toHaveCount(4);
+  await expect(preview.getByTestId("preset-edit")).toBeDisabled(); // a built-in preset is selected
+  await preview.getByTestId("preset-row-user-01").click();
+  await expect(preview.getByTestId("preset-edit")).toBeEnabled();
   await preview.getByTestId("settings-cat-logs").click();
   await preview.getByTestId("settings-open-diagnostics").click();
   await expect(preview.getByTestId("dialog-diagnostics")).toBeVisible();
@@ -551,12 +567,12 @@ test("top bar at large zoom / narrow windows: destinations fold into a menu, not
   expect(r.smallText).toEqual([]);
 });
 
-test("palette: green proposal by default, UI-2 blue for comparison; production theme untouched", async ({ preview }) => {
+test("accent: green by default, blue (UI-2 hue) selectable; production theme untouched", async ({ preview }) => {
   const primary = () => preview.evaluate(() => getComputedStyle(document.querySelector(".v-application")!).getPropertyValue("--v-theme-primary").trim());
   expect(await primary()).toBe("31,107,79"); // #1f6b4f
   await setup(preview, { theme: "dark" });
   expect(await primary()).toBe("127,209,173"); // #7fd1ad
-  await preview.getByTestId("palette-ui2").click();
+  await preview.getByTestId("palette-blue").click();
   expect(await primary()).toBe("141,180,220"); // UI-2 dark #8db4dc
   await setup(preview, { theme: "light" });
   expect(await primary()).toBe("47,93,138"); // UI-2 light #2f5d8a

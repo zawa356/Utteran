@@ -2,21 +2,24 @@
 import { mdiChevronDown, mdiChevronUp, mdiRestore } from "@mdi/js";
 import { computed } from "vue";
 import { usePreview } from "../composables";
-import { type PreviewLanguage, type PreviewPalette, type PreviewTheme, type Scenario, SCENARIOS, SYNC_EXAMPLES, type SyncExample } from "../domain/demo";
+import { type AccentTheme, type Appearance, APPEARANCES, type PreviewLanguage, type Scenario, SCENARIOS, SYNC_EXAMPLES, type SyncExample } from "../domain/demo";
 import { ENV_EXAMPLES, type EnvExample } from "../domain/envExamples";
 import { type MenuStyle, PANE_PRESET_IDS, type PanePreset } from "../domain/layout";
+import { SETUP_EXAMPLES, type SetupExample } from "../domain/setup";
 
 /**
  * Reviewer controls, deliberately OUTSIDE the product UI: a dashed, tinted strip docked at the
- * bottom of the window (collapsible). Display scenario, fictional environment example, job-status
- * fetch example, colour proposal, theme, language, Expert pane split examples, app-menu style and reset.
+ * bottom of the window (collapsible). Display scenario, setup state example (iteration 4), fictional
+ * environment example, job-status fetch example, accent theme, appearance, language, Expert pane
+ * split examples, app-menu style and reset. The product's own theme setting is on the Settings page.
  */
-const { demo, layout, layoutState, state, t } = usePreview();
+const { demo, layout, layoutState, setup, setupState, state, t } = usePreview();
+const setups = computed(() => SETUP_EXAMPLES.map((s) => ({ value: s, title: t(`setupExample.${s}`) })));
 const scenarios = computed(() => SCENARIOS.map((s) => ({ value: s, title: t(`scenario.${s}`) })));
 const envs = computed(() => ENV_EXAMPLES.map((e) => ({ value: e, title: t(`envExample.${e}`) })));
 const syncs = computed(() => SYNC_EXAMPLES.map((s) => ({ value: s, title: t(`syncOption.${s}`) })));
 const presets = computed(() => PANE_PRESET_IDS.map((p) => ({ value: p, title: t(`preset.${p}`) })));
-const themes = computed(() => (["system", "light", "dark"] as const).map((v) => ({ value: v, title: t(`theme.${v}`) })));
+const themes = computed(() => APPEARANCES.map((v) => ({ value: v, title: t(`theme.${v}`) })));
 const open = computed(() => layoutState.value.reviewStripOpen);
 </script>
 
@@ -36,13 +39,14 @@ const open = computed(() => layoutState.value.reviewStripOpen);
       </v-btn>
       <div v-show="open" id="p-review-controls" class="p-review__controls">
         <v-select :label="t('toolbar.scenario')" :items="scenarios" :model-value="state.scenario" class="p-review__select" data-testid="toolbar-scenario" @update:model-value="(v) => demo.setScenario(v as Scenario)" />
+        <v-select :label="t('toolbar.setup')" :items="setups" :model-value="setupState.example" class="p-review__select p-review__select--sm" data-testid="toolbar-setup" @update:model-value="(v) => setup.setExample(v as SetupExample)" />
         <v-select :label="t('toolbar.env')" :items="envs" :model-value="state.envExample" class="p-review__select p-review__select--sm" data-testid="toolbar-env" @update:model-value="(v) => demo.setEnvExample(v as EnvExample)" />
         <v-select :label="t('toolbar.sync')" :items="syncs" :model-value="state.sync" class="p-review__select p-review__select--sm" data-testid="toolbar-sync" @update:model-value="(v) => demo.setSync(v as SyncExample)" />
-        <v-btn-toggle :model-value="state.palette" mandatory density="compact" variant="outlined" divided :aria-label="t('toolbar.palette')" data-testid="toolbar-palette" @update:model-value="(v: PreviewPalette) => demo.setPalette(v)">
-          <v-btn value="green" size="small" data-testid="palette-green">{{ t("palette.green") }}</v-btn>
-          <v-btn value="ui2" size="small" data-testid="palette-ui2">{{ t("palette.ui2") }}</v-btn>
+        <v-btn-toggle :model-value="state.accentTheme" mandatory density="compact" variant="outlined" divided :aria-label="t('toolbar.palette')" data-testid="toolbar-palette" @update:model-value="(v: AccentTheme) => demo.setAccentTheme(v)">
+          <v-btn value="green" size="small" data-testid="palette-green">{{ t("accent.green") }}</v-btn>
+          <v-btn value="blue" size="small" data-testid="palette-blue">{{ t("accent.blue") }}</v-btn>
         </v-btn-toggle>
-        <v-btn-toggle :model-value="state.theme" mandatory density="compact" variant="outlined" divided :aria-label="t('settings.theme')" data-testid="toolbar-theme" @update:model-value="(v: PreviewTheme) => demo.setTheme(v)">
+        <v-btn-toggle :model-value="state.appearance" mandatory density="compact" variant="outlined" divided :aria-label="t('settings.theme')" data-testid="toolbar-theme" @update:model-value="(v: Appearance) => demo.setAppearance(v)">
           <v-btn v-for="th in themes" :key="th.value" :value="th.value" size="small" :data-testid="`theme-${th.value}`">{{ th.title }}</v-btn>
         </v-btn-toggle>
         <v-btn-toggle :model-value="state.language" mandatory density="compact" variant="outlined" divided :aria-label="t('settings.language')" data-testid="toolbar-language" @update:model-value="(v: PreviewLanguage) => demo.setLanguage(v)">
