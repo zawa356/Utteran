@@ -1,0 +1,116 @@
+/* Prototype-only additions on top of styles/app.css (kept small; Vuetify does the rest). */
+.p-toolbar {
+  background: rgb(var(--v-theme-surface));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.p-toolbar__select {
+  flex: 0 1 280px;
+  min-width: 160px;
+}
+.p-normal {
+  max-width: 960px;
+}
+.p-step-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-on-primary));
+}
+/* Long names: one line with an ellipsis; the full name is in the title attribute. */
+.p-ellipsis {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+/* VTable puts the class on its wrapper div; the layout must be set on the <table> itself. */
+.p-table table {
+  table-layout: fixed;
+  width: 100%;
+}
+/* Fixed columns so a long file name is cut (with its full text in the title), not the stage. */
+.p-table th.p-col-format {
+  width: 72px;
+}
+.p-table th.p-col-duration {
+  width: 84px;
+}
+.p-table th.p-col-state {
+  width: 132px;
+}
+.p-table th.p-col-stage {
+  width: 180px;
+}
+.p-table th.p-col-actions {
+  width: 200px;
+}
+.p-table th.p-col-icon {
+  width: 48px;
+}
+.p-field__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-bottom: 4px;
+}
+.p-dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+}
+.p-dl dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.p-index {
+  min-width: 1.5em;
+  margin-right: 8px;
+  text-align: end;
+}
+.p-demo {
+  border-top: 1px dashed rgba(var(--v-border-color), var(--v-border-opacity));
+  padding-top: 8px;
+}
+.p-two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--u-gap);
+  align-items: start;
+}
+@media (max-width: 1023px) {
+  .p-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+/* Three-column layout: each pane scrolls on its own below the app bar, banner and toolbar. */
+@media (min-width: 1280px) {
+  .p-pane {
+    max-height: calc(100vh - 300px);
+    overflow-y: auto;
+  }
+}
+.p-pane:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
+}
+.p-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

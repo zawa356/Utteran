@@ -1,5 +1,19 @@
 # AI 作業状態
 
+## 現在地（2026-11-05、UI-3-0 画面設計・隔離プロトタイプ、0.1.43・未リリース、Draft PR）
+
+- 基点`main` = `dd115085`（PR #36 merge、`git fetch`で確認・先行変更なし）。作業ブランチは環境固定の`claude/blissful-planck-84e59y`
+  （mainと同一点から開始した未使用のUI-3-0専用ブランチ）。開発版0.1.42→**0.1.43**（lock差分はversion行のみ）。
+- 成果: [docs/architecture/ui3/](docs/architecture/ui3/README.md)（配置案比較・推奨案、状態遷移・部品分割・境界、レビュー画像の再現・試験・引継ぎ）と、
+  合成データだけで操作できるプロトタイプ`frontend/preview.html`＋`frontend/src/preview/`（`npm run prototype`、Vite dev server専用）。
+- 推奨: 通常A1（縦ステップ）／Expert C1（3ペイン）。不採択: A2（ウィザード）、C2（上下分割）。1280pxのExpertではサイドバーをrailにする調整を
+  プロトタイプだけで実施（本番は未変更、owner判断事項）。
+- 隔離: `vite build`は`index.html`のみ（buildサイズUI-2と同一）、`main.ts`はDEV以外で起動しない、ESLintで双方向のimport・通信・storageを禁止、
+  E2Eで外部request/`/api`/console errorを失敗扱い、build出力に試作が無いことを検査。既定GUI・`/next/`本番画面・backend・`app.py`・CSPは無変更。
+- 検証（Linux、headless Chromium）: Vitest 91、UI-2 E2E 10、プロトタイプE2E 19、Python gates。詳細[ui3/review-and-acceptance](docs/architecture/ui3/review-and-acceptance.md)。
+- **owner判断待ち**: 配置案の承認、Expertのサイドバー/ペイン比率、構成項目の分け方、rerunの置き場、G-05/G-06（案1〜3を提示）、G-15。
+  **承認までS1以降・Ready化・mergeに着手しない。** 未受入: WebView2・OS DPI実機・native D&D/picker・IME・実backend。
+
 ## 現在地（2026-11-04、UI-2 Windows実機受入・CSP修正、0.1.42・未リリース、Draft PR #36）
 
 - 0.1.41（下節）の後続。ownerがWindows実機で受入し、`862870d`（0.1.42）で修正: pywebviewの文字選択禁止用nonceなしstyleが

@@ -17,5 +17,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "e2e/**/*.ts", "*.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "e2e/**/*.ts", "e2e-preview/**/*.ts", "*.config.ts"]
 }

@@ -349,7 +349,7 @@ jobs:
   # through the real FastAPI /launch -> /next/ path, and a wheel installed in a new venv.
   # Headless Chromium on Linux is NOT a Windows WebView2 acceptance (that stays a UI-4 gate).
   ui2-frontend:
-    name: UI-2 frontend (npm ci, audit, lint, types, unit, build, E2E, wheel)
+    name: UI-2 frontend (npm ci, audit, lint, types, unit, build, E2E, UI-3-0 prototype, wheel)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -396,6 +396,11 @@ jobs:
       - name: E2E through /launch -> /next/ (real FastAPI, synthetic services)
         working-directory: frontend
         run: npm run e2e
+      # UI-3-0 design prototype (Vite dev server, synthetic data, no backend). Also checks that
+      # the production build above contains no prototype entry, module or text.
+      - name: UI-3-0 prototype E2E (dev-only preview.html; isolation from the production build)
+        working-directory: frontend
+        run: npm run e2e:prototype
       - name: Build the wheel and serve /next/ from a new isolated venv
         run: |
           set -euo pipefail

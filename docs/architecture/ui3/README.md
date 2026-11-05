@@ -1,0 +1,51 @@
+# UI-3-0 — 画面設計と隔離型インタラクティブプロトタイプ
+
+更新: 2026-11-05 JST。開発版 **0.1.43（未リリース）**。Issue [#21](https://github.com/zawa356/Utteran/issues/21)（Epic [#18](https://github.com/zawa356/Utteran/issues/18)）。
+前段: [UI-2](../ui2/README.md)（S0基盤、0.1.42）、情報設計の合意: [UI-1 ux-structure](../ui1/ux-structure.md)。
+
+> **これは画面設計のレビュー用成果物で、機能移行ではない。** プロトタイプは合成データだけで動き、
+> 文字起こし・ジョブ投入・保存・ファイル操作・通信を一切行わない。Vite dev serverでだけ開け、production build・
+> `utteran-gui --next-ui`の`/next/`・既定の旧GUIには含まれない。**ownerの画面レビューと設計承認まで、S1以降の本格移行には着手しない。**
+
+## 目的と範囲
+
+| 範囲内 | 範囲外（禁止・未実施） |
+|---|---|
+| 通常A／Expert C の配置案比較と推奨案（[screen-design](screen-design.md)） | 実Job投入・実キュー操作・推論・モデルDL・Setup実行 |
+| 推奨案の操作できる隔離プロトタイプ（`frontend/preview.html`、`src/preview/`） | S1/S2/S3の本番移植、B9 #37修正、v1 activate・DB migration |
+| 状態遷移・コンポーネント分割・境界（[interaction-and-component-map](interaction-and-component-map.md)） | 既定GUI・`/next/`本番画面・`app.py`・CSP・installer/portableの変更 |
+| レビュー画像の再現手順・テスト結果・引継ぎ（[review-and-acceptance](review-and-acceptance.md)） | 永続化（G-05/G-06/G-15はowner判断待ち） |
+
+## プロトタイプの起動
+
+```bash
+cd frontend && npm ci
+```
+
+```bash
+npm run prototype
+```
+
+ブラウザで `http://127.0.0.1:5180/preview.html` を開く（Vite dev server、127.0.0.1のみで待受）。backend・`uv`は不要。
+同じdev serverの`/`（`index.html`）は本番UIで、`/api`が無いため読み込みエラーになるが、プロトタイプとは無関係。
+
+画面上部の「レビュー用操作」帯で、表示状態（標準／空／読み込み中／エラー／処理中／すべて完了）、接続表示の例、日英、テーマ、
+初期化を切り替えられる。すべてin-memoryで、再読み込みで初期状態に戻る。
+
+## 現状
+
+- 推奨案: **通常A1（縦ステップ）**と**Expert C1（3ペイン）**。不採択: A2（`VStepper`ウィザード）、C2（上下分割の表＋Inspector）。
+- 実装: `frontend/src/preview/`（38 file、Vuetify標準部品のみ、追加依存なし）。本番コードは`eslint.config.js`・`package.json`の
+  scripts・`tsconfig.json`のinclude以外を変更していない。
+- 検証（Linux、headless Chromium）: Vitest 91（うちプロトタイプ14）、UI-2既存E2E 10、プロトタイプE2E 19（操作9・レビュー画像/DPI 9・隔離1）。
+  詳細と実測値は[review-and-acceptance](review-and-acceptance.md)。
+- 1280pxのExpertで左ペインが窮屈だったため、**プロトタイプでのみ**Expert表示中は<1440pxでサイドバーをrailにした（本番は未変更、[§4](screen-design.md#4-幅別の縮退と高dpi)）。
+
+## 後続（ownerの承認後）
+
+[review-and-acceptance §6](review-and-acceptance.md#6-ui-3-s1s5ui-4への引継ぎ)の順序（S1→S2→S3→S4→S5、UI-4）で、画面単位の小PRとして移す。
+
+## 未受入（UI-3-0では確認していない）
+
+Windows WebView2での表示・操作、OS DPI実機（125/150/200%）、native D&D・file dialog、IME（自由入力欄が無い）、実backend接続・
+SSE・ready判定、GPU/モデル/推論、起動時間・RAM、installer/portable。CI上のheadless Chromiumの合格はWindows実機の合格ではない。

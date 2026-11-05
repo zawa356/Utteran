@@ -43,6 +43,25 @@ uv run python ../tools/ui2/serve_next_ui.py --port 8791
 
 `UI2_SCREENSHOTS=1 npm run e2e` additionally writes screenshots (synthetic data) to `test-results/screenshots/`.
 
+### UI-3-0 design prototype (dev server only)
+
+A clickable mock-up of the UI-3 screens with synthetic data only ([docs/architecture/ui3/](../docs/architecture/ui3/README.md)).
+It lives in `src/preview/` + `preview.html`, is **not** part of `npm run build` (only `index.html` is built) and never
+calls the backend, the host bridge or storage (enforced by ESLint and by the E2E). No `uv` needed.
+
+```bash
+npm run prototype
+```
+
+Then open `http://127.0.0.1:5180/preview.html`. Checks (run `npm run build` first; the isolation spec inspects the build):
+
+```bash
+npm run e2e:prototype
+```
+
+`UI3_SCREENSHOTS=1 npm run e2e:prototype` writes the review set to `test-results/ui3-screenshots/` (run it after
+`npm run e2e`, which recreates `test-results/`).
+
 ## Rules
 
 - Views (`features/`, `components/`) use only `domain/` actions/stores and `host/`; ESLint rejects `window.pywebview`
