@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { mdiArrowExpandHorizontal } from "@mdi/js";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import ResizeHandle from "../components/ResizeHandle.vue";
 import { usePreview } from "../composables";
@@ -12,7 +11,8 @@ import QueuePane from "./QueuePane.vue";
  * Expert work area: inputs | Inspector | submit & status, with draggable (and keyboard-operable)
  * separators. Column count follows the WIDTH OF THIS AREA (not the viewport), so a wide sidebar
  * also drops columns: 3 → 2 (queue below) → 1 (pane switcher). Widths are clamped to minimums,
- * so nothing overflows horizontally. F6 / Shift+F6 move between panes.
+ * so nothing overflows horizontally. F6 / Shift+F6 move between panes. Iteration 3: no header row
+ * of hints; "reset pane widths" lives in the View menu and on the separators (double-click / Enter).
  */
 const { layout, layoutState, t } = usePreview();
 const ORDER: ExpertPane[] = ["inputs", "inspector", "queue"];
@@ -47,7 +47,7 @@ const gridStyle = computed(() => {
   if (w.columns === 2) return { gridTemplateColumns: `${w.inputs}px ${HANDLE_PX}px minmax(0, 1fr)` };
   return { gridTemplateColumns: "minmax(0, 1fr)" };
 });
-const panes = computed(() => ORDER.map((value) => ({ value, title: t(`expert.${value}`) })));
+const panes = computed(() => ORDER.map((value, i) => ({ value, title: `${i + 1} ${t(`expert.${value}`)}` })));
 const refs = ref<Record<ExpertPane, HTMLElement | null>>({ inputs: null, inspector: null, queue: null });
 const visible = (pane: ExpertPane) => columns.value > 1 || layoutState.value.expertPane === pane;
 
@@ -66,15 +66,10 @@ async function nextPane(event: KeyboardEvent) {
 
 <template>
   <div class="p-expert" :class="`p-expert--cols-${columns}`" :data-columns="columns" data-testid="expert-layout" @keydown="nextPane">
-    <div class="p-expert__head">
-      <h1 class="u-heading">{{ t("section.transcribe") }}</h1>
-      <span class="text-body-small">{{ t("expert.f6") }}</span>
-      <v-spacer />
-      <v-btn size="small" variant="text" :prepend-icon="mdiArrowExpandHorizontal" data-testid="panes-reset" @click="layout.resetPanes()">{{ t("expert.resetPanes") }}</v-btn>
-    </div>
+    <h1 class="p-sr-only">{{ t("section.transcribe") }}</h1>
     <v-btn-toggle
       v-if="columns === 1"
-      class="mx-3 mb-2"
+      class="mb-2"
       :model-value="layoutState.expertPane"
       mandatory
       density="compact"
@@ -85,7 +80,7 @@ async function nextPane(event: KeyboardEvent) {
       data-testid="expert-pane-switch"
       @update:model-value="(v: ExpertPane) => layout.showPane(v)"
     >
-      <v-btn v-for="p in panes" :key="p.value" :value="p.value" size="small" :data-testid="`pane-switch-${p.value}`">{{ p.title }}</v-btn>
+      <v-btn v-for="p in panes" :key="p.value" :value="p.value" :data-testid="`pane-switch-${p.value}`">{{ p.title }}</v-btn>
     </v-btn-toggle>
     <div ref="area" class="p-expert__panes" :class="{ 'p-no-select': dragging }" :style="gridStyle" data-testid="expert-panes">
       <section
@@ -95,7 +90,7 @@ async function nextPane(event: KeyboardEvent) {
         class="p-pane"
         data-pane="inputs"
         tabindex="-1"
-        :aria-label="t('expert.inputs')"
+        aria-labelledby="pane-inputs-heading"
         data-testid="pane-inputs"
       >
         <InputsPane />
@@ -118,7 +113,7 @@ async function nextPane(event: KeyboardEvent) {
         class="p-pane"
         data-pane="inspector"
         tabindex="-1"
-        :aria-label="t('expert.inspector')"
+        aria-labelledby="pane-inspector-heading"
         data-testid="pane-inspector"
       >
         <InspectorPane />
@@ -143,7 +138,7 @@ async function nextPane(event: KeyboardEvent) {
         class="p-pane p-pane--queue"
         data-pane="queue"
         tabindex="-1"
-        :aria-label="t('expert.queue')"
+        aria-labelledby="pane-queue-heading"
         data-testid="pane-queue"
       >
         <QueuePane />

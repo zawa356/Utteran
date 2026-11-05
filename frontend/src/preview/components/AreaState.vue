@@ -20,7 +20,7 @@ const { t } = usePreview();
     <div>{{ t("area.errorBody") }}</div>
     <div class="text-body-small">{{ t("area.errorCode", { code: "demo_unavailable" }) }}</div>
     <template #append>
-      <v-btn variant="text" size="small" :data-testid="`${testid}-retry`" @click="emit('retry')">{{ t("common.retry") }}</v-btn>
+      <v-btn variant="text" :data-testid="`${testid}-retry`" @click="emit('retry')">{{ t("common.retry") }}</v-btn>
     </template>
   </v-alert>
   <v-alert v-else-if="empty" type="info" variant="outlined" :data-testid="`${testid}-empty`">{{ emptyText }}</v-alert>

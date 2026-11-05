@@ -50,7 +50,10 @@ It lives in `src/preview/` + `preview.html`, is **not** part of `npm run build` 
 calls the backend, the host bridge or storage (enforced by ESLint and by the E2E). No `uv` needed.
 Iteration 2 ([docs/architecture/ui3/iteration-2.md](../docs/architecture/ui3/iteration-2.md)) adds the Normal top bar with one
 file, the resizable Expert sidebar and panes, a prototype-only green palette (`src/preview/theme.ts`; the production
-`src/styles/theme.ts` is unchanged) and fictional environment examples.
+`src/styles/theme.ts` is unchanged) and fictional environment examples. Iteration 3
+([docs/architecture/ui3/iteration-3.md](../docs/architecture/ui3/iteration-3.md)) raises the readability floor (prototype-only
+Vuetify defaults `previewDefaults`), adds the shared app menu with mock log/diagnostics/about dialogs, the Expert
+files → settings → submit flow with a short queue, Normal/Expert settings, and a fictional stage progress/ETA mock.
 
 ```bash
 npm run prototype

@@ -11,12 +11,12 @@ import type { SettingKey } from "../domain/fixtures";
  * common". The control slot is enabled only when the value is individually set for all selected
  * inputs, so an inherited value can never be edited by accident.
  */
-const props = defineProps<{ field: SettingKey; label: string; mode: "common" | "selection" }>();
+const props = defineProps<{ field: SettingKey; label: string; mode: "common" | "selection" | "normal" }>();
 const { demo, state, t } = usePreview();
 const view = computed(() => selectionField(state.value, props.field));
-const editable = computed(() => props.mode === "common" || view.value.coverage === "all");
+const editable = computed(() => props.mode !== "selection" || view.value.coverage === "all");
 const sourceText = computed(() => {
-  if (props.mode === "common") return t("inspector.source.common");
+  if (props.mode !== "selection") return t("inspector.source.common");
   return t(`inspector.source.${view.value.coverage}`);
 });
 function onOverride(on: boolean | null) {
@@ -31,7 +31,6 @@ function onOverride(on: boolean | null) {
       <span class="text-body-medium font-weight-medium">{{ label }}</span>
       <v-chip
         v-if="mode === 'selection'"
-        size="x-small"
         label
         :color="view.coverage === 'none' ? undefined : 'primary'"
         :variant="view.coverage === 'none' ? 'outlined' : 'tonal'"
@@ -46,14 +45,12 @@ function onOverride(on: boolean | null) {
           :label="t('inspector.individual')"
           color="primary"
           hide-details
-          density="compact"
           class="flex-grow-0"
           :data-testid="`field-${field}-override`"
           @update:model-value="onOverride"
         />
         <v-btn
           v-if="view.coverage !== 'none'"
-          size="small"
           variant="text"
           :prepend-icon="mdiUndoVariant"
           :data-testid="`field-${field}-reset`"

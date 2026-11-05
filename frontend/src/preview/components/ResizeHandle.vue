@@ -98,6 +98,7 @@ onBeforeUnmount(stop);
     @dblclick="emit('reset')"
     @keydown="onKey"
   >
+    <span class="p-resize__track" aria-hidden="true"></span>
     <span class="p-resize__grip" aria-hidden="true"></span>
   </div>
 </template>

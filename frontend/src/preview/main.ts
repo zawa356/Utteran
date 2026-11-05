@@ -4,12 +4,12 @@ import { aliases, mdi } from "vuetify/iconsets/mdi-svg";
 import "vuetify/styles";
 import "../styles/app.css";
 import "./preview.css";
-import { componentDefaults, darkTheme, lightTheme } from "../styles/theme";
+import { darkTheme, lightTheme } from "../styles/theme";
 import { PREVIEW } from "./composables";
 import { DemoController } from "./domain/demo";
 import { LayoutController } from "./domain/layout";
 import PreviewApp from "./PreviewApp.vue";
-import { greenDark, greenLight } from "./theme";
+import { greenDark, greenLight, previewDefaults } from "./theme";
 
 /**
  * UI-3-0 design prototype entry (frontend/preview.html). Reachable only from the Vite dev server:
@@ -22,7 +22,7 @@ const vuetify = createVuetify({
   // Prototype-only green proposal next to the unchanged production (UI-2) themes for comparison.
   theme: { defaultTheme: "greenLight", themes: { light: lightTheme, dark: darkTheme, greenLight, greenDark } },
   icons: { defaultSet: "mdi", aliases, sets: { mdi } },
-  defaults: componentDefaults,
+  defaults: previewDefaults,
 });
 
 const app = createApp(PreviewApp);

@@ -13,8 +13,24 @@ export type SectionId = (typeof EXPERT_SECTIONS)[number];
 export type NormalSection = (typeof NORMAL_SECTIONS)[number];
 export type ExpertPane = "inputs" | "inspector" | "queue";
 export type PaneColumns = 1 | 2 | 3;
-/** Example pane splits the reviewer can compare (owner memo: do not fix one ratio yet). */
-export type PanePreset = "standard" | "wideInspector";
+/**
+ * Example pane splits the reviewer can compare (owner memo: do not fix one ratio yet). Iteration 3
+ * starts with the narrower inputs pane (22/53/25) as the default CANDIDATE; 30/42/28 (iteration 2)
+ * stays one click away in the review strip.
+ */
+export type PanePreset = "compactInputs" | "wideInputs";
+export const PANE_PRESET_IDS: readonly PanePreset[] = ["compactInputs", "wideInputs"];
+export const DEFAULT_PRESET: PanePreset = "compactInputs";
+/** App menu presentation the reviewer compares: Windows-like menu bar vs. one menu button. */
+export type MenuStyle = "bar" | "button";
+/** Below this window width the menu bar always folds into the single menu button. */
+export const MENU_BAR_MIN_WIDTH = 1100;
+/** Below this window width the Normal destinations fold into one menu (no text is shrunk). */
+export const TOPNAV_MIN_WIDTH = 760;
+/** Mock dialogs opened from the app menu (Tools / Help). Nothing is read, written or sent. */
+export type AppDialog = "systemLog" | "jobLog" | "diagnostics" | "about";
+export const SETTINGS_CATEGORIES = ["general", "logs", "advanced", "presets"] as const;
+export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 
 /** Fractions of the pane area's content width (handles excluded); the Inspector takes the rest. */
 export interface PaneRatios {
@@ -22,8 +38,8 @@ export interface PaneRatios {
   queue: number;
 }
 export const PANE_PRESETS: Record<PanePreset, PaneRatios> = {
-  standard: { inputs: 0.3, queue: 0.28 },
-  wideInspector: { inputs: 0.22, queue: 0.25 },
+  compactInputs: { inputs: 0.22, queue: 0.25 },
+  wideInputs: { inputs: 0.3, queue: 0.28 },
 };
 
 export const SIDEBAR = { min: 168, max: 360, default: 200, rail: 56 } as const;
@@ -50,6 +66,9 @@ export interface LayoutState {
   sidebarExpandedNarrow: boolean;
   panes: PaneRatios;
   reviewStripOpen: boolean;
+  menuStyle: MenuStyle;
+  dialog: AppDialog | null;
+  settingsCategory: SettingsCategory;
 }
 
 export function clamp(value: number, min: number, max: number): number {
@@ -125,8 +144,11 @@ function initialLayout(): LayoutState {
     sidebarWidth: SIDEBAR.default,
     sidebarCollapsed: false,
     sidebarExpandedNarrow: false,
-    panes: { ...PANE_PRESETS.standard },
+    panes: { ...PANE_PRESETS[DEFAULT_PRESET] },
     reviewStripOpen: true,
+    menuStyle: "bar",
+    dialog: null,
+    settingsCategory: "general",
   };
 }
 
@@ -187,7 +209,19 @@ export class LayoutController {
   }
 
   resetPanes(): void {
-    this.applyPreset("standard");
+    this.applyPreset(DEFAULT_PRESET);
+  }
+
+  setMenuStyle(menuStyle: MenuStyle): void {
+    this.store.patch({ menuStyle });
+  }
+
+  openDialog(dialog: AppDialog | null): void {
+    this.store.patch({ dialog });
+  }
+
+  setSettingsCategory(settingsCategory: SettingsCategory): void {
+    this.store.patch({ settingsCategory });
   }
 
   toggleReviewStrip(): void {

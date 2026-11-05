@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { DemoController, effectiveSettings, jobOf, normalInputId, outputNames, queueView, resultsView, selectionField, stepJob } from "./demo";
+import {
+  advanceProgress,
+  DemoController,
+  effectiveSettings,
+  jobOf,
+  miniQueue,
+  normalInputId,
+  outputNames,
+  queueView,
+  resultsView,
+  selectionField,
+  stageEta,
+  stagePosition,
+  stepJob,
+  submitBlock,
+} from "./demo";
 import { formatDuration } from "./fixtures";
 
 /** The several-files state the Expert views start from (scenario "multi"). */
@@ -15,7 +30,7 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
     expect(s.inputs.map((i) => i.name)).toEqual(["sample-meeting-01.wav"]);
     expect(normalInputId(s)).toBe("in-01");
     expect(s.jobs).toEqual([]);
-    expect(s.sync).toBe("none");
+    expect(s.sync).toBe("ok");
     expect(s.envExample).toBe("gpu");
     expect(s.palette).toBe("green");
     expect(s.overrides).toEqual({});
@@ -204,6 +219,110 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
     demo.removeSelected();
     record();
     expect(new Set(seqs).size).toBe(seqs.length);
+  });
+
+  it("Normal 'choose another file' never drops an input that carries Expert settings or a job", () => {
+    const demo = new DemoController();
+    demo.selectAll();
+    demo.setOverride("language", "en"); // set in Expert on the only input
+    demo.chooseNormalFile();
+    const s = demo.store.get();
+    expect(s.inputs.map((i) => i.id)).toEqual(["in-01", "add-01"]); // kept, just not shown
+    expect(s.overrides["in-01"]).toEqual({ language: "en" });
+    expect(normalInputId(s)).toBe("add-01");
+    expect(s.selected).toEqual(["add-01"]); // the selection followed the shown file (it was that file only)
+    expect(s.jobs).toEqual([]);
+  });
+
+  it("Normal 'choose' keeps an explicit Expert multi-selection", () => {
+    const demo = multi();
+    demo.selectAll();
+    demo.chooseNormalFile();
+    const s = demo.store.get();
+    expect(s.selected).toEqual(["in-01", "in-02", "in-03", "in-04", "in-05"]);
+    expect(normalInputId(s)).toBe("add-01");
+  });
+
+  it("Normal settings edit what the shown file runs with (its override, else the common default)", () => {
+    const demo = multi();
+    demo.selectOnly("in-02"); // in-02 overrides language=en, speakers=2
+    demo.setNormalSetting("in-02", "language", "auto");
+    let s = demo.store.get();
+    expect(s.overrides["in-02"]).toEqual({ language: "auto", speakers: "2" });
+    expect(s.common.language).toBe("ja");
+    demo.setNormalSetting("in-02", "diarization", false); // not overridden → common
+    s = demo.store.get();
+    expect(s.common.diarization).toBe(false);
+    expect(effectiveSettings(s, "in-02")).toMatchObject({ language: "auto", diarization: false, speakers: "2" });
+  });
+
+  it("submit feedback: created / skipped counts, cleared when the selection changes", () => {
+    const demo = multi();
+    demo.selectAll();
+    expect(submitBlock(demo.store.get())).toBeNull();
+    demo.submit(demo.store.get().selected);
+    expect(demo.store.get().lastSubmit).toMatchObject({ created: 4, unsupported: 1, alreadySubmitted: 0 });
+    expect(submitBlock(demo.store.get())).toBe("allSubmitted");
+    demo.submit(["in-01"]);
+    expect(demo.store.get().lastSubmit).toMatchObject({ created: 0, alreadySubmitted: 1 });
+    demo.selectOnly("in-05");
+    expect(demo.store.get().lastSubmit).toBeNull();
+    expect(submitBlock(demo.store.get())).toBe("unsupported");
+    demo.clearSelection();
+    expect(submitBlock(demo.store.get())).toBe("noSelection");
+  });
+
+  it("the short queue shows the just-submitted jobs first, at most five rows", () => {
+    const demo = multi();
+    demo.setScenario("busy"); // 4 jobs: running, preparing, failed, waiting
+    demo.addFiles(3);
+    demo.submit(["add-01", "add-02", "add-03"]);
+    const rows = miniQueue(demo.store.get());
+    expect(rows).toHaveLength(5);
+    expect(rows.slice(0, 3).map((j) => j.inputId)).toEqual(["add-01", "add-02", "add-03"]);
+    expect(rows[3]!.state).toBe("running");
+    demo.selectOnly("in-01"); // feedback cleared → priority by state
+    expect(miniQueue(demo.store.get(), 3).map((j) => j.state)).toEqual(["running", "preparing", "failed"]);
+  });
+
+  it("progress mock: per-stage fraction, indeterminate output stage, ETA only from 10 %", () => {
+    const demo = new DemoController();
+    demo.submit(["in-01"]);
+    let job = stepJob(stepJob(demo.store.get().jobs[0]!)); // waiting → preparing → running:asr
+    expect(job.progress.fraction).toBe(0);
+    expect(stageEta(job)).toEqual({ kind: "estimating" });
+    expect(stagePosition(job)).toEqual({ index: 1, total: 3 });
+    job = advanceProgress(advanceProgress(job)); // 50 % after 90 s in this stage
+    expect(job.progress.fraction).toBe(0.5);
+    expect(stageEta(job)).toEqual({ kind: "estimate", remainingSec: 90 });
+    job = stepJob(stepJob(job)); // → diarization → output
+    expect(job.stage).toBe("output");
+    expect(job.progress.fraction).toBeNull();
+    expect(stageEta(job)).toEqual({ kind: "none" });
+    expect(advanceProgress(job)).toBe(job);
+    expect(job.progress.elapsedSec).toBeGreaterThan(90); // elapsed keeps counting over the stages
+    const noDiar = { ...job, snapshot: { ...job.snapshot, diarization: false } };
+    expect(stagePosition(noDiar)).toEqual({ index: 2, total: 2 });
+  });
+
+  it("the running scenario starts halfway through its stage; retry clears the progress", () => {
+    const demo = new DemoController();
+    demo.setScenario("running");
+    const job = demo.store.get().jobs[0]!;
+    expect(job.progress.fraction).toBe(0.5);
+    demo.fail(job.id);
+    demo.retry(job.id);
+    expect(demo.store.get().jobs[0]!.progress).toEqual({ fraction: null, stageElapsedSec: 0, elapsedSec: 0 });
+  });
+
+  it("job-status examples never change job states (a slow or failed fetch is not a stopped job)", () => {
+    const demo = new DemoController();
+    demo.setScenario("busy");
+    const before = demo.store.get().jobs.map((j) => j.state);
+    demo.setSync("unavailable");
+    expect(demo.store.get().jobs.map((j) => j.state)).toEqual(before);
+    demo.retrySync();
+    expect(demo.store.get().sync).toBe("ok");
   });
 
   it("formats synthetic durations", () => {

@@ -2,19 +2,20 @@
 import { mdiChevronDown, mdiChevronUp, mdiRestore } from "@mdi/js";
 import { computed } from "vue";
 import { usePreview } from "../composables";
-import { type PreviewLanguage, type PreviewPalette, type PreviewTheme, type Scenario, SCENARIOS, type SyncExample } from "../domain/demo";
+import { type PreviewLanguage, type PreviewPalette, type PreviewTheme, type Scenario, SCENARIOS, SYNC_EXAMPLES, type SyncExample } from "../domain/demo";
 import { ENV_EXAMPLES, type EnvExample } from "../domain/envExamples";
-import type { PanePreset } from "../domain/layout";
+import { type MenuStyle, PANE_PRESET_IDS, type PanePreset } from "../domain/layout";
 
 /**
  * Reviewer controls, deliberately OUTSIDE the product UI: a dashed, tinted strip docked at the
- * bottom of the window (collapsible). Display scenario, fictional environment example, connection
- * example, colour proposal, theme, language, Expert pane split examples and resets.
+ * bottom of the window (collapsible). Display scenario, fictional environment example, job-status
+ * fetch example, colour proposal, theme, language, Expert pane split examples, app-menu style and reset.
  */
 const { demo, layout, layoutState, state, t } = usePreview();
 const scenarios = computed(() => SCENARIOS.map((s) => ({ value: s, title: t(`scenario.${s}`) })));
 const envs = computed(() => ENV_EXAMPLES.map((e) => ({ value: e, title: t(`envExample.${e}`) })));
-const syncs = computed(() => (["none", "synced", "resyncing", "offline"] as const).map((s) => ({ value: s, title: t(`syncOption.${s}`) })));
+const syncs = computed(() => SYNC_EXAMPLES.map((s) => ({ value: s, title: t(`syncOption.${s}`) })));
+const presets = computed(() => PANE_PRESET_IDS.map((p) => ({ value: p, title: t(`preset.${p}`) })));
 const themes = computed(() => (["system", "light", "dark"] as const).map((v) => ({ value: v, title: t(`theme.${v}`) })));
 const open = computed(() => layoutState.value.reviewStripOpen);
 </script>
@@ -49,8 +50,11 @@ const open = computed(() => layoutState.value.reviewStripOpen);
           <v-btn value="en" size="small" data-testid="lang-en">English</v-btn>
         </v-btn-toggle>
         <v-btn-toggle :model-value="null" density="compact" variant="outlined" divided :aria-label="t('toolbar.panes')" data-testid="toolbar-panes" @update:model-value="(v: PanePreset | null) => v && layout.applyPreset(v)">
-          <v-btn value="standard" size="small" data-testid="preset-standard">{{ t("preset.standard") }}</v-btn>
-          <v-btn value="wideInspector" size="small" data-testid="preset-wide-inspector">{{ t("preset.wideInspector") }}</v-btn>
+          <v-btn v-for="p in presets" :key="p.value" :value="p.value" size="small" :data-testid="`preset-${p.value}`">{{ p.title }}</v-btn>
+        </v-btn-toggle>
+        <v-btn-toggle :model-value="layoutState.menuStyle" mandatory density="compact" variant="outlined" divided :aria-label="t('toolbar.menu')" data-testid="toolbar-menu" @update:model-value="(v: MenuStyle) => layout.setMenuStyle(v)">
+          <v-btn value="bar" size="small" data-testid="menustyle-bar">{{ t("menuStyle.bar") }}</v-btn>
+          <v-btn value="button" size="small" data-testid="menustyle-button">{{ t("menuStyle.button") }}</v-btn>
         </v-btn-toggle>
         <v-btn size="small" variant="text" :prepend-icon="mdiRestore" data-testid="toolbar-reset" @click="demo.reset()">{{ t("toolbar.reset") }}</v-btn>
       </div>

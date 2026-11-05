@@ -5,7 +5,7 @@ import { usePreview } from "../composables";
 import type { JobState } from "../domain/demo";
 
 /** State = icon + label (+ colour as a third cue). Colour alone never carries the meaning. */
-const props = withDefaults(defineProps<{ state: JobState; size?: "x-small" | "small" }>(), { size: "small" });
+const props = withDefaults(defineProps<{ state: JobState; size?: "small" | "default" }>(), { size: "small" });
 const { t } = usePreview();
 const VIEW: Record<JobState, { color: string | undefined; icon: string }> = {
   waiting: { color: undefined, icon: mdiClockOutline },

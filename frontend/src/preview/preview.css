@@ -19,28 +19,44 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px 0 16px;
+  padding: 0 8px 0 16px;
   white-space: nowrap;
+  font-size: 1.0625rem;
+  font-weight: 600;
 }
+/* One short line (iteration 3): the review strip at the bottom carries the rest. */
 .p-banner {
   flex: none;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 2px 8px;
+  gap: 8px;
   padding: 4px 16px;
+  font-size: 0.875rem;
+  line-height: 1.4;
   background: rgba(var(--v-theme-warning), 0.1);
   border-bottom: 1px solid rgba(var(--v-theme-warning), 0.5);
 }
 .p-topnav {
   display: flex;
   gap: 2px;
-  overflow-x: auto;
+  min-width: 0;
 }
 /* Active destination: colour + underline + aria-current (not colour alone). */
 .p-topnav__item--active {
   box-shadow: inset 0 -2px 0 rgb(var(--v-theme-primary));
   font-weight: 600;
+}
+.p-appmenu {
+  display: flex;
+  align-items: center;
+}
+.p-appbar-sep {
+  align-self: center;
+  flex: none;
+  width: 1px;
+  height: 24px;
+  margin: 0 8px;
+  background: rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
 /* ---- review strip (not product UI): dashed, tinted, docked at the bottom --------------------- */
@@ -62,7 +78,7 @@
   background: rgb(var(--v-theme-surface));
 }
 .p-review__select--sm {
-  flex-basis: 170px;
+  flex-basis: 180px;
 }
 
 /* ---- Expert sidebar ------------------------------------------------------------------------ */
@@ -71,15 +87,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  min-height: 40px;
-  padding: 0 4px 0 12px;
+  min-height: 48px;
+  padding: 0 4px 0 16px;
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 .v-navigation-drawer--rail .p-sidebar__head {
   justify-content: center;
   padding: 0;
 }
-.p-sidebar__resize {
+.p-resize.p-sidebar__resize {
   position: absolute;
   top: 0;
   right: 0;
@@ -89,15 +105,18 @@
 .p-no-transition ~ .v-main {
   transition: none !important;
 }
-.p-sync {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
 
 /* ---- splitter -------------------------------------------------------------------------------- */
+/*
+ * Iteration 3: the handle is visible at rest (owner memo #7: the 18 % hairline was easy to miss).
+ * A 1 px track plus a 4×32 px grip, the grip on-surface at --p-handle-opacity (≥ 3:1 against the
+ * background, asserted by theme.test.ts and measured in the E2E); hover/drag/focus turn it primary.
+ */
+.p-app {
+  --p-handle-opacity: 0.6;
+}
 .p-resize {
+  position: relative;
   width: 8px;
   cursor: col-resize;
   display: flex;
@@ -105,21 +124,36 @@
   touch-action: none;
   z-index: 2;
 }
-.p-resize__grip {
-  width: 2px;
+.p-resize__track {
+  width: 1px;
   height: 100%;
-  background: rgba(var(--v-theme-on-surface), 0.18);
+  background: rgba(var(--v-theme-on-surface), 0.28);
+}
+.p-resize__grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 32px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: rgba(var(--v-theme-on-surface), var(--p-handle-opacity));
+}
+.p-resize:hover .p-resize__track,
+.p-resize--active .p-resize__track,
+.p-resize:focus-visible .p-resize__track {
+  width: 2px;
+  background: rgb(var(--v-theme-primary));
 }
 .p-resize:hover .p-resize__grip,
-.p-resize--active .p-resize__grip {
-  background: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+.p-resize--active .p-resize__grip,
+.p-resize:focus-visible .p-resize__grip {
+  width: 6px;
+  background: rgb(var(--v-theme-primary));
 }
 .p-resize:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
   outline-offset: -1px;
-}
-.p-resize:focus-visible .p-resize__grip {
-  width: 4px;
-  background: rgb(var(--v-theme-primary));
 }
 html.p-resizing,
 html.p-resizing * {
@@ -133,14 +167,7 @@ html.p-resizing * {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 0 8px 8px;
-}
-.p-expert__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 6px 4px;
+  padding: 8px;
 }
 .p-expert__panes {
   flex: 1 1 auto;
@@ -179,20 +206,54 @@ html.p-resizing * {
   outline-offset: 1px;
 }
 .p-pane__body {
-  padding: 8px 10px;
+  padding: 10px 12px;
 }
 .p-pane__body > * + * {
-  margin-top: 8px;
+  margin-top: 10px;
 }
-.p-pane__title {
+.p-expert--cols-3 .p-pane__body--split {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+/* Pane headings "1 ファイル / 2 処理設定 / 3 キュー投入": same size, spacing and accent (left → right). */
+.p-panehead {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 8px;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 40px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid rgba(var(--v-theme-primary), 0.55);
+}
+.p-panehead__step {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: rgb(var(--v-theme-on-primary));
+  background: rgb(var(--v-theme-primary));
+}
+.p-panehead__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+.p-panehead__meta {
+  margin-left: auto;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  white-space: nowrap;
 }
 .p-add {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 6px;
 }
 .p-add__btn.v-btn {
@@ -205,6 +266,13 @@ html.p-resizing * {
   gap: 2px;
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
+.p-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
 
 /* ---- Explorer-like detail list --------------------------------------------------------------- */
 .p-explorer-wrap {
@@ -214,19 +282,19 @@ html.p-resizing * {
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 .p-explorer th {
   font-weight: 600;
   text-align: start;
-  padding: 2px 4px;
+  padding: 4px;
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .p-explorer td {
-  height: 28px;
+  height: 36px;
   padding: 0 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -252,77 +320,105 @@ html.p-resizing * {
   font-style: italic;
 }
 .p-explorer__check {
-  width: 28px;
+  width: 36px;
 }
 .p-explorer__check .v-selection-control {
-  --v-selection-control-size: 24px;
+  --v-selection-control-size: 32px;
 }
 .p-explorer__fmt {
-  width: 48px;
+  width: 56px;
 }
 .p-explorer__len {
-  width: 60px;
+  width: 68px;
   text-align: end;
   font-variant-numeric: tabular-nums;
 }
 .p-explorer__state {
-  width: 78px;
+  width: 92px;
 }
 .p-explorer__state .v-icon {
   margin-right: 2px;
 }
 .p-explorer__ovr {
-  width: 34px;
+  width: 40px;
   text-align: center;
 }
 .p-ovr {
   font-weight: 600;
   color: rgb(var(--v-theme-primary));
 }
-/* Narrow pane: drop the format column first, then the length (both stay in the tooltip/Inspector). */
-@container (max-width: 380px) {
+/* Narrow pane: drop the format column first, then the length (both stay in the tooltip). */
+@container (max-width: 400px) {
   .p-explorer__fmt {
     display: none;
   }
 }
-@container (max-width: 300px) {
+@container (max-width: 320px) {
   .p-explorer__len {
     display: none;
+  }
+}
+/* Very narrow (the 22 % default at 1280 px): the status becomes icon-only (text stays in the
+   accessible name and tooltip), so the file name keeps the room. */
+@container (max-width: 300px) {
+  .p-explorer__state {
+    width: 32px;
+  }
+  .p-explorer__state-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .p-explorer__ovr {
+    width: 32px;
   }
 }
 
 /* ---- Normal home ------------------------------------------------------------------------------ */
 .p-home {
-  padding: 12px 18px 16px;
-  max-width: 1280px;
-}
-.p-home__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 16px;
-  margin-bottom: 10px;
+  padding: 16px 20px 20px;
+  max-width: 1180px;
 }
 .p-home__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
 }
 .p-home__col > * + * {
-  margin-top: 12px;
+  margin-top: 16px;
 }
 @media (max-width: 879px) {
   .p-home__grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.p-card {
+  padding: 16px;
+}
+.p-card > * + * {
+  margin-top: 12px;
+}
+.p-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.p-card__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
 .p-dropzone {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 18px 12px;
+  gap: 10px;
+  padding: 20px 12px;
   text-align: center;
   border: 2px dashed rgba(var(--v-theme-on-surface), 0.35);
   border-radius: 6px;
@@ -331,7 +427,7 @@ html.p-resizing * {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   background: rgb(var(--v-theme-surface-variant));
   border-radius: 4px;
 }
@@ -341,14 +437,15 @@ html.p-resizing * {
 }
 .p-fields--compact {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 8px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 16px;
 }
 .p-reason {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  font-size: 0.9375rem;
 }
 .p-envline {
   display: flex;
@@ -368,8 +465,9 @@ html.p-resizing * {
 .p-track__step {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 10px;
   border: 1px solid rgba(var(--v-border-color), 0.4);
   border-radius: 4px;
 }
@@ -384,47 +482,78 @@ html.p-resizing * {
   border-style: dashed;
 }
 .p-outputs,
-.p-bullets,
-.p-now {
+.p-bullets {
   list-style: none;
   padding: 0;
   margin: 0;
 }
 .p-outputs li,
 .p-bullets li {
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
+  min-height: 28px;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
-.p-now li {
+
+/* ---- Expert short queue (bottom half of the right pane) -------------------------------------- */
+.p-split {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.p-expert--cols-3 .p-split {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.p-split__bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.p-expert--cols-3 .p-split__bottom {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* Vuetify gives VAlert `flex: 1 0 0%` (basis 0 + overflow hidden): inside these columns every
+   block keeps its natural height; only the short-queue list scrolls. */
+.p-split > *,
+.p-split__bottom > * {
+  flex: 0 0 auto;
+}
+.p-expert--cols-3 .p-split__scroll {
+  flex: 1 1 auto;
+  flex-shrink: 1;
+  min-height: 96px;
+  overflow: auto;
+}
+.p-mini {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.p-mini li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 4px;
-  min-height: 30px;
+  gap: 2px 6px;
+  padding: 6px 4px;
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
-.p-counts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
-  gap: 4px;
-  margin: 0;
+.p-mini__name {
+  font-size: 0.9375rem;
 }
-.p-counts > div {
-  padding: 4px 6px;
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  border-radius: 4px;
+.p-mini__sub {
+  grid-column: 1 / -1;
+  font-size: 0.875rem;
 }
-.p-counts dt {
-  font-size: 0.75rem;
-}
-.p-counts dd {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+.p-mini__new {
+  box-shadow: inset 3px 0 0 rgb(var(--v-theme-primary));
+  padding-left: 10px !important;
+  background: rgba(var(--v-theme-primary), 0.06);
 }
 .p-links {
   display: flex;
@@ -433,6 +562,26 @@ html.p-resizing * {
 }
 .p-target {
   overflow-wrap: anywhere;
+}
+
+/* ---- progress / ETA mock (G-03 preview): stage, % in that stage, elapsed, remaining ------------ */
+.p-progress {
+  display: grid;
+  gap: 6px;
+}
+.p-progress__line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 12px;
+  font-size: 0.9375rem;
+}
+.p-progress__nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- pages ------------------------------------------------------------------------------------ */
@@ -455,26 +604,49 @@ html.p-resizing * {
 }
 .p-profiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 12px;
 }
 .p-profiles--single {
   grid-template-columns: minmax(0, 720px);
 }
 .p-profile {
-  padding: 12px;
+  padding: 16px;
 }
 .p-profile > * + * {
-  margin-top: 8px;
+  margin-top: 10px;
 }
-.p-profile--dense {
-  padding: 6px 8px;
+
+/* ---- app menu dialogs / settings ------------------------------------------------------------ */
+.p-log {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 46vh;
+  overflow: auto;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "BIZ UDGothic", monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: rgb(var(--v-theme-surface-variant));
+  border-radius: 4px;
 }
-.p-profile--dense > * + * {
-  margin-top: 2px;
+.p-settings {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
 }
-.p-profile--dense .p-dl {
-  font-size: 0.8rem;
+@media (max-width: 899px) {
+  .p-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.p-settings__body {
+  max-width: 640px;
+}
+.p-settings__body > * + * {
+  margin-top: 16px;
 }
 
 /* ---- shared helpers --------------------------------------------------------------------------- */
@@ -505,10 +677,10 @@ html.p-resizing * {
   width: 120px;
 }
 .p-table th.p-col-stage {
-  width: 170px;
+  width: 190px;
 }
 .p-table th.p-col-order {
-  width: 76px;
+  width: 96px;
 }
 .p-field__head {
   display: flex;
@@ -520,7 +692,7 @@ html.p-resizing * {
 .p-dl {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 2px 12px;
+  gap: 4px 16px;
   margin: 0;
 }
 .p-dl dd {
@@ -557,4 +729,65 @@ html.p-resizing * {
 /* Vuetify 4 typography classes (text-body-small etc.) default to Roboto; keep the system UI stack. */
 .p-app {
   --v-font-body: var(--u-font);
+}
+
+/*
+ * ---- readability floor (iteration 3, owner memo #7/#8) ------------------------------------------
+ * No text below 13 px, body text 14–16 px, Japanese with normal letter spacing. Vuetify's x-small /
+ * small sizes (10–12 px text, 16–28 px targets with the production compact density) are lifted
+ * here instead of shrinking content: if something does not fit, it is cut, folded or moved.
+ */
+.p-app .text-body-small {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  letter-spacing: normal;
+}
+.p-app .text-body-medium,
+.p-app .text-body-large {
+  letter-spacing: normal;
+}
+.p-app .v-chip.v-chip--size-small,
+.p-app .v-chip.v-chip--size-x-small {
+  --v-chip-size: 0.8125rem;
+  --v-chip-height: 28px;
+  font-size: 0.8125rem;
+  letter-spacing: normal;
+}
+.p-app .v-btn {
+  letter-spacing: normal;
+  text-transform: none;
+}
+.p-app .v-btn--size-small:not(.v-btn--icon),
+.p-app .v-btn--size-x-small:not(.v-btn--icon) {
+  --v-btn-size: 0.875rem;
+  --v-btn-height: 36px;
+}
+.p-app .v-btn--icon.v-btn--size-small,
+.p-app .v-btn--icon.v-btn--size-x-small {
+  --v-btn-height: 28px; /* 40 px square with density "default" */
+}
+.p-app .v-tab.v-btn {
+  font-size: 0.9375rem;
+}
+.p-app .v-list-item-title {
+  font-size: 0.9375rem;
+}
+.p-app .v-list-item-subtitle {
+  font-size: 0.8125rem;
+}
+.p-app .v-field__input,
+.p-app .v-label,
+.p-app .v-selection-control .v-label {
+  font-size: 0.9375rem;
+}
+.p-app .v-alert {
+  font-size: 0.9375rem;
+}
+/* VCard renders its underlay/loader as children: they must not push the first real child down. */
+.p-card > .v-card__underlay + *,
+.p-card > .v-card__loader + * {
+  margin-top: 0;
+}
+.p-app .v-messages {
+  font-size: 0.8125rem;
 }

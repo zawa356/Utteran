@@ -13,12 +13,15 @@ import SettingsSection from "./sections/SettingsSection.vue";
 import SetupSection from "./sections/SetupSection.vue";
 import ExpertSidebar from "./shell/ExpertSidebar.vue";
 import NormalTopNav from "./shell/NormalTopNav.vue";
+import AppDialogs from "./shell/AppDialogs.vue";
+import AppMenu from "./shell/AppMenu.vue";
 import ReviewStrip from "./shell/ReviewStrip.vue";
 
 /**
- * Iteration 2: the mode switches the whole information architecture.
- * Normal = app bar with three destinations, no sidebar, one file. Expert = resizable management
- * sidebar with six destinations. The demo data is shared and never changed by the switch.
+ * The mode switches the whole information architecture (iteration 2): Normal = app bar with three
+ * destinations, no sidebar, one file; Expert = resizable management sidebar with six destinations.
+ * Iteration 3 adds the shared application menu (File / View / Tools / Help) at the left of the app
+ * bar and keeps one short prototype line under it. The demo data is never changed by the switch.
  */
 const { layout, layoutState, state, t } = usePreview();
 const mode = computed(() => layoutState.value.mode);
@@ -35,12 +38,13 @@ const noticeText = computed(() => {
 
 <template>
   <v-layout class="fill-height" :data-mode="mode">
-    <v-app-bar density="compact" flat border="b" data-testid="app-bar">
-      <div class="p-brand">
-        <span class="u-subheading">Utteran</span>
-        <v-chip size="x-small" label color="warning" variant="outlined" data-testid="prototype-chip">{{ t("app.prototype") }}</v-chip>
-      </div>
-      <NormalTopNav v-if="mode === 'normal'" />
+    <v-app-bar density="compact" height="52" flat border="b" data-testid="app-bar">
+      <div class="p-brand">Utteran</div>
+      <AppMenu />
+      <template v-if="mode === 'normal'">
+        <span class="p-appbar-sep" aria-hidden="true"></span>
+        <NormalTopNav />
+      </template>
       <v-spacer />
       <v-btn-toggle
         :model-value="mode"
@@ -54,8 +58,8 @@ const noticeText = computed(() => {
         data-testid="mode-toggle"
         @update:model-value="(m: Mode) => layout.setMode(m)"
       >
-        <v-btn value="normal" size="small" data-testid="mode-normal">{{ t("mode.normal") }}</v-btn>
-        <v-btn value="expert" size="small" data-testid="mode-expert">{{ t("mode.expert") }}</v-btn>
+        <v-btn value="normal" data-testid="mode-normal">{{ t("mode.normal") }}</v-btn>
+        <v-btn value="expert" data-testid="mode-expert">{{ t("mode.expert") }}</v-btn>
       </v-btn-toggle>
     </v-app-bar>
     <ExpertSidebar v-if="mode === 'expert'" />
@@ -76,6 +80,7 @@ const noticeText = computed(() => {
       </div>
     </v-main>
     <ReviewStrip />
+    <AppDialogs />
     <v-snackbar :key="state.notice?.seq ?? 0" :model-value="noticeText !== ''" timeout="2500" location="top end" color="secondary" role="status" data-testid="notice">
       {{ noticeText }}
     </v-snackbar>

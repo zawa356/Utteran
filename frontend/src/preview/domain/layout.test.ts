@@ -48,10 +48,30 @@ describe("prototype layout (mode IA, sidebar and pane sizes)", () => {
     layout.setPaneWidth("inputs", 5000, 1200);
     const r = resolvePanes(1200, layout.store.get().panes);
     expect(r.inputs).toBe(paneRange(1200, layout.store.get().panes, "inputs").max);
-    layout.applyPreset("wideInspector");
-    expect(layout.store.get().panes).toEqual({ inputs: 0.22, queue: 0.25 });
-    layout.resetPanes();
+    layout.applyPreset("wideInputs");
     expect(layout.store.get().panes).toEqual({ inputs: 0.3, queue: 0.28 });
+    layout.resetPanes(); // iteration 3: the narrower files pane (22/53/25) is the default candidate
+    expect(layout.store.get().panes).toEqual({ inputs: 0.22, queue: 0.25 });
+  });
+
+  it("22/53/25 at 1280 px with the default sidebar keeps every pane at or above its minimum", () => {
+    const area = 1280 - SIDEBAR.default - 2 - 16; // window − sidebar − its border − work-area padding
+    const r = resolvePanes(area, new LayoutController().store.get().panes);
+    expect(r.columns).toBe(3);
+    expect(r.inputs).toBeGreaterThanOrEqual(PANE_MIN.inputs);
+    expect(r.queue).toBeGreaterThanOrEqual(PANE_MIN.queue);
+    expect(r.inspector).toBeGreaterThan(2 * r.inputs); // the Inspector gets the room
+  });
+
+  it("menu style, dialogs and settings category are plain UI state", () => {
+    const layout = new LayoutController();
+    expect(layout.store.get()).toMatchObject({ menuStyle: "bar", dialog: null, settingsCategory: "general" });
+    layout.setMenuStyle("button");
+    layout.openDialog("about");
+    layout.setSettingsCategory("presets");
+    expect(layout.store.get()).toMatchObject({ menuStyle: "button", dialog: "about", settingsCategory: "presets" });
+    layout.openDialog(null);
+    expect(layout.store.get().dialog).toBeNull();
   });
 
   it("sidebar width is clamped and resettable; collapse state is separate for narrow windows", () => {

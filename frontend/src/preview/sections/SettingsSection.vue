@@ -1,23 +1,105 @@
 <script setup lang="ts">
+import { mdiCogOutline, mdiFileDocumentOutline, mdiFolderOutline, mdiInformationOutline, mdiStarOutline, mdiTune } from "@mdi/js";
 import { computed } from "vue";
 import { usePreview } from "../composables";
 import type { PreviewLanguage, PreviewTheme } from "../domain/demo";
+import { SETTINGS_CATEGORIES, type SettingsCategory } from "../domain/layout";
 
-/** Prototype settings: language and theme in memory only (production saves via S1). */
-const { demo, state, t } = usePreview();
+/**
+ * Settings (iteration 3, owner memo #14). An information-design MOCK, not a working settings page:
+ * only theme and language change (in memory, never saved). Every other item is shown disabled and
+ * labelled "later", because no API stores it yet (production GUI settings, B5 presets/policy and
+ * the core config are three different sources of truth — see iteration-3.md §7).
+ * Normal: a few app-wide items on one page. Expert: the same plus categories. Per-job settings
+ * (language, model, diarization, formats) are NOT here: they belong to the Inspector.
+ */
+const { demo, layout, layoutState, state, t } = usePreview();
+const expert = computed(() => layoutState.value.mode === "expert");
+const category = computed(() => layoutState.value.settingsCategory);
 const themes = computed(() => (["system", "light", "dark"] as const).map((v) => ({ value: v, title: t(`theme.${v}`) })));
 const languages = [
   { value: "ja", title: "日本語" },
   { value: "en", title: "English" },
 ];
+const ICONS: Record<SettingsCategory, string> = { general: mdiCogOutline, logs: mdiFileDocumentOutline, advanced: mdiTune, presets: mdiStarOutline };
+const categories = computed(() => SETTINGS_CATEGORIES.map((id) => ({ id, icon: ICONS[id], title: t(`settings.cat.${id}`) })));
+const presets = computed(() => (["standard", "meeting", "subtitles"] as const).map((id) => ({ id, title: t(`settings.preset.${id}`), sub: t(`settings.preset.${id}.sub`) })));
 </script>
 
 <template>
-  <section class="u-page u-stack" aria-labelledby="settings-heading" data-testid="section-settings">
+  <section class="u-page p-page-wide u-stack" aria-labelledby="settings-heading" data-testid="section-settings" :data-variant="expert ? 'expert' : 'normal'">
     <h1 id="settings-heading" class="u-heading">{{ t("section.settings") }}</h1>
-    <v-alert type="info" variant="outlined">{{ t("settings.notSaved") }}</v-alert>
-    <v-select :label="t('settings.theme')" :items="themes" :model-value="state.theme" class="u-w-sm" data-testid="settings-theme" @update:model-value="(v) => demo.setTheme(v as PreviewTheme)" />
-    <v-select :label="t('settings.language')" :items="languages" :model-value="state.language" class="u-w-sm" data-testid="settings-language" @update:model-value="(v) => demo.setLanguage(v as PreviewLanguage)" />
-    <p class="text-body-small">{{ t("settings.later") }}</p>
+    <div class="p-feedback" role="note" data-testid="settings-status">
+      <v-icon :icon="mdiInformationOutline" size="small" color="warning" aria-hidden="true" />
+      <span>{{ t("settings.status") }}</span>
+    </div>
+
+    <div :class="expert ? 'p-settings' : ''">
+      <v-list v-if="expert" nav :aria-label="t('settings.categories')" data-testid="settings-categories">
+        <v-list-item
+          v-for="c in categories"
+          :key="c.id"
+          :prepend-icon="c.icon"
+          :title="c.title"
+          :active="c.id === category"
+          color="primary"
+          :aria-current="c.id === category ? 'page' : undefined"
+          :data-testid="`settings-cat-${c.id}`"
+          @click="layout.setSettingsCategory(c.id)"
+        />
+      </v-list>
+
+      <div class="p-settings__body" :data-testid="`settings-body-${expert ? category : 'normal'}`">
+        <!-- general (Normal shows only this) -->
+        <template v-if="!expert || category === 'general'">
+          <h2 v-if="expert" class="u-subheading">{{ t("settings.cat.general") }}</h2>
+          <v-select :label="t('settings.theme')" :items="themes" :model-value="state.theme" data-testid="settings-theme" @update:model-value="(v) => demo.setTheme(v as PreviewTheme)" />
+          <v-select :label="t('settings.language')" :items="languages" :model-value="state.language" data-testid="settings-language" @update:model-value="(v) => demo.setLanguage(v as PreviewLanguage)" />
+          <div class="u-row" data-testid="settings-output">
+            <v-text-field :label="t('settings.output')" :model-value="t('settings.outputValue')" readonly :prepend-inner-icon="mdiFolderOutline" hide-details class="flex-grow-1" />
+            <v-btn variant="outlined" disabled>{{ t("settings.change") }}</v-btn>
+          </div>
+          <v-select v-if="expert" :label="t('settings.startMode')" :items="[t('mode.normal'), t('mode.expert')]" :model-value="t('mode.normal')" disabled :hint="t('settings.later')" persistent-hint />
+        </template>
+
+        <template v-else-if="category === 'logs'">
+          <h2 class="u-subheading">{{ t("settings.cat.logs") }}</h2>
+          <v-select :label="t('settings.logLevel')" :items="[t('settings.logLevel.standard'), t('settings.logLevel.detailed')]" :model-value="t('settings.logLevel.standard')" disabled :hint="t('settings.later')" persistent-hint />
+          <v-select :label="t('settings.logKeep')" :items="[t('settings.logKeep.value')]" :model-value="t('settings.logKeep.value')" disabled :hint="t('settings.later')" persistent-hint />
+          <div class="u-row">
+            <v-btn variant="tonal" data-testid="settings-open-log" @click="layout.openDialog('systemLog')">{{ t("menu.tools.systemLog") }}</v-btn>
+            <v-btn variant="tonal" data-testid="settings-open-diagnostics" @click="layout.openDialog('diagnostics')">{{ t("menu.tools.diagnostics") }}</v-btn>
+          </div>
+        </template>
+
+        <template v-else-if="category === 'advanced'">
+          <h2 class="u-subheading">{{ t("settings.cat.advanced") }}</h2>
+          <v-text-field :label="t('settings.heavySlot')" :model-value="t('settings.heavySlot.value')" readonly :hint="t('settings.heavySlot.hint')" persistent-hint />
+          <v-text-field :label="t('settings.temp')" :model-value="t('settings.temp.value')" disabled :hint="t('settings.later')" persistent-hint />
+          <div class="u-row">
+            <v-text-field :label="t('settings.token')" :model-value="t('settings.token.value')" readonly hide-details class="flex-grow-1" data-testid="settings-token" />
+            <v-btn variant="outlined" disabled>{{ t("settings.change") }}</v-btn>
+          </div>
+          <v-switch :label="t('settings.resume')" color="primary" disabled hide-details />
+        </template>
+
+        <template v-else>
+          <h2 class="u-subheading">{{ t("settings.cat.presets") }}</h2>
+          <p class="text-body-medium">{{ t("settings.presets.lead") }}</p>
+          <v-card>
+            <v-list lines="two" data-testid="settings-presets">
+              <v-list-item v-for="p in presets" :key="p.id" :title="p.title" :subtitle="p.sub">
+                <template v-if="p.id === 'standard'" #append><v-chip label variant="outlined">{{ t("settings.preset.default") }}</v-chip></template>
+              </v-list-item>
+            </v-list>
+          </v-card>
+          <div class="u-row">
+            <v-btn variant="tonal" disabled>{{ t("settings.preset.new") }}</v-btn>
+            <v-btn variant="text" disabled>{{ t("settings.preset.edit") }}</v-btn>
+            <span class="text-body-medium">{{ t("settings.later") }}</span>
+          </div>
+        </template>
+      </div>
+    </div>
   </section>
 </template>

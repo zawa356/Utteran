@@ -15,6 +15,8 @@ const THEMES = [
 ] as const;
 const SEMANTIC = ["primary", "secondary", "error", "warning", "info", "success"] as const;
 const FIELD_BORDER_OPACITY = 0.6;
+/** Must equal --p-handle-opacity in preview.css (the resting grip of every splitter). */
+const HANDLE_OPACITY = 0.6;
 const TINT = 0.12;
 
 function color(t: (typeof THEMES)[number]["t"], key: string): string {
@@ -55,8 +57,12 @@ describe("prototype green palette — WCAG 2.2 AA", () => {
       expect(contrastRatio(blend(onSurface, surface, FIELD_BORDER_OPACITY), surface)).toBeGreaterThanOrEqual(3);
       expect(contrastRatio(color(t, "primary"), surface)).toBeGreaterThanOrEqual(3);
       expect(contrastRatio(color(t, "primary"), background)).toBeGreaterThanOrEqual(3);
-      // The pane/sidebar separator grip uses on-surface at medium emphasis.
-      expect(contrastRatio(blend(onSurface, background, emphasis.medium), background)).toBeGreaterThanOrEqual(3);
+      // The resting splitter grip (iteration 3: visible without hover) on the work-area background
+      // and on the sidebar surface. Hover/drag/focus switch it to primary (checked above).
+      expect(contrastRatio(blend(onSurface, background, HANDLE_OPACITY), background)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(blend(onSurface, surface, HANDLE_OPACITY), surface)).toBeGreaterThanOrEqual(3);
+      // The pane-heading step badge: on-primary text on primary.
+      expect(contrastRatio(color(t, "on-primary"), color(t, "primary"))).toBeGreaterThanOrEqual(4.5);
     });
 
     it(`${name}: the brand green is not the success colour (states also carry an icon and a label)`, () => {

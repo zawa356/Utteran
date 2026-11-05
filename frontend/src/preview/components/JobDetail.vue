@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { mdiClose, mdiReplay, mdiStepForward, mdiAlertOutline } from "@mdi/js";
+import { mdiAlertOutline, mdiClose, mdiPercentOutline, mdiReplay, mdiStepForward } from "@mdi/js";
 import { computed } from "vue";
 import { usePreview } from "../composables";
 import { isActive } from "../domain/demo";
+import JobProgress from "./JobProgress.vue";
 import JobStageTrack from "./JobStageTrack.vue";
 import { useSnapshotText } from "./useSnapshotText";
 import JobStateChip from "./JobStateChip.vue";
 
 /**
- * Detail of the selected synthetic job: state, stage (never a percentage — G-03), the frozen
+ * Detail of the selected synthetic job: state, stage and the fictional stage progress/ETA, the frozen
  * "settings at submit time", and the actions allowed in that state. Demo-only controls are
  * grouped separately and labelled as such.
  */
@@ -26,28 +27,28 @@ const snapshot = computed(() => (job.value ? snapshotText(job.value.snapshot) : 
     </div>
     <dl class="p-dl text-body-medium">
       <dt>{{ t("job.id") }}</dt>
-      <dd>{{ job.id }} <span class="text-body-small">({{ t("common.synthetic") }})</span></dd>
+      <dd>{{ job.id }}</dd>
       <dt>{{ t("job.attemptLabel") }}</dt>
       <dd>{{ job.attempt }}</dd>
       <dt>{{ t("job.snapshot") }}</dt>
       <dd data-testid="job-snapshot">{{ snapshot }}</dd>
     </dl>
     <JobStageTrack :job="job" />
-    <p class="text-body-small">{{ t("job.noPercent") }}</p>
+    <JobProgress v-if="isActive(job)" :job="job" />
     <v-alert v-if="job.state === 'failed'" type="error" role="alert" data-testid="job-error">
       {{ t("job.failedBody") }}
       <div class="text-body-small">{{ t("area.errorCode", { code: job.errorCode ?? "—" }) }}</div>
     </v-alert>
     <div class="u-row">
-      <v-btn v-if="isActive(job)" size="small" variant="tonal" :prepend-icon="mdiClose" data-testid="job-cancel" @click="demo.cancel(job.id)">{{ t("job.cancel") }}</v-btn>
-      <v-btn v-if="job.state === 'failed' || job.state === 'cancelled'" size="small" color="primary" :prepend-icon="mdiReplay" data-testid="job-retry" @click="demo.retry(job.id)">{{ t("job.retry") }}</v-btn>
+      <v-btn v-if="isActive(job)" variant="outlined" :prepend-icon="mdiClose" data-testid="job-cancel" @click="demo.cancel(job.id)">{{ t("job.cancel") }}</v-btn>
+      <v-btn v-if="job.state === 'failed' || job.state === 'cancelled'" color="primary" :prepend-icon="mdiReplay" data-testid="job-retry" @click="demo.retry(job.id)">{{ t("job.retry") }}</v-btn>
     </div>
     <div v-if="isActive(job)" class="p-demo u-row" role="group" :aria-label="t('demo.controls')">
-      <v-chip size="x-small" label color="warning" variant="outlined">{{ t("demo.chip") }}</v-chip>
-      <v-btn size="small" variant="outlined" :prepend-icon="mdiStepForward" data-testid="job-step" @click="demo.step(job.id)">{{ t("demo.step") }}</v-btn>
+      <v-chip label color="warning" variant="outlined">{{ t("demo.chip") }}</v-chip>
+      <v-btn v-if="job.state === 'running' && job.progress.fraction !== null && job.progress.fraction < 1" variant="outlined" :prepend-icon="mdiPercentOutline" data-testid="job-advance" @click="demo.advance(job.id)">{{ t("demo.advance") }}</v-btn>
+      <v-btn variant="outlined" :prepend-icon="mdiStepForward" data-testid="job-step" @click="demo.step(job.id)">{{ t("demo.step") }}</v-btn>
       <v-btn
         v-if="job.state !== 'waiting'"
-        size="small"
         variant="outlined"
         :prepend-icon="mdiAlertOutline"
         data-testid="job-fail"

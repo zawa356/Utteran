@@ -3,16 +3,17 @@ import { mdiDeleteOutline, mdiFilePlusOutline, mdiFolderPlusOutline, mdiSelectAl
 import { computed, ref } from "vue";
 import AreaState from "../components/AreaState.vue";
 import InputTable from "../components/InputTable.vue";
+import PaneHeading from "../components/PaneHeading.vue";
 import { usePreview } from "../composables";
-import { formatDuration } from "../domain/fixtures";
 
 /**
- * Left pane. Adding inputs is the primary action of this pane: two large, labelled buttons at the
- * top (distinct from the queue pane's "submit"). Below, a dense Explorer-style detail list.
+ * Step 1 (left pane): add files and choose which ones the next steps act on. The heading shows
+ * the selection count that the Inspector (step 2) and the submit button (step 3) use as well.
+ * Adding is a demo: it appends synthetic names and opens no dialog.
  */
 const { demo, state, t } = usePreview();
 const confirming = ref(false);
-const total = computed(() => formatDuration(state.value.inputs.filter((i) => i.supported).reduce((s, i) => s + (i.durationSec ?? 0), 0)));
+const selected = computed(() => state.value.selected.length);
 function confirmRemove() {
   demo.removeSelected();
   confirming.value = false;
@@ -21,29 +22,24 @@ function confirmRemove() {
 
 <template>
   <div class="p-pane__body">
-    <div class="p-pane__title">
-      <h2 class="u-subheading" data-testid="inputs-heading">{{ t("expert.inputs") }} ({{ state.inputs.length }})</h2>
-      <span class="text-body-small" data-testid="inputs-total">{{ t("inputs.total", { total }) }}</span>
-    </div>
+    <PaneHeading id="pane-inputs-heading" :step="1" :title="t('expert.inputs')" :meta="t('inputs.selectedOf', { count: selected, total: state.inputs.length })" />
     <div class="p-add" role="group" :aria-label="t('inputs.addGroup')">
       <v-btn color="primary" variant="tonal" :prepend-icon="mdiFilePlusOutline" class="p-add__btn" data-testid="expert-add-file" @click="demo.addFiles(1)">{{ t("inputs.addFile") }}</v-btn>
       <v-btn color="primary" variant="tonal" :prepend-icon="mdiFolderPlusOutline" class="p-add__btn" data-testid="expert-add-folder" @click="demo.addFiles(3)">{{ t("inputs.addFolder") }}</v-btn>
     </div>
-    <p class="text-body-small">{{ t("inputs.demoPickerShort") }}</p>
     <div class="p-selbar">
-      <span class="text-body-small" data-testid="inputs-selected-count">{{ t("inputs.selectedCount", { count: state.selected.length }) }}</span>
+      <span class="text-body-medium" data-testid="inputs-heading">{{ t("inputs.count", { count: state.inputs.length }) }}</span>
       <v-spacer />
-      <v-btn size="x-small" variant="text" :icon="mdiSelectAll" :disabled="state.inputs.length === 0" :aria-label="t('inputs.selectAll')" :title="t('inputs.selectAll')" data-testid="inputs-select-all" @click="demo.selectAll()" />
-      <v-btn size="x-small" variant="text" :icon="mdiSelectRemove" :disabled="state.selected.length === 0" :aria-label="t('inputs.clearSelection')" :title="t('inputs.clearSelection')" data-testid="inputs-clear-selection" @click="demo.clearSelection()" />
-      <v-btn size="x-small" variant="text" :icon="mdiDeleteOutline" :disabled="state.selected.length === 0" :aria-label="t('inputs.removeSelected')" :title="t('inputs.removeSelected')" data-testid="inputs-remove" @click="confirming = true" />
+      <v-btn size="small" variant="text" :icon="mdiSelectAll" :disabled="state.inputs.length === 0" :aria-label="t('inputs.selectAll')" :title="t('inputs.selectAll')" data-testid="inputs-select-all" @click="demo.selectAll()" />
+      <v-btn size="small" variant="text" :icon="mdiSelectRemove" :disabled="selected === 0" :aria-label="t('inputs.clearSelection')" :title="t('inputs.clearSelection')" data-testid="inputs-clear-selection" @click="demo.clearSelection()" />
+      <v-btn size="small" variant="text" :icon="mdiDeleteOutline" :disabled="selected === 0" :aria-label="t('inputs.removeSelected')" :title="t('inputs.removeSelected')" data-testid="inputs-remove" @click="confirming = true" />
     </div>
     <AreaState :state="state.inputsArea" :empty="state.inputs.length === 0" :empty-text="t('inputs.empty')" testid="expert-inputs" @retry="demo.recoverArea('inputs')">
       <InputTable />
     </AreaState>
-    <p class="text-body-small">{{ t("inputs.tableHelp") }}</p>
-    <v-dialog v-model="confirming" max-width="420" data-testid="remove-dialog">
-      <v-card :title="t('inputs.removeTitle')" data-testid="remove-dialog-card">
-        <v-card-text>{{ t("inputs.removeBody", { count: state.selected.length }) }}</v-card-text>
+    <v-dialog v-model="confirming" max-width="440" data-testid="remove-dialog">
+      <v-card variant="elevated" :title="t('inputs.removeTitle')" data-testid="remove-dialog-card">
+        <v-card-text>{{ t("inputs.removeBody", { count: selected }) }}</v-card-text>
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" data-testid="remove-cancel" @click="confirming = false">{{ t("common.cancel") }}</v-btn>

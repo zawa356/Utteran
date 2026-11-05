@@ -1,25 +1,31 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { usePreview } from "../composables";
-import { selectionField } from "../domain/demo";
+import { effectiveSettings, selectionField } from "../domain/demo";
 import { DEMO_MODELS, LANGUAGES, OUTPUT_FORMATS, type ProcessingSettings, SPEAKER_COUNTS, type SettingKey } from "../domain/fixtures";
 import InspectorField from "./InspectorField.vue";
 
-/** The processing form shared by the common defaults and the selected-inputs Inspector. */
-const props = withDefaults(defineProps<{ mode: "common" | "selection"; fields?: SettingKey[]; compact?: boolean }>(), {
+/**
+ * The processing form shared by the Expert Inspector (common defaults / selected inputs) and Normal
+ * mode. "normal" shows the effective values of one input and edits what that input will run with.
+ */
+const props = withDefaults(defineProps<{ mode: "common" | "selection" | "normal"; inputId?: string | null; fields?: SettingKey[]; compact?: boolean }>(), {
+  inputId: null,
   fields: () => ["model", "language", "diarization", "speakers", "formats"],
   compact: false,
 });
 const { demo, state, t } = usePreview();
 
 function value<K extends SettingKey>(key: K): ProcessingSettings[K] {
+  if (props.mode === "normal") return props.inputId ? effectiveSettings(state.value, props.inputId)[key] : state.value.common[key];
   return props.mode === "common" ? state.value.common[key] : selectionField(state.value, key).value;
 }
 function mixed(key: SettingKey): boolean {
   return props.mode === "selection" && selectionField(state.value, key).mixed;
 }
 function set<K extends SettingKey>(key: K, v: ProcessingSettings[K]) {
-  if (props.mode === "common") demo.setCommon(key, v);
+  if (props.mode === "normal") demo.setNormalSetting(props.inputId, key, v);
+  else if (props.mode === "common") demo.setCommon(key, v);
   else demo.setOverride(key, v);
 }
 const models = computed(() => DEMO_MODELS.map((m) => ({ value: m, title: t(`model.${m}`) })));
@@ -38,8 +44,6 @@ const show = (key: SettingKey) => props.fields.includes(key);
           :placeholder="t('inspector.mixedShort')"
           :disabled="disabled"
           :aria-label="t('field.model')"
-          :hint="t('field.modelHint')"
-          :persistent-hint="!compact"
           :data-testid="`input-model-${mode}`"
           @update:model-value="(v) => v && set('model', v)"
         />
@@ -99,9 +103,8 @@ const show = (key: SettingKey) => props.fields.includes(key);
           :data-testid="`input-formats-${mode}`"
           @update:model-value="(v: unknown) => Array.isArray(v) && v.length > 0 && set('formats', v as ProcessingSettings['formats'])"
         >
-          <v-chip v-for="f in OUTPUT_FORMATS" :key="f" :value="f" filter label size="small" :disabled="disabled" variant="outlined">{{ f.toUpperCase() }}</v-chip>
+          <v-chip v-for="f in OUTPUT_FORMATS" :key="f" :value="f" filter label size="default" :disabled="disabled" variant="outlined">{{ f.toUpperCase() }}</v-chip>
         </v-chip-group>
-        <div class="text-body-small">{{ t("field.formatsHint") }}</div>
       </template>
     </InspectorField>
   </div>

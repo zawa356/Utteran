@@ -9,9 +9,18 @@ describe("prototype i18n", () => {
     for (const value of [...Object.values(ja), ...Object.values(en)]) expect(value.trim()).not.toBe("");
   });
 
-  it("states 'prototype / synthetic / nothing is processed' in both languages", () => {
-    expect(translatePreview("ja", "banner.title")).toBe("プロトタイプ／合成データ／処理しません");
-    expect(translatePreview("en", "banner.title")).toMatch(/prototype.*synthetic.*nothing is processed/i);
+  it("states 'prototype / synthetic / nothing is processed' in one short line in both languages", () => {
+    const ja1 = `${translatePreview("ja", "banner.title")} ${translatePreview("ja", "banner.body")}`;
+    const en1 = `${translatePreview("en", "banner.title")} ${translatePreview("en", "banner.body")}`;
+    expect(ja1).toMatch(/試作.*合成データ.*行いません/);
+    expect(en1).toMatch(/prototype.*synthetic.*nothing is/i);
+    expect(ja1.length).toBeLessThanOrEqual(60);
+    expect(en1.length).toBeLessThanOrEqual(110);
+  });
+
+  it("product texts carry no connection jargon (owner memo #11)", () => {
+    const product = Object.entries(ja).filter(([k]) => !k.startsWith("toolbar.") && !k.startsWith("syncOption."));
+    for (const [key, value] of product) expect(value, key).not.toMatch(/同期|再同期|epoch|\/sync|SSE|接続:/);
   });
 
   it("uses the same placeholders in both languages", () => {

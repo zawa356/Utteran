@@ -4,7 +4,7 @@ import { computed } from "vue";
 import { usePreview } from "../composables";
 import type { ProfileStatus } from "../domain/envExamples";
 
-/** Status of a FICTIONAL profile: icon + label that itself says "example" (never a real verdict). */
+/** Status of a FICTIONAL profile: icon + label (the Setup page states once that all of it is fictional). */
 const props = defineProps<{ status: ProfileStatus }>();
 const { t } = usePreview();
 const VIEW: Record<ProfileStatus, { color: string; icon: string }> = {
@@ -16,5 +16,5 @@ const view = computed(() => VIEW[props.status]);
 </script>
 
 <template>
-  <v-chip size="x-small" label variant="tonal" :color="view.color" :prepend-icon="view.icon" :data-testid="`env-status-${status}`">{{ t(`env.status.${status}`) }}</v-chip>
+  <v-chip label variant="tonal" :color="view.color" :prepend-icon="view.icon" :data-testid="`env-status-${status}`">{{ t(`env.status.${status}`) }}</v-chip>
 </template>

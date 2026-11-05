@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test";
  * Requires `npm run build` first (CI builds before the E2E steps); a missing build fails.
  */
 const root = fileURLToPath(new URL("../../src/utteran_gui/web-next/", import.meta.url));
-const MARKERS = ["プロトタイプ／合成データ／処理しません", "デモ用の架空情報", "demo-model-balanced", "demo-profile-gpu", "greenLight", "src/preview", "utteran-ui3-preview", "sample-meeting-01"];
+const MARKERS = ["試作版（UI-3-0 第3案）", "デモ用の架空の例", "システムログを見る", "zawa356/Utteran/blob", "demo-model-balanced", "demo-profile-gpu", "greenLight", "src/preview", "utteran-ui3-preview", "sample-meeting-01"];
 
 test("the production build has no prototype entry, module or text", () => {
   expect(existsSync(`${root}index.html`), "run `npm run build` before this check").toBe(true);

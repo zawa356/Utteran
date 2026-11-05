@@ -52,15 +52,16 @@ function onClick(e: MouseEvent, index: number, input: DemoInput) {
 
 <template>
   <div class="p-explorer-wrap">
-    <table class="p-explorer" role="grid" aria-multiselectable="true" :aria-label="t('inputs.listLabel')" :aria-rowcount="state.inputs.length + 1" data-testid="input-list">
+    <p id="p-inputs-help" class="p-sr-only">{{ t("inputs.tableHelp") }}</p>
+    <table class="p-explorer" role="grid" aria-multiselectable="true" :aria-label="t('inputs.listLabel')" aria-describedby="p-inputs-help" :aria-rowcount="state.inputs.length + 1" data-testid="input-list">
       <thead>
         <tr>
           <th class="p-explorer__check" scope="col"><span class="p-sr-only">{{ t("inputs.col.select") }}</span></th>
           <th scope="col">{{ t("inputs.col.name") }}</th>
           <th class="p-explorer__fmt" scope="col">{{ t("inputs.col.format") }}</th>
           <th class="p-explorer__len" scope="col">{{ t("inputs.col.duration") }}</th>
-          <th class="p-explorer__state" scope="col">{{ t("inputs.col.status") }}</th>
-          <th class="p-explorer__ovr" scope="col" :title="t('inputs.col.overrideLong')">{{ t("inputs.col.override") }}</th>
+          <th class="p-explorer__state" scope="col" :title="t('inputs.col.status')"><span class="p-explorer__state-text">{{ t("inputs.col.status") }}</span></th>
+          <th class="p-explorer__ovr" scope="col" :title="t('inputs.col.overrideLong')"><span class="p-explorer__state-text">{{ t("inputs.col.override") }}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -79,18 +80,17 @@ function onClick(e: MouseEvent, index: number, input: DemoInput) {
           <td class="p-explorer__check">
             <v-checkbox-btn
               :model-value="state.selected.includes(input.id)"
-              density="compact"
               tabindex="-1"
               :aria-label="t('input.select', { name: input.name })"
               @click.stop="demo.toggleSelect(input.id)"
             />
           </td>
-          <td class="p-explorer__name"><span class="p-ellipsis" :title="input.name">{{ input.name }}</span></td>
+          <td class="p-explorer__name"><span class="p-ellipsis" :title="`${input.name} · ${input.format.toUpperCase()} · ${formatDuration(input.durationSec)}`">{{ input.name }}</span></td>
           <td class="p-explorer__fmt">{{ input.format.toUpperCase() }}</td>
           <td class="p-explorer__len">{{ formatDuration(input.durationSec) }}</td>
-          <td class="p-explorer__state" :class="status(input).tone ? `text-${status(input).tone}` : ''" :data-testid="`input-row-${input.id}-state`">
-            <v-icon :icon="status(input).icon" size="x-small" aria-hidden="true" />
-            <span class="p-ellipsis">{{ status(input).text }}</span>
+          <td class="p-explorer__state" :class="status(input).tone ? `text-${status(input).tone}` : ''" :title="status(input).text" :data-testid="`input-row-${input.id}-state`">
+            <v-icon :icon="status(input).icon" size="small" aria-hidden="true" />
+            <span class="p-ellipsis p-explorer__state-text">{{ status(input).text }}</span>
           </td>
           <td class="p-explorer__ovr">
             <span v-if="overrideCount(state, input.id) > 0" class="p-ovr" :title="t('input.overrides', { count: overrideCount(state, input.id) })" :data-testid="`input-row-${input.id}-override`">

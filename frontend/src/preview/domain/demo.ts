@@ -26,12 +26,25 @@ export type JobState = "waiting" | "preparing" | "running" | "succeeded" | "fail
 export type JobStage = "asr" | "diarization" | "output";
 export const ACTIVE_STATES: readonly JobState[] = ["waiting", "preparing", "running"];
 
+/**
+ * Fictional progress of the current stage (iteration 3 mock of G-03). `fraction` is the share of
+ * the CURRENT stage only (null = the stage reports no progress → indeterminate); there is no
+ * job-wide percentage, because fixed stage weights would invent a number the backend never sends.
+ * Elapsed seconds are synthetic and only move on explicit demo controls.
+ */
+export interface DemoProgress {
+  fraction: number | null;
+  stageElapsedSec: number;
+  elapsedSec: number;
+}
+
 export interface DemoJob {
   id: string;
   inputId: string;
   inputName: string;
   state: JobState;
   stage: JobStage | null;
+  progress: DemoProgress;
   attempt: number;
   /** Settings frozen at submission ("settings at submit time"); edits afterwards do not change it. */
   snapshot: ProcessingSettings;
@@ -48,9 +61,22 @@ export type Scenario = "single" | "empty" | "running" | "failed" | "done" | "mul
 export const SCENARIOS: readonly Scenario[] = ["single", "empty", "running", "failed", "done", "multi", "busy", "loading", "error"];
 export type QueueFilter = "all" | "active" | "attention" | "finished";
 export type QueueSort = "order" | "name" | "state";
-/** How the connection indicator is drawn. "none" = honest default (no backend connection at all). */
-export type SyncExample = "none" | "synced" | "resyncing" | "offline";
+/**
+ * Review-only example of how fresh the job status is. The product shows nothing while it is "ok";
+ * "checking" = a status refresh is slow (a short inline note where job states are shown);
+ * "unavailable" = the status cannot be fetched (a warning with retry). Neither means a job stopped.
+ */
+export type SyncExample = "ok" | "checking" | "unavailable";
+export const SYNC_EXAMPLES: readonly SyncExample[] = ["ok", "checking", "unavailable"];
 export type InspectorTab = "common" | "selection";
+
+/** Outcome of the last "submit" in the Expert work area, shown inline under the button. */
+export interface SubmitResult {
+  created: number;
+  unsupported: number;
+  alreadySubmitted: number;
+  jobIds: string[];
+}
 
 export interface Notice {
   key: string;
@@ -70,6 +96,7 @@ export interface DemoState {
   jobs: DemoJob[];
   jobSeq: number;
   selectedJobId: string | null;
+  lastSubmit: SubmitResult | null;
   queuePaused: boolean;
   scenario: Scenario;
   inputsArea: AreaState;
@@ -141,16 +168,75 @@ const NEXT: Record<JobState, JobState | null> = {
   cancelled: null,
 };
 
+export const NO_PROGRESS: DemoProgress = { fraction: null, stageElapsedSec: 0, elapsedSec: 0 };
+/** Synthetic seconds added by one demo step / one demo progress advance. */
+const STEP_SEC = 20;
+const ADVANCE_SEC = 45;
+
+/**
+ * Whether a stage reports progress in the fictional mock. ASR (segment end / duration, whisper.cpp
+ * "progress = n%") and diarization (pyannote hook completed/total) exist in the core today; the
+ * output stage has no progress source, so it stays indeterminate.
+ */
+export function stageReportsProgress(stage: JobStage): boolean {
+  return stage !== "output";
+}
+
+function enterStage(job: DemoJob, stage: JobStage): DemoJob {
+  return {
+    ...job,
+    stage,
+    progress: { fraction: stageReportsProgress(stage) ? 0 : null, stageElapsedSec: 0, elapsedSec: job.progress.elapsedSec + STEP_SEC },
+  };
+}
+
 /** One explicit demo step. Running walks ASR → (diarization if enabled) → output → succeeded. */
 export function stepJob(job: DemoJob): DemoJob {
   if (job.state === "running") {
-    if (job.stage === "asr") return { ...job, stage: job.snapshot.diarization ? "diarization" : "output" };
-    if (job.stage === "diarization") return { ...job, stage: "output" };
-    return { ...job, state: "succeeded", stage: null };
+    if (job.stage === "asr") return enterStage(job, job.snapshot.diarization ? "diarization" : "output");
+    if (job.stage === "diarization") return enterStage(job, "output");
+    return { ...job, state: "succeeded", stage: null, progress: { ...job.progress, fraction: null, stageElapsedSec: 0 } };
   }
   const next = NEXT[job.state];
   if (!next) return job;
-  return { ...job, state: next, stage: next === "running" ? "asr" : null };
+  if (next === "running") return enterStage({ ...job, state: "running" }, "asr");
+  return { ...job, state: next, stage: null };
+}
+
+/** Demo control: +25 % within the current stage (only stages that report progress). */
+export function advanceProgress(job: DemoJob): DemoJob {
+  const f = job.progress.fraction;
+  if (job.state !== "running" || f === null || f >= 1) return job;
+  return {
+    ...job,
+    progress: {
+      fraction: Math.min(1, Math.round((f + 0.25) * 100) / 100),
+      stageElapsedSec: job.progress.stageElapsedSec + ADVANCE_SEC,
+      elapsedSec: job.progress.elapsedSec + ADVANCE_SEC,
+    },
+  };
+}
+
+export type EtaView = { kind: "none" } | { kind: "estimating" } | { kind: "estimate"; remainingSec: number };
+
+/**
+ * Remaining time of the CURRENT stage, extrapolated from the stage's own elapsed time and fraction.
+ * Below 10 % (or without elapsed time) the estimate is too noisy: "estimating". A stage without
+ * progress has no estimate at all. Real ETAs need smoothing and may go up again (non-monotonic).
+ */
+export function stageEta(job: Pick<DemoJob, "state" | "progress">): EtaView {
+  const { fraction, stageElapsedSec } = job.progress;
+  if (job.state !== "running" || fraction === null) return { kind: "none" };
+  if (fraction < 0.1 || stageElapsedSec <= 0) return { kind: "estimating" };
+  if (fraction >= 1) return { kind: "estimate", remainingSec: 0 };
+  return { kind: "estimate", remainingSec: Math.round((stageElapsedSec * (1 - fraction)) / fraction) };
+}
+
+/** Stage position "n of m" for a job (diarization off → two stages). */
+export function stagePosition(job: Pick<DemoJob, "stage" | "snapshot">): { index: number; total: number } | null {
+  if (!job.stage) return null;
+  const stages: JobStage[] = job.snapshot.diarization ? ["asr", "diarization", "output"] : ["asr", "output"];
+  return { index: stages.indexOf(job.stage) + 1, total: stages.length };
 }
 
 export function isActive(job: DemoJob): boolean {
@@ -178,6 +264,34 @@ export function normalInputId(state: Pick<DemoState, "inputs" | "selected" | "fo
   if (state.focusInputId && ids.has(state.focusInputId)) return state.focusInputId;
   const selected = state.selected.find((id) => ids.has(id));
   return selected ?? state.inputs[0]?.id ?? null;
+}
+
+export type SubmitBlock = "noSelection" | "allSubmitted" | "unsupported" | "area";
+
+/** Why the selection cannot be submitted (null = at least one selected input can be). */
+export function submitBlock(state: Pick<DemoState, "inputs" | "selected" | "jobs" | "inputsArea">): SubmitBlock | null {
+  if (state.inputsArea !== "ready") return "area";
+  const selected = state.inputs.filter((i) => state.selected.includes(i.id));
+  if (selected.length === 0) return "noSelection";
+  const submitted = submittedInputs(state);
+  if (selected.some((i) => i.supported && !submitted.has(i.id))) return null;
+  return selected.every((i) => !i.supported) ? "unsupported" : "allSubmitted";
+}
+
+const MINI_ORDER: Record<JobState, number> = { running: 1, preparing: 2, failed: 3, cancelled: 4, waiting: 5, succeeded: 6 };
+
+/**
+ * The Expert work area's short queue (at most `limit` rows): the jobs just submitted first, then
+ * running, needing attention, waiting and finished ones. The full list is the Queue page.
+ */
+export function miniQueue(state: Pick<DemoState, "jobs" | "lastSubmit">, limit = 5): DemoJob[] {
+  const recent = new Set(state.lastSubmit?.jobIds ?? []);
+  const rank = (j: DemoJob) => (recent.has(j.id) ? 0 : MINI_ORDER[j.state]);
+  return state.jobs
+    .map((job, i) => ({ job, i }))
+    .sort((a, b) => rank(a.job) - rank(b.job) || (a.job.state === "succeeded" ? b.i - a.i : a.i - b.i))
+    .slice(0, limit)
+    .map((r) => r.job);
 }
 
 const STATE_ORDER: Record<JobState, number> = { failed: 0, running: 1, preparing: 2, waiting: 3, cancelled: 4, succeeded: 5 };
@@ -224,11 +338,12 @@ function initialState(): DemoState {
     jobs: [],
     jobSeq: 0,
     selectedJobId: null,
+    lastSubmit: null,
     queuePaused: false,
     scenario: "single",
     inputsArea: "ready",
     queueArea: "ready",
-    sync: "none",
+    sync: "ok",
     envExample: "gpu",
     envChecking: false,
     queueQuery: "",
@@ -288,37 +403,53 @@ export class DemoController {
   }
 
   toggleSelect(id: string): void {
-    this.update((s) => ({ selected: s.selected.includes(id) ? s.selected.filter((x) => x !== id) : [...s.selected, id], focusInputId: id }));
+    this.update((s) => ({ selected: s.selected.includes(id) ? s.selected.filter((x) => x !== id) : [...s.selected, id], focusInputId: id, lastSubmit: null }));
   }
 
   /** Explorer-style plain click: select only this row. */
   selectOnly(id: string): void {
-    this.update(() => ({ selected: [id], focusInputId: id }));
+    this.update(() => ({ selected: [id], focusInputId: id, lastSubmit: null }));
   }
 
   /**
-   * Normal mode "choose a file" (demo: the next synthetic name, never a real picker). In the
-   * single-file case an unsubmitted file is replaced, because the user explicitly picked another
-   * one. Otherwise the file is added and shown, and every existing input is kept untouched.
+   * Normal mode "choose a file" (demo: the next synthetic name, never a real picker). The new file
+   * becomes the one Normal shows, so it LOOKS like a replacement. The old input is dropped only when
+   * that loses nothing: it is the only input, never submitted and has no individual settings.
+   * Otherwise it stays (Expert still lists it, with its jobs and settings) and is just not shown.
    */
   chooseNormalFile(): void {
     this.update((s) => {
       const added = poolInput(s.poolCursor);
       const current = normalInputId(s);
-      const replace = s.inputs.length === 1 && current !== null && !submittedInputs(s).has(current);
+      const replace = s.inputs.length === 1 && current !== null && !submittedInputs(s).has(current) && overrideCount(s, current) === 0;
       const inputs = replace ? [added] : [...s.inputs, added];
-      const overrides = replace ? {} : s.overrides;
-      const selected = replace ? [added.id] : s.selected;
-      return { inputs, overrides, selected, focusInputId: added.id, poolCursor: s.poolCursor + 1, inputsArea: "ready" };
+      const selected = replace || s.selected.length === 0 || (s.selected.length === 1 && s.selected[0] === current) ? [added.id] : s.selected;
+      return { inputs, selected, focusInputId: added.id, poolCursor: s.poolCursor + 1, inputsArea: "ready" };
     }, "notice.chosen", { name: poolInput(this.store.get().poolCursor).name });
   }
 
+  /**
+   * Normal settings edit what the shown file will run with: a field this file overrides (set in
+   * Expert) changes that override; any other field changes the common defaults. So the form always
+   * shows the effective value and never needs to explain the two levels.
+   */
+  setNormalSetting<K extends SettingKey>(inputId: string | null, key: K, value: ProcessingSettings[K]): void {
+    const s = this.store.get();
+    if (!inputId || !(key in (s.overrides[inputId] ?? {}))) {
+      this.setCommon(key, value);
+      return;
+    }
+    this.update((cur) => ({
+      overrides: { ...cur.overrides, [inputId]: { ...cur.overrides[inputId], [key]: Array.isArray(value) ? [...value] : value } },
+    }), "notice.settingChanged");
+  }
+
   selectAll(): void {
-    this.update((s) => ({ selected: s.inputs.map((i) => i.id) }));
+    this.update((s) => ({ selected: s.inputs.map((i) => i.id), lastSubmit: null }));
   }
 
   clearSelection(): void {
-    this.update(() => ({ selected: [] }));
+    this.update(() => ({ selected: [], lastSubmit: null }));
   }
 
   /** Removes the selected inputs from the (in-memory) list; submitted jobs keep their snapshot. */
@@ -395,14 +526,17 @@ export class DemoController {
   /**
    * Creates demo jobs for the given inputs that are supported and were never submitted. A failed or
    * cancelled job is resumed with "retry"; re-running a finished input (B7 `rerun`) is an S3 design
-   * item, so it is not offered here. Returns how many jobs were created.
+   * item, so it is not offered here. The outcome (created / skipped and why) is kept for the inline
+   * feedback under the submit button. Returns how many jobs were created.
    */
   submit(inputIds: string[]): number {
     const s = this.store.get();
     const submitted = submittedInputs(s);
-    const targets = s.inputs.filter((i) => inputIds.includes(i.id) && i.supported && !submitted.has(i.id));
+    const asked = s.inputs.filter((i) => inputIds.includes(i.id));
+    const targets = asked.filter((i) => i.supported && !submitted.has(i.id));
+    const skipped = { unsupported: asked.filter((i) => !i.supported).length, alreadySubmitted: asked.filter((i) => i.supported && submitted.has(i.id)).length };
     if (targets.length === 0) {
-      this.update(() => ({}), "notice.nothingToSubmit");
+      this.update(() => ({ lastSubmit: { created: 0, ...skipped, jobIds: [] } }), "notice.nothingToSubmit");
       return 0;
     }
     this.update((cur) => {
@@ -415,12 +549,19 @@ export class DemoController {
           inputName: i.name,
           state: "waiting",
           stage: null,
+          progress: { ...NO_PROGRESS },
           attempt: 1,
           snapshot: effectiveSettings(cur, i.id),
           errorCode: null,
         };
       });
-      return { jobs: [...cur.jobs, ...created], jobSeq: seq, selectedJobId: created[0]?.id ?? cur.selectedJobId, queueArea: "ready" };
+      return {
+        jobs: [...cur.jobs, ...created],
+        jobSeq: seq,
+        selectedJobId: created[0]?.id ?? cur.selectedJobId,
+        queueArea: "ready",
+        lastSubmit: { created: created.length, ...skipped, jobIds: created.map((j) => j.id) },
+      };
     }, "notice.submitted", { count: targets.length });
     return targets.length;
   }
@@ -440,6 +581,11 @@ export class DemoController {
   /** Demo control: advance one job by one step (the queue order is not enforced in the demo). */
   step(id: string): void {
     this.mapJob(id, stepJob, "notice.stepped");
+  }
+
+  /** Demo control: +25 % in the current stage of a running job (fictional progress). */
+  advance(id: string): void {
+    this.mapJob(id, advanceProgress, "notice.advanced");
   }
 
   /** Demo control: advance every active job by one step unless the queue is paused. */
@@ -469,7 +615,8 @@ export class DemoController {
   retry(id: string): void {
     this.mapJob(
       id,
-      (j) => (j.state === "failed" || j.state === "cancelled" ? { ...j, state: "waiting", stage: null, errorCode: null, attempt: j.attempt + 1 } : j),
+      (j) =>
+        j.state === "failed" || j.state === "cancelled" ? { ...j, state: "waiting", stage: null, progress: { ...NO_PROGRESS }, errorCode: null, attempt: j.attempt + 1 } : j,
       "notice.retried",
     );
   }
@@ -502,6 +649,11 @@ export class DemoController {
   // ---- display-state scenarios ----------------------------------------------------------------
   setSync(sync: SyncExample): void {
     this.update(() => ({ sync }));
+  }
+
+  /** "Retry" of the job-status fetch: in the demo it simply succeeds (no request is made). */
+  retrySync(): void {
+    this.update(() => ({ sync: "ok" }), "notice.syncRecovered");
   }
 
   /** "Retry" of a demo error/loading area: it simply returns to ready (no request is made). */
@@ -567,9 +719,12 @@ export class DemoController {
     this.store.set((s) => ({
       ...s,
       notice: before,
+      lastSubmit: null,
       jobs: s.jobs.map((j) => {
         let job = j;
         for (let i = 0; i < (steps[j.inputId] ?? 0); i += 1) job = stepJob(job);
+        // A running stage starts halfway, so the fictional progress and estimate are visible at once.
+        if (job.state === "running" && job.progress.fraction !== null) job = advanceProgress(advanceProgress(job));
         if (j.inputId === failId) job = { ...job, state: "failed", errorCode: "demo_failure" };
         return job;
       }),
