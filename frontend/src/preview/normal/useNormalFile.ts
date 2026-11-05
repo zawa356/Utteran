@@ -12,7 +12,7 @@ export function useNormalFile() {
   const inputId = computed(() => normalInputId(state.value));
   const input = computed(() => state.value.inputs.find((i) => i.id === inputId.value) ?? null);
   const job = computed(() => (input.value ? jobOf(state.value, input.value.id) : null));
-  const env = computed(() => environmentView(state.value.envExample, state.value.diarizationReady));
+  const env = computed(() => environmentView(state.value.env));
   /** `setup`: offer the way to the setup page; `diarization`: offer "turn diarization off" as well. */
   const blocked = computed(() => {
     const none = { setup: false, diarization: false };

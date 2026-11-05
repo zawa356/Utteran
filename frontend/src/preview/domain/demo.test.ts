@@ -18,6 +18,7 @@ import {
 import { formatDuration } from "./fixtures";
 import { allPresets, overrideCount, skipReason } from "./demo";
 import { engineCandidates } from "./settingsSchema";
+import { envFromExample } from "./envExamples";
 import { jobLog } from "./diagnostics";
 
 /** The several-files state the Expert views start from (scenario "multi"). */
@@ -378,7 +379,7 @@ describe("UI-3-0 prototype state (synthetic, in-memory)", () => {
     const demo = multi();
     demo.selectOnly("in-01");
     demo.setOverride("beamSize", 0);
-    demo.setEnvironment("gpu", false);
+    demo.setEnvironment(envFromExample("gpu", false));
     demo.selectOnly("in-04");
     demo.setOverride("diarization", false);
     const s = demo.store.get();

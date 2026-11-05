@@ -2,7 +2,7 @@
 import { usePreview } from "../composables";
 
 /** Optional features. Only diarization today; it needs a model download and, the first time, a credential. */
-const { setup, setupState, t } = usePreview();
+const { setup, setupState, state, t } = usePreview();
 </script>
 
 <template>
@@ -17,6 +17,7 @@ const { setup, setupState, t } = usePreview();
       @update:model-value="(v) => setup.setChoice('diarization', Boolean(v))"
     />
     <p class="text-body-medium">{{ t("wizard.features.diarizationHint") }}</p>
-    <p v-if="setupState.choices.diarization && !setupState.detected.credential" class="text-body-medium" data-testid="wizard-needs-credential">{{ t("wizard.features.needsCredential") }}</p>
+    <p v-if="setupState.entry !== 'first_run' && state.env.diarization" class="text-body-medium" data-testid="wizard-diarization-kept">{{ t("wizard.features.alreadySetUp") }}</p>
+    <p v-if="setupState.choices.diarization" class="text-body-medium" data-testid="wizard-needs-credential">{{ t("wizard.features.needsCredential") }}</p>
   </div>
 </template>

@@ -1,5 +1,5 @@
 import { Store } from "../../domain/store";
-import type { EnvExample } from "./envExamples";
+import { type EnvExample, envFromExample, type EnvState } from "./envExamples";
 import { type DemoInput, initialInputs, poolInput } from "./fixtures";
 import { initialUserPresets, type PresetDef, BUILTIN_PRESETS, presetKeys, uniqueName } from "./presets";
 import {
@@ -122,10 +122,11 @@ export interface DemoState {
   queueArea: AreaState;
   sync: SyncExample;
   /** Fictional environment example (never detected) and whether a demo re-detection is shown. */
-  envExample: EnvExample;
+  /** Review-strip example the environment last started from (null after setup changed it). */
+  envExample: EnvExample | null;
   envChecking: boolean;
-  /** Speaker diarization is set up in the (fictional) environment. */
-  diarizationReady: boolean;
+  /** The fictional environment: per-profile install state and diarization (iteration 4 P1 fix). */
+  env: EnvState;
   /** Queue page list controls (search / filter / sort on the synthetic jobs only). */
   queueQuery: string;
   queueFilter: QueueFilter;
@@ -156,8 +157,8 @@ export function inputIssues(state: Pick<DemoState, "common" | "overrides">, inpu
 }
 
 /** Whether an input would need speaker diarization that is not set up. */
-export function needsDiarization(state: Pick<DemoState, "common" | "overrides" | "diarizationReady">, inputId: string): boolean {
-  return !state.diarizationReady && effectiveSettings(state, inputId).diarization;
+export function needsDiarization(state: Pick<DemoState, "common" | "overrides" | "env">, inputId: string): boolean {
+  return !state.env.diarization && effectiveSettings(state, inputId).diarization;
 }
 
 /** Built-in and user presets in display order. */
@@ -305,7 +306,7 @@ export function normalInputId(state: Pick<DemoState, "inputs" | "selected" | "fo
 }
 
 export type SubmitBlock = "noSelection" | "allSubmitted" | "unsupported" | "invalid" | "diarization" | "area";
-type SubmitState = Pick<DemoState, "inputs" | "selected" | "jobs" | "inputsArea" | "common" | "overrides" | "diarizationReady">;
+type SubmitState = Pick<DemoState, "inputs" | "selected" | "jobs" | "inputsArea" | "common" | "overrides" | "env">;
 export type SkipReason = "unsupported" | "alreadySubmitted" | "invalid" | "diarization";
 
 /** Why one input cannot be submitted now (null = it can). */
@@ -401,7 +402,7 @@ function initialState(): DemoState {
     sync: "ok",
     envExample: "gpu",
     envChecking: false,
-    diarizationReady: true,
+    env: envFromExample("gpu"),
     queueQuery: "",
     queueFilter: "all",
     queueSort: "order",
@@ -428,9 +429,9 @@ export class DemoController {
   }
 
   /** Reviewer preferences that survive "reset" and scenario changes. */
-  private kept(): Pick<DemoState, "language" | "appearance" | "accentTheme" | "envExample" | "diarizationReady"> {
-    const { language, appearance, accentTheme, envExample, diarizationReady } = this.store.get();
-    return { language, appearance, accentTheme, envExample, diarizationReady };
+  private kept(): Pick<DemoState, "language" | "appearance" | "accentTheme" | "envExample" | "env"> {
+    const { language, appearance, accentTheme, envExample, env } = this.store.get();
+    return { language, appearance, accentTheme, envExample, env };
   }
 
   /** Back to the deterministic initial state; language, theme and the environment are kept. */
@@ -849,13 +850,18 @@ export class DemoController {
   }
 
   // ---- fictional environment ------------------------------------------------------------------
+  /** Review strip: start from a named example (keeps the current diarization state). */
   setEnvExample(envExample: EnvExample): void {
-    this.update(() => ({ envExample, envChecking: false }));
+    this.update((s) => ({ envExample, env: envFromExample(envExample, s.env.diarization), envChecking: false }));
   }
 
-  /** Used by the setup wizard and its examples (never by detection: nothing is detected). */
-  setEnvironment(envExample: EnvExample, diarizationReady: boolean): void {
-    this.update(() => ({ envExample, diarizationReady, envChecking: false }));
+  /**
+   * Used by the setup wizard and its examples (never by detection: nothing is detected). The
+   * wizard passes the WHOLE resulting environment, computed from the current one, so profiles it
+   * did not touch stay as they were.
+   */
+  setEnvironment(env: EnvState, example: EnvExample | null = null): void {
+    this.update(() => ({ env: { ...env }, envExample: example, envChecking: false }));
   }
 
   /** Demo "re-detect": only shows the checking state; nothing is detected (no request, no timer). */

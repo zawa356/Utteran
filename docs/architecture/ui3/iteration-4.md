@@ -264,3 +264,57 @@ ChromiumのエミュレーションはWindows実機の合格扱いにしない�
 3. **Expertの処理設定の範囲**: 5カテゴリと今回の項目で足りるか。whisper.cppの任意引数（`extra_arguments`）や後処理の残り十数項目を出すか（出すなら「上級」区画と安全審査が必要）。
 4. **プリセット交換形式**: `utteran-preset` v1（契約の入れ子名）を後続で正式化するか。プロンプト・用語集を既定で含めない方針でよいか。
 5. **狭幅と最小サイズ**: 2列（ファイル＋切替）／1列切替でよいか。Windowsの最小サイズ（通常800×550、Expert 1200×680）を強制するか、強制せず自動切替に任せるか。既定のアクセント色（緑/青）。
+
+## 14. 追補: P1修正（目視レビュー前、2026-11-05）
+
+コードレビューで見つかったP1の2件を、第4案の上に**通常コミット**で修正した（基点`3da8219`）。合成データのみの試作であることは変わらない
+（トークンの値・実セットアップ・GPU検出・ダウンロード・保存・通信なし）。本番build出力は同一ハッシュ。
+
+### 14.1 P1-1 認証情報と利用条件の同意を独立に判定
+
+- 状態: 資格情報は`detected.credential`（以前から存在）または`choices.credential`（このWizardで登録、**存在フラグのみ**）。同意は
+  `choices.acceptedAgreements: string[]`（受け入れた条件のid）。プランは`requiresCredential`と`requiredAgreements`（B8 `PlanContent.required_agreements`相当、
+  話者分離ONで`demo-diarization-model-terms-v1`）を持つ。`missingRequirements()`が**現在のプラン**に対して不足（`credential`／`agreement`）を返す。
+- 画面: 話者分離ONなら、トークンが既にあっても「話者分離の認証」ステップを出す（トークン行は「登録済み」、同意チェックは未チェック）。「トークンを登録…」は未登録の時だけ。
+  確認表の「トークン」「同意」行は**実際の状態**を表示し（未同意なら「未同意」）、話者分離OFFでは行ごと出さない。
+- 強制: 次へ（認証ステップ）・承認して開始（確認表）はビューで無効化するだけでなく、`approveAndStart()`が不足時に`false`を返して**実行状態へ移らない**。
+  `continueRun()`（再試行・再開）も、承認が現在のプラン版に対するものでない場合や不足がある場合は拒否する。プランを変える選択（デバイス・話者分離）は承認を無効化（従来どおり）。
+  追加Wizardは前回の同意を引き継がない（`open("add")`で空にする）。完了時も同意は破棄する。
+- 修復: 試作の修復プランは新しいモデルを入れないため`requiredAgreements: []`。実装ではB8が返す`required_agreements`に従う（「修復だから不要」と決め打ちしない）。
+
+### 14.2 P1-2 追加・修復が既存の実行環境を壊さない
+
+- 状態: 単一の`envExample`文字列の代わりに`EnvState { gpu, cpu: "absent"|"ready"|"repair", diarization, gpuDetected, preferred, loadFailed }`。
+  カード（`environmentView`）・Normalの開始可否・修復案内はすべてこの状態から導く。レビュー帯の環境例は名前付きの初期状態（`envFromExample`）で、
+  P1受入用に「GPUのみ（CPU未構成）」を追加。カードに「CPU用のセットアップ…」（`addCpu`）を追加。
+- 反映: `applySetupOutcome(現在の環境, {entry, device, diarization})`を**成功後の`finish()`でだけ**呼ぶ。初回・追加は選んだプロファイルをreadyにし、
+  話者分離は入れた時だけreadyにする（既にreadyなら維持）。修復は対象プロファイル（カードから引継ぎ、無指定なら`repairTarget`）だけをreadyにする。
+  他のプロファイル・話者分離・ジョブ・キュー・共通/個別設定は変えない。推奨（使用中）のプロファイル`preferred`は未設定の時だけ埋め、追加で自動的に切り替えない。
+  承認前・実行中・失敗・中断・完了ページ表示中は何も反映しない。初回で話者分離を入れなかった時だけ、処理設定の既定を話者分離オフにする（追加・修復では変えない）。
+- Wizardの表示: 追加時、既にreadyのプロファイルに「設定済み」、話者分離が設定済みなら「オフのままでもそのまま使えます」と1行。
+
+### 14.3 試験
+
+| 受入ケース | Vitest | E2E |
+|---|---|---|
+| 話者分離ON・認証あり／同意なし → 同意UI・承認不可、同意後に承認可 | `setup.test.ts` P1-1 | `P1-1 credential present, terms NOT accepted…`（英語表示も確認） |
+| 認証なし／同意あり → 承認不可 | P1-1 | `P1-1 token missing, terms accepted…` |
+| 両方あり → 承認可 | P1-1 | 同上（同意後に確認表へ） |
+| 話者分離OFF → 要求なし・誤った「同意済み」なし | P1-1 | `P1-1 diarization off…` |
+| `approveAndStart()`の直接呼出し、承認後の変更・設定変更・再試行・再開での検査 | P1-1（6件） | — |
+| GPU+話者分離 → CPU追加: GPU・話者分離・ジョブ・個別設定を保持、失敗・中断では不変 | `envExamples.test.ts`・`setup.test.ts` P1-2 | `P1-2 GPU ready + diarization ready → add CPU…` |
+| CPU → GPU追加 | 同上 | `P1-2 CPU ready → add GPU…` |
+| GPU要修復＋CPU → GPU修復: GPUのみ、話者分離を作らない | 同上 | `P1-2 GPU needs repair…`（Normalの開始可否・修復案内の整合も） |
+| GPU → 話者分離の追加（成功後のみready） | 同上 | — |
+| 初回CPUのみ → CPU ready・GPU未構成・話者分離オフで開始可 | 同上 | 既存`#24 first run…` |
+
+結果（Linux、headless Chromium）: Vitest **185 passed**（プロトタイプ108）、`npm run e2e` **10 passed**、`npm run e2e:prototype` **76 passed**（第4案33＝P1の6件を追加）、
+lint・typecheck ok、build出力ハッシュ同一（`index-CiI1nAQQ.js`・`index-Cp6HCEPQ.css`）。既存テストの削除・skip・条件緩和なし。期待値を変えたのは、
+「トークンが既にあれば認証ステップを省く」前提だった`credentialStepNeeded`の単体テストと、CPUのready表示（「注意あり」→「利用できます」＋速度の警告行）の単体テスト。
+画像（`p1-credential-present-terms-missing`・`p1-gpu-and-cpu-after-add`・`p1-after-gpu-repair`）は`UI3_SCREENSHOTS=1`で生成、commitしない。
+
+### 14.4 残る制約・後続
+
+- 試作の同意は条件id1種のみ。条件の改版（v1→v2）で再同意を求める挙動、資格情報の有効性（失効・拒否）は表現していない。
+- 推奨（使用中）プロファイルを切り替えるUIは無い（追加で勝手に切り替えないことだけを保証）。
+- **P2（今回は未着手）**: プリセット適用前に表示する変更件数と実際の変化のずれ、プリセット交換形式の正式化、デバイス情報の扱い。

@@ -7,7 +7,9 @@ import type { DevicePlan } from "../domain/setup";
  * Detected (fictional) facts and the one choice that matters: GPU or CPU. A GPU that was not found
  * cannot be chosen; the CPU always can — the wizard never forces a GPU.
  */
-const { setup, setupState, t } = usePreview();
+const { setup, setupState, state, t } = usePreview();
+// Adding to a working setup: say which profile is already set up (choosing it again only reinstalls it).
+const installed = (p: DevicePlan) => setupState.value.entry !== "first_run" && state.value.env[p] === "ready";
 </script>
 
 <template>
@@ -32,7 +34,7 @@ const { setup, setupState, t } = usePreview();
       <v-radio value="gpu" :disabled="!setupState.detected.gpu" color="primary" data-testid="wizard-device-gpu">
         <template #label>
           <div>
-            <div class="font-weight-medium">{{ t("wizard.env.gpuOption") }}<span v-if="setupState.detected.gpu"> — {{ t("env.recommended") }}</span></div>
+            <div class="font-weight-medium">{{ t("wizard.env.gpuOption") }}<span v-if="installed('gpu')" data-testid="wizard-installed-gpu"> — {{ t("wizard.env.installed") }}</span><span v-else-if="setupState.detected.gpu"> — {{ t("env.recommended") }}</span></div>
             <div class="text-body-medium">{{ setupState.detected.gpu ? t("wizard.env.gpuHint") : t("wizard.env.gpuUnavailable") }}</div>
           </div>
         </template>
@@ -40,7 +42,7 @@ const { setup, setupState, t } = usePreview();
       <v-radio value="cpu" color="primary" data-testid="wizard-device-cpu">
         <template #label>
           <div>
-            <div class="font-weight-medium">{{ t("wizard.env.cpuOption") }}<span v-if="!setupState.detected.gpu"> — {{ t("env.recommended") }}</span></div>
+            <div class="font-weight-medium">{{ t("wizard.env.cpuOption") }}<span v-if="installed('cpu')" data-testid="wizard-installed-cpu"> — {{ t("wizard.env.installed") }}</span><span v-else-if="!setupState.detected.gpu"> — {{ t("env.recommended") }}</span></div>
             <div class="text-body-medium">{{ t("wizard.env.cpuHint") }}</div>
           </div>
         </template>

@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { usePreview } from "../composables";
-import { planFor } from "../domain/setup";
+import { credentialPresent, DIARIZATION_TERMS, missingRequirements, planFor } from "../domain/setup";
 import type { PreviewKey } from "../i18n";
 
 /**
  * "What will be installed" (B8: the read-only plan). Components with example sizes, what will run,
  * and what was agreed — in one short list. Nothing happens before "Approve and start".
  */
-const { setupState, t } = usePreview();
+const { setup, setupState, t } = usePreview();
 const plan = computed(() => planFor(setupState.value.entry, setupState.value.choices));
+// What is actually given for THIS plan (never "accepted" just because the plan needs it).
+const missing = computed(() => missingRequirements(setupState.value));
+const termsAccepted = computed(() => setupState.value.choices.acceptedAgreements.includes(DIARIZATION_TERMS));
 const size = (mb: number) => (mb >= 1000 ? t("size.gb", { n: (mb / 1000).toFixed(1) }) : t("size.mb", { n: mb }));
 const itemName = (id: string) => {
   if (id === "runtime") return t(setupState.value.choices.device === "gpu" ? "plan.item.runtimeGpu" : "plan.item.runtimeCpu");
   if (id === "asrModel") return t(setupState.value.choices.device === "gpu" ? "plan.item.asrModelGpu" : "plan.item.asrModelCpu");
+  if (id === "repairRuntime") return t(setupState.value.choices.device === "gpu" ? "plan.item.repairRuntimeGpu" : "plan.item.repairRuntimeCpu");
   return t(`plan.item.${id}` as PreviewKey);
 };
 </script>
@@ -45,11 +49,16 @@ const itemName = (id: string) => {
     <dl class="p-dl text-body-medium">
       <dt>{{ t("plan.steps") }}</dt>
       <dd>{{ plan.stages.map((s) => t(`stage.${s}` as PreviewKey)).join(t("list.separator")) }}</dd>
-      <template v-if="plan.needsAgreement">
+      <template v-if="plan.requiresCredential">
+        <dt>{{ t("plan.credential") }}</dt>
+        <dd data-testid="plan-credential" :data-ok="credentialPresent(setupState)">{{ credentialPresent(setupState) ? t("wizard.cred.present") : t("wizard.cred.absent") }}</dd>
+      </template>
+      <template v-if="plan.requiredAgreements.length > 0">
         <dt>{{ t("plan.agreements") }}</dt>
-        <dd>{{ t("plan.agreementDone") }}</dd>
+        <dd data-testid="plan-agreement" :data-ok="termsAccepted">{{ termsAccepted ? t("plan.agreementDone") : t("plan.agreementMissing") }}</dd>
       </template>
     </dl>
     <p class="text-body-medium" data-testid="wizard-no-side-effects">{{ t("wizard.review.nothingYet") }}</p>
+    <v-btn v-if="missing.length > 0" variant="outlined" class="align-self-start" data-testid="wizard-fix-requirements" @click="setup.back()">{{ t("wizard.review.fixRequirements") }}</v-btn>
   </div>
 </template>

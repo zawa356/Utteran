@@ -2,6 +2,10 @@
 
 ## 現在地（2026-11-05、UI-3-0 第4イテレーション、0.1.43・未リリース、Draft PR #38の続き）
 
+- **P1修正（目視レビュー前）**: `3da8219`の上に通常コミット。認証情報と利用条件の同意を独立に判定し、不足時は承認・再試行・再開をコントローラで拒否。
+  環境を`EnvState`（GPU/CPUごとの状態＋話者分離）にし、追加・修復は成功後に対象だけを反映（既存のready構成・話者分離・ジョブ・設定を保持）。
+  Vitest 185、UI-2 E2E 10、プロトタイプE2E 76。詳細[ui3/iteration-4 §14](docs/architecture/ui3/iteration-4.md#14-追補-p1修正目視レビュー前2026-11-05)。PR #38のブランチへは未反映。
+
 - 開始HEAD`c6dc8cc0`（PR #38のブランチ`claude/blissful-planck-84e59y`の最新と一致を確認）。セッションの指定ブランチ`claude/festive-shannon-9ksc36`を
   このHEADから作り、通常pushで追加コミット（fast-forward可能。PR #38のブランチへは未push、Draft・merge・tagに触れていない）。versionは0.1.43のまま
   （理由は[ui3/iteration-4 §12](docs/architecture/ui3/iteration-4.md#12-versionの判断)）。変更は`frontend/src/preview/`・`frontend/e2e-preview/`・文書のみ。

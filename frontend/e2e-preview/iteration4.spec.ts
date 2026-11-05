@@ -1,4 +1,4 @@
-import { appBarOverlaps, choose, columns, expect, horizontalOverflow, lowContrastText, paneTops, readability, settled, setup, test } from "./fixtures";
+import { appBarOverlaps, choose, columns, expect, horizontalOverflow, lowContrastText, paneTops, readability, settled, setup, shot, test } from "./fixtures";
 
 /**
  * UI-3-0 iteration 4 (owner memos #15–#24). Synthetic data only; every test also fails on any
@@ -483,4 +483,134 @@ test("#21 1280 px: a typical file name is not cut in the files pane", async ({ p
   await settled(preview);
   const cut = await preview.getByTestId("input-row-in-02").locator(".p-explorer__name .p-ellipsis").evaluate((el) => el.scrollWidth > el.clientWidth);
   expect(cut).toBe(false); // "interview-sample-02.wav"
+});
+
+// ---- iteration 4 P1 fixes ------------------------------------------------------------------------------
+test("P1-1 credential present, terms NOT accepted: the terms step shows and blocks; approve only after accepting", async ({ preview }) => {
+  // "Set up" (default example): a diarization credential already exists.
+  await preview.getByTestId("topnav-setup").click();
+  await preview.getByTestId("env-setup").click();
+  await preview.getByTestId("wizard-next").click(); // environment → features
+  await preview.getByTestId("wizard-diarization").locator("input").click();
+  await preview.getByTestId("wizard-next").click();
+  const cred = preview.getByTestId("wizard-credentials");
+  await expect(cred).toBeVisible();
+  await expect(preview.getByTestId("wizard-credential-state")).toHaveAttribute("data-present", "true");
+  await expect(preview.getByTestId("wizard-register-credential")).toHaveCount(0); // "Register…" only while missing
+  await expect(preview.getByTestId("wizard-agreement").locator("input")).not.toBeChecked();
+  await expect(preview.getByTestId("wizard-next")).toBeDisabled();
+  await expect(preview.getByTestId("wizard-next-block")).toContainText("利用条件に同意すると");
+  await shot(preview, "p1-credential-present-terms-missing");
+  await preview.getByTestId("wizard-agreement").locator("input").click();
+  await preview.getByTestId("wizard-next").click();
+  await expect(preview.getByTestId("plan-agreement")).toHaveAttribute("data-ok", "true");
+  await expect(preview.getByTestId("plan-credential")).toHaveAttribute("data-ok", "true");
+  await expect(preview.getByTestId("wizard-approve")).toBeEnabled();
+  // Withdrawing the acceptance on the way back keeps "next" blocked again.
+  await preview.getByTestId("wizard-back").click();
+  await preview.getByTestId("wizard-agreement").locator("input").click();
+  await expect(preview.getByTestId("wizard-next")).toBeDisabled();
+  await preview.getByTestId("lang-en").click();
+  await expect(preview.getByTestId("wizard-next-block")).toHaveText("Accept the terms to continue.");
+  await expect(cred).toContainText("Token: registered (value not shown)");
+});
+
+test("P1-1 diarization off: no token or terms asked, approvable, and no false 'accepted' on the review", async ({ preview }) => {
+  await choose(preview, "toolbar-setup", /^初回起動/);
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
+  await expect(preview.getByTestId("wizard-review")).toBeVisible();
+  await expect(preview.getByTestId("plan-agreement")).toHaveCount(0);
+  await expect(preview.getByTestId("plan-credential")).toHaveCount(0);
+  await expect(preview.getByTestId("wizard-review")).not.toContainText("同意済み");
+  await expect(preview.getByTestId("wizard-approve")).toBeEnabled();
+});
+
+test("P1-1 token missing, terms accepted: still blocked on the token; 'continue without diarization' clears both", async ({ preview }) => {
+  await choose(preview, "toolbar-setup", /^話者分離のトークンなし/);
+  await preview.getByTestId("topnav-setup").click();
+  await preview.getByTestId("env-action-diarization-gpu").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-agreement").locator("input").click();
+  await expect(preview.getByTestId("wizard-next")).toBeDisabled();
+  await expect(preview.getByTestId("wizard-next-block")).toContainText("トークンを登録すると");
+  await preview.getByTestId("wizard-skip-diarization").click();
+  await expect(preview.getByTestId("plan-agreement")).toHaveCount(0);
+  await expect(preview.getByTestId("wizard-approve")).toBeEnabled();
+});
+
+test("P1-2 GPU ready + diarization ready → add CPU: GPU and diarization stay, jobs and settings untouched; nothing changes on failure", async ({ preview }) => {
+  await setup(preview, { scenario: /^複数ファイル・処理中/ });
+  await choose(preview, "toolbar-env", /^GPUのみ/);
+  await preview.getByTestId("mode-expert").click();
+  await expect(preview.getByTestId("queue-now").locator("li")).toHaveCount(4);
+  const jobsBefore = await preview.getByTestId("queue-now").innerText();
+  await expect(preview.getByTestId("input-row-in-02-override")).toHaveText("2");
+  await preview.getByTestId("nav-setup").click();
+  await expect(preview.getByTestId("env-profile-gpu").getByTestId("env-status-ready")).toBeVisible();
+  await expect(preview.getByTestId("env-profile-cpu").getByTestId("env-status-unavailable")).toBeVisible();
+
+  await preview.getByTestId("env-action-addCpu-cpu").click();
+  await expect(preview.getByTestId("wizard-device-cpu").locator("input")).toBeChecked();
+  await expect(preview.getByTestId("wizard-installed-gpu")).toBeVisible();
+  await preview.getByTestId("wizard-next").click();
+  await expect(preview.getByTestId("wizard-diarization-kept")).toBeVisible();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-approve").click();
+  await preview.getByTestId("wizard-demo-fail").click();
+  await preview.getByTestId("wizard-close").click();
+  await expect(preview.getByTestId("env-profile-cpu").getByTestId("env-status-unavailable")).toBeVisible(); // failure: unchanged
+  await expect(preview.getByTestId("env-profile-gpu").getByTestId("env-status-ready")).toBeVisible();
+
+  await preview.getByTestId("env-setup").click(); // the stopped operation is shown again
+  await preview.getByTestId("wizard-continue").click();
+  for (let i = 0; i < 12 && (await preview.getByTestId("wizard-demo-advance").count()) > 0; i += 1) await preview.getByTestId("wizard-demo-advance").click();
+  await preview.getByTestId("wizard-back-to-setup").click();
+  await expect(preview.getByTestId("env-profile-gpu").getByTestId("env-status-ready")).toBeVisible();
+  await expect(preview.getByTestId("env-profile-cpu").getByTestId("env-status-ready")).toBeVisible();
+  await expect(preview.getByTestId("env-profile-gpu").getByTestId("env-recommended")).toBeVisible(); // preferred profile unchanged
+  await expect(preview.getByTestId("env-profile-gpu").getByTestId("env-fact-diarization")).toHaveText("pyannote");
+  await expect(preview.getByTestId("env-profiles").locator("[data-testid^=env-action-]")).toHaveCount(0);
+  await shot(preview, "p1-gpu-and-cpu-after-add");
+  await preview.getByTestId("nav-transcribe").click();
+  expect(await preview.getByTestId("queue-now").innerText()).toBe(jobsBefore);
+  await expect(preview.getByTestId("input-row-in-02-override")).toHaveText("2");
+  await preview.getByTestId("mode-normal").click();
+  await expect(preview.getByTestId("input-diarization-normal").locator("input")).toBeChecked(); // default not changed
+});
+
+test("P1-2 GPU needs repair + CPU ready → repair: only the GPU changes; Normal start and notes agree", async ({ preview }) => {
+  await choose(preview, "toolbar-setup", /^構成に問題/);
+  await expect(preview.getByTestId("normal-start")).toBeEnabled();
+  await preview.getByTestId("normal-repair").click();
+  await expect(preview.getByTestId("plan-item-repairRuntime")).toContainText("GPU用");
+  await expect(preview.getByTestId("plan-agreement")).toHaveCount(0);
+  await preview.getByTestId("wizard-approve").click();
+  for (let i = 0; i < 6 && (await preview.getByTestId("wizard-demo-advance").count()) > 0; i += 1) await preview.getByTestId("wizard-demo-advance").click();
+  await preview.getByTestId("wizard-start-transcribing").click();
+  await expect(preview.getByTestId("normal-repair-note")).toHaveCount(0);
+  await expect(preview.getByTestId("normal-start")).toBeEnabled();
+  await preview.getByTestId("mode-expert").click();
+  await preview.getByTestId("nav-setup").click();
+  await expect(preview.getByTestId("env-profile-gpu").getByTestId("env-status-ready")).toBeVisible();
+  await expect(preview.getByTestId("env-profile-cpu").getByTestId("env-status-ready")).toBeVisible();
+  await expect(preview.getByTestId("env-profile-cpu").getByTestId("env-recommended")).toBeVisible(); // still the preferred one
+  await shot(preview, "p1-after-gpu-repair");
+});
+
+test("P1-2 CPU ready → add GPU from the card: both profiles ready afterwards", async ({ preview }) => {
+  await choose(preview, "toolbar-env", /^CPUのみの例/);
+  await preview.getByTestId("mode-expert").click();
+  await preview.getByTestId("nav-setup").click();
+  await preview.getByTestId("env-action-addGpu-gpu").click();
+  await expect(preview.getByTestId("wizard-device-gpu").locator("input")).toBeChecked();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-approve").click();
+  for (let i = 0; i < 12 && (await preview.getByTestId("wizard-demo-advance").count()) > 0; i += 1) await preview.getByTestId("wizard-demo-advance").click();
+  await preview.getByTestId("wizard-back-to-setup").click();
+  await expect(preview.getByTestId("env-profile-gpu").getByTestId("env-status-ready")).toBeVisible();
+  await expect(preview.getByTestId("env-profile-cpu").getByTestId("env-status-ready")).toBeVisible();
 });

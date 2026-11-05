@@ -1,5 +1,5 @@
 import { Store } from "../../domain/store";
-import type { EnvExample } from "./envExamples";
+import { applySetupOutcome, type EnvExample, envFromExample, type EnvState, repairTarget } from "./envExamples";
 
 /**
  * Setup wizard of the UI-3-0 prototype (iteration 4, owner memos #23/#24). It models the
@@ -11,6 +11,14 @@ import type { EnvExample } from "./envExamples";
  * Changing a choice after approval invalidates the approval (B8 `reapproval_required`). The legacy
  * wizard (utteran_gui/setup_wizard.py) and B8 are not mixed: nothing here reads the legacy
  * `setup_wizard_*` settings or treats their completion as evidence for this flow.
+ *
+ * Iteration 4 P1 fixes:
+ *  - a credential (present or not) and the acceptance of the model terms are SEPARATE: a plan lists
+ *    what it requires (B8 `PlanContent.required_agreements`) and the approval carries what was
+ *    accepted (`ApprovalRequest.accepted_agreement_ids`). Missing either blocks "next", the approval
+ *    and any retry / resume — in the controller, not only in the view;
+ *  - a successful setup changes only what its plan installed or repaired (`applySetupOutcome`);
+ *    nothing is applied before success.
  */
 export type SetupExample = "configured" | "first_run" | "incomplete" | "failed" | "needs_repair" | "cpu_only" | "missing_token";
 export const SETUP_EXAMPLES: readonly SetupExample[] = ["configured", "first_run", "incomplete", "failed", "needs_repair", "cpu_only", "missing_token"];
@@ -31,13 +39,17 @@ export interface Detected {
 }
 
 export interface WizardChoices {
+  /** The profile to install (first run / add) or to repair (repair). */
   device: DevicePlan;
   diarization: boolean;
-  /** Demo stand-in for "a credential has been registered" — no value is entered or kept. */
+  /** Demo stand-in for "a credential was registered in this wizard" — no value is entered or kept. */
   credential: boolean;
-  /** The model terms of the diarization model were accepted. */
-  agreement: boolean;
+  /** Ids of the terms the user accepted (checked against the CURRENT plan's required ids). */
+  acceptedAgreements: string[];
 }
+
+/** Terms of the (fictional) diarization model; the id names the version that was accepted. */
+export const DIARIZATION_TERMS = "demo-diarization-model-terms-v1";
 
 export interface StageRun {
   id: StageId;
@@ -77,14 +89,19 @@ export interface SetupPlan {
   stages: StageId[];
   downloadMb: number;
   diskMb: number;
-  needsAgreement: boolean;
+  /** A credential must be present before the plan can be approved. */
+  requiresCredential: boolean;
+  /** Agreement ids the approval must accept (B8 `required_agreements`). */
+  requiredAgreements: string[];
+  /** The profile this plan installs or repairs; every other profile is preserved. */
+  target: DevicePlan;
 }
 
 /** The plan for the current choices (B8: read-only, computed before any approval). */
 export function planFor(entry: WizardEntry, choices: WizardChoices): SetupPlan {
   const items: PlanItem[] = [];
   if (entry === "repair") {
-    items.push({ id: "repairRuntime", downloadMb: 900, diskMb: 2100 });
+    items.push(choices.device === "gpu" ? { id: "repairRuntime", downloadMb: 900, diskMb: 2100 } : { id: "repairRuntime", downloadMb: 300, diskMb: 700 });
   } else {
     items.push(choices.device === "gpu" ? { id: "runtime", downloadMb: 2400, diskMb: 5200 } : { id: "runtime", downloadMb: 600, diskMb: 1400 });
     items.push(choices.device === "gpu" ? { id: "asrModel", downloadMb: 1600, diskMb: 1600 } : { id: "asrModel", downloadMb: 480, diskMb: 480 });
@@ -100,13 +117,38 @@ export function planFor(entry: WizardEntry, choices: WizardChoices): SetupPlan {
     stages,
     downloadMb: items.reduce((n, i) => n + i.downloadMb, 0),
     diskMb: items.reduce((n, i) => n + i.diskMb, 0),
-    needsAgreement: entry !== "repair" && choices.diarization,
+    // The repair mock installs no new model, so it requires no terms; a real repair plan would
+    // carry whatever `required_agreements` the backend lists for it.
+    requiresCredential: entry !== "repair" && choices.diarization,
+    requiredAgreements: entry !== "repair" && choices.diarization ? [DIARIZATION_TERMS] : [],
+    target: choices.device,
   };
 }
 
-/** Whether the credential step is part of this run of the wizard (only when it is needed). */
+export type Requirement = "credential" | "agreement";
+
+/** Whether a credential exists (found before, or registered in this wizard). Presence only. */
+export function credentialPresent(s: Pick<SetupState, "detected" | "choices">): boolean {
+  return s.detected.credential || s.choices.credential;
+}
+
+/** What the CURRENT plan still needs before it may be approved or run (credential and terms, independently). */
+export function missingRequirements(s: Pick<SetupState, "entry" | "choices" | "detected">): Requirement[] {
+  const plan = planFor(s.entry, s.choices);
+  const missing: Requirement[] = [];
+  if (plan.requiresCredential && !credentialPresent(s)) missing.push("credential");
+  if (plan.requiredAgreements.some((id) => !s.choices.acceptedAgreements.includes(id))) missing.push("agreement");
+  return missing;
+}
+
+/**
+ * Whether the credential / terms step is part of this run of the wizard: whenever the plan
+ * requires a credential or terms — also when a credential already exists, because the terms of
+ * this plan still have to be accepted.
+ */
 export function credentialStepNeeded(s: Pick<SetupState, "entry" | "choices" | "detected">): boolean {
-  return s.entry !== "repair" && s.choices.diarization && !s.detected.credential;
+  const plan = planFor(s.entry, s.choices);
+  return plan.requiresCredential || plan.requiredAgreements.length > 0;
 }
 
 /** The pre-approval steps in order (the run and done pages follow the approval). */
@@ -118,13 +160,10 @@ export function wizardSteps(s: Pick<SetupState, "entry" | "choices" | "detected"
   return steps;
 }
 
-/** Why "next" is unavailable on the current step (null = it can be pressed). */
-export function nextBlock(s: SetupState): "gpuMissing" | "credential" | "agreement" | null {
+/** Why "next" (or, on the review step, "approve") is unavailable now (null = it can be pressed). */
+export function nextBlock(s: SetupState): "gpuMissing" | Requirement | null {
   if (s.step === "environment" && s.choices.device === "gpu" && !s.detected.gpu) return "gpuMissing";
-  if (s.step === "credentials" && s.choices.diarization) {
-    if (!s.choices.credential) return "credential";
-    if (!s.choices.agreement) return "agreement";
-  }
+  if (s.step === "credentials" || s.step === "review") return missingRequirements(s)[0] ?? null;
   return null;
 }
 
@@ -150,7 +189,7 @@ const FAIL_CODE: Record<StageId, string> = {
   smoke: "demo_smoke_failed",
 };
 
-const NO_CHOICES: WizardChoices = { device: "gpu", diarization: false, credential: false, agreement: false };
+const NO_CHOICES: WizardChoices = { device: "gpu", diarization: false, credential: false, acceptedAgreements: [] };
 
 function base(example: SetupExample): SetupState {
   return {
@@ -184,7 +223,7 @@ export function exampleState(example: SetupExample): SetupState {
     case "cpu_only":
       return { ...s, configured: false, wizardOpen: true, detected: { gpu: false, credential: false }, choices: { ...NO_CHOICES, device: "cpu" } };
     case "incomplete": {
-      const choices: WizardChoices = { device: "gpu", diarization: false, credential: false, agreement: false };
+      const choices: WizardChoices = { device: "gpu", diarization: false, credential: false, acceptedAgreements: [] };
       return {
         ...s,
         configured: false,
@@ -200,7 +239,7 @@ export function exampleState(example: SetupExample): SetupState {
       };
     }
     case "failed": {
-      const choices: WizardChoices = { device: "gpu", diarization: true, credential: true, agreement: true };
+      const choices: WizardChoices = { device: "gpu", diarization: true, credential: true, acceptedAgreements: [DIARIZATION_TERMS] };
       return {
         ...s,
         configured: false,
@@ -223,26 +262,29 @@ export function exampleState(example: SetupExample): SetupState {
   }
 }
 
-/** Environment example the rest of the prototype shows for a setup example. */
-export function envForExample(example: SetupExample): { env: EnvExample; diarizationReady: boolean } {
+/** Environment the rest of the prototype starts from for a setup example (and the review-strip label). */
+export function envForExample(example: SetupExample): { env: EnvState; label: EnvExample } {
   switch (example) {
     case "first_run":
-    case "cpu_only":
     case "incomplete":
     case "failed":
-      return { env: "unconfigured", diarizationReady: false };
+      return { env: envFromExample("unconfigured"), label: "unconfigured" };
+    case "cpu_only":
+      return { env: { ...envFromExample("unconfigured"), gpuDetected: false }, label: "unconfigured" };
     case "needs_repair":
-      return { env: "repair", diarizationReady: true };
+      return { env: envFromExample("repair", true), label: "repair" };
     case "missing_token":
-      return { env: "gpu", diarizationReady: false };
+      return { env: envFromExample("gpu", false), label: "gpu" };
     default:
-      return { env: "gpu", diarizationReady: true };
+      return { env: envFromExample("gpu", true), label: "gpu" };
   }
 }
 
 export interface SetupEffects {
-  /** Called when the wizard finishes: the rest of the prototype then shows this environment. */
-  applyEnvironment(env: EnvExample, diarizationReady: boolean): void;
+  /** The environment as it is now (the wizard changes it only after a successful run). */
+  currentEnvironment(): EnvState;
+  /** Shows a new environment (computed from the current one by the wizard, or an example). */
+  applyEnvironment(env: EnvState, label: EnvExample | null): void;
   /** Defaults that follow the wizard's feature choices (e.g. diarization off when it was not installed). */
   applyDefaults(patch: { diarization?: boolean }): void;
   notify(key: string, params?: Record<string, string | number>): void;
@@ -258,9 +300,10 @@ export class SetupController {
   }
 
   setExample(example: SetupExample): void {
-    this.store.set(exampleState(example));
-    const { env, diarizationReady } = envForExample(example);
-    this.effects.applyEnvironment(env, diarizationReady);
+    const { env, label } = envForExample(example);
+    const state = exampleState(example);
+    this.store.set({ ...state, detected: { ...state.detected, gpu: env.gpuDetected } });
+    this.effects.applyEnvironment(env, label);
   }
 
   /**
@@ -274,10 +317,21 @@ export class SetupController {
       this.patch({ wizardOpen: true, step: "run" });
       return;
     }
-    const steps = wizardSteps({ ...s, entry });
-    const choices: WizardChoices = { ...s.choices, ...preset };
-    if (!s.detected.gpu) choices.device = "cpu";
+    const env = this.effects.currentEnvironment();
+    // First run keeps what was chosen before the wizard was closed; add / repair start fresh
+    // with what the card asked for (e.g. "Set up the GPU…" → device gpu).
+    let choices: WizardChoices;
+    if (entry === "first_run") choices = { ...s.choices, ...preset };
+    else if (entry === "repair") choices = { ...NO_CHOICES, device: preset.device ?? repairTarget(env) ?? "gpu" };
+    else {
+      const fallback: DevicePlan = env.gpu !== "ready" && env.gpuDetected ? "gpu" : "cpu";
+      choices = { ...NO_CHOICES, device: fallback, ...preset, acceptedAgreements: [...(preset.acceptedAgreements ?? [])] };
+    }
+    const detected = { ...s.detected, gpu: env.gpuDetected };
+    if (!detected.gpu && entry !== "repair") choices.device = "cpu";
+    const steps = wizardSteps({ ...s, entry, choices, detected });
     this.patch({
+      detected,
       wizardOpen: true,
       entry,
       step: steps[0]!,
@@ -294,16 +348,24 @@ export class SetupController {
     this.patch({ wizardOpen: false });
   }
 
-  setChoice<K extends keyof WizardChoices>(key: K, value: WizardChoices[K]): void {
+  /** A choice that changes the PLAN (device, diarization): any earlier approval is void (B8 reapproval_required). */
+  setChoice<K extends "device" | "diarization">(key: K, value: WizardChoices[K]): void {
     const s = this.store.get();
     if (s.choices[key] === value) return;
-    // Any change of the plan after an approval needs a new approval (B8 reapproval_required).
-    this.patch({ choices: { ...s.choices, [key]: value }, planRevision: s.planRevision + 1, approved: false });
+    this.patch({ choices: { ...s.choices, [key]: value }, planRevision: s.planRevision + 1, approved: false, approvedRevision: null });
   }
 
   /** Demo: mark a credential as registered (no value is typed, shown or stored). */
   registerCredential(): void {
-    this.setChoice("credential", true);
+    const s = this.store.get();
+    this.patch({ choices: { ...s.choices, credential: true } });
+  }
+
+  /** Accept or withdraw one set of terms (sent with the next approval). */
+  setAgreement(id: string, accepted: boolean): void {
+    const s = this.store.get();
+    const rest = s.choices.acceptedAgreements.filter((a) => a !== id);
+    this.patch({ choices: { ...s.choices, acceptedAgreements: accepted ? [...rest, id] : rest } });
   }
 
   next(): void {
@@ -327,10 +389,18 @@ export class SetupController {
     this.patch({ step: "review" });
   }
 
-  /** Approves the shown plan and starts the (fictional) operation. Done stages of an earlier attempt are kept. */
-  approveAndStart(): void {
+  /**
+   * Approves the shown plan and starts the (fictional) operation. Refused — whoever calls it — while
+   * the plan's credential or terms are missing. Done stages of an earlier attempt are kept.
+   * Returns whether the operation started.
+   */
+  approveAndStart(): boolean {
     const s = this.store.get();
-    if (s.step !== "review") return;
+    if (s.step !== "review") return false;
+    if (missingRequirements(s).length > 0) {
+      this.effects.notify("notice.setupBlocked");
+      return false;
+    }
     const plan = planFor(s.entry, s.choices);
     const previous = new Map(s.stages.map((st) => [st.id, st.status]));
     const stages = plan.stages.map((id): StageRun => ({ id, status: previous.get(id) === "done" ? "done" : "pending", fraction: null }));
@@ -338,6 +408,7 @@ export class SetupController {
     if (first >= 0) stages[first] = this.enter(stages[first]!);
     this.patch({ approved: true, approvedRevision: s.planRevision, step: first >= 0 ? "run" : "done", run: first >= 0 ? "running" : "succeeded", stages, attempt: s.attempt + 1, errorCode: null });
     this.effects.notify("notice.setupStarted");
+    return true;
   }
 
   private enter(stage: StageRun): StageRun {
@@ -387,12 +458,18 @@ export class SetupController {
   }
 
   /** retry (failed) / resume (interrupted): same approved plan, the stopped stage starts again. */
-  continueRun(): void {
+  continueRun(): boolean {
     const s = this.store.get();
-    if (s.run !== "failed" && s.run !== "interrupted") return;
+    if (s.run !== "failed" && s.run !== "interrupted") return false;
+    // Retry / resume reuse the approval only for the plan it was given for, with its requirements met.
+    if (!s.approved || s.approvedRevision !== s.planRevision || missingRequirements(s).length > 0) {
+      this.effects.notify("notice.setupBlocked");
+      return false;
+    }
     const stages = s.stages.map((st) => (st.status === "failed" || st.status === "interrupted" ? this.enter(st) : st));
     this.patch({ stages, run: "running", attempt: s.attempt + 1, errorCode: null });
     this.effects.notify(s.run === "failed" ? "notice.setupRetried" : "notice.setupResumed");
+    return true;
   }
 
   /** "Change settings" from a stopped run: back to the choices; a new approval is needed. */
@@ -404,15 +481,29 @@ export class SetupController {
     this.patch({ run: "idle", step: target, approved: false, approvedRevision: null, planRevision: s.planRevision + 1, errorCode: null });
   }
 
-  /** Last page: the rest of the prototype now shows the configured (fictional) environment. */
+  /**
+   * Last page, only after a SUCCESSFUL run: the plan's outcome is applied to the CURRENT environment
+   * (added / repaired profile only; everything else is preserved). Jobs, queue and settings are
+   * not touched — except that a first run without diarization makes "diarization off" the default.
+   */
   finish(): void {
     const s = this.store.get();
     if (s.run !== "succeeded") return;
-    const env: EnvExample = s.entry === "repair" ? "gpu" : s.choices.device === "gpu" ? "gpu" : "cpu";
-    const diarizationReady = s.entry === "repair" ? true : s.choices.diarization;
-    this.store.set({ ...s, configured: true, wizardOpen: false, run: "idle", stages: [], step: "welcome", example: "configured", detected: { ...s.detected, credential: s.detected.credential || s.choices.credential } });
-    this.effects.applyEnvironment(env, diarizationReady);
-    if (s.entry !== "repair" && !s.choices.diarization) this.effects.applyDefaults({ diarization: false });
+    const before = this.effects.currentEnvironment();
+    const env = applySetupOutcome(before, { entry: s.entry, device: s.choices.device, diarization: s.choices.diarization });
+    this.store.set({
+      ...s,
+      configured: true,
+      wizardOpen: false,
+      run: "idle",
+      stages: [],
+      step: "welcome",
+      example: "configured",
+      choices: { ...s.choices, acceptedAgreements: [] },
+      detected: { ...s.detected, credential: credentialPresent(s) },
+    });
+    this.effects.applyEnvironment(env, null);
+    if (s.entry === "first_run" && !env.diarization) this.effects.applyDefaults({ diarization: false });
     this.effects.notify("notice.setupDone");
   }
 }

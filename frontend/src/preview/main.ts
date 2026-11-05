@@ -28,7 +28,8 @@ const vuetify = createVuetify({
 const app = createApp(PreviewApp);
 const demo = new DemoController();
 const setup = new SetupController({
-  applyEnvironment: (env, diarizationReady) => demo.setEnvironment(env, diarizationReady),
+  currentEnvironment: () => demo.store.get().env,
+  applyEnvironment: (env, label) => demo.setEnvironment(env, label),
   applyDefaults: (patch) => demo.setCommonPatch(patch),
   notify: (key, params) => demo.say(key, params),
 });

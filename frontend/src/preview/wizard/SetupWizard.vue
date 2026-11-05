@@ -76,7 +76,7 @@ function backToSetup() {
       </template>
       <template v-else-if="step !== 'run'">
         <v-btn variant="outlined" :prepend-icon="mdiArrowLeft" :disabled="index <= 0" data-testid="wizard-back" @click="setup.back()">{{ t("wizard.back") }}</v-btn>
-        <v-btn v-if="step === 'review'" color="primary" :prepend-icon="mdiPlay" data-testid="wizard-approve" @click="setup.approveAndStart()">{{ t("wizard.approve") }}</v-btn>
+        <v-btn v-if="step === 'review'" color="primary" :prepend-icon="mdiPlay" :disabled="block !== null" data-testid="wizard-approve" @click="setup.approveAndStart()">{{ t("wizard.approve") }}</v-btn>
         <v-btn v-else color="primary" :append-icon="mdiArrowRight" :disabled="block !== null" data-testid="wizard-next" @click="setup.next()">{{ t("wizard.next") }}</v-btn>
       </template>
     </footer>

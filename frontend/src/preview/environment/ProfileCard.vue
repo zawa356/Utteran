@@ -23,11 +23,21 @@ const { openSetup } = useSetupNav();
 const BRIEF = new Set(["asr", "model", "device", "runtime", "diarization"]);
 const facts = computed(() => (props.brief ? props.profile.facts.filter((f) => BRIEF.has(f.label)) : props.profile.facts));
 const hasDetails = computed(() => props.profile.detection.length + props.profile.warnings.length > 0);
-const ACTION: Record<EnvAction, { entry: WizardEntry; preset: Partial<WizardChoices>; key: PreviewKey }> = {
-  setup: { entry: "first_run", preset: {}, key: "env.action.setup" },
-  addGpu: { entry: "add", preset: { device: "gpu" }, key: "env.action.addGpu" },
-  repair: { entry: "repair", preset: {}, key: "env.action.repair" },
-  diarization: { entry: "add", preset: { diarization: true }, key: "env.action.diarization" },
+// Each card action names its target, so the wizard installs / repairs exactly that profile or feature.
+const action = (a: EnvAction): { entry: WizardEntry; preset: Partial<WizardChoices>; key: PreviewKey } => {
+  const device = props.profile.name === "none" ? undefined : props.profile.name;
+  switch (a) {
+    case "setup":
+      return { entry: "first_run", preset: {}, key: "env.action.setup" };
+    case "addGpu":
+      return { entry: "add", preset: { device: "gpu", diarization: false }, key: "env.action.addGpu" };
+    case "addCpu":
+      return { entry: "add", preset: { device: "cpu", diarization: false }, key: "env.action.addCpu" };
+    case "repair":
+      return { entry: "repair", preset: device ? { device } : {}, key: "env.action.repair" };
+    default:
+      return { entry: "add", preset: { ...(device ? { device } : {}), diarization: true }, key: "env.action.diarization" };
+  }
 };
 </script>
 
@@ -55,9 +65,9 @@ const ACTION: Record<EnvAction, { entry: WizardEntry; preset: Partial<WizardChoi
           :variant="a === 'repair' || a === 'setup' ? 'flat' : 'tonal'"
           color="primary"
           :data-testid="`env-action-${a}-${profile.name}`"
-          @click="openSetup(ACTION[a].entry, ACTION[a].preset)"
+          @click="openSetup(action(a).entry, action(a).preset)"
         >
-          {{ t(ACTION[a].key) }}
+          {{ t(action(a).key) }}
         </v-btn>
         <v-spacer />
         <v-btn v-if="!brief && hasDetails" variant="text" :append-icon="expanded ? mdiChevronUp : mdiChevronDown" :aria-expanded="expanded" :data-testid="`env-toggle-${profile.name}`" @click="emit('toggle')">
