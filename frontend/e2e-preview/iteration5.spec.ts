@@ -383,3 +383,66 @@ test("#32 Tools → Repair and reset: three separate operations; reset is a conf
   await preview.getByTestId("nav-transcribe").click();
   await expect(preview.getByTestId("queue-now").locator("li")).toHaveCount(4); // nothing was reset
 });
+
+// ---- review fixes (P1-1 / P1-2) ---------------------------------------------------------------------------
+test("review P1-2: first setup with large-v3 → Normal shows it → the submitted job's snapshot uses large-v3", async ({ preview }) => {
+  await choose(preview, "toolbar-setup", /^初回起動/);
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-change-model").click();
+  await preview.getByTestId("wizard-model-option-large-v3").locator("input").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-approve").click();
+  await advanceAll(preview);
+  await preview.getByTestId("wizard-start-transcribing").click();
+  await preview.getByTestId("config-details").click();
+  await expect(preview.getByTestId("input-model-normal")).toContainText("large-v3");
+  await expect(preview.getByTestId("input-model-normal")).not.toContainText("large-v3-turbo");
+  await preview.getByTestId("normal-start").click();
+  await preview.getByTestId("mode-expert").click();
+  await preview.getByTestId("nav-queue").click();
+  await preview.getByTestId("queue-row-demo-job-001").click();
+  await expect(preview.getByTestId("job-snapshot")).toContainText("faster-whisper · large-v3 /");
+  await shot(preview, "i5-15-first-setup-model-in-job");
+});
+
+test("review P1-2: first setup with Kotoba-Whisper is not replaced by another model", async ({ preview }) => {
+  await choose(preview, "toolbar-setup", /^初回起動/);
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-change-model").click();
+  await preview.getByTestId("wizard-model-option-kotoba-whisper-v2.0").locator("input").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-approve").click();
+  await advanceAll(preview);
+  await preview.getByTestId("wizard-start-transcribing").click();
+  await preview.getByTestId("normal-start").click();
+  await preview.getByTestId("mode-expert").click();
+  await preview.getByTestId("nav-queue").click();
+  await preview.getByTestId("queue-row-demo-job-001").click();
+  await expect(preview.getByTestId("job-snapshot")).toContainText("kotoba-whisper-v2.0");
+});
+
+test("review P1-1: model A fetched, later stage fails → change to model B → re-approve: the model stage runs again", async ({ preview }) => {
+  await choose(preview, "toolbar-setup", /^初回起動/);
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-approve").click();
+  for (let i = 0; i < 14 && (await preview.getByTestId("wizard-stage-smoke").getAttribute("data-status")) !== "running"; i += 1) await preview.getByTestId("wizard-demo-advance").click();
+  await expect(preview.getByTestId("wizard-stage-asr_model")).toHaveAttribute("data-status", "done");
+  await preview.getByTestId("wizard-demo-fail").click();
+  await preview.getByTestId("wizard-change").click();
+  await preview.getByTestId("wizard-back").click(); // features → device and models
+  await preview.getByTestId("wizard-change-model").click();
+  await preview.getByTestId("wizard-model-option-large-v3").locator("input").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
+  await expect(preview.getByTestId("plan-item-model-large-v3")).toBeVisible();
+  await preview.getByTestId("wizard-approve").click();
+  await expect(preview.getByTestId("wizard-stage-asr_model")).toHaveAttribute("data-status", "pending");
+  await expect(preview.getByTestId("wizard-stages").locator("[data-status=done]")).toHaveCount(0);
+  await shot(preview, "i5-16-reapproved-plan-starts-over");
+  await advanceAll(preview);
+  await expect(preview.getByTestId("wizard-done-models")).toHaveText("Whisper large-v3");
+});

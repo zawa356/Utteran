@@ -251,7 +251,10 @@ export interface EngineCandidates {
 
 const MOCK_ENGINE_CANDIDATES: Record<AsrBackend, EngineCandidates> = {
   auto: { models: DEMO_MODELS, devices: ["auto"], computeTypes: null },
-  "faster-whisper": { models: ["large-v3-turbo", "large-v3", "medium", "small"], devices: ["auto", "cpu", "cuda"], computeTypes: COMPUTE_TYPES },
+  // Iteration 5 review fix P1-2: every faster-whisper model the setup wizard offers (setupCatalog.ts)
+  // is listed, so a first setup with Kotoba-Whisper is not silently "normalised" to another model.
+  // Still a synthetic example; the real model / device compatibility comes from B4.
+  "faster-whisper": { models: ["large-v3-turbo", "large-v3", "kotoba-whisper-v2.0", "medium", "small"], devices: ["auto", "cpu", "cuda"], computeTypes: COMPUTE_TYPES },
   "whisper-cpp": { models: ["ggml-large-v3-turbo", "ggml-medium", "ggml-small"], devices: ["auto", "cpu", "cuda", "vulkan"], computeTypes: null },
   "openvino-genai": { models: ["whisper-large-v3-turbo-ov", "whisper-small-ov"], devices: ["auto", "cpu", "gpu", "npu"], computeTypes: null },
 };

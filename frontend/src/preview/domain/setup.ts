@@ -126,6 +126,12 @@ export interface SetupState {
   /** Bumped whenever the plan changes; an approval belongs to one revision. */
   planRevision: number;
   approvedRevision: number | null;
+  /**
+   * Identity of the plan the current `stages` belong to (`planKey`), set when a plan is approved.
+   * Review fix P1-1: stages are never carried over to a DIFFERENT plan — only retry / resume of the
+   * same approved plan keeps finished stages, and `finish()` applies nothing unless this matches.
+   */
+  runPlanKey: string | null;
   run: RunState;
   stages: StageRun[];
   attempt: number;
@@ -211,6 +217,25 @@ export function planFor(entry: WizardEntry, choices: WizardChoices, inventory: I
 /** The B8 `SetupPlanRequest` fields the choices stand for (shape check only; nothing is sent). */
 export function planRequest(choices: WizardChoices): { profile_kind: "cuda" | "cpu"; model_refs: string[]; diarization_enabled: boolean } {
   return { profile_kind: PROFILE_KIND[choices.device], model_refs: choices.models.map((m) => modelRef(choices.engine, m)), diarization_enabled: choices.diarization };
+}
+
+/**
+ * Everything that decides WHAT a plan installs (entry, target, engine, models, main model, features,
+ * and the inventory it was computed against). Two plans with the same stage ids but a different key
+ * install different things, so a finished stage of one never counts for the other.
+ */
+export function planKey(entry: WizardEntry, choices: WizardChoices, inventory: Inventory): string {
+  const plan = planFor(entry, choices, inventory);
+  return JSON.stringify({
+    entry,
+    device: choices.device,
+    engine: choices.engine,
+    models: [...choices.models].sort(),
+    primary: choices.primaryModel,
+    diarization: choices.diarization,
+    items: plan.items.map((i) => `${i.id}:${i.modelId ?? ""}`),
+    stages: plan.stages,
+  });
 }
 
 /** Chosen models that the chosen engine/device does not offer (they block "next"). */
@@ -333,6 +358,7 @@ function base(example: SetupExample): SetupState {
     approved: false,
     planRevision: 1,
     approvedRevision: null,
+    runPlanKey: null,
     run: "idle",
     stages: [],
     attempt: 0,
@@ -363,6 +389,7 @@ export function exampleState(example: SetupExample): SetupState {
         choices,
         approved: true,
         approvedRevision: 1,
+        runPlanKey: planKey("first_run", choices, EMPTY_INVENTORY),
         run: "interrupted",
         attempt: 1,
         stages: stagesOf(planFor("first_run", choices).stages, { preflight: "done", runtime: "done", vad_model: "done", asr_model: "interrupted" }),
@@ -379,6 +406,7 @@ export function exampleState(example: SetupExample): SetupState {
         choices,
         approved: true,
         approvedRevision: 1,
+        runPlanKey: planKey("first_run", choices, EMPTY_INVENTORY),
         run: "failed",
         attempt: 1,
         errorCode: FAIL_CODE.asr_model,
@@ -410,14 +438,39 @@ export function envForExample(example: SetupExample): { env: EnvState; label: En
   }
 }
 
+/** Common processing defaults a first setup may set (a subset of the prototype's ProcessingSettings). */
+export interface SetupDefaults {
+  backend: SetupEngine;
+  model: string;
+  device: "cuda" | "cpu";
+  computeType: "auto";
+  diarization: boolean;
+}
+
 export interface SetupEffects {
   /** The environment as it is now (the wizard changes it only after a successful run). */
   currentEnvironment(): EnvState;
   /** Shows a new environment (computed from the current one by the wizard, or an example). */
   applyEnvironment(env: EnvState, label: EnvExample | null): void;
   /** Defaults that follow the wizard's feature choices (e.g. diarization off when it was not installed). */
-  applyDefaults(patch: { diarization?: boolean }): void;
+  applyDefaults(patch: SetupDefaults): void;
   notify(key: string, params?: Record<string, string | number>): void;
+}
+
+/** What a completed first setup writes into the common processing defaults. */
+export function firstRunDefaults(choices: WizardChoices, diarizationReady: boolean): SetupDefaults {
+  return { backend: choices.engine, model: choices.primaryModel, device: choices.device === "gpu" ? "cuda" : "cpu", computeType: "auto", diarization: diarizationReady };
+}
+
+/**
+ * A run counts as completed only when every stage of the CURRENT approved plan is done: approved,
+ * the approval is for the current revision, the stages belong to this plan, and none is missing.
+ */
+export function runCompleted(s: SetupState): boolean {
+  if (s.run !== "succeeded" || !s.approved || s.approvedRevision !== s.planRevision) return false;
+  if (s.runPlanKey !== planKey(s.entry, s.choices, s.inventory)) return false;
+  const expected = planFor(s.entry, s.choices, s.inventory).stages;
+  return s.stages.length === expected.length && s.stages.every((st, i) => st.id === expected[i] && st.status === "done");
 }
 
 export class SetupController {
@@ -581,8 +634,8 @@ export class SetupController {
 
   /**
    * Approves the shown plan and starts the (fictional) operation. Refused — whoever calls it — while
-   * the plan's credential or terms are missing or the plan is not valid. Done stages of an earlier
-   * attempt are kept. Returns whether the operation started.
+   * the plan's credential or terms are missing or the plan is not valid. Every stage of the plan
+   * runs (nothing is carried over from an earlier approval). Returns whether the operation started.
    */
   approveAndStart(): boolean {
     const s = this.store.get();
@@ -592,11 +645,13 @@ export class SetupController {
       return false;
     }
     const plan = planFor(s.entry, s.choices, s.inventory);
-    const previous = new Map(s.stages.map((st) => [st.id, st.status]));
-    const stages = plan.stages.map((id): StageRun => ({ id, status: previous.get(id) === "done" ? "done" : "pending", fraction: null }));
-    const first = stages.findIndex((st) => st.status !== "done");
-    if (first >= 0) stages[first] = this.enter(stages[first]!);
-    this.patch({ approved: true, approvedRevision: s.planRevision, step: first >= 0 ? "run" : "done", run: first >= 0 ? "running" : "succeeded", stages, attempt: s.attempt + 1, errorCode: null });
+    // Review fix P1-1: a (re-)approved plan always starts with ALL of its own stages pending. Stages
+    // finished under an earlier approval are not reused, even when the stage id is the same
+    // ("asr_model" of model A is not "asr_model" of model B). Only continueRun() — retry / resume
+    // of the SAME approved plan — keeps finished stages.
+    const stages = plan.stages.map((id): StageRun => ({ id, status: "pending", fraction: null }));
+    stages[0] = this.enter(stages[0]!);
+    this.patch({ approved: true, approvedRevision: s.planRevision, runPlanKey: planKey(s.entry, s.choices, s.inventory), step: "run", run: "running", stages, attempt: s.attempt + 1, errorCode: null });
     this.effects.notify("notice.setupStarted");
     return true;
   }
@@ -652,7 +707,7 @@ export class SetupController {
     const s = this.store.get();
     if (s.run !== "failed" && s.run !== "interrupted") return false;
     // Retry / resume reuse the approval only for the plan it was given for, with its requirements met.
-    if (!s.approved || s.approvedRevision !== s.planRevision || missingRequirements(s).length > 0) {
+    if (!s.approved || s.approvedRevision !== s.planRevision || s.runPlanKey !== planKey(s.entry, s.choices, s.inventory) || missingRequirements(s).length > 0) {
       this.effects.notify("notice.setupBlocked");
       return false;
     }
@@ -668,18 +723,20 @@ export class SetupController {
     if (s.run !== "failed" && s.run !== "interrupted") return;
     const steps = wizardSteps(s);
     const target: WizardStep = steps.includes("features") ? "features" : "review";
-    this.patch({ run: "idle", step: target, approved: false, approvedRevision: null, planRevision: s.planRevision + 1, errorCode: null });
+    // The stopped run's stages are dropped: whatever is approved next starts from its own first stage.
+    this.patch({ run: "idle", step: target, approved: false, approvedRevision: null, runPlanKey: null, stages: [], planRevision: s.planRevision + 1, errorCode: null });
   }
 
   /**
    * Last page, only after a SUCCESSFUL run: the plan's outcome is applied to the CURRENT environment
    * (added / repaired profile and added models only; everything else is preserved). Jobs, queue and
-   * settings are not touched — except that a first run without diarization makes "diarization off"
-   * the default.
+   * settings are not touched — except that a completed FIRST run makes the chosen engine / main
+   * model / device the common defaults (and "diarization off" when it was not set up).
+   * Refused unless the run that succeeded belongs to the currently approved plan (review fix P1-1).
    */
   finish(): void {
     const s = this.store.get();
-    if (s.run !== "succeeded") return;
+    if (!runCompleted(s)) return;
     const before = this.effects.currentEnvironment();
     const plan = planFor(s.entry, s.choices, s.inventory);
     const env = applySetupOutcome(before, { entry: s.entry, device: s.choices.device, diarization: s.choices.diarization, models: plan.newModels, primaryModel: primaryChoosable(s) ? s.choices.primaryModel : null });
@@ -696,7 +753,11 @@ export class SetupController {
       detected: { ...s.detected, credential: credentialPresent(s) },
     });
     this.effects.applyEnvironment(env, null);
-    if (s.entry === "first_run" && !env.diarization) this.effects.applyDefaults({ diarization: false });
+    // Review fix P1-2: only a completed FIRST setup sets the common defaults, in ONE patch so the
+    // engine group is normalised once (never via "auto" and its example models): the chosen engine,
+    // the main model and the device of the installed profile. Diarization is on only if it is set up.
+    // Add / repair never touch processing settings, presets, overrides or job snapshots.
+    if (s.entry === "first_run") this.effects.applyDefaults(firstRunDefaults(s.choices, env.diarization));
     this.effects.notify("notice.setupDone");
   }
 }

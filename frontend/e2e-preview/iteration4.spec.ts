@@ -292,7 +292,9 @@ test("#24 failure: short reason → log → change settings (new approval) → r
   await preview.getByTestId("wizard-next").click();
   await expect(preview.getByTestId("wizard-review")).toBeVisible();
   await preview.getByTestId("wizard-approve").click();
-  await expect(preview.getByTestId("wizard-stage-runtime")).toHaveAttribute("data-status", "done"); // kept
+  // Iteration 5 review fix P1-1: a re-approved (changed) plan starts over; nothing is carried over.
+  await expect(preview.getByTestId("wizard-stage-runtime")).toHaveAttribute("data-status", "pending");
+  await expect(preview.getByTestId("wizard-stage-preflight")).toHaveAttribute("data-status", "running");
   await preview.getByTestId("wizard-demo-fail").click();
   await preview.getByTestId("wizard-continue").click(); // retry
   await expect(preview.getByTestId("wizard-run")).toHaveAttribute("data-run", "running");

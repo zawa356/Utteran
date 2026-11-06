@@ -282,3 +282,57 @@ npm run prototype
 `http://127.0.0.1:5180/preview.html`を開き、下端のレビュー帯で: 「セットアップの状態の例→初回起動」でモデル選択、「表示状態→同じファイルを別設定で2回投入」
 「キューを片付けた後」「保存先が混在」「用語集120語」で各状態を直接確認できる。最終受入の5点（モデルを選べる／片付けても履歴が残る／同じ音声を別設定で2回投入できる／
 ファイルごとに出力先を設定できる／用語集を大量に貼り付けられる）はすべてこの画面で操作できる。
+
+## 18. 追補: レビューP1修正（2026-11-06）
+
+開始HEAD `fe689c21e01b890582ca3ac325850122cd10c0ed`（`claude/zealous-mayer-bavdwr`、push CI run 42150232717 は14/14 success とレビューで確認済み）。
+作業開始時にPR #38のhead（`3d8b984`）と作業ブランチのHEADが変わっていないことを確認した。
+
+### 18.1 P1-1 プラン変更後の再承認で工程の完了を流用しない
+
+- **原因**: `approveAndStart()`が直前の`stages`から「工程ID→状態」を作り、新しいプランでも**IDが同じなら`done`を引き継いでいた**。`asr_model`は
+  モデルに関係なく同じIDのため、モデルAの取得完了後に失敗→モデルBへ変更→再承認すると、Bの取得を飛ばして完了扱いにできた。
+- **修正**（`domain/setup.ts`）:
+  - `approveAndStart()`は**常にそのプランの全工程を未着手で作り直し**、先頭から実行する（旧ステージは一切流用しない）。
+  - 承認したプランの同一性を`runPlanKey`（`planKey()` = entry・対象デバイス・エンジン・モデル集合・主モデル・話者分離・プラン項目・工程列）で保持。
+  - `continueRun()`（再試行・再開）は、承認revisionの一致・P1-1の要件に加えて**`runPlanKey`が現在のプランと一致する時だけ**完了済み工程を保持して続行する。
+  - `changeChoices()`は停止した実行の`stages`と`runPlanKey`を破棄する（戻っただけで何も変えずに再承認しても先頭から）。
+  - `finish()`は`runCompleted()`（`succeeded`・承認済み・revision一致・`runPlanKey`一致・現在のプランの全工程が`done`）を満たさない限り何もしない。
+    直接呼び出し・未承認・未完了・プラン不一致では環境・設定を変えない。
+- 将来、同一プランの成果物を再利用する場合は、プランdigest・工程の対象・実体の検証結果（B8のjournal等）が一致した時だけに限る。試作では実装しない。
+
+### 18.2 P1-2 初回セットアップの主モデルを処理設定の共通既定値へ反映
+
+- **原因**: `finish()`は環境（`EnvState.defaultModel`・モデル一覧）だけを更新し、共通既定値（`DemoState.common`）は`backend: auto` / `demo-model-balanced`のまま。
+  新規ジョブのsnapshotは共通既定値から作られるため、選んだモデルと実際のジョブが一致しなかった。また合成候補`MOCK_ENGINE_CANDIDATES['faster-whisper']`に
+  `kotoba-whisper-v2.0`が無く、そのまま渡すと`normalizeEngine()`で別モデルへ黙って置換される状態だった。
+- **修正**:
+  - **初回セットアップ（`first_run`）が完了した時だけ**、`firstRunDefaults()` = `{ backend: エンジン, model: 主モデル, device: cuda|cpu, computeType: auto, diarization: 導入済みか }`
+    を**1回のパッチ**で`setCommonPatch()`へ渡す（エンジン群の正規化は1回、途中で`auto`の例へ戻らない）。承認時・実行中・失敗・中断では呼ばれない。
+  - 合成候補のfaster-whisperに`kotoba-whisper-v2.0`を追加（ウィザードで選べるモデルはすべて処理設定でも有効）。**互換性の正本はB4で、この表は合成の例**。
+  - 追加（`add`）・修復（`repair`）は従来どおり環境だけを変え、共通既定値・個別override・プリセット・ジョブsnapshot・既定モデル・preferredを変えない。
+  - 個別overrideは保持され、共通値を継承するファイルだけが新しいモデルを使う。
+
+### 18.3 試験
+
+| 種類 | 内容 |
+|---|---|
+| Vitest `setupReviewFix.test.ts`（新規15件、DemoControllerとmain.tsと同じ配線） | P1-1: モデルA完了→smoke失敗→モデルBで再承認するとBの`asr_model`は未着手で実行される／同一プランの再試行は完了工程を保持／デバイス・話者分離の変更でも流用しない・旧承認の再試行は拒否／失敗・中断で環境・ジョブ・override・共通値不変／トークンのみ・revision不一致で開始不可／`finish()`の直接呼び出し（未承認・未完了・プラン不一致）で何も反映しない。P1-2: large-v3・Kotoba・large-v3-turbo（GPU）・small（CPU）で共通値とジョブsnapshotが一致し正規化で置換されない／複数モデル＋方式切替で主モデルが選ばれる／話者分離導入時はON／個別override保持／失敗・中断・未承認で不変／追加・修復で共通値・override・snapshot・既定モデル不変 |
+| 修正前コードでの確認 | 同じ15件を修正前の`setup.ts`/`settingsSchema.ts`で実行すると**10件が失敗**（残る5件は非退行のガード）。修正後は15件成功 |
+| E2E `iteration5.spec.ts`（3件追加、計20） | 初回でlarge-v3→通常の詳細にlarge-v3→投入ジョブのsnapshotが`faster-whisper · large-v3`／初回でKotoba→snapshotがKotoba／モデルA取得後に失敗→モデルBで再承認→`asr_model`は`pending`・完了0件→完了画面はlarge-v3 |
+| 既存テストの期待値変更 | `setup.test.ts`「failure → … change settings needs a new approval」: 再承認後`runtime`が`done`→**全工程が未着手（先頭のみ実行中）**。同「first run → CPU」: `applyDefaults`が`{diarization:false}`→**`{backend, model: small, device: cpu, computeType, diarization:false}`**。`iteration4.spec.ts`「#24 failure」: 再承認後`runtime`が`done`→`pending`（`preflight`が実行中）。いずれも本修正で禁止した旧挙動を前提にしていたため置き換え、同じ箇所で新仕様を検査している。削除・skipなし |
+
+| gate（Linux、Node 22.23.4、headless Chromium） | 結果 |
+|---|---|
+| lint / typecheck | ok（warning 0）/ ok |
+| `npm test` | **221 passed**（26 files。プロトタイプ144、本番77は不変） |
+| `npm run build` | 出力3ファイルのsha256がPR #38 HEADのbuildと**バイト同一** |
+| `npm run e2e`（UI-2） | **10 passed** |
+| `npm run e2e:prototype` | **96 passed**（第5案20件を含む） |
+| `npm run audit:prod` | 0 vulnerabilities |
+
+### 18.4 残る制約・本番接続課題
+
+- 本番B8の工程再開には、プランdigest・成果物の同一性・永続journalなど信頼できる証拠が必要（試作は「以前終えたから安全」と判断しない）。
+- 初回セットアップの結果をGUIの既定設定として**保存**する仕組み（GUI設定とB5 policyの正本の整理）は後続。試作はin-memoryのみ。
+- `device`を処理設定へ入れるのは試作の表示整合のため。本番ではprofile/policyが実行デバイスを決める（`CONTRACT_PATH.device = null`のまま）。

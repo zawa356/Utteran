@@ -77,7 +77,9 @@ describe("setup wizard mock (iteration 4, owner memos #23/#24; B8 plan → appro
     c.finish();
     expect(c.store.get()).toMatchObject({ configured: true, wizardOpen: false });
     expect(env()).toMatchObject({ cpu: "ready", gpu: "absent", diarization: false });
-    expect(defaults).toEqual([{ diarization: false }]); // not installed → off by default
+    // Review fix P1-2: the first setup's engine / main model / device become the common defaults;
+    // diarization stays off because it was not installed.
+    expect(defaults).toEqual([{ backend: "faster-whisper", model: "small", device: "cpu", computeType: "auto", diarization: false }]);
   });
 
   it("CPU only: the GPU cannot be chosen, the CPU completes the wizard", () => {
@@ -109,7 +111,9 @@ describe("setup wizard mock (iteration 4, owner memos #23/#24; B8 plan → appro
     c.next();
     c.next();
     expect(c.approveAndStart()).toBe(true);
-    expect(c.store.get().stages.find((st) => st.id === "runtime")!.status).toBe("done"); // already installed
+    // Review fix P1-1: a re-approved plan starts from its own first stage; nothing finished under the
+    // earlier approval is counted as done (iteration 5 had kept "runtime" as done here).
+    expect(c.store.get().stages.map((st) => st.status)).toEqual(["running", ...Array(c.store.get().stages.length - 1).fill("pending")]);
   });
 
   it("interrupted → continue from the stopped stage → done", () => {
