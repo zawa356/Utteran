@@ -1,5 +1,83 @@
 # AI 作業状態
 
+## 現在地（2026-11-06、UI-3-0 第5イテレーション レビューP1修正）
+
+- `fe689c2`の上に通常コミット（`claude/zealous-mayer-bavdwr`、PR #38のブランチへは未反映・fast-forward可能）。
+  P1-1: 再承認したプランは常に全工程を先頭から実行し、工程IDの一致だけで旧プランの完了を流用しない（再試行・再開は同一承認プランのみ）。`finish()`は現在の承認プランが完了した時だけ反映。
+  P1-2: 初回セットアップの完了時だけ、エンジン・主モデル・デバイスを1回のパッチで共通既定値へ反映（Kotobaを合成候補に追加）。追加・修復は処理設定を変えない。
+  Vitest 221、プロトタイプE2E 96、UI-2 E2E 10、build同一。詳細[ui3/iteration-5 §18](docs/architecture/ui3/iteration-5.md#18-追補-レビューp1修正2026-11-06)。
+
+## 現在地（2026-11-06、UI-3-0 第5イテレーション、0.1.43・未リリース、Draft PR #38の続き）
+
+- 開始HEAD`3d8b9848`（PR #38の`refs/pull/38/head`と`claude/blissful-planck-84e59y`の最新が一致することを確認）。セッションの指定ブランチ
+  `claude/zealous-mayer-bavdwr`をこのHEADから作り、通常pushで追加コミット（PR #38のブランチへfast-forward可能、PR #38のブランチ自体には未push）。
+  Draft・merge・tag・releaseに触れていない。versionは0.1.43のまま（[ui3/iteration-5 §13](docs/architecture/ui3/iteration-5.md#13-versionの判断)）。
+  変更は`frontend/src/preview/`・`frontend/e2e-preview/`・文書のみ。
+- ownerメモ#25〜#36を反映: 標準/カスタムセットアップとモデル選択（合成カタログ、無効組合せ不可、導入済みとの差分だけ、B8 request形と一致）、
+  話者分離ONで同画面にトークン/同意（P1-1維持）、確認表・完了画面の簡素化、キュー片付けは表示だけ外し結果/履歴に残す、同一ファイルの再投入
+  （別Job ID・snapshot・出力名、retry/rerunの区別）、既定＋ファイル別の保存先（投入時に凍結、見本フォルダのみ）、用語集の複数行入力とTXT取込/書出mock、
+  設定のラベル間隔とNormalカードの折返し、修復と初期化の確認画面（何も消さない）、全文言の静的列挙（未使用0）と点検表。
+- 検証（Linux、headless Chromium）: Vitest 206（プロトタイプ129）、UI-2 E2E 10、プロトタイプE2E 93、build出力はPR #38 HEADとバイト同一、
+  `npm run audit:prod` 0件、`public_history_scan --worktree` blocking 0。画像はcommitしない。
+- **owner再レビュー待ち（Windows実機での目視）。** 未受入: WebView2・OS DPI実機・日本語フォント・実IME・実OSのフォルダ/ファイルダイアログ・実backend（B4/B5/B7/B8）。
+
+## 現在地（2026-11-05、UI-3-0 第4イテレーション、0.1.43・未リリース、Draft PR #38の続き）
+
+- **P1修正（目視レビュー前）**: `3da8219`の上に通常コミット。認証情報と利用条件の同意を独立に判定し、不足時は承認・再試行・再開をコントローラで拒否。
+  環境を`EnvState`（GPU/CPUごとの状態＋話者分離）にし、追加・修復は成功後に対象だけを反映（既存のready構成・話者分離・ジョブ・設定を保持）。
+  Vitest 185、UI-2 E2E 10、プロトタイプE2E 76。詳細[ui3/iteration-4 §14](docs/architecture/ui3/iteration-4.md#14-追補-p1修正目視レビュー前2026-11-05)。PR #38のブランチへは未反映。
+
+- 開始HEAD`c6dc8cc0`（PR #38のブランチ`claude/blissful-planck-84e59y`の最新と一致を確認）。セッションの指定ブランチ`claude/festive-shannon-9ksc36`を
+  このHEADから作り、通常pushで追加コミット（fast-forward可能。PR #38のブランチへは未push、Draft・merge・tagに触れていない）。versionは0.1.43のまま
+  （理由は[ui3/iteration-4 §12](docs/architecture/ui3/iteration-4.md#12-versionの判断)）。変更は`frontend/src/preview/`・`frontend/e2e-preview/`・文書のみ。
+- ownerメモ#15〜#24を反映: Expertの処理設定5カテゴリ（`initial_prompt`・用語集・VAD・beam・エンジン固有項目は選んだエンジンだけ、連動グループ、検証で投入を止める、
+  プリセット適用）、セットアップウィザード（初回／途中／失敗／要修復／CPUのみ／トークンなし、plan→承認→工程→完了、B8対応表）、「再検出」と別の「セットアップ…」と
+  カードの修復/追加ボタン、Expertの縦積み廃止（2列＝ファイル＋切替、1列＝切替）・自動比率・ファイル下限260px、ログ/プリセットの入出力確認画面（保存しない）、
+  診断の簡素化、「判定の根拠」等の文言、既存アイコン、緑/青×外観の独立設定。通常の設定編集は表示中ファイルだけに適用（次のファイルへ引継ぎ）。
+- 検証（Linux、headless Chromium）: Vitest 169（プロトタイプ92）、UI-2 E2E 10、プロトタイプE2E 70、
+  build出力は第3案と同一ハッシュ。画像はcommitしない。
+- **owner再レビュー待ち。** Ready化・merge・tag・release・S1以降は未着手。未受入: WebView2・OS DPI実機・Windows日本語フォント・実IME・
+  実OSのファイル/保存ダイアログ・実backend（B4/B5/B8）・画面読み上げ・タッチ。Windowsの最小サイズは設計のみ。
+
+## 現在地（2026-11-05、UI-3-0 第3イテレーション、0.1.43・未リリース、Draft PR #38）
+
+- PR #38（`claude/blissful-planck-84e59y`、開始時HEAD`8b0feac3`、他者の変更なし）へ通常pushで追加コミット。versionは0.1.43のまま
+  （理由は[ui3/iteration-3 §12](docs/architecture/ui3/iteration-3.md#12-versionの判断)）。変更は`frontend/src/preview/`・`frontend/e2e-preview/`・文書のみ。
+- ownerメモ#6〜#14を反映: 可読性の下限（ボタン36px・文字13px以上、E2Eで検査）、上部1行の試作表示と説明文の削減、通常の内部仕様説明の撤去と
+  「別のファイルにする」の置換表示（Expert側は保持）、Expertの①ファイル→②処理設定→③キュー投入（件数一致、右は投入＋簡易キュー）、
+  22/53/25を既定候補に、同期表示の廃止（確認中/取得不可だけを短く）、共通メニュー（ファイル/表示/ツール/ヘルプ）とログ・診断・Aboutのmock、
+  環境画面の単一レイアウト、設定の通常/Expert分離（カテゴリ、保存不可は「後続で実装」）、工程内%・推定残りのmock（G-03提案を文書化）。
+- 検証（Linux、headless Chromium）: Vitest 130（プロトタイプ53）、UI-2 E2E 10、プロトタイプE2E 35、build出力は第2案と同一ハッシュ、Python gates ok。画像はcommitしない。
+- **owner再レビュー待ち。** Ready化・merge・tag・release・#21クローズ・S1以降は未着手。未受入: WebView2・OS DPI実機・Windows日本語フォント・
+  native D&D/picker・IME・実backend・画面読み上げ・タッチ。
+
+## 現在地（2026-11-05、UI-3-0 第2イテレーション、0.1.43・未リリース、Draft PR #38）
+
+- PR #38（`claude/blissful-planck-84e59y`、HEAD確認時`fbf9da83`、他者の変更なし）へ通常pushで追加コミット。versionは0.1.43のまま
+  （同一作業単位のレビュー反復で配布物に差分なし、理由は[ui3/iteration-2 §9](docs/architecture/ui3/iteration-2.md#9-versionの判断)）。
+- ownerメモ#1〜#5・配色・環境mockを`frontend/src/preview/`だけで反映: 通常＝topbar 3導線＋1ファイルの2カラム1画面（状態は未開始/未選択/
+  実行中/失敗/完了を切替）、Expert＝上部で折りたためる幅可変sidebar＋drag/キーボードで幅を変える3ペイン（作業領域幅で3→2→1列）、
+  Explorer風の高密度入力一覧と大きな追加ボタン、作業画面右は要約のみ（キュー＝全件管理、結果と履歴＝完了物）、緑配色案（本番theme不変、
+  WCAG AA実測）、架空の環境情報（GPU/CPU/未構成/読み込み失敗、常時「デモ用の架空情報」）。
+- 検証（Linux、headless Chromium）: Vitest 116、UI-2 E2E 10、プロトタイプE2E 26、build出力はUI-2と同一サイズ。画像はcommitしない。
+- 発見（本番は未変更）: Vuetify 4でMD2 typography class（`text-caption`等）が無効、UI-2青ライトの入力欄枠2.68:1（<3:1）。
+- **owner再レビュー待ち。** Ready化・merge・tag・release・#21クローズ・S1以降は未着手。未受入: WebView2・OS DPI実機・native D&D/picker・IME・実backend・
+  画面読み上げ・タッチでのresize。
+
+## 現在地（2026-11-05、UI-3-0 画面設計・隔離プロトタイプ、0.1.43・未リリース、Draft PR）
+
+- 基点`main` = `dd115085`（PR #36 merge、`git fetch`で確認・先行変更なし）。作業ブランチは環境固定の`claude/blissful-planck-84e59y`
+  （mainと同一点から開始した未使用のUI-3-0専用ブランチ）。開発版0.1.42→**0.1.43**（lock差分はversion行のみ）。
+- 成果: [docs/architecture/ui3/](docs/architecture/ui3/README.md)（配置案比較・推奨案、状態遷移・部品分割・境界、レビュー画像の再現・試験・引継ぎ）と、
+  合成データだけで操作できるプロトタイプ`frontend/preview.html`＋`frontend/src/preview/`（`npm run prototype`、Vite dev server専用）。
+- 推奨: 通常A1（縦ステップ）／Expert C1（3ペイン）。不採択: A2（ウィザード）、C2（上下分割）。1280pxのExpertではサイドバーをrailにする調整を
+  プロトタイプだけで実施（本番は未変更、owner判断事項）。
+- 隔離: `vite build`は`index.html`のみ（buildサイズUI-2と同一）、`main.ts`はDEV以外で起動しない、ESLintで双方向のimport・通信・storageを禁止、
+  E2Eで外部request/`/api`/console errorを失敗扱い、build出力に試作が無いことを検査。既定GUI・`/next/`本番画面・backend・`app.py`・CSPは無変更。
+- 検証（Linux、headless Chromium）: Vitest 91、UI-2 E2E 10、プロトタイプE2E 19、Python gates。詳細[ui3/review-and-acceptance](docs/architecture/ui3/review-and-acceptance.md)。
+- **owner判断待ち**: 配置案の承認、Expertのサイドバー/ペイン比率、構成項目の分け方、rerunの置き場、G-05/G-06（案1〜3を提示）、G-15。
+  **承認までS1以降・Ready化・mergeに着手しない。** 未受入: WebView2・OS DPI実機・native D&D/picker・IME・実backend。
+
 ## 現在地（2026-11-04、UI-2 Windows実機受入・CSP修正、0.1.42・未リリース、Draft PR #36）
 
 - 0.1.41（下節）の後続。ownerがWindows実機で受入し、`862870d`（0.1.42）で修正: pywebviewの文字選択禁止用nonceなしstyleが

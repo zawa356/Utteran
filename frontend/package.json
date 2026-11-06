@@ -14,7 +14,9 @@
     "lint": "eslint --max-warnings=0 .",
     "test": "vitest run",
     "e2e": "playwright test",
-    "audit:prod": "npm audit --omit=dev --audit-level=high"
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "prototype": "vite --host 127.0.0.1 --port 5180 --strictPort",
+    "e2e:prototype": "playwright test -c playwright.preview.config.ts"
   },
   "dependencies": {
     "@mdi/js": "7.4.47",

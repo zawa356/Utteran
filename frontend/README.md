@@ -43,6 +43,35 @@ uv run python ../tools/ui2/serve_next_ui.py --port 8791
 
 `UI2_SCREENSHOTS=1 npm run e2e` additionally writes screenshots (synthetic data) to `test-results/screenshots/`.
 
+### UI-3-0 design prototype (dev server only)
+
+A clickable mock-up of the UI-3 screens with synthetic data only ([docs/architecture/ui3/](../docs/architecture/ui3/README.md)).
+It lives in `src/preview/` + `preview.html`, is **not** part of `npm run build` (only `index.html` is built) and never
+calls the backend, the host bridge or storage (enforced by ESLint and by the E2E). No `uv` needed.
+Iteration 2 ([docs/architecture/ui3/iteration-2.md](../docs/architecture/ui3/iteration-2.md)) adds the Normal top bar with one
+file, the resizable Expert sidebar and panes, a prototype-only green palette (`src/preview/theme.ts`; the production
+`src/styles/theme.ts` is unchanged) and fictional environment examples. Iteration 3
+([docs/architecture/ui3/iteration-3.md](../docs/architecture/ui3/iteration-3.md)) raises the readability floor (prototype-only
+Vuetify defaults `previewDefaults`), adds the shared app menu with mock log/diagnostics/about dialogs, the Expert
+files → settings → submit flow with a short queue, Normal/Expert settings, and a fictional stage progress/ETA mock.
+Iteration 4 ([docs/architecture/ui3/iteration-4.md](../docs/architecture/ui3/iteration-4.md)) adds the categorised Expert
+processing settings (prompt, glossary, engine-specific fields), a mock setup wizard (first run / add / repair, switchable
+in the review strip), log and preset import/export confirmation screens (nothing is written), the green/blue × appearance
+theme setting and the existing app icon (`src/preview/assets/utteran.svg`, a byte-identical copy of `icon/utteran.svg`).
+
+```bash
+npm run prototype
+```
+
+Then open `http://127.0.0.1:5180/preview.html`. Checks (run `npm run build` first; the isolation spec inspects the build):
+
+```bash
+npm run e2e:prototype
+```
+
+`UI3_SCREENSHOTS=1 npm run e2e:prototype` writes the review set to `test-results/ui3-screenshots/` (run it after
+`npm run e2e`, which recreates `test-results/`).
+
 ## Rules
 
 - Views (`features/`, `components/`) use only `domain/` actions/stores and `host/`; ESLint rejects `window.pywebview`

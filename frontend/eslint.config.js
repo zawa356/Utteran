@@ -21,7 +21,7 @@ export default [
     },
   },
   {
-    files: ["src/api/http.ts", "src/main.ts", "src/**/*.test.ts", "e2e/**/*.ts"],
+    files: ["src/api/http.ts", "src/main.ts", "src/**/*.test.ts", "e2e/**/*.ts", "e2e-preview/**/*.ts"],
     rules: { "no-restricted-globals": "off" },
   },
   {
@@ -32,6 +32,44 @@ export default [
         { object: "window", property: "pywebview", message: "Use src/host." },
         { object: "window", property: "fetch", message: "Use src/api." },
       ],
+    },
+  },
+  // UI-3-0 prototype isolation (docs/architecture/ui3/): the prototype never reaches api/, host/,
+  // transport/ or the production AppCore, and production code never imports the prototype.
+  {
+    files: ["src/preview/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["**/api", "**/api/**", "**/host", "**/host/**", "**/transport/**"], message: "The UI-3-0 prototype must not reach the backend or the host bridge." },
+            { group: ["**/domain/core", "**/composables/core", "**/domain/environment", "**/domain/settings"], message: "The prototype uses only synthetic state (src/preview/domain)." },
+          ],
+        },
+      ],
+      "no-restricted-properties": [
+        "error",
+        { object: "window", property: "pywebview", message: "No host bridge in the prototype." },
+        { object: "window", property: "fetch", message: "No network in the prototype." },
+        { object: "navigator", property: "sendBeacon", message: "No network in the prototype." },
+      ],
+      "no-restricted-globals": [
+        "error",
+        { name: "fetch", message: "No network in the prototype." },
+        { name: "XMLHttpRequest", message: "No network in the prototype." },
+        { name: "EventSource", message: "No network in the prototype." },
+        { name: "WebSocket", message: "No network in the prototype." },
+        { name: "localStorage", message: "The prototype keeps state in memory only." },
+        { name: "sessionStorage", message: "The prototype keeps state in memory only." },
+      ],
+    },
+  },
+  {
+    files: ["src/**"],
+    ignores: ["src/preview/**"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [{ group: ["**/preview", "**/preview/**"], message: "Production code must not import the UI-3-0 prototype." }] }],
     },
   },
 ];
