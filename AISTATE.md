@@ -1,5 +1,12 @@
 # AI 作業状態
 
+## 現在地（2026-11-06、UI-3-0 Design Freeze・PR #38 main統合）
+
+- ownerは第5案をWindowsブラウザで概観し、UI-3-0の**画面設計を承認**。微調整は後続S1〜S5へ繰り越す。これは実WebView2/本番接続の受入を意味しない。
+- [PR #38](https://github.com/zawa356/Utteran/pull/38) 最終`1f72f28`をmerge commit `701a94e1d7630bb58e6810b69064926fc02f01e1`でmain統合。PR CI14/14・main CI成功。`0.1.43`未リリース、tag/releaseなし。
+- UI設計の正本は[docs/architecture/ui3/design-freeze.md](docs/architecture/ui3/design-freeze.md)。第5案の実装詳細・P1レビュー2件は[iteration-5](docs/architecture/ui3/iteration-5.md)。UI-3 #21は継続、UI-4 #22の実機/配布受入は未完了。
+- 下記の「Draft」「未マージ」「owner再レビュー待ち」は当時の提出履歴として保持。現在の判断には本節を優先。
+
 ## 現在地（2026-11-06、UI-3-0 第5イテレーション レビューP1修正）
 
 - `fe689c2`の上に通常コミット（`claude/zealous-mayer-bavdwr`、PR #38のブランチへは未反映・fast-forward可能）。

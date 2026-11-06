@@ -1,5 +1,8 @@
 # UI/UX刷新計画・次期開発引継ぎ
 
+> **2026-11-06最新状況:** [UI-3-0設計確定記録](architecture/ui3/design-freeze.md)を正本として第5案を採用。[PR #38](https://github.com/zawa356/Utteran/pull/38)をmainへ統合（`701a94e`）。通常1ファイル中心/Expert可変3ペインとVue/Vuetify・WebView2基本は確定。**UI-3 #21はS1〜S5本番移行が残るためオープン**、UI-4 #22はWindows実機/配布未受入。以下の古い「Draft」「未着手」は当時の記録。
+
+
 > **2026-11-04現況（UI-2）:** ownerがVue 3 + TypeScript + Vite + Vuetify 4 / pywebview + WebView2継続を採択し、[ADR-003](adr/ADR-003-ui-frontend-stack-and-host-boundary.md)を**Accepted**に更新。UI-2（[#20](https://github.com/zawa356/Utteran/issues/20)）でfrontend基盤（S0）と設定・環境の小さな縦切りを実装（[docs/architecture/ui2/](architecture/ui2/README.md)、Draft PR）。新UIは`--next-ui`のopt-inのみで、既定GUIは旧UIのまま。Windows WebView2実機は未受入。
 
 > **2026-11-04現況（UI-1）:** 現行GUI監査・再現・技術比較・理想UI設計を[docs/architecture/ui1/](architecture/ui1/README.md)に提出（Draft PR、採択待ち）。技術選定は[ADR-003](adr/ADR-003-ui-frontend-stack-and-host-boundary.md)（Proposed）。新GUIは未実装。以下の現況行・未決定の記載は当時の記録。

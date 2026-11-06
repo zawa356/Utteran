@@ -2,6 +2,20 @@
 
 更新: 2026-11-05 JST（0.1.43）。対象はプロトタイプ`frontend/src/preview/`。**ここに書く状態遷移は合成の表示用で、
 B7のJob/Queue契約の再実装ではない。** 実装時の正本はbackend（[interfaces](../backend/interfaces.md)）。
+## 0. 第5案で確定した状態遷移（§1以降の初期案より優先）
+
+> **注:** 旧案の「再投入不可」「進捗率なし」「モデル/保存先未設計」「実行しないUI」等は当時の記録。[design-freeze.md](design-freeze.md)が確定設計の正本。`domain/demo.ts` / `domain/setup.ts`は合成状態であり本番契約ではない。
+
+| 対象 | 第5案の挙動 | 本番への境界 |
+|---|---|---|
+| モード/設定 | 通常/Expertで同一state。common→override→投入時snapshotを保持 | B5契約・設定の永続化 |
+| 同じ入力をもう一度追加 | 新Job ID＋現在の設定・出力先・出力名を凍結 | B7で同一入力の同時admissionを設計 |
+| retry / rerun | retryは同Job/snapshot、rerunは新Job/snapshot | B7の対象状態・不変条件 |
+| キューの片付け | `queueHidden`だけを変更し、結果/履歴を残す | 履歴recordと出力成果物の削除は別 |
+| 出力先 | 既定→個別保存先を解決してジョブへ固定 | `FileInput.output_dir`・実パス検証 |
+| 用語集 | 1行1語をまとめて編集し、検査後に適用 | B5の`asr.glossary`・OSのTXT I/O |
+| セットアップ | 標準/カスタム→同意→差分plan→承認→工程→完了 | B4候補、B8 plan/journalが正本 |
+| 再承認と初回主モデル | 再承認は旧ステージを再利用しない。初回成功時の主モデルを共通既定値に反映 | 本番の承認証拠とprofile/policyはbackend正本 |
 
 ## 1. 入力 → 結果の導線
 

@@ -1,6 +1,6 @@
 # Architecture documents — where to start
 
-更新: 2026-11-05 JST（UI-3-0 画面設計・隔離プロトタイプ、開発版 0.1.43・未リリース）
+更新: 2026-11-06 JST（UI-3-0設計確定、開発版0.1.43・未リリース）
 
 このディレクトリには **「現在の実装の正本」** と **「各Phaseの提出・検証記録（歴史資料）」** が混在する。
 UI刷新（U0〜U3）やバックエンド変更を始める前に、まず次の正本を読むこと。
@@ -24,14 +24,8 @@ DTOとAPIの機械可読な正本は、コード（`src/utteran_contracts/`）�
 
 ## UI刷新（UI-1 設計 → UI-2 基盤 → UI-3-0 画面設計）
 
-- [ui3/](ui3/README.md): **UI-3-0 画面設計と隔離型プロトタイプ**（2026-11-05、0.1.43）。通常A1（縦ステップ）／Expert C1（3ペイン）の推奨案、
-  合成データだけで操作できるVite dev server専用のプロトタイプ（production buildに含まれない）、レビュー画像の再現手順、S1–S5への引継ぎ。
-  第2イテレーション（[ui3/iteration-2](ui3/iteration-2.md)）で通常＝topbar＋1ファイル、Expert＝リサイズ可能なsidebar＋3ペイン、緑配色案、架空の環境mockへ改めた。
-  第3イテレーション（[ui3/iteration-3](ui3/iteration-3.md)）で可読性の下限、説明文の削減、Expertの①→②→③と簡易キュー、共通メニューとログ・診断・Aboutのmock、
-  設定の通常/Expert分離、工程内進捗・推定残りのmock（G-03の提案）を加えた。
-  第4イテレーション（[ui3/iteration-4](ui3/iteration-4.md)）でExpertの処理設定5カテゴリ（Prompt・用語集・エンジン固有項目）、初回セットアップウィザード（B8のplan→承認→工程に対応）、
-  セットアップ画面の「セットアップ…」、狭幅の縦積み廃止、ログ・プリセットの入出力確認画面、診断の簡素化、既存アイコン、緑/青テーマを加えた。
-  **owner承認前の設計案で、機能移行ではない。**
+- [ui3/](ui3/README.md): **UI-3-0設計確定（2026-11-06、`0.1.43`未リリース）**。[design-freeze](ui3/design-freeze.md)が採用仕様・証拠・未実装とS1〜S5引継ぎの正本。[PR #38](https://github.com/zawa356/Utteran/pull/38)をmainに統合（`701a94e`、CI成功）。通常1ファイル中心/Expert可変3ペイン、モデル選択、キューと履歴の分離、個別出力先・用語集一括入力は**合成プロトタイプの設計**。実APIとWindows配布は未受入、UI-3 #21は継続。
+
 - [ui2/](ui2/README.md): **次期GUIのfrontend基盤（S0）とopt-in新UI**（2026-11-04、0.1.41→0.1.42。Windows WebView2で条件付き受入、DPI 200%の初期窓に制約）。Vue 3 + Vuetify 4、
   `utteran-gui --next-ui`のときだけ表示。既定GUIは旧UIのまま。設計・実測・UI-3への移行計画。
 - [ui1/](ui1/README.md): 現行GUI監査・再現・技術比較・理想UI情報設計・次期frontendアーキテクチャ・backendギャップ（2026-11-04）。

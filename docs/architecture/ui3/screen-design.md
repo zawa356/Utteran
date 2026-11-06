@@ -1,6 +1,6 @@
 # UI-3-0 画面設計 — 配置案の比較・推奨案・幅別の縮退
 
-更新: 2026-11-05 JST（0.1.43）。**owner承認前の設計案**。前提は[UI-1 ux-structure](../ui1/ux-structure.md)（通常A／Expert C、
+更新: 2026-11-05 JST（0.1.43）。**第1案の比較履歴（第5案で設計確定済み）**。前提は[UI-1 ux-structure](../ui1/ux-structure.md)（通常A／Expert C、
 常設サイドバー、通常/Expertは同じデータの別表示）と[UI-2 design](../ui2/design.md)（Vue 3 + Vuetify 4、compact、ja/en）。
 操作できるプロトタイプは[README](README.md#プロトタイプの起動)の手順で開ける。
 
@@ -8,6 +8,7 @@
 > 通常＝topbar＋1ファイルのコンパクト画面、Expert＝リサイズ可能な管理sidebar＋リサイズ可能な3ペイン、緑配色案、架空の環境情報へ
 > 改めた。差分・根拠・実測は[iteration-2](iteration-2.md)。本書の§2〜§5は**第1案（A1/C1）の記録**として残す
 > （通常A1の5段縦積み、Expertの<1440px自動rail、ペイン手動resizer不採用、`theme.ts`の青配色は第2案で見直し済み）。
+> **最新仕様への誘導:** この文書のA1の縦積み、ペイン比率、「未設計」は初期案時点の記録。[design-freeze.md](design-freeze.md)と[iteration-5](iteration-5.md)が確定した設計基準。通常1ファイル中心・Expert可変3ペイン、個別出力先、キュー/履歴分離、標準/カスタムセットアップ等は第5案を優先する。
 
 ## 1. 現状（UI-2、0.1.42）の確認
 
