@@ -1,5 +1,19 @@
 # AI 作業状態
 
+## 現在地（2026-11-06、UI-3-0 第5イテレーション、0.1.43・未リリース、Draft PR #38の続き）
+
+- 開始HEAD`3d8b9848`（PR #38の`refs/pull/38/head`と`claude/blissful-planck-84e59y`の最新が一致することを確認）。セッションの指定ブランチ
+  `claude/zealous-mayer-bavdwr`をこのHEADから作り、通常pushで追加コミット（PR #38のブランチへfast-forward可能、PR #38のブランチ自体には未push）。
+  Draft・merge・tag・releaseに触れていない。versionは0.1.43のまま（[ui3/iteration-5 §13](docs/architecture/ui3/iteration-5.md#13-versionの判断)）。
+  変更は`frontend/src/preview/`・`frontend/e2e-preview/`・文書のみ。
+- ownerメモ#25〜#36を反映: 標準/カスタムセットアップとモデル選択（合成カタログ、無効組合せ不可、導入済みとの差分だけ、B8 request形と一致）、
+  話者分離ONで同画面にトークン/同意（P1-1維持）、確認表・完了画面の簡素化、キュー片付けは表示だけ外し結果/履歴に残す、同一ファイルの再投入
+  （別Job ID・snapshot・出力名、retry/rerunの区別）、既定＋ファイル別の保存先（投入時に凍結、見本フォルダのみ）、用語集の複数行入力とTXT取込/書出mock、
+  設定のラベル間隔とNormalカードの折返し、修復と初期化の確認画面（何も消さない）、全文言の静的列挙（未使用0）と点検表。
+- 検証（Linux、headless Chromium）: Vitest 206（プロトタイプ129）、UI-2 E2E 10、プロトタイプE2E 93、build出力はPR #38 HEADとバイト同一、
+  `npm run audit:prod` 0件、`public_history_scan --worktree` blocking 0。画像はcommitしない。
+- **owner再レビュー待ち（Windows実機での目視）。** 未受入: WebView2・OS DPI実機・日本語フォント・実IME・実OSのフォルダ/ファイルダイアログ・実backend（B4/B5/B7/B8）。
+
 ## 現在地（2026-11-05、UI-3-0 第4イテレーション、0.1.43・未リリース、Draft PR #38の続き）
 
 - **P1修正（目視レビュー前）**: `3da8219`の上に通常コミット。認証情報と利用条件の同意を独立に判定し、不足時は承認・再試行・再開をコントローラで拒否。

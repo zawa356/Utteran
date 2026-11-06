@@ -1,77 +1,89 @@
 <script setup lang="ts">
-import { mdiDeleteOutline, mdiPlus } from "@mdi/js";
+import { mdiCheck, mdiExport, mdiImport, mdiUndoVariant } from "@mdi/js";
 import { computed, ref } from "vue";
 import { usePreview } from "../composables";
-import { GLOSSARY_ITEM_MAX, GLOSSARY_MAX, glossaryEntryIssue } from "../domain/settingsSchema";
-import type { PreviewKey } from "../i18n";
+import { glossaryDraftKey } from "../domain/demo";
+import { analyzeGlossary, canApply, glossaryToText } from "../domain/glossaryText";
+import { GLOSSARY_ITEM_MAX, GLOSSARY_MAX } from "../domain/settingsSchema";
+import GlossaryExportDialog from "./GlossaryExportDialog.vue";
+import GlossaryImportDialog from "./GlossaryImportDialog.vue";
 import { useSettingAccess } from "./useSettingAccess";
 
 /**
- * Glossary (asr.glossary): one term per row — add, edit in place, delete. Enter adds the new term,
- * except while an IME composition is open (that Enter only confirms the conversion). Each row is
- * checked for empty / too long / duplicate with the same rules as the validator.
+ * Glossary (asr.glossary), iteration 5 (owner memo #36): ONE multi-line text box, one term per line,
+ * so long lists can be pasted at once. Typing never changes the stored glossary — "Apply" does, and
+ * the summary says beforehand what it will skip (empty lines, repeated terms) or refuse (too long,
+ * more than 1000). Enter is just a new line, also during IME conversion; nothing is applied on a key.
+ * The draft is kept per editing target (category / model changes do not lose it).
+ * Several selected files with DIFFERENT glossaries start with an empty box: nothing of one file is
+ * shown as if it belonged to the others, and "Apply to all n selected files" says what will happen.
  */
 defineProps<{ disabled: boolean }>();
 const access = useSettingAccess();
-const { t } = usePreview();
-const list = computed(() => (access.mixed("glossary") ? [] : access.value("glossary")));
-const draft = ref("");
-const composing = ref(false);
-const draftIssue = computed(() => (draft.value === "" ? null : glossaryEntryIssue(draft.value, list.value)));
-const canAdd = computed(() => draft.value.trim() !== "" && draftIssue.value === null && list.value.length < GLOSSARY_MAX);
+const { demo, state, t } = usePreview();
+const key = computed(() => glossaryDraftKey(access.mode, access.targetIds.value));
+const mixed = computed(() => access.mixed("glossary"));
+const stored = computed(() => (mixed.value ? null : access.value("glossary")));
+const storedText = computed(() => (stored.value ? glossaryToText(stored.value) : ""));
+const draft = computed(() => state.value.glossaryDrafts[key.value]);
+const text = computed(() => draft.value ?? storedText.value);
+const dirty = computed(() => draft.value !== undefined && draft.value !== storedText.value);
+const a = computed(() => analyzeGlossary(text.value));
+const many = computed(() => access.mode === "selection" && access.targetIds.value.length > 1);
+const importing = ref(false);
+const exporting = ref(false);
 
-function add() {
-  if (!canAdd.value) return;
-  access.set("glossary", [...list.value, draft.value.trim()]);
-  draft.value = "";
+function onInput(v: string) {
+  demo.setGlossaryDraft(key.value, v === storedText.value ? null : v);
 }
-function onKey(e: KeyboardEvent) {
-  if (e.key !== "Enter" || e.isComposing || composing.value || e.keyCode === 229) return;
-  e.preventDefault();
-  add();
+function apply() {
+  if (!dirty.value || !canApply(a.value)) return;
+  access.set("glossary", [...a.value.terms]);
+  demo.setGlossaryDraft(key.value, null);
 }
-function edit(i: number, v: string) {
-  if (composing.value) return;
-  const next = [...list.value];
-  next[i] = v;
-  access.set("glossary", next);
+function discard() {
+  demo.setGlossaryDraft(key.value, null);
 }
-function remove(i: number) {
-  access.set("glossary", list.value.filter((_, j) => j !== i));
-}
-const issueText = (code: string | null) => (code ? t(`issue.${code}` as PreviewKey, { max: GLOSSARY_ITEM_MAX }) : undefined);
+const lines = (nums: number[]) => (nums.length > 5 ? `${nums.slice(0, 5).join(", ")}…` : nums.join(", "));
 </script>
 
 <template>
-  <div class="u-stack p-glossary" data-testid="glossary" @compositionstart="composing = true" @compositionend="composing = false">
-    <div class="text-body-medium" data-testid="glossary-count">{{ t("glossary.count", { n: list.length, max: GLOSSARY_MAX }) }}</div>
-    <p v-if="access.mixed('glossary')" class="text-body-medium">{{ t("inspector.mixed") }}</p>
-    <ul v-else-if="list.length > 0" class="p-glossary__list" :aria-label="t('field.glossary')">
-      <li v-for="(term, i) in list" :key="i" :data-testid="`glossary-item-${i}`">
-        <v-text-field
-          :model-value="term"
-          :disabled="disabled"
-          :aria-label="t('glossary.itemLabel', { n: i + 1 })"
-          :error-messages="access.issueText('glossary', i)"
-          hide-details="auto"
-          :data-testid="`glossary-edit-${i}`"
-          @update:model-value="(v) => edit(i, v)"
-        />
-        <v-btn variant="text" :icon="mdiDeleteOutline" :disabled="disabled" :aria-label="t('glossary.remove', { term })" :title="t('glossary.removeShort')" :data-testid="`glossary-remove-${i}`" @click="remove(i)" />
-      </li>
+  <div class="u-stack p-glossary" data-testid="glossary" :data-dirty="dirty">
+    <p v-if="mixed" class="text-body-medium" data-testid="glossary-mixed">{{ t("glossary.mixed", { count: access.targetIds.value.length }) }}</p>
+    <label :for="`p-glossary-${access.mode}`" class="text-body-medium">{{ t("glossary.text") }}</label>
+    <v-textarea
+      :id="`p-glossary-${access.mode}`"
+      :model-value="text"
+      :disabled="disabled"
+      :placeholder="t('glossary.placeholder')"
+      rows="8"
+      max-rows="16"
+      auto-grow
+      spellcheck="false"
+      hide-details
+      class="p-glossary__text"
+      data-testid="glossary-text"
+      @update:model-value="onInput"
+    />
+    <div class="text-body-medium" data-testid="glossary-count">{{ t("glossary.summary", { lines: a.lineCount, n: a.terms.length, max: GLOSSARY_MAX }) }}</div>
+    <ul v-if="a.emptyLines + a.duplicateLines.length + a.trimmedLines + a.tooLongLines.length > 0 || a.tooMany" class="p-glossary__issues text-body-medium" data-testid="glossary-issues">
+      <li v-if="a.tooLongLines.length > 0" class="text-error" data-testid="glossary-too-long">{{ t("glossary.tooLong", { lines: lines(a.tooLongLines), max: GLOSSARY_ITEM_MAX }) }}</li>
+      <li v-if="a.tooMany" class="text-error" data-testid="glossary-too-many">{{ t("glossary.tooMany", { n: a.terms.length, max: GLOSSARY_MAX }) }}</li>
+      <li v-if="a.duplicateLines.length > 0" data-testid="glossary-duplicates">{{ t("glossary.duplicates", { count: a.duplicateLines.length, lines: lines(a.duplicateLines) }) }}</li>
+      <li v-if="a.emptyLines > 0" data-testid="glossary-empty-lines">{{ t("glossary.emptyLines", { count: a.emptyLines }) }}</li>
+      <li v-if="a.trimmedLines > 0" data-testid="glossary-trimmed">{{ t("glossary.trimmed", { count: a.trimmedLines }) }}</li>
     </ul>
-    <p v-else class="text-body-medium" data-testid="glossary-empty">{{ t("glossary.empty") }}</p>
-    <div class="p-glossary__add">
-      <v-text-field
-        v-model="draft"
-        :label="t('glossary.new')"
-        :disabled="disabled || access.mixed('glossary')"
-        :error-messages="issueText(draftIssue)"
-        hide-details="auto"
-        data-testid="glossary-new"
-        @keydown="onKey"
-      />
-      <v-btn variant="tonal" color="primary" :prepend-icon="mdiPlus" :disabled="disabled || !canAdd" data-testid="glossary-add" @click="add">{{ t("glossary.add") }}</v-btn>
+    <div class="u-row">
+      <v-btn color="primary" variant="tonal" :prepend-icon="mdiCheck" :disabled="disabled || !dirty || !canApply(a)" data-testid="glossary-apply" @click="apply">
+        {{ many ? t("glossary.applyAll", { count: access.targetIds.value.length }) : t("glossary.apply") }}
+      </v-btn>
+      <v-btn v-if="dirty" variant="text" :prepend-icon="mdiUndoVariant" data-testid="glossary-discard" @click="discard">{{ t("glossary.discard") }}</v-btn>
+      <v-spacer />
+      <v-btn variant="text" :prepend-icon="mdiImport" :disabled="disabled" data-testid="glossary-import" @click="importing = true">{{ t("glossary.import") }}</v-btn>
+      <v-btn variant="text" :prepend-icon="mdiExport" :disabled="mixed || (stored?.length ?? 0) === 0" data-testid="glossary-export" @click="exporting = true">{{ t("glossary.export") }}</v-btn>
     </div>
+    <p v-if="dirty" class="text-body-medium" role="status" data-testid="glossary-unapplied">{{ t("glossary.unapplied") }}</p>
+    <GlossaryImportDialog v-model="importing" :draft="text" @import="(v) => onInput(v)" />
+    <GlossaryExportDialog v-model="exporting" :terms="stored ?? []" />
   </div>
 </template>

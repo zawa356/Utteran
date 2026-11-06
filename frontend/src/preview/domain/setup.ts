@@ -1,5 +1,20 @@
 import { Store } from "../../domain/store";
 import { applySetupOutcome, type EnvExample, envFromExample, type EnvState, repairTarget } from "./envExamples";
+import {
+  DIARIZATION_SIZE,
+  MAX_MODEL_REFS,
+  modelAllowed,
+  modelRef,
+  PROFILE_KIND,
+  RECOMMENDED_MODEL,
+  REPAIR_SIZE,
+  RUNTIME_SIZE,
+  type SetupDevice,
+  type SetupEngine,
+  SETUP_ENGINES,
+  setupModel,
+  VAD_SIZE,
+} from "./setupCatalog";
 
 /**
  * Setup wizard of the UI-3-0 prototype (iteration 4, owner memos #23/#24). It models the
@@ -19,14 +34,28 @@ import { applySetupOutcome, type EnvExample, envFromExample, type EnvState, repa
  *    and any retry / resume — in the controller, not only in the view;
  *  - a successful setup changes only what its plan installed or repaired (`applySetupOutcome`);
  *    nothing is applied before success.
+ *
+ * Iteration 5 (owner memos #26–#28, #30): standard / custom setup with model selection (catalog
+ * fixture in `setupCatalog.ts`), the plan installs only the difference to what is installed, and
+ * the credential / terms are on the features page (the controller checks them exactly as before).
  */
 export type SetupExample = "configured" | "first_run" | "incomplete" | "failed" | "needs_repair" | "cpu_only" | "missing_token";
 export const SETUP_EXAMPLES: readonly SetupExample[] = ["configured", "first_run", "incomplete", "failed", "needs_repair", "cpu_only", "missing_token"];
 
 /** Why the wizard was opened. Same screens, different starting point and plan. */
 export type WizardEntry = "first_run" | "add" | "repair";
-export type WizardStep = "welcome" | "environment" | "features" | "credentials" | "review" | "run" | "done";
-export type DevicePlan = "gpu" | "cpu";
+/**
+ * Iteration 5 (#26): no separate credentials step any more — the token state and the terms are
+ * shown on the "features" page as soon as diarization is switched on.
+ */
+export type WizardStep = "welcome" | "environment" | "features" | "review" | "run" | "done";
+export type DevicePlan = SetupDevice;
+/**
+ * Standard = take the (fictional) recommendation, with "Change model…"; custom = choose engine,
+ * device, models and the main model. Independent of the app's Normal / Expert display mode, and
+ * both write the SAME choices, so switching never loses a selection (iteration 5, #30).
+ */
+export type SetupMethod = "standard" | "custom";
 export type StageId = "preflight" | "runtime" | "vad_model" | "asr_model" | "diarization_model" | "smoke";
 export type StageStatus = "pending" | "running" | "done" | "failed" | "interrupted";
 /** B8 operation states the prototype shows (subset; see iteration-4.md §3 for the full mapping). */
@@ -38,9 +67,34 @@ export interface Detected {
   credential: boolean;
 }
 
+/**
+ * What is already installed, copied from the environment when the wizard opens (the analogue of
+ * B8's inventory revision). The plan installs only the difference.
+ */
+export interface Inventory {
+  ready: Record<DevicePlan, boolean>;
+  models: Record<DevicePlan, string[]>;
+}
+export const EMPTY_INVENTORY: Inventory = { ready: { gpu: false, cpu: false }, models: { gpu: [], cpu: [] } };
+
+export function inventoryOf(env: EnvState): Inventory {
+  return {
+    ready: { gpu: env.gpu === "ready", cpu: env.cpu === "ready" },
+    models: { gpu: env.gpu === "absent" ? [] : [...env.models.gpu], cpu: env.cpu === "absent" ? [] : [...env.models.cpu] },
+  };
+}
+
 export interface WizardChoices {
+  method: SetupMethod;
+  engine: SetupEngine;
   /** The profile to install (first run / add) or to repair (repair). */
   device: DevicePlan;
+  /** Every ASR model the profile should have after the run (installed ones included; B8 `model_refs`). */
+  models: string[];
+  /** The model the profile uses by default (applies only if the profile has no default yet). */
+  primaryModel: string;
+  /** False while the models simply follow the recommendation for the device. */
+  modelsTouched: boolean;
   diarization: boolean;
   /** Demo stand-in for "a credential was registered in this wizard" — no value is entered or kept. */
   credential: boolean;
@@ -66,6 +120,7 @@ export interface SetupState {
   entry: WizardEntry;
   step: WizardStep;
   detected: Detected;
+  inventory: Inventory;
   choices: WizardChoices;
   approved: boolean;
   /** Bumped whenever the plan changes; an approval belongs to one revision. */
@@ -79,50 +134,114 @@ export interface SetupState {
 
 export interface PlanItem {
   id: "runtime" | "asrModel" | "vadModel" | "diarizationModel" | "repairRuntime";
-  /** Synthetic sizes in MB (examples, not measured). */
-  downloadMb: number;
-  diskMb: number;
+  /** The ASR model of an `asrModel` item. */
+  modelId?: string;
+  /** Synthetic sizes in MB (examples, not measured); null = unknown (B8 `bytes_unknown`). */
+  downloadMb: number | null;
+  diskMb: number | null;
 }
 
 export interface SetupPlan {
   items: PlanItem[];
   stages: StageId[];
+  /** Sum of the KNOWN sizes; `sizeUnknown` says whether some item's size is not known. */
   downloadMb: number;
   diskMb: number;
+  sizeUnknown: boolean;
   /** A credential must be present before the plan can be approved. */
   requiresCredential: boolean;
   /** Agreement ids the approval must accept (B8 `required_agreements`). */
   requiredAgreements: string[];
   /** The profile this plan installs or repairs; every other profile is preserved. */
   target: DevicePlan;
+  /** Models this plan downloads (already installed ones are not downloaded again). */
+  newModels: string[];
 }
 
-/** The plan for the current choices (B8: read-only, computed before any approval). */
-export function planFor(entry: WizardEntry, choices: WizardChoices): SetupPlan {
+/** Credential / terms of a plan: they depend on the diarization choice only. */
+function requirementsOf(entry: WizardEntry, choices: Pick<WizardChoices, "diarization">): Pick<SetupPlan, "requiresCredential" | "requiredAgreements"> {
+  const on = entry !== "repair" && choices.diarization;
+  // The repair mock installs no new model, so it requires no terms; a real repair plan would
+  // carry whatever `required_agreements` the backend lists for it.
+  return { requiresCredential: on, requiredAgreements: on ? [DIARIZATION_TERMS] : [] };
+}
+
+/**
+ * The plan for the current choices (B8: read-only, computed before any approval). Only the
+ * DIFFERENCE to the inventory is installed: a ready profile gets no new runtime, an installed
+ * model is not downloaded again.
+ */
+export function planFor(entry: WizardEntry, choices: WizardChoices, inventory: Inventory = EMPTY_INVENTORY): SetupPlan {
   const items: PlanItem[] = [];
+  const device = choices.device;
+  let newModels: string[] = [];
   if (entry === "repair") {
-    items.push(choices.device === "gpu" ? { id: "repairRuntime", downloadMb: 900, diskMb: 2100 } : { id: "repairRuntime", downloadMb: 300, diskMb: 700 });
+    items.push({ id: "repairRuntime", ...REPAIR_SIZE[device] });
   } else {
-    items.push(choices.device === "gpu" ? { id: "runtime", downloadMb: 2400, diskMb: 5200 } : { id: "runtime", downloadMb: 600, diskMb: 1400 });
-    items.push(choices.device === "gpu" ? { id: "asrModel", downloadMb: 1600, diskMb: 1600 } : { id: "asrModel", downloadMb: 480, diskMb: 480 });
-    items.push({ id: "vadModel", downloadMb: 2, diskMb: 2 });
-    if (choices.diarization) items.push({ id: "diarizationModel", downloadMb: 60, diskMb: 60 });
+    const ready = inventory.ready[device];
+    if (!ready) items.push({ id: "runtime", ...RUNTIME_SIZE[device] });
+    newModels = choices.models.filter((m) => !(ready && inventory.models[device].includes(m)));
+    for (const m of newModels) {
+      const size = setupModel(m)?.sizeMb ?? null;
+      items.push({ id: "asrModel", modelId: m, downloadMb: size, diskMb: size });
+    }
+    if (!ready) items.push({ id: "vadModel", ...VAD_SIZE });
+    if (choices.diarization) items.push({ id: "diarizationModel", ...DIARIZATION_SIZE });
   }
-  const stages: StageId[] =
-    entry === "repair"
-      ? ["preflight", "runtime", "smoke"]
-      : (["preflight", "runtime", "vad_model", "asr_model", ...(choices.diarization ? (["diarization_model"] as const) : []), "smoke"] as StageId[]);
+  const has = (id: PlanItem["id"]) => items.some((i) => i.id === id);
+  const stages: StageId[] = ["preflight"];
+  if (has("runtime") || has("repairRuntime")) stages.push("runtime");
+  if (has("vadModel")) stages.push("vad_model");
+  if (has("asrModel")) stages.push("asr_model");
+  if (has("diarizationModel")) stages.push("diarization_model");
+  stages.push("smoke");
+  const sum = (k: "downloadMb" | "diskMb") => items.reduce((n, i) => n + (i[k] ?? 0), 0);
   return {
     items,
     stages,
-    downloadMb: items.reduce((n, i) => n + i.downloadMb, 0),
-    diskMb: items.reduce((n, i) => n + i.diskMb, 0),
-    // The repair mock installs no new model, so it requires no terms; a real repair plan would
-    // carry whatever `required_agreements` the backend lists for it.
-    requiresCredential: entry !== "repair" && choices.diarization,
-    requiredAgreements: entry !== "repair" && choices.diarization ? [DIARIZATION_TERMS] : [],
-    target: choices.device,
+    downloadMb: sum("downloadMb"),
+    diskMb: sum("diskMb"),
+    sizeUnknown: items.some((i) => i.downloadMb === null || i.diskMb === null),
+    ...requirementsOf(entry, choices),
+    target: device,
+    newModels,
   };
+}
+
+/** The B8 `SetupPlanRequest` fields the choices stand for (shape check only; nothing is sent). */
+export function planRequest(choices: WizardChoices): { profile_kind: "cuda" | "cpu"; model_refs: string[]; diarization_enabled: boolean } {
+  return { profile_kind: PROFILE_KIND[choices.device], model_refs: choices.models.map((m) => modelRef(choices.engine, m)), diarization_enabled: choices.diarization };
+}
+
+/** Chosen models that the chosen engine/device does not offer (they block "next"). */
+export function unavailableModels(choices: Pick<WizardChoices, "models" | "engine" | "device">): string[] {
+  return choices.models.filter((m) => !modelAllowed(m, choices.engine, choices.device));
+}
+
+/** Models the profile will have without asking: the installed ones, else the recommendation. */
+function baseModels(inventory: Inventory, device: DevicePlan): string[] {
+  const installed = inventory.ready[device] ? inventory.models[device] : [];
+  return installed.length > 0 ? [...installed] : [RECOMMENDED_MODEL[device]];
+}
+
+/** Models after a device change: untouched choices follow the device; touched ones are kept (and checked). */
+function modelsAfterDevice(choices: WizardChoices, inventory: Inventory, device: DevicePlan): Pick<WizardChoices, "models" | "primaryModel"> {
+  const base = baseModels(inventory, device);
+  if (!choices.modelsTouched) return { models: base, primaryModel: base[0]! };
+  const installed = inventory.ready[device] ? inventory.models[device] : [];
+  const models = [...installed, ...choices.models.filter((m) => !installed.includes(m))];
+  return { models, primaryModel: models.includes(choices.primaryModel) ? choices.primaryModel : models[0]! };
+}
+
+/** Installed models of the target profile: always part of the plan, never removed by this wizard. */
+export function lockedModels(s: Pick<SetupState, "entry" | "choices" | "inventory">): string[] {
+  if (s.entry === "repair" || !s.inventory.ready[s.choices.device]) return [];
+  return s.inventory.models[s.choices.device];
+}
+
+/** Whether the main-model choice applies (a ready profile keeps its default model). */
+export function primaryChoosable(s: Pick<SetupState, "entry" | "choices" | "inventory">): boolean {
+  return !s.inventory.ready[s.choices.device];
 }
 
 export type Requirement = "credential" | "agreement";
@@ -134,36 +253,43 @@ export function credentialPresent(s: Pick<SetupState, "detected" | "choices">): 
 
 /** What the CURRENT plan still needs before it may be approved or run (credential and terms, independently). */
 export function missingRequirements(s: Pick<SetupState, "entry" | "choices" | "detected">): Requirement[] {
-  const plan = planFor(s.entry, s.choices);
+  const req = requirementsOf(s.entry, s.choices);
   const missing: Requirement[] = [];
-  if (plan.requiresCredential && !credentialPresent(s)) missing.push("credential");
-  if (plan.requiredAgreements.some((id) => !s.choices.acceptedAgreements.includes(id))) missing.push("agreement");
+  if (req.requiresCredential && !credentialPresent(s)) missing.push("credential");
+  if (req.requiredAgreements.some((id) => !s.choices.acceptedAgreements.includes(id))) missing.push("agreement");
   return missing;
 }
 
-/**
- * Whether the credential / terms step is part of this run of the wizard: whenever the plan
- * requires a credential or terms — also when a credential already exists, because the terms of
- * this plan still have to be accepted.
- */
-export function credentialStepNeeded(s: Pick<SetupState, "entry" | "choices" | "detected">): boolean {
-  const plan = planFor(s.entry, s.choices);
-  return plan.requiresCredential || plan.requiredAgreements.length > 0;
-}
-
 /** The pre-approval steps in order (the run and done pages follow the approval). */
-export function wizardSteps(s: Pick<SetupState, "entry" | "choices" | "detected">): WizardStep[] {
+export function wizardSteps(s: Pick<SetupState, "entry"> & Partial<Pick<SetupState, "choices">>): WizardStep[] {
   if (s.entry === "repair") return ["review"];
-  const steps: WizardStep[] = s.entry === "first_run" ? ["welcome", "environment", "features"] : ["environment", "features"];
-  if (credentialStepNeeded(s)) steps.push("credentials");
-  steps.push("review");
-  return steps;
+  return s.entry === "first_run" ? ["welcome", "environment", "features", "review"] : ["environment", "features", "review"];
 }
 
-/** Why "next" (or, on the review step, "approve") is unavailable now (null = it can be pressed). */
-export function nextBlock(s: SetupState): "gpuMissing" | Requirement | null {
-  if (s.step === "environment" && s.choices.device === "gpu" && !s.detected.gpu) return "gpuMissing";
-  if (s.step === "credentials" || s.step === "review") return missingRequirements(s)[0] ?? null;
+export type NextBlock = "gpuMissing" | "noModel" | "modelUnavailable" | "tooManyModels" | "nothingToInstall" | Requirement;
+
+/** Why "next" (or, on the review step, "start") is unavailable now (null = it can be pressed). */
+export function nextBlock(s: SetupState): NextBlock | null {
+  const modelBlock = (): NextBlock | null => {
+    if (s.choices.models.length === 0) return "noModel";
+    if (s.choices.models.length > MAX_MODEL_REFS) return "tooManyModels";
+    if (unavailableModels(s.choices).length > 0) return "modelUnavailable";
+    return null;
+  };
+  if (s.step === "environment") {
+    if (s.choices.device === "gpu" && !s.detected.gpu) return "gpuMissing";
+    return modelBlock();
+  }
+  if (s.step === "features") return missingRequirements(s)[0] ?? null;
+  if (s.step === "review") {
+    if (s.entry !== "repair") {
+      const m = modelBlock();
+      if (m) return m;
+    }
+    const missing = missingRequirements(s)[0];
+    if (missing) return missing;
+    if (s.entry !== "repair" && planFor(s.entry, s.choices, s.inventory).items.length === 0) return "nothingToInstall";
+  }
   return null;
 }
 
@@ -189,7 +315,10 @@ const FAIL_CODE: Record<StageId, string> = {
   smoke: "demo_smoke_failed",
 };
 
-const NO_CHOICES: WizardChoices = { device: "gpu", diarization: false, credential: false, acceptedAgreements: [] };
+function noChoices(device: DevicePlan = "gpu"): WizardChoices {
+  const m = RECOMMENDED_MODEL[device];
+  return { method: "standard", engine: "faster-whisper", device, models: [m], primaryModel: m, modelsTouched: false, diarization: false, credential: false, acceptedAgreements: [] };
+}
 
 function base(example: SetupExample): SetupState {
   return {
@@ -199,7 +328,8 @@ function base(example: SetupExample): SetupState {
     entry: "first_run",
     step: "welcome",
     detected: { gpu: true, credential: true },
-    choices: { ...NO_CHOICES },
+    inventory: EMPTY_INVENTORY,
+    choices: noChoices(),
     approved: false,
     planRevision: 1,
     approvedRevision: null,
@@ -221,9 +351,9 @@ export function exampleState(example: SetupExample): SetupState {
     case "first_run":
       return { ...s, configured: false, wizardOpen: true, detected: { gpu: true, credential: false } };
     case "cpu_only":
-      return { ...s, configured: false, wizardOpen: true, detected: { gpu: false, credential: false }, choices: { ...NO_CHOICES, device: "cpu" } };
+      return { ...s, configured: false, wizardOpen: true, detected: { gpu: false, credential: false }, choices: noChoices("cpu") };
     case "incomplete": {
-      const choices: WizardChoices = { device: "gpu", diarization: false, credential: false, acceptedAgreements: [] };
+      const choices = noChoices();
       return {
         ...s,
         configured: false,
@@ -239,7 +369,7 @@ export function exampleState(example: SetupExample): SetupState {
       };
     }
     case "failed": {
-      const choices: WizardChoices = { device: "gpu", diarization: true, credential: true, acceptedAgreements: [DIARIZATION_TERMS] };
+      const choices: WizardChoices = { ...noChoices(), diarization: true, credential: true, acceptedAgreements: [DIARIZATION_TERMS] };
       return {
         ...s,
         configured: false,
@@ -302,14 +432,14 @@ export class SetupController {
   setExample(example: SetupExample): void {
     const { env, label } = envForExample(example);
     const state = exampleState(example);
-    this.store.set({ ...state, detected: { ...state.detected, gpu: env.gpuDetected } });
+    this.store.set({ ...state, detected: { ...state.detected, gpu: env.gpuDetected }, inventory: inventoryOf(env) });
     this.effects.applyEnvironment(env, label);
   }
 
   /**
-   * Opens the wizard. `add` = install something more (GPU, diarization) on a working setup;
-   * `repair` = fix a broken profile; `first_run` = nothing usable yet. An unfinished operation is
-   * shown as it is (resume) instead of starting over.
+   * Opens the wizard. `add` = install something more (a profile, models, diarization) on a working
+   * setup; `repair` = fix a broken profile; `first_run` = nothing usable yet. An unfinished
+   * operation is shown as it is (resume) instead of starting over.
    */
   open(entry: WizardEntry, preset: Partial<WizardChoices> = {}): void {
     const s = this.store.get();
@@ -318,20 +448,23 @@ export class SetupController {
       return;
     }
     const env = this.effects.currentEnvironment();
+    const inventory = inventoryOf(env);
     // First run keeps what was chosen before the wizard was closed; add / repair start fresh
     // with what the card asked for (e.g. "Set up the GPU…" → device gpu).
     let choices: WizardChoices;
     if (entry === "first_run") choices = { ...s.choices, ...preset };
-    else if (entry === "repair") choices = { ...NO_CHOICES, device: preset.device ?? repairTarget(env) ?? "gpu" };
+    else if (entry === "repair") choices = noChoices(preset.device ?? repairTarget(env) ?? "gpu");
     else {
       const fallback: DevicePlan = env.gpu !== "ready" && env.gpuDetected ? "gpu" : "cpu";
-      choices = { ...NO_CHOICES, device: fallback, ...preset, acceptedAgreements: [...(preset.acceptedAgreements ?? [])] };
+      choices = { ...noChoices(preset.device ?? fallback), ...preset, acceptedAgreements: [...(preset.acceptedAgreements ?? [])] };
     }
     const detected = { ...s.detected, gpu: env.gpuDetected };
     if (!detected.gpu && entry !== "repair") choices.device = "cpu";
-    const steps = wizardSteps({ ...s, entry, choices, detected });
+    if (entry !== "repair") choices = { ...choices, ...modelsAfterDevice(choices, inventory, choices.device) };
+    const steps = wizardSteps({ entry });
     this.patch({
       detected,
+      inventory,
       wizardOpen: true,
       entry,
       step: steps[0]!,
@@ -348,11 +481,67 @@ export class SetupController {
     this.patch({ wizardOpen: false });
   }
 
-  /** A choice that changes the PLAN (device, diarization): any earlier approval is void (B8 reapproval_required). */
+  /** Every change of the PLAN voids an earlier approval (B8 reapproval_required). */
+  private changePlan(choices: WizardChoices): void {
+    const s = this.store.get();
+    this.patch({ choices, planRevision: s.planRevision + 1, approved: false, approvedRevision: null });
+  }
+
+  /** A choice that changes the PLAN (device, diarization). A device change re-checks the chosen models. */
   setChoice<K extends "device" | "diarization">(key: K, value: WizardChoices[K]): void {
     const s = this.store.get();
     if (s.choices[key] === value) return;
-    this.patch({ choices: { ...s.choices, [key]: value }, planRevision: s.planRevision + 1, approved: false, approvedRevision: null });
+    let choices: WizardChoices = { ...s.choices, [key]: value };
+    if (key === "device") choices = { ...choices, ...modelsAfterDevice(s.choices, s.inventory, value as DevicePlan) };
+    this.changePlan(choices);
+  }
+
+  /** Standard ↔ custom only changes how the choices are shown; nothing is lost or re-planned. */
+  setMethod(method: SetupMethod): void {
+    const s = this.store.get();
+    if (s.choices.method !== method) this.patch({ choices: { ...s.choices, method } });
+  }
+
+  setEngine(engine: SetupEngine): void {
+    const s = this.store.get();
+    if (s.choices.engine === engine || !SETUP_ENGINES.some((e) => e.id === engine && e.selectable)) return;
+    this.changePlan({ ...s.choices, engine });
+  }
+
+  /** Standard "Change model…": exactly this model (plus the installed ones, which are never removed). */
+  chooseModel(id: string): void {
+    const s = this.store.get();
+    if (!modelAllowed(id, s.choices.engine, s.choices.device)) return;
+    const locked = lockedModels(s);
+    const models = locked.includes(id) ? [...locked] : [...locked, id];
+    this.changePlan({ ...s.choices, models, primaryModel: primaryChoosable(s) ? id : s.choices.primaryModel, modelsTouched: true });
+  }
+
+  /** Custom: add or remove one model. Installed models and offers the device lacks cannot be added/removed. */
+  toggleModel(id: string, on: boolean): void {
+    const s = this.store.get();
+    if (lockedModels(s).includes(id)) return;
+    if (on && (!modelAllowed(id, s.choices.engine, s.choices.device) || s.choices.models.includes(id) || s.choices.models.length >= MAX_MODEL_REFS)) return;
+    if (!on && !s.choices.models.includes(id)) return;
+    const models = on ? [...s.choices.models, id] : s.choices.models.filter((m) => m !== id);
+    const primaryModel = models.includes(s.choices.primaryModel) ? s.choices.primaryModel : (models[0] ?? "");
+    this.changePlan({ ...s.choices, models, primaryModel, modelsTouched: true });
+  }
+
+  setPrimaryModel(id: string): void {
+    const s = this.store.get();
+    if (!s.choices.models.includes(id) || s.choices.primaryModel === id) return;
+    this.changePlan({ ...s.choices, primaryModel: id, modelsTouched: true });
+  }
+
+  /** "Remove the models this device cannot use" after a device change. */
+  removeUnavailableModels(): void {
+    const s = this.store.get();
+    const bad = unavailableModels(s.choices);
+    if (bad.length === 0) return;
+    let models = s.choices.models.filter((m) => !bad.includes(m));
+    if (models.length === 0) models = baseModels(s.inventory, s.choices.device);
+    this.changePlan({ ...s.choices, models, primaryModel: models.includes(s.choices.primaryModel) ? s.choices.primaryModel : models[0]! });
   }
 
   /** Demo: mark a credential as registered (no value is typed, shown or stored). */
@@ -383,25 +572,26 @@ export class SetupController {
     if (i > 0) this.patch({ step: steps[i - 1]! });
   }
 
-  /** "Continue without diarization" on the credential step. */
-  skipDiarization(): void {
-    this.setChoice("diarization", false);
-    this.patch({ step: "review" });
+  /** Jump to an earlier step (the review's "Change" links). */
+  goTo(step: WizardStep): void {
+    const s = this.store.get();
+    const steps = wizardSteps(s);
+    if (steps.indexOf(step) >= 0 && steps.indexOf(step) < steps.indexOf(s.step)) this.patch({ step });
   }
 
   /**
    * Approves the shown plan and starts the (fictional) operation. Refused — whoever calls it — while
-   * the plan's credential or terms are missing. Done stages of an earlier attempt are kept.
-   * Returns whether the operation started.
+   * the plan's credential or terms are missing or the plan is not valid. Done stages of an earlier
+   * attempt are kept. Returns whether the operation started.
    */
   approveAndStart(): boolean {
     const s = this.store.get();
     if (s.step !== "review") return false;
-    if (missingRequirements(s).length > 0) {
+    if (nextBlock(s) !== null) {
       this.effects.notify("notice.setupBlocked");
       return false;
     }
-    const plan = planFor(s.entry, s.choices);
+    const plan = planFor(s.entry, s.choices, s.inventory);
     const previous = new Map(s.stages.map((st) => [st.id, st.status]));
     const stages = plan.stages.map((id): StageRun => ({ id, status: previous.get(id) === "done" ? "done" : "pending", fraction: null }));
     const first = stages.findIndex((st) => st.status !== "done");
@@ -483,14 +673,16 @@ export class SetupController {
 
   /**
    * Last page, only after a SUCCESSFUL run: the plan's outcome is applied to the CURRENT environment
-   * (added / repaired profile only; everything else is preserved). Jobs, queue and settings are
-   * not touched — except that a first run without diarization makes "diarization off" the default.
+   * (added / repaired profile and added models only; everything else is preserved). Jobs, queue and
+   * settings are not touched — except that a first run without diarization makes "diarization off"
+   * the default.
    */
   finish(): void {
     const s = this.store.get();
     if (s.run !== "succeeded") return;
     const before = this.effects.currentEnvironment();
-    const env = applySetupOutcome(before, { entry: s.entry, device: s.choices.device, diarization: s.choices.diarization });
+    const plan = planFor(s.entry, s.choices, s.inventory);
+    const env = applySetupOutcome(before, { entry: s.entry, device: s.choices.device, diarization: s.choices.diarization, models: plan.newModels, primaryModel: primaryChoosable(s) ? s.choices.primaryModel : null });
     this.store.set({
       ...s,
       configured: true,
@@ -499,6 +691,7 @@ export class SetupController {
       stages: [],
       step: "welcome",
       example: "configured",
+      inventory: inventoryOf(env),
       choices: { ...s.choices, acceptedAgreements: [] },
       detected: { ...s.detected, credential: credentialPresent(s) },
     });

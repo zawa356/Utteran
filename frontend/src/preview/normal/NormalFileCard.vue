@@ -3,6 +3,7 @@ import { mdiFileMusicOutline, mdiFilePlusOutline, mdiFileReplaceOutline } from "
 import AreaState from "../components/AreaState.vue";
 import { usePreview } from "../composables";
 import { formatDuration } from "../domain/fixtures";
+import OutputDirField from "../output/OutputDirField.vue";
 import { useNormalFile } from "./useNormalFile";
 
 /**
@@ -34,7 +35,8 @@ const { input } = useNormalFile();
             </div>
           </div>
         </div>
-        <v-btn variant="outlined" :prepend-icon="mdiFileReplaceOutline" data-testid="normal-choose-other" @click="demo.chooseNormalFile()">{{ t("normal.chooseOther") }}</v-btn>
+        <v-btn variant="outlined" :prepend-icon="mdiFileReplaceOutline" class="align-self-start" data-testid="normal-choose-other" @click="demo.chooseNormalFile()">{{ t("normal.chooseOther") }}</v-btn>
+        <OutputDirField :input-ids="[input.id]" />
       </template>
     </AreaState>
   </v-card>

@@ -420,7 +420,7 @@ test("environment: one layout, no density / expand-all; Normal brief, Expert can
   await preview.getByTestId("topnav-setup").click();
   const page = preview.getByTestId("section-setup");
   await expect(preview.getByTestId("env-demo-note")).toContainText("架空");
-  await expect(page.getByText("デモ用の架空", { exact: false })).toHaveCount(1);
+  await expect(page.getByText("架空の例です", { exact: false })).toHaveCount(1);
   await expect(preview.getByTestId("env-density")).toHaveCount(0);
   await expect(preview.getByTestId("env-expand-all")).toHaveCount(0);
   await expect(preview.getByTestId("env-profile-gpu")).toContainText("large-v3-turbo");
@@ -503,7 +503,8 @@ test("settings: Normal = a few app-wide items; Expert = categories; nothing per-
   await expect(page).toHaveAttribute("data-variant", "normal");
   await expect(preview.getByTestId("settings-status")).toContainText("保存されません");
   await expect(preview.getByTestId("settings-categories")).toHaveCount(0);
-  await expect(preview.getByTestId("settings-output").locator("input")).toHaveValue("入力ファイルと同じフォルダ");
+  await expect(preview.getByTestId("settings-output-same").locator("input")).toBeChecked(); // iteration 5: a real choice (#35)
+  await expect(preview.getByTestId("settings-output-value")).toHaveText("入力ファイルと同じフォルダ");
   await expect(page).not.toContainText("文字起こしモデル"); // per-job settings live in the Inspector
   await choose(preview, "settings-theme", "ダーク");
   await expect(preview.locator(".v-application")).toHaveClass(/v-theme--greenDark/);
@@ -512,7 +513,7 @@ test("settings: Normal = a few app-wide items; Expert = categories; nothing per-
   await expect(page).toHaveAttribute("data-variant", "expert");
   await expect(preview.getByTestId("settings-categories").locator(".v-list-item")).toHaveCount(4);
   await preview.getByTestId("settings-cat-advanced").click();
-  await expect(preview.getByTestId("settings-token").locator("input")).toHaveValue("設定済み（値は表示しません）");
+  await expect(preview.getByTestId("settings-token").locator("input")).toHaveValue("登録済み");
   await expect(preview.getByTestId("settings-body-advanced")).toContainText("同時実行数");
   await preview.getByTestId("settings-cat-presets").click();
   await expect(preview.getByTestId("settings-presets").locator(".v-list-item")).toHaveCount(4);

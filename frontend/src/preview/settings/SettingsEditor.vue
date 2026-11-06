@@ -4,6 +4,7 @@ import { computed } from "vue";
 import { usePreview } from "../composables";
 import { CATEGORIES, type FieldDef, fieldsOf, FOLDED_SECTIONS } from "../domain/settingsSchema";
 import type { PreviewKey } from "../i18n";
+import OutputDirField from "../output/OutputDirField.vue";
 import SettingRow from "./SettingRow.vue";
 import { type FieldMode, provideSettingAccess } from "./useSettingAccess";
 
@@ -14,7 +15,7 @@ import { type FieldMode, provideSettingAccess } from "./useSettingAccess";
  * fields that apply to the chosen backend are shown (the rest stay stored but unused).
  */
 const props = defineProps<{ mode: Exclude<FieldMode, "normal"> }>();
-const { demo, state, t } = usePreview();
+const { demo, layout, state, t } = usePreview();
 const access = provideSettingAccess(() => props.mode);
 const category = computed(() => state.value.inspectorCategory);
 
@@ -70,6 +71,14 @@ const showHeadings = computed(() => category.value === "advanced" || sections.va
 
     <div class="p-editor__body u-stack" role="region" :aria-label="t(`cat.${category}` as PreviewKey)" :data-testid="`category-panel-${category}`">
       <p v-if="engineNote" class="text-body-medium" data-testid="engine-note">{{ engineNote }}</p>
+      <!-- #35: the output folder belongs to the file (FileInput.output_dir), not to the processing settings. -->
+      <template v-if="category === 'output'">
+        <OutputDirField v-if="mode === 'selection'" :input-ids="state.selected" />
+        <div v-else class="u-stack" data-testid="output-dir-common">
+          <div class="text-body-medium"><span class="font-weight-medium">{{ t("settings.output") }}</span> — {{ state.defaultOutputDir ?? t("output.sameAsInput") }}</div>
+          <v-btn variant="text" color="primary" class="align-self-start" data-testid="output-dir-open-settings" @click="layout.navigate('settings')">{{ t("output.changeInSettings") }}</v-btn>
+        </div>
+      </template>
       <template v-for="sec in sections" :key="sec.id">
         <v-expansion-panels v-if="sec.folded" variant="accordion" flat class="p-editor__fold">
           <v-expansion-panel :data-testid="`section-${sec.id}`">

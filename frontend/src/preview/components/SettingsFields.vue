@@ -14,7 +14,9 @@ const defs = computed(() => props.fields.map((k) => fieldDef(k)));
 </script>
 
 <template>
-  <div class="p-fields--compact" data-testid="settings-fields-normal">
-    <SettingRow v-for="def in defs" :key="def.key" :def="def" simple />
+  <div class="p-fields-wrap">
+    <div class="p-fields--compact" data-testid="settings-fields-normal">
+      <SettingRow v-for="def in defs" :key="def.key" :def="def" simple />
+    </div>
   </div>
 </template>

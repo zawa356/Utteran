@@ -55,7 +55,7 @@ const groups = computed<Group[]>(() => {
       id: "tools",
       title: k("menu.tools"),
       items: [
-        ...(firstRun.value ? [] : [{ action: "setup" as const, title: k("menu.tools.setup") }]),
+        ...(firstRun.value ? [] : [{ action: "setup" as const, title: k("menu.tools.setup") }, { action: "maintenance" as const, title: k("menu.tools.maintenance") }]),
         { action: "systemLog", title: k("menu.tools.systemLog") },
         { action: "jobLog", title: k("menu.tools.jobLog") },
         { action: "diagnostics", title: k("menu.tools.diagnostics") },

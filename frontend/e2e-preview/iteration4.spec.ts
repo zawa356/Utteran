@@ -22,15 +22,13 @@ test("#19 Expert: categories keep what was typed — prompt (Japanese), glossary
   const prompt = preview.getByTestId("input-initialPrompt").locator("textarea");
   await prompt.fill("社内の定例会議です。話題は製品の開発計画です。");
   await expect(preview.getByTestId("input-initialPrompt")).toContainText("23 / 32768文字");
-  const term = preview.getByTestId("glossary-new").locator("input");
-  await term.fill("議事録");
-  await term.press("Enter");
-  await term.fill("Utteran");
-  await preview.getByTestId("glossary-add").click();
-  await term.fill("utteran");
-  await expect(preview.getByTestId("glossary-new")).toContainText("同じ語句がすでにあります");
-  await expect(preview.getByTestId("glossary-add")).toBeDisabled();
-  await expect(preview.getByTestId("glossary-count")).toHaveText("2語（最大1000）");
+  // Iteration 5 (#36): one term per line in one text box; a repeated term is named and skipped on "Apply".
+  const terms = preview.getByTestId("glossary-text").locator("textarea");
+  await terms.fill("議事録\nUtteran\nutteran");
+  await expect(preview.getByTestId("glossary-duplicates")).toContainText("重複 1件（3行目）");
+  await expect(preview.getByTestId("glossary-count")).toHaveText("3行 · 適用される語 2／最大1000");
+  await preview.getByTestId("glossary-apply").click();
+  await expect(terms).toHaveValue("議事録\nUtteran");
 
   await preview.getByTestId("category-asr").click();
   await preview.getByTestId("input-beamSize-common").locator("input").fill("150");
@@ -60,7 +58,7 @@ test("#19 Expert: categories keep what was typed — prompt (Japanese), glossary
   // Back and forth between categories and panes: nothing is lost.
   await preview.getByTestId("category-prompt").click();
   await expect(prompt).toHaveValue("社内の定例会議です。話題は製品の開発計画です。");
-  await expect(preview.getByTestId("glossary-edit-0").locator("input")).toHaveValue("議事録");
+  await expect(terms).toHaveValue("議事録\nUtteran");
   await preview.getByTestId("category-asr").click();
   await expect(preview.getByTestId("input-beamSize-common").locator("input")).toHaveValue("8");
   await preview.getByTestId("mode-normal").click();
@@ -70,19 +68,23 @@ test("#19 Expert: categories keep what was typed — prompt (Japanese), glossary
   await expect(preview.getByTestId("input-wcThreads-common").locator("input")).toHaveValue("6");
 });
 
-test("#19 IME: text is applied on compositionend, Enter during composition never adds a glossary term", async ({ preview }) => {
+test("#19 IME: Enter during composition never applies the glossary; only 'Apply' stores it", async ({ preview }) => {
   await preview.getByTestId("mode-expert").click();
   await preview.getByTestId("category-prompt").click();
-  const term = preview.getByTestId("glossary-new").locator("input");
+  const term = preview.getByTestId("glossary-text").locator("textarea");
   await term.focus();
   await term.dispatchEvent("compositionstart");
   await preview.keyboard.insertText("ぎじろく");
   await term.dispatchEvent("keydown", { key: "Enter", isComposing: true, keyCode: 229 });
-  await expect(preview.getByTestId("glossary-count")).toHaveText("0語（最大1000）");
   await term.dispatchEvent("compositionend");
-  await term.press("Enter");
-  await expect(preview.getByTestId("glossary-count")).toHaveText("1語（最大1000）");
-  await expect(preview.getByTestId("glossary-edit-0").locator("input")).toHaveValue("ぎじろく");
+  await expect(preview.getByTestId("glossary")).toHaveAttribute("data-dirty", "true"); // typed, not applied
+  await term.press("Enter"); // a plain Enter is a new line, never "apply"
+  await expect(preview.getByTestId("glossary")).toHaveAttribute("data-dirty", "true");
+  await expect(term).toHaveValue("ぎじろく\n");
+  await preview.getByTestId("glossary-apply").click();
+  await expect(preview.getByTestId("glossary")).toHaveAttribute("data-dirty", "false");
+  await expect(preview.getByTestId("glossary-count")).toHaveText("1行 · 適用される語 1／最大1000");
+  await expect(term).toHaveValue("ぎじろく");
 });
 
 test("#19 common vs individual: per-file override, mixed values kept, snapshot frozen; no prompt in the job view", async ({ preview }) => {
@@ -194,7 +196,7 @@ test("#24 first run: welcome → detect → CPU → no diarization → review �
   await expect(preview.getByTestId("top-nav")).toHaveCount(0);
   await expect(preview.getByTestId("wizard-back")).toBeDisabled();
   await preview.getByTestId("wizard-next").click();
-  await expect(preview.getByTestId("wizard-position")).toHaveText("手順 2/4: 環境の確認");
+  await expect(preview.getByTestId("wizard-position")).toHaveText("手順 2/4: 実行環境とモデル");
   await preview.getByTestId("wizard-device-cpu").locator("input").click();
   await preview.getByTestId("wizard-next").click();
   await preview.getByTestId("wizard-back").click(); // back keeps the choice
@@ -205,7 +207,9 @@ test("#24 first run: welcome → detect → CPU → no diarization → review �
   await expect(preview.getByTestId("wizard-position")).toHaveText("手順 4/4: インストール内容の確認"); // no credential step
   await expect(preview.getByTestId("plan-item-runtime")).toContainText("CPU用の実行環境");
   await expect(preview.getByTestId("plan-item-diarizationModel")).toHaveCount(0);
-  await expect(preview.getByTestId("wizard-no-side-effects")).toBeVisible();
+  await expect(preview.getByTestId("plan-item-model-small")).toBeVisible(); // the CPU recommendation (iteration 5)
+  await expect(preview.getByTestId("plan-requirements")).toHaveCount(0);
+  await expect(preview.getByTestId("wizard-approve")).toHaveText("インストールを開始"); // nothing happens before it
   await preview.getByTestId("wizard-approve").click();
   await expect(preview.getByTestId("wizard-run")).toHaveAttribute("data-run", "running");
   await expect(preview.getByTestId("wizard-close")).toBeDisabled();
@@ -219,19 +223,19 @@ test("#24 first run: welcome → detect → CPU → no diarization → review �
   await expect(preview.getByTestId("normal-slow-note")).toContainText("CPU");
 });
 
-test("#24 GPU + diarization: the credential step appears only when needed; close keeps the choices", async ({ preview }) => {
+test("#24 GPU + diarization: token and terms appear (on the same page) only when needed; close keeps the choices", async ({ preview }) => {
   await choose(preview, "toolbar-setup", /^初回起動/);
   await preview.getByTestId("wizard-next").click();
   await preview.getByTestId("wizard-next").click();
+  await expect(preview.getByTestId("wizard-credentials")).toHaveCount(0);
   await preview.getByTestId("wizard-diarization").locator("input").click();
-  await expect(preview.getByTestId("wizard-needs-credential")).toBeVisible();
-  await preview.getByTestId("wizard-next").click();
-  await expect(preview.getByTestId("wizard-credentials")).toBeVisible();
+  await expect(preview.getByTestId("wizard-features").getByTestId("wizard-credentials")).toBeVisible();
   await expect(preview.getByTestId("wizard-next")).toBeDisabled();
   await expect(preview.getByTestId("wizard-next-block")).toContainText("トークンを登録");
   await expect(preview.getByTestId("wizard-credentials").locator("input[type=password], input[type=text]")).toHaveCount(0); // no token is typed
   await preview.getByTestId("wizard-register-credential").click();
-  await expect(preview.getByTestId("wizard-credential-state")).toContainText("値は表示しません");
+  await expect(preview.getByTestId("wizard-credential-state")).toHaveAttribute("data-present", "true");
+  await expect(preview.getByTestId("wizard-credential-state")).toContainText("登録済み");
   await preview.getByTestId("wizard-agreement").locator("input").click();
   await preview.getByTestId("wizard-close").click();
   await preview.getByTestId("wizard-close-confirm").click();
@@ -239,7 +243,6 @@ test("#24 GPU + diarization: the credential step appears only when needed; close
   await expect(preview.getByTestId("normal-start")).toBeDisabled();
   await preview.getByTestId("setup-notice-continue").click();
   await expect(preview.getByTestId("setup-wizard")).toHaveAttribute("data-step", "welcome");
-  await preview.getByTestId("wizard-next").click();
   await preview.getByTestId("wizard-next").click();
   await preview.getByTestId("wizard-next").click();
   await expect(preview.getByTestId("wizard-agreement").locator("input")).toBeChecked(); // kept
@@ -331,9 +334,10 @@ test("#23 missing diarization token: a blocked start explains it; the card offer
   await expect(preview.getByTestId("setup-wizard")).toHaveAttribute("data-step", "environment");
   await preview.getByTestId("wizard-next").click();
   await expect(preview.getByTestId("wizard-diarization").locator("input")).toBeChecked();
-  await preview.getByTestId("wizard-next").click();
   await expect(preview.getByTestId("wizard-credentials")).toBeVisible();
-  await preview.getByTestId("wizard-skip-diarization").click();
+  await preview.getByTestId("wizard-diarization").locator("input").click(); // continue without diarization
+  await expect(preview.getByTestId("wizard-credentials")).toHaveCount(0);
+  await preview.getByTestId("wizard-next").click();
   await expect(preview.getByTestId("wizard-review")).toBeVisible();
 });
 
@@ -486,13 +490,12 @@ test("#21 1280 px: a typical file name is not cut in the files pane", async ({ p
 });
 
 // ---- iteration 4 P1 fixes ------------------------------------------------------------------------------
-test("P1-1 credential present, terms NOT accepted: the terms step shows and blocks; approve only after accepting", async ({ preview }) => {
+test("P1-1 credential present, terms NOT accepted: the terms row shows and blocks; approve only after accepting", async ({ preview }) => {
   // "Set up" (default example): a diarization credential already exists.
   await preview.getByTestId("topnav-setup").click();
   await preview.getByTestId("env-setup").click();
   await preview.getByTestId("wizard-next").click(); // environment → features
   await preview.getByTestId("wizard-diarization").locator("input").click();
-  await preview.getByTestId("wizard-next").click();
   const cred = preview.getByTestId("wizard-credentials");
   await expect(cred).toBeVisible();
   await expect(preview.getByTestId("wizard-credential-state")).toHaveAttribute("data-present", "true");
@@ -512,7 +515,7 @@ test("P1-1 credential present, terms NOT accepted: the terms step shows and bloc
   await expect(preview.getByTestId("wizard-next")).toBeDisabled();
   await preview.getByTestId("lang-en").click();
   await expect(preview.getByTestId("wizard-next-block")).toHaveText("Accept the terms to continue.");
-  await expect(cred).toContainText("Token: registered (value not shown)");
+  await expect(cred).toContainText("Hugging Face token: registered");
 });
 
 test("P1-1 diarization off: no token or terms asked, approvable, and no false 'accepted' on the review", async ({ preview }) => {
@@ -527,17 +530,27 @@ test("P1-1 diarization off: no token or terms asked, approvable, and no false 'a
   await expect(preview.getByTestId("wizard-approve")).toBeEnabled();
 });
 
-test("P1-1 token missing, terms accepted: still blocked on the token; 'continue without diarization' clears both", async ({ preview }) => {
+test("P1-1 token missing, terms accepted: still blocked on the token; switching diarization off clears both", async ({ preview }) => {
   await choose(preview, "toolbar-setup", /^話者分離のトークンなし/);
   await preview.getByTestId("topnav-setup").click();
   await preview.getByTestId("env-action-diarization-gpu").click();
   await preview.getByTestId("wizard-next").click();
-  await preview.getByTestId("wizard-next").click();
   await preview.getByTestId("wizard-agreement").locator("input").click();
   await expect(preview.getByTestId("wizard-next")).toBeDisabled();
   await expect(preview.getByTestId("wizard-next-block")).toContainText("トークンを登録すると");
-  await preview.getByTestId("wizard-skip-diarization").click();
+  await preview.getByTestId("wizard-diarization").locator("input").click(); // continue without diarization
+  await preview.getByTestId("wizard-next").click();
   await expect(preview.getByTestId("plan-agreement")).toHaveCount(0);
+  await expect(preview.getByTestId("plan-credential")).toHaveCount(0);
+  // Iteration 5: the plan installs only the difference. The GPU is ready, so without diarization
+  // nothing is left to install — the block is "nothing to install", no longer the token.
+  await expect(preview.getByTestId("wizard-next-block")).toContainText("追加するものがありません");
+  await preview.getByTestId("wizard-back").click();
+  await preview.getByTestId("wizard-back").click();
+  await preview.getByTestId("wizard-change-model").click();
+  await preview.getByTestId("wizard-model-option-kotoba-whisper-v2.0").locator("input").click();
+  await preview.getByTestId("wizard-next").click();
+  await preview.getByTestId("wizard-next").click();
   await expect(preview.getByTestId("wizard-approve")).toBeEnabled();
 });
 

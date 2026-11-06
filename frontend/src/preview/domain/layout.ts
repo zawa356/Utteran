@@ -30,7 +30,7 @@ export const MENU_BAR_MIN_WIDTH = 1100;
 /** Below this window width the Normal destinations fold into one menu (no text is shrunk). */
 export const TOPNAV_MIN_WIDTH = 760;
 /** Mock dialogs opened from the app menu (Tools / Help). Nothing is read, written or sent. */
-export type AppDialog = "systemLog" | "jobLog" | "setupLog" | "diagnostics" | "about";
+export type AppDialog = "systemLog" | "jobLog" | "setupLog" | "diagnostics" | "about" | "maintenance";
 export const SETTINGS_CATEGORIES = ["general", "logs", "advanced", "presets"] as const;
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 

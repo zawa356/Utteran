@@ -182,10 +182,8 @@ test("⑥ Expert settings: 1280 recognition, prompt & glossary, whisper.cpp deta
   await shot(preview, "6a-expert-1280-recognition");
   await preview.getByTestId("category-prompt").click();
   await preview.getByTestId("input-initialPrompt").locator("textarea").fill("社内の定例会議です。話題は製品の開発計画です。");
-  for (const term of ["議事録", "アクションアイテム", "Utteran"]) {
-    await preview.getByTestId("glossary-new").locator("input").fill(term);
-    await preview.getByTestId("glossary-add").click();
-  }
+  await preview.getByTestId("glossary-text").locator("textarea").fill(["議事録", "アクションアイテム", "Utteran"].join("\n"));
+  await preview.getByTestId("glossary-apply").click();
   await shot(preview, "6b-expert-prompt-glossary");
   await preview.getByTestId("category-asr").click();
   await choose(preview, "input-backend-common", "whisper.cpp");
@@ -219,8 +217,7 @@ test("⑦ Wizard: welcome, environment, plan, running, failed, done, interrupted
   await shot(preview, "7b-wizard-environment");
   await preview.getByTestId("wizard-next").click();
   await preview.getByTestId("wizard-diarization").locator("input").click();
-  await preview.getByTestId("wizard-next").click();
-  await shot(preview, "7c-wizard-credentials");
+  await shot(preview, "7c-wizard-credentials"); // iteration 5: on the features page itself
   await preview.getByTestId("wizard-register-credential").click();
   await preview.getByTestId("wizard-agreement").locator("input").click();
   await preview.getByTestId("wizard-next").click();

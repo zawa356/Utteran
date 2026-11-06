@@ -1,31 +1,41 @@
 <script setup lang="ts">
-import { mdiArrowDown, mdiArrowUp, mdiBroom, mdiMagnify, mdiPause, mdiPlay, mdiStepForward } from "@mdi/js";
+import { mdiArrowDown, mdiArrowRight, mdiArrowUp, mdiBroom, mdiMagnify, mdiPause, mdiPlay, mdiStepForward } from "@mdi/js";
 import { computed } from "vue";
 import AreaState from "../components/AreaState.vue";
 import JobDetail from "../components/JobDetail.vue";
 import JobStateChip from "../components/JobStateChip.vue";
 import JobStatusNotice from "../components/JobStatusNotice.vue";
 import { usePreview } from "../composables";
-import { isActive, type QueueFilter, type QueueSort, queueView } from "../domain/demo";
+import { useJobText } from "../components/useJobText";
+import { isActive, type QueueFilter, type QueueSort, queueJobs, queueView } from "../domain/demo";
 
 /**
- * Queue page (Expert): management of ALL jobs — search, filter, sort, reorder, pause, clean up,
- * and the selected job's detail. The work area only summarises; this page does not repeat the
+ * Queue page (Expert): management of the queued jobs — search, filter, sort, reorder, pause, clean
+ * up, and the selected job's detail. Iteration 5 (#34): "clean up" only takes finished jobs off this
+ * list; they stay in Results & history. The work area only summarises; this page does not repeat the
  * inputs or the results.
  */
-const { demo, state, t } = usePreview();
+const { demo, layout, state, t } = usePreview();
+const { jobLine } = useJobText();
+const visible = computed(() => queueJobs(state.value));
+// #34: jobs cleaned up from the queue are still in Results & history.
+const cleaned = computed(() => state.value.jobs.filter((j) => j.queueHidden).length);
 const rows = computed(() => queueView(state.value));
 const filters = computed(() => (["all", "active", "attention", "finished"] as const).map((v) => ({ value: v, title: t(`queue.filter.${v}`) })));
 const sorts = computed(() => (["order", "name", "state"] as const).map((v) => ({ value: v, title: t(`queue.sort.${v}`) })));
-const finished = computed(() => state.value.jobs.filter((j) => !isActive(j)).length);
-const active = computed(() => state.value.jobs.filter(isActive).length);
+const finished = computed(() => visible.value.filter((j) => !isActive(j)).length);
+const active = computed(() => visible.value.filter(isActive).length);
 </script>
 
 <template>
   <section class="u-page p-page-wide u-stack" aria-labelledby="queue-heading" data-testid="section-queue">
     <h1 id="queue-heading" class="u-heading">{{ t("section.queue") }}</h1>
     <JobStatusNotice :active="active > 0" />
-    <AreaState :state="state.queueArea" :empty="state.jobs.length === 0" :empty-text="t('queue.empty')" testid="queue-section" @retry="demo.recoverArea('queue')">
+    <div v-if="cleaned > 0" class="p-feedback" role="status" data-testid="queue-cleaned-note">
+      <span>{{ t("queue.cleanedNote", { count: cleaned }) }}</span>
+      <v-btn variant="text" color="primary" :append-icon="mdiArrowRight" data-testid="queue-open-history" @click="demo.setResultsTab('history'); layout.navigate('results')">{{ t("queue.openHistory") }}</v-btn>
+    </div>
+    <AreaState :state="state.queueArea" :empty="visible.length === 0" :empty-text="t(state.jobs.length > 0 ? 'queue.emptyCleaned' : 'queue.empty')" testid="queue-section" @retry="demo.recoverArea('queue')">
       <div class="p-filterbar">
         <v-text-field
           :model-value="state.queueQuery"
@@ -71,7 +81,10 @@ const active = computed(() => state.value.jobs.filter(isActive).length);
                 @keydown.enter.prevent="demo.selectJob(job.id)"
               >
                 <td class="text-body-medium">{{ position }}</td>
-                <td><span class="p-ellipsis" :title="job.inputName">{{ job.inputName }}</span></td>
+                <td>
+                  <span class="p-ellipsis p-line" :title="job.inputName">{{ job.inputName }}</span>
+                  <span class="p-ellipsis p-line text-body-medium" :data-testid="`queue-meta-${job.id}`">{{ jobLine(job) }}</span>
+                </td>
                 <td><JobStateChip :state="job.state" /></td>
                 <td class="text-body-medium">{{ job.stage ? t(`job.stage.${job.stage}`) : t("job.noStage") }}<template v-if="job.attempt > 1"> · {{ t("job.attempt", { n: job.attempt }) }}</template></td>
                 <td class="text-end">

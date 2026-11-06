@@ -69,6 +69,7 @@ function setFormats(v: unknown) {
         multiple
         column
         selected-class="text-primary"
+        class="p-formats"
         :disabled="disabled"
         :aria-label="label"
         :data-testid="`input-formats-${access.mode}`"

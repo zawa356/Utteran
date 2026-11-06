@@ -7,7 +7,8 @@ import JobStateChip from "../components/JobStateChip.vue";
 import JobStatusNotice from "../components/JobStatusNotice.vue";
 import PaneHeading from "../components/PaneHeading.vue";
 import { usePreview } from "../composables";
-import { isActive, miniQueue, skipReason, submitBlock } from "../domain/demo";
+import { isActive, miniQueue, queueJobs, skipReason, submitBlock, submittedInputs } from "../domain/demo";
+import { useJobText } from "../components/useJobText";
 
 /**
  * Step 3 (right pane), split in two (iteration 3, owner memos #9/#10):
@@ -22,16 +23,24 @@ const MINI = 5;
 const open = computed(() => state.value.inputs.filter((i) => skipReason(state.value, i) === null));
 const openSelected = computed(() => open.value.filter((i) => state.value.selected.includes(i.id)));
 const block = computed(() => submitBlock(state.value));
+const { jobLine } = useJobText();
+// #33: selected files that already have a job can be added AGAIN with the current settings.
+const againSelected = computed(() => {
+  const done = submittedInputs(state.value);
+  return state.value.inputs.filter((i) => state.value.selected.includes(i.id) && done.has(i.id) && skipReason(state.value, i, true) === null);
+});
+const visible = computed(() => queueJobs(state.value));
 const skippedBefore = computed(() => state.value.selected.length - openSelected.value.length);
 const rows = computed(() => miniQueue(state.value, MINI));
 const recent = computed(() => new Set(state.value.lastSubmit?.jobIds ?? []));
 const anyActive = computed(() => state.value.jobs.some(isActive));
-const hidden = computed(() => Math.max(0, state.value.jobs.length - rows.value.length));
+const hidden = computed(() => Math.max(0, visible.value.length - rows.value.length));
 const result = computed(() => {
   const r = state.value.lastSubmit;
   if (!r) return null;
   const parts: string[] = [];
-  if (r.created > 0) parts.push(t("submit.added", { count: r.created }));
+  if (r.created > 0) parts.push(t(r.kind === "again" ? "submit.addedAgain" : "submit.added", { count: r.created }));
+  if (r.renamed > 0) parts.push(t("submit.renamed", { count: r.renamed }));
   if (r.alreadySubmitted > 0) parts.push(t("submit.skippedSubmitted", { count: r.alreadySubmitted }));
   if (r.unsupported > 0) parts.push(t("submit.skippedUnsupported", { count: r.unsupported }));
   if (r.invalid > 0) parts.push(t("submit.skippedInvalid", { count: r.invalid }));
@@ -69,6 +78,16 @@ const result = computed(() => {
           <v-icon :icon="mdiAlertOutline" size="small" aria-hidden="true" />
           <span>{{ t("submit.partial", { count: skippedBefore }) }}</span>
         </div>
+        <v-btn
+          v-if="againSelected.length > 0"
+          variant="outlined"
+          color="primary"
+          :disabled="state.inputsArea !== 'ready'"
+          data-testid="submit-again"
+          @click="demo.submitAgain(againSelected.map((i) => i.id))"
+        >
+          {{ t("queue.submitAgain", { count: againSelected.length }) }}
+        </v-btn>
         <v-btn variant="text" color="primary" :disabled="open.length === 0 || state.inputsArea !== 'ready'" data-testid="submit-all" @click="demo.submit(open.map((i) => i.id))">
           {{ t("queue.submitAll", { count: open.length }) }}
         </v-btn>
@@ -78,10 +97,10 @@ const result = computed(() => {
       <section class="p-split__bottom" aria-labelledby="mini-queue-heading" data-testid="mini-queue">
         <div class="u-row">
           <h3 id="mini-queue-heading" class="text-body-large font-weight-medium">{{ t("queue.mini") }}</h3>
-          <span class="text-body-medium" data-testid="mini-total">{{ t("queue.total", { count: state.jobs.length }) }}</span>
+          <span class="text-body-medium" data-testid="mini-total">{{ t("queue.total", { count: visible.length }) }}</span>
           <v-spacer />
           <v-btn
-            v-if="state.jobs.length > 0"
+            v-if="visible.length > 0"
             size="small"
             variant="text"
             :icon="state.queuePaused ? mdiPlay : mdiPause"
@@ -94,10 +113,13 @@ const result = computed(() => {
         <v-chip v-if="state.queuePaused" label color="warning" variant="tonal" :prepend-icon="mdiPause" data-testid="queue-paused">{{ t("queue.paused") }}</v-chip>
         <JobStatusNotice :active="anyActive" />
         <div class="p-split__scroll">
-          <AreaState :state="state.queueArea" :empty="state.jobs.length === 0" :empty-text="t('queue.empty')" testid="expert-queue" @retry="demo.recoverArea('queue')">
+          <AreaState :state="state.queueArea" :empty="visible.length === 0" :empty-text="t(state.jobs.length > 0 ? 'queue.emptyCleaned' : 'queue.empty')" testid="expert-queue" @retry="demo.recoverArea('queue')">
             <ul class="p-mini" data-testid="queue-now">
               <li v-for="job in rows" :key="job.id" :class="{ 'p-mini__new': recent.has(job.id) }" :data-testid="`now-${job.id}`" :data-new="recent.has(job.id)">
-                <span class="p-ellipsis p-mini__name" :title="job.inputName">{{ job.inputName }}</span>
+                <span class="p-mini__name">
+                  <span class="p-ellipsis p-line" :title="job.inputName">{{ job.inputName }}</span>
+                  <span class="p-ellipsis p-line text-body-medium" :data-testid="`now-meta-${job.id}`">{{ jobLine(job) }}</span>
+                </span>
                 <JobStateChip :state="job.state" />
                 <v-btn v-if="isActive(job)" size="small" variant="text" :icon="mdiClose" :aria-label="t('job.cancelNamed', { name: job.inputName })" :title="t('job.cancel')" :data-testid="`now-cancel-${job.id}`" @click="demo.cancel(job.id)" />
                 <v-btn

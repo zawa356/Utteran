@@ -26,6 +26,8 @@ export interface SettingAccess {
   mode: FieldMode;
   /** Effective settings of every target (one for common/normal, one per selected file). */
   targets: ComputedRef<ProcessingSettings[]>;
+  /** Ids of the files edited (empty for the common defaults). */
+  targetIds: ComputedRef<string[]>;
   value<K extends SettingKey>(key: K): ProcessingSettings[K];
   mixed(key: SettingKey): boolean;
   editable(key: SettingKey): boolean;
@@ -55,12 +57,21 @@ export function provideSettingAccess(mode: () => FieldMode, inputId: () => strin
     return s.selected.length > 0 ? s.selected.map((id) => effectiveSettings(s, id)) : [s.common];
   });
   const issues = computed(() => targets.value.flatMap((x) => validateSettings(x)));
+  const targetIds = computed<string[]>(() => {
+    if (mode() === "common") return [];
+    if (mode() === "normal") {
+      const id = inputId();
+      return id && state.value.inputs.some((i) => i.id === id) ? [id] : [];
+    }
+    return [...state.value.selected];
+  });
 
   const access: SettingAccess = {
     get mode() {
       return mode();
     },
     targets,
+    targetIds,
     value(key) {
       if (mode() === "selection") return selectionField(state.value, key).value;
       return targets.value[0]![key];

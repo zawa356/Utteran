@@ -4,7 +4,6 @@ import { computed, ref } from "vue";
 import { usePreview } from "../composables";
 import { nextBlock, wizardSteps } from "../domain/setup";
 import type { PreviewKey } from "../i18n";
-import WizardCredentials from "./WizardCredentials.vue";
 import WizardDone from "./WizardDone.vue";
 import WizardEnvironment from "./WizardEnvironment.vue";
 import WizardFeatures from "./WizardFeatures.vue";
@@ -13,7 +12,8 @@ import WizardRun from "./WizardRun.vue";
 import WizardWelcome from "./WizardWelcome.vue";
 
 /**
- * Setup wizard (mock, iteration 4): one page per step, the same button positions on every page —
+ * Setup wizard (mock, iteration 4; iteration 5: method + models on the environment page, token and
+ * terms inline on the features page, no separate credentials step): one page per step, the same button positions on every page —
  * close on the left; back and next/start on the right. The step position is a quiet line, not a
  * stepper. First run, "add" and "repair" reuse these pages but start at different steps with
  * different plans. Closing keeps every choice (in memory only; a reload starts over).
@@ -21,6 +21,7 @@ import WizardWelcome from "./WizardWelcome.vue";
 const { layout, setup, setupState, t } = usePreview();
 const step = computed(() => setupState.value.step);
 const steps = computed(() => wizardSteps(setupState.value));
+const approveLabel = computed(() => t(setupState.value.entry === "repair" ? "wizard.approveRepair" : "wizard.approve"));
 const index = computed(() => steps.value.indexOf(step.value));
 const block = computed(() => nextBlock(setupState.value));
 const confirming = ref(false);
@@ -61,7 +62,6 @@ function backToSetup() {
       <WizardWelcome v-if="step === 'welcome'" />
       <WizardEnvironment v-else-if="step === 'environment'" />
       <WizardFeatures v-else-if="step === 'features'" />
-      <WizardCredentials v-else-if="step === 'credentials'" />
       <WizardReview v-else-if="step === 'review'" />
       <WizardRun v-else-if="step === 'run'" />
       <WizardDone v-else />
@@ -76,7 +76,7 @@ function backToSetup() {
       </template>
       <template v-else-if="step !== 'run'">
         <v-btn variant="outlined" :prepend-icon="mdiArrowLeft" :disabled="index <= 0" data-testid="wizard-back" @click="setup.back()">{{ t("wizard.back") }}</v-btn>
-        <v-btn v-if="step === 'review'" color="primary" :prepend-icon="mdiPlay" :disabled="block !== null" data-testid="wizard-approve" @click="setup.approveAndStart()">{{ t("wizard.approve") }}</v-btn>
+        <v-btn v-if="step === 'review'" color="primary" :prepend-icon="mdiPlay" :disabled="block !== null" data-testid="wizard-approve" @click="setup.approveAndStart()">{{ approveLabel }}</v-btn>
         <v-btn v-else color="primary" :append-icon="mdiArrowRight" :disabled="block !== null" data-testid="wizard-next" @click="setup.next()">{{ t("wizard.next") }}</v-btn>
       </template>
     </footer>

@@ -1,20 +1,39 @@
 <script setup lang="ts">
 import { mdiCheckCircleOutline, mdiMinusCircleOutline } from "@mdi/js";
 import { usePreview } from "../composables";
-import type { DevicePlan } from "../domain/setup";
+import type { DevicePlan, SetupMethod } from "../domain/setup";
+import WizardModels from "./WizardModels.vue";
 
 /**
- * Detected (fictional) facts and the one choice that matters: GPU or CPU. A GPU that was not found
- * cannot be chosen; the CPU always can — the wizard never forces a GPU.
+ * Detected (fictional) facts, the device and the models (iteration 5, #30). A GPU that was not
+ * found cannot be chosen; the CPU always can — the wizard never forces a GPU. Standard and custom
+ * edit the same choices, so the switch at the top never loses a selection.
  */
 const { setup, setupState, state, t } = usePreview();
-// Adding to a working setup: say which profile is already set up (choosing it again only reinstalls it).
+// Adding to a working setup: say which profile is already set up (choosing it again adds models only).
 const installed = (p: DevicePlan) => setupState.value.entry !== "first_run" && state.value.env[p] === "ready";
 </script>
 
 <template>
   <div class="u-stack p-wizard__page" data-testid="wizard-environment">
-    <h2 class="p-wizard__title">{{ t("wizard.step.environment") }}</h2>
+    <div class="u-row">
+      <h2 class="p-wizard__title">{{ t("wizard.step.environment") }}</h2>
+      <v-spacer />
+      <v-btn-toggle
+        :model-value="setupState.choices.method"
+        mandatory
+        divided
+        density="compact"
+        variant="outlined"
+        color="primary"
+        :aria-label="t('wizard.method.label')"
+        data-testid="wizard-method-toggle"
+        @update:model-value="(v: SetupMethod) => setup.setMethod(v)"
+      >
+        <v-btn value="standard" data-testid="wizard-method-toggle-standard">{{ t("wizard.method.standard") }}</v-btn>
+        <v-btn value="custom" data-testid="wizard-method-toggle-custom">{{ t("wizard.method.custom") }}</v-btn>
+      </v-btn-toggle>
+    </div>
     <dl class="p-dl text-body-medium" data-testid="wizard-detected">
       <dt>{{ t("wizard.env.gpu") }}</dt>
       <dd>
@@ -48,5 +67,6 @@ const installed = (p: DevicePlan) => setupState.value.entry !== "first_run" && s
         </template>
       </v-radio>
     </v-radio-group>
+    <WizardModels />
   </div>
 </template>

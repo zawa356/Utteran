@@ -1,6 +1,7 @@
 import { Store } from "../../domain/store";
 import { type EnvExample, envFromExample, type EnvState } from "./envExamples";
 import { type DemoInput, initialInputs, poolInput } from "./fixtures";
+import { analyzeGlossary, decodeTxt, GLOSSARY_SAMPLES } from "./glossaryText";
 import { initialUserPresets, type PresetDef, BUILTIN_PRESETS, presetKeys, uniqueName } from "./presets";
 import {
   cloneSettings,
@@ -59,6 +60,20 @@ export interface DemoJob {
   /** Settings frozen at submission ("settings at submit time"); edits afterwards do not change it. */
   snapshot: ProcessingSettings;
   errorCode: string | null;
+  /** n-th job of this input (1 = first submission). Shown as "run n" to tell jobs of one file apart. */
+  runNo: number;
+  /**
+   * Output folder resolved and FROZEN at submission (B5 `FileInput.output_dir`); null = the input's
+   * own folder. Changing the default or the file's folder later does not change this job.
+   */
+  outputDir: string | null;
+  /** Output file names, decided at submission so a second job never overwrites the first one's files. */
+  outputs: string[];
+  /**
+   * Iteration 5 (#34): "Clean up finished jobs" only HIDES a finished job from the queue views. The
+   * job itself — id, snapshot, outputs, error — stays and is listed in Results & history.
+   */
+  queueHidden: boolean;
 }
 
 /** Per-area display state, switched explicitly by the reviewer (empty/loading/error/ready). */
@@ -67,10 +82,16 @@ export type AreaState = "ready" | "loading" | "error";
  * Display scenarios. The first five are the Normal (single file) states; "multi"/"busy" load
  * several inputs for the Expert views; "loading"/"error" are area states.
  */
-export type Scenario = "single" | "empty" | "running" | "failed" | "done" | "multi" | "busy" | "loading" | "error";
-export const SCENARIOS: readonly Scenario[] = ["single", "empty", "running", "failed", "done", "multi", "busy", "loading", "error"];
+export type Scenario = "single" | "empty" | "running" | "failed" | "done" | "multi" | "busy" | "loading" | "error" | "sameFile" | "history" | "outputs" | "glossary";
+/** Iteration 5 adds direct review states: one file twice, history after a clean-up, mixed output folders, a long glossary. */
+export const SCENARIOS: readonly Scenario[] = ["single", "empty", "running", "failed", "done", "multi", "busy", "loading", "error", "sameFile", "history", "outputs", "glossary"];
 export type QueueFilter = "all" | "active" | "attention" | "finished";
 export type QueueSort = "order" | "name" | "state";
+export type ResultsTab = "results" | "history";
+export type HistoryFilter = "all" | "succeeded" | "failed" | "cancelled";
+export const HISTORY_FILTERS: readonly HistoryFilter[] = ["all", "succeeded", "failed", "cancelled"];
+/** Synthetic folders the folder-picker mock offers (no real folder is listed, read or created). */
+export const SAMPLE_FOLDERS: readonly string[] = ["D:\\Utteran-demo\\output", "D:\\Utteran-demo\\meetings", "E:\\demo-share\\transcripts"];
 /**
  * Review-only example of how fresh the job status is. The product shows nothing while it is "ok";
  * "checking" = a status refresh is slow (a short inline note where job states are shown);
@@ -82,7 +103,11 @@ export type InspectorTab = "common" | "selection";
 
 /** Outcome of the last "submit" in the Expert work area, shown inline under the button. */
 export interface SubmitResult {
+  /** "new" = inputs never submitted; "again" = new jobs with the current settings (#33). */
+  kind: "new" | "again";
   created: number;
+  /** Jobs whose output names got the job id because an earlier job writes the same names. */
+  renamed: number;
   unsupported: number;
   alreadySubmitted: number;
   /** Skipped because their effective settings have an error. */
@@ -134,10 +159,27 @@ export interface DemoState {
   /** Results page: search text and the opened result. */
   resultsQuery: string;
   selectedResultId: string | null;
+  /** Results & history page: "results" = jobs with outputs; "history" = every finished job. */
+  resultsTab: ResultsTab;
+  historyFilter: HistoryFilter;
+  /** Default output folder (null = the input's own folder). Settings page; never part of a preset. */
+  defaultOutputDir: string | null;
+  /** Folder chosen for one input (B5 `FileInput.output_dir`); absent = use the default. */
+  outputDirs: Record<string, string>;
+  /**
+   * Unapplied glossary text per editing target (#36), so a draft survives switching categories or
+   * changing the model. Key: see `glossaryDraftKey`. Never part of a snapshot, preset or export.
+   */
+  glossaryDrafts: Record<string, string>;
   language: PreviewLanguage;
   appearance: Appearance;
   accentTheme: AccentTheme;
   notice: Notice | null;
+}
+
+/** Draft key of an editing target: the mode plus the target files (a different selection = a different draft). */
+export function glossaryDraftKey(mode: string, inputIds: readonly string[]): string {
+  return `${mode}:${[...inputIds].sort().join(",")}`;
 }
 
 /** Effective settings of one input = common defaults with that input's overrides on top. */
@@ -282,12 +324,35 @@ export function isActive(job: DemoJob): boolean {
   return ACTIVE_STATES.includes(job.state);
 }
 
+/** Jobs the queue views show (#34: cleaned-up finished jobs are hidden there, never deleted). */
+export function queueJobs(state: Pick<DemoState, "jobs">): DemoJob[] {
+  return state.jobs.filter((j) => !j.queueHidden);
+}
+
+/** Output folder an input would use now: its own choice, else the default (null = its own folder). */
+export function resolvedOutputDir(state: Pick<DemoState, "defaultOutputDir" | "outputDirs">, inputId: string): string | null {
+  return state.outputDirs[inputId] ?? state.defaultOutputDir;
+}
+
+/**
+ * Output names for a new job (#33/#35). Rule: the first job of a file in a folder writes
+ * "<stem>.<format>"; when an earlier job (any state, also one cleaned up from the queue) of the same
+ * file name writes into the same folder, the new job's files get the job id ("<stem>_<job id>.<format>")
+ * — nothing is overwritten. The product additionally checks the real folder (B7) and never
+ * overwrites an existing file without asking.
+ */
+export function plannedOutputs(state: Pick<DemoState, "jobs">, inputName: string, outputDir: string | null, formats: readonly string[], jobId: string): { names: string[]; renamed: boolean } {
+  const stem = inputName.replace(/\.[^.]+$/, "");
+  const renamed = state.jobs.some((j) => j.inputName === inputName && j.outputDir === outputDir);
+  return { names: formats.map((f) => (renamed ? `${stem}_${jobId}.${f}` : `${stem}.${f}`)), renamed };
+}
+
 /** Inputs that already have a job (in any state). */
 export function submittedInputs(state: Pick<DemoState, "jobs">): Set<string> {
   return new Set(state.jobs.map((j) => j.inputId));
 }
 
-/** Latest job of one input (an input has at most one job; retry reuses it). */
+/** Latest job of one input (#33: an input may have several jobs; retry reuses its own job). */
 export function jobOf(state: Pick<DemoState, "jobs">, inputId: string): DemoJob | null {
   const jobs = state.jobs.filter((j) => j.inputId === inputId);
   return jobs[jobs.length - 1] ?? null;
@@ -309,10 +374,13 @@ export type SubmitBlock = "noSelection" | "allSubmitted" | "unsupported" | "inva
 type SubmitState = Pick<DemoState, "inputs" | "selected" | "jobs" | "inputsArea" | "common" | "overrides" | "env">;
 export type SkipReason = "unsupported" | "alreadySubmitted" | "invalid" | "diarization";
 
-/** Why one input cannot be submitted now (null = it can). */
-export function skipReason(state: Omit<SubmitState, "selected" | "inputsArea">, input: DemoInput): SkipReason | null {
+/**
+ * Why one input cannot be submitted now (null = it can). `again` = "add again with the current
+ * settings" (#33): having been submitted before is then no reason to refuse.
+ */
+export function skipReason(state: Omit<SubmitState, "selected" | "inputsArea">, input: DemoInput, again = false): SkipReason | null {
   if (!input.supported) return "unsupported";
-  if (submittedInputs(state).has(input.id)) return "alreadySubmitted";
+  if (!again && submittedInputs(state).has(input.id)) return "alreadySubmitted";
   if (inputIssues(state, input.id).length > 0) return "invalid";
   if (needsDiarization(state, input.id)) return "diarization";
   return null;
@@ -340,7 +408,7 @@ const MINI_ORDER: Record<JobState, number> = { running: 1, preparing: 2, failed:
 export function miniQueue(state: Pick<DemoState, "jobs" | "lastSubmit">, limit = 5): DemoJob[] {
   const recent = new Set(state.lastSubmit?.jobIds ?? []);
   const rank = (j: DemoJob) => (recent.has(j.id) ? 0 : MINI_ORDER[j.state]);
-  return state.jobs
+  return queueJobs(state)
     .map((job, i) => ({ job, i }))
     .sort((a, b) => rank(a.job) - rank(b.job) || (a.job.state === "succeeded" ? b.i - a.i : a.i - b.i))
     .slice(0, limit)
@@ -352,7 +420,7 @@ const STATE_ORDER: Record<JobState, number> = { failed: 0, running: 1, preparing
 /** Queue page view: filter, search and sort over the synthetic jobs (the queue order is kept). */
 export function queueView(state: Pick<DemoState, "jobs" | "queueQuery" | "queueFilter" | "queueSort">): { job: DemoJob; position: number }[] {
   const query = state.queueQuery.trim().toLowerCase();
-  const rows = state.jobs
+  const rows = queueJobs(state)
     .map((job, i) => ({ job, position: i + 1 }))
     .filter(({ job }) => {
       if (query && !job.inputName.toLowerCase().includes(query)) return false;
@@ -366,16 +434,29 @@ export function queueView(state: Pick<DemoState, "jobs" | "queueQuery" | "queueF
   return rows;
 }
 
-/** Results page view: succeeded jobs only, searched by name. */
-export function resultsView(state: Pick<DemoState, "jobs" | "resultsQuery">): DemoJob[] {
-  const query = state.resultsQuery.trim().toLowerCase();
-  return state.jobs.filter((j) => j.state === "succeeded" && (!query || j.inputName.toLowerCase().includes(query)));
+function matches(job: DemoJob, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  return !q || job.inputName.toLowerCase().includes(q) || job.id.includes(q);
 }
 
-/** Example output file names of a finished job (nothing is written). */
-export function outputNames(job: Pick<DemoJob, "inputName" | "snapshot">): string[] {
-  const stem = job.inputName.replace(/\.[^.]+$/, "");
-  return job.snapshot.formats.map((f) => `${stem}.${f}`);
+/**
+ * Results tab: succeeded jobs (they have outputs), newest first — independent of the queue's
+ * clean-up (#34). Searched by file name or job id.
+ */
+export function resultsView(state: Pick<DemoState, "jobs" | "resultsQuery">): DemoJob[] {
+  return state.jobs.filter((j) => j.state === "succeeded" && matches(j, state.resultsQuery)).reverse();
+}
+
+/** History tab: every FINISHED job (succeeded, failed, cancelled), newest first; filterable by state. */
+export function historyView(state: Pick<DemoState, "jobs" | "resultsQuery" | "historyFilter">): DemoJob[] {
+  return state.jobs
+    .filter((j) => !isActive(j) && (state.historyFilter === "all" || j.state === state.historyFilter) && matches(j, state.resultsQuery))
+    .reverse();
+}
+
+/** Output file names of a job, as frozen at submission (nothing is written). */
+export function outputNames(job: Pick<DemoJob, "outputs">): string[] {
+  return job.outputs;
 }
 
 /** Default: one file, nothing submitted (Normal is the default mode and shows one file). */
@@ -408,6 +489,11 @@ function initialState(): DemoState {
     queueSort: "order",
     resultsQuery: "",
     selectedResultId: null,
+    resultsTab: "results",
+    historyFilter: "all",
+    defaultOutputDir: null,
+    outputDirs: {},
+    glossaryDrafts: {},
     language: "ja",
     appearance: "light",
     accentTheme: "green",
@@ -496,8 +582,10 @@ export class DemoController {
       const selected = replace || s.selected.length === 0 || (s.selected.length === 1 && s.selected[0] === current) ? [added.id] : s.selected;
       const overrides = { ...s.overrides };
       if (replace && current) delete overrides[current];
+      const outputDirs = { ...s.outputDirs };
+      if (replace && current) delete outputDirs[current];
       if (carried && Object.keys(carried).length > 0) overrides[added.id] = { ...carried, ...(carried.formats ? { formats: [...carried.formats] } : {}), ...(carried.glossary ? { glossary: [...carried.glossary] } : {}) };
-      return { inputs, selected, overrides, focusInputId: added.id, poolCursor: s.poolCursor + 1, inputsArea: "ready" };
+      return { inputs, selected, overrides, outputDirs, focusInputId: added.id, poolCursor: s.poolCursor + 1, inputsArea: "ready" };
     }, "notice.chosen", { name: poolInput(this.store.get().poolCursor).name });
   }
 
@@ -534,7 +622,8 @@ export class DemoController {
     if (count === 0) return;
     this.update((s) => {
       const overrides = Object.fromEntries(Object.entries(s.overrides).filter(([id]) => !gone.has(id)));
-      return { inputs: s.inputs.filter((i) => !gone.has(i.id)), selected: s.selected.filter((id) => !gone.has(id)), overrides };
+      const outputDirs = Object.fromEntries(Object.entries(s.outputDirs).filter(([id]) => !gone.has(id)));
+      return { inputs: s.inputs.filter((i) => !gone.has(i.id)), selected: s.selected.filter((id) => !gone.has(id)), overrides, outputDirs };
     }, "notice.removed", { count });
   }
 
@@ -696,47 +785,84 @@ export class DemoController {
 
   // ---- jobs (synthetic only; nothing is created anywhere but in this store) -------------------
   /**
-   * Creates demo jobs for the given inputs that are supported and were never submitted. A failed or
-   * cancelled job is resumed with "retry"; re-running a finished input (B7 `rerun`) is an S3 design
-   * item, so it is not offered here. The outcome (created / skipped and why) is kept for the inline
-   * feedback under the submit button. Returns how many jobs were created.
+   * "Submit": demo jobs for the given inputs that are supported and were never submitted. The
+   * outcome (created / skipped and why) is kept for the inline feedback under the submit button.
+   * Returns how many jobs were created.
    */
   submit(inputIds: string[]): number {
+    return this.createJobs(inputIds, false);
+  }
+
+  /**
+   * "Add again with the current settings" (#33): a NEW job per input — also for inputs that already
+   * have jobs (waiting, running or finished). Each job gets its own id, its own frozen snapshot and
+   * output folder; earlier jobs are not changed. Unsupported / invalid / diarization-missing
+   * inputs are still skipped.
+   */
+  submitAgain(inputIds: string[]): number {
+    return this.createJobs(inputIds, true);
+  }
+
+  private createJobs(inputIds: string[], again: boolean): number {
     const s = this.store.get();
     const asked = s.inputs.filter((i) => inputIds.includes(i.id));
-    const reasons = asked.map((i) => ({ input: i, reason: skipReason(s, i) }));
+    const reasons = asked.map((i) => ({ input: i, reason: skipReason(s, i, again) }));
     const targets = reasons.filter((r) => r.reason === null).map((r) => r.input);
     const count = (reason: SkipReason) => reasons.filter((r) => r.reason === reason).length;
+    const kind = again ? "again" : "new";
     const skipped = { unsupported: count("unsupported"), alreadySubmitted: count("alreadySubmitted"), invalid: count("invalid"), diarization: count("diarization") };
     if (targets.length === 0) {
-      this.update(() => ({ lastSubmit: { created: 0, ...skipped, jobIds: [] } }), "notice.nothingToSubmit");
+      this.update(() => ({ lastSubmit: { kind, created: 0, ...skipped, jobIds: [], renamed: 0 } }), "notice.nothingToSubmit");
       return 0;
     }
+    let renamed = 0;
     this.update((cur) => {
       let seq = cur.jobSeq;
-      const created = targets.map((i): DemoJob => {
+      const jobs = [...cur.jobs];
+      for (const i of targets) {
         seq += 1;
-        return {
-          id: `demo-job-${String(seq).padStart(3, "0")}`,
+        const id = `demo-job-${String(seq).padStart(3, "0")}`;
+        const snapshot = effectiveSettings(cur, i.id);
+        const outputDir = resolvedOutputDir(cur, i.id);
+        const out = plannedOutputs({ jobs }, i.name, outputDir, snapshot.formats, id);
+        if (out.renamed) renamed += 1;
+        jobs.push({
+          id,
           inputId: i.id,
           inputName: i.name,
           state: "waiting",
           stage: null,
           progress: { ...NO_PROGRESS },
           attempt: 1,
-          snapshot: effectiveSettings(cur, i.id),
+          snapshot,
           errorCode: null,
-        };
-      });
+          runNo: jobs.filter((j) => j.inputId === i.id).length + 1,
+          outputDir,
+          outputs: out.names,
+          queueHidden: false,
+        });
+      }
+      const created = jobs.slice(cur.jobs.length);
       return {
-        jobs: [...cur.jobs, ...created],
+        jobs,
         jobSeq: seq,
         selectedJobId: created[0]?.id ?? cur.selectedJobId,
         queueArea: "ready",
-        lastSubmit: { created: created.length, ...skipped, jobIds: created.map((j) => j.id) },
+        lastSubmit: { kind, created: created.length, ...skipped, jobIds: created.map((j) => j.id), renamed },
       };
     }, "notice.submitted", { count: targets.length });
     return targets.length;
+  }
+
+  /**
+   * "Run again with the current settings" from a finished job (B7 `rerun`): a new job with the
+   * input's settings resolved NOW (new snapshot, new id). Unlike `retry`, which repeats the same job
+   * with its frozen snapshot. Refused when the input was removed from the list.
+   */
+  rerun(jobId: string): number {
+    const job = this.store.get().jobs.find((j) => j.id === jobId);
+    if (!job || isActive(job) || !this.store.get().inputs.some((i) => i.id === job.inputId)) return 0;
+    return this.submitAgain([job.inputId]);
   }
 
   selectJob(id: string | null): void {
@@ -784,12 +910,12 @@ export class DemoController {
     this.mapJob(id, (j) => (isActive(j) ? { ...j, state: "cancelled", stage: null } : j), "notice.cancelled");
   }
 
-  /** Retry keeps the frozen snapshot (a new attempt of the same job, not a re-submission). */
+  /** Retry keeps the frozen snapshot (a new attempt of the same job, not a re-submission); it returns to the queue. */
   retry(id: string): void {
     this.mapJob(
       id,
       (j) =>
-        j.state === "failed" || j.state === "cancelled" ? { ...j, state: "waiting", stage: null, progress: { ...NO_PROGRESS }, errorCode: null, attempt: j.attempt + 1 } : j,
+        j.state === "failed" || j.state === "cancelled" ? { ...j, state: "waiting", stage: null, progress: { ...NO_PROGRESS }, errorCode: null, attempt: j.attempt + 1, queueHidden: false } : j,
       "notice.retried",
     );
   }
@@ -812,11 +938,64 @@ export class DemoController {
     this.update((s) => ({ queuePaused: !s.queuePaused }), this.store.get().queuePaused ? "notice.resumed" : "notice.pausedOn");
   }
 
+  /**
+   * "Clean up finished jobs" (#34): hides succeeded / failed / cancelled jobs from the queue views
+   * ONLY. Nothing is deleted: Results & history still list them with their snapshot and outputs.
+   * Waiting and running jobs are never touched; doing it twice is harmless.
+   */
   clearFinished(): void {
+    const count = this.store.get().jobs.filter((j) => !isActive(j) && !j.queueHidden).length;
     this.update((s) => {
-      const jobs = s.jobs.filter(isActive);
-      return { jobs, selectedJobId: jobs.some((j) => j.id === s.selectedJobId) ? s.selectedJobId : null };
-    }, "notice.cleared");
+      const jobs = s.jobs.map((j) => (isActive(j) || j.queueHidden ? j : { ...j, queueHidden: true }));
+      const selected = jobs.find((j) => j.id === s.selectedJobId);
+      return { jobs, selectedJobId: selected && !selected.queueHidden ? s.selectedJobId : null };
+    }, "notice.cleared", { count });
+  }
+
+  // ---- output folders (#35; synthetic folders only, nothing is read or created) ---------------
+  /** Settings page: the default folder (null = the input's own folder). Jobs already submitted keep theirs. */
+  setDefaultOutputDir(dir: string | null): void {
+    if (this.store.get().defaultOutputDir === dir) {
+      this.update(() => ({}), "notice.outputUnchanged");
+      return;
+    }
+    this.update(() => ({ defaultOutputDir: dir }), "notice.outputDefaultChanged");
+  }
+
+  /** A folder for these inputs (Normal: the shown file; Expert: the selection). */
+  setOutputDir(inputIds: string[], dir: string): void {
+    const ids = inputIds.filter((id) => this.store.get().inputs.some((i) => i.id === id));
+    if (ids.length === 0) return;
+    if (ids.every((id) => this.store.get().outputDirs[id] === dir)) {
+      this.update(() => ({}), "notice.outputUnchanged");
+      return;
+    }
+    this.update((s) => ({ outputDirs: { ...s.outputDirs, ...Object.fromEntries(ids.map((id) => [id, dir])) } }), "notice.outputSet", { count: ids.length });
+  }
+
+  /** Back to the default (the inputs follow later changes of the default again). */
+  resetOutputDir(inputIds: string[]): void {
+    const ids = inputIds.filter((id) => id in this.store.get().outputDirs);
+    if (ids.length === 0) return;
+    this.update((s) => ({ outputDirs: Object.fromEntries(Object.entries(s.outputDirs).filter(([id]) => !ids.includes(id))) }), "notice.outputReset", { count: ids.length });
+  }
+
+  /** Keeps (text) or drops (null) the unapplied glossary text of one editing target. */
+  setGlossaryDraft(key: string, text: string | null): void {
+    this.update((s) => {
+      const glossaryDrafts = { ...s.glossaryDrafts };
+      if (text === null) delete glossaryDrafts[key];
+      else glossaryDrafts[key] = text;
+      return { glossaryDrafts };
+    });
+  }
+
+  setResultsTab(resultsTab: ResultsTab): void {
+    this.update(() => ({ resultsTab }));
+  }
+
+  setHistoryFilter(historyFilter: HistoryFilter): void {
+    this.update(() => ({ historyFilter }));
   }
 
   // ---- display-state scenarios ----------------------------------------------------------------
@@ -841,12 +1020,35 @@ export class DemoController {
     if (scenario === "empty") next = { ...base, inputs: [], selected: [], focusInputId: null };
     if (scenario === "multi" || scenario === "busy") next = { ...base, ...multi };
     if (scenario === "loading") next = { ...base, inputsArea: "loading", queueArea: "loading" };
+    if (scenario === "history") next = { ...base, ...multi };
+    if (scenario === "outputs")
+      next = { ...base, ...multi, selected: ["in-01", "in-02", "in-03"], defaultOutputDir: SAMPLE_FOLDERS[0]!, outputDirs: { "in-02": SAMPLE_FOLDERS[1]!, "in-03": SAMPLE_FOLDERS[2]! } };
+    if (scenario === "glossary") next = { ...base, overrides: { "in-01": { glossary: analyzeGlossary(decodeTxt(GLOSSARY_SAMPLES[0]!.content).text).terms } } };
     if (scenario === "error") next = { ...base, inputsArea: "error", queueArea: "error" };
     this.store.set({ ...next, notice: this.notify("notice.scenario", { scenario }) });
     if (scenario === "busy") this.fillQueue({ "in-01": 3, "in-02": 1, "in-03": 2, "in-04": 0 }, "in-03");
     if (scenario === "running") this.fillQueue({ "in-01": 3 });
     if (scenario === "failed") this.fillQueue({ "in-01": 2 }, "in-01");
     if (scenario === "done") this.fillQueue({ "in-01": 9 });
+    if (scenario === "sameFile") this.sameFileTwice();
+    if (scenario === "history") {
+      this.fillQueue({ "in-01": 9, "in-02": 9, "in-03": 2, "in-04": 0 }, "in-03");
+      this.quietly(() => this.clearFinished());
+    }
+  }
+
+  /** Runs `fn` without replacing the scenario notice in the snackbar. */
+  private quietly(fn: () => void): void {
+    const before = this.store.get().notice;
+    fn();
+    this.store.set((s) => ({ ...s, notice: before }));
+  }
+
+  /** One file, two jobs: the first finished with the default model, the second waiting with large-v3 (#33). */
+  private sameFileTwice(): void {
+    this.fillQueue({ "in-01": 9 });
+    this.store.set((s) => ({ ...s, overrides: { "in-01": { backend: "faster-whisper", model: "large-v3", device: "auto", computeType: "auto" } } }));
+    this.quietly(() => this.submitAgain(["in-01"]));
   }
 
   // ---- fictional environment ------------------------------------------------------------------

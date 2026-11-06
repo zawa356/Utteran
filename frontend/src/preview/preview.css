@@ -430,10 +430,61 @@ html.p-resizing * {
   flex: 1 1 auto;
   min-width: 0;
 }
+/*
+ * Normal settings card (#31): the columns follow the card's OWN width with one clear breakpoint
+ * (container query), not the window: two columns from 520 px, else one. Output formats always take
+ * a full row, and their chips keep one size and wrap with an even gap instead of being squeezed.
+ */
+.p-fields-wrap {
+  container-type: inline-size;
+}
 .p-fields--compact {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@container (min-width: 520px) {
+  .p-fields--compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
+  }
+}
+.p-fields--compact > [data-testid="field-formats"] {
+  grid-column: 1 / -1;
+}
+.p-formats .v-slide-group__content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.p-formats .v-chip {
+  margin: 0 !important;
+  min-width: 4.75rem;
+  justify-content: center;
+}
+/* App settings lines (#25): a label column and the control with a fixed gap; stacked when narrow. */
+.p-setlines {
+  container-type: inline-size;
+  display: grid;
+  gap: 20px;
+}
+.p-setline {
+  display: grid;
+  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 8px;
+  align-items: center;
+}
+.p-setline__control {
+  min-width: 0;
+}
+.p-setline__select {
+  max-width: 22rem;
+}
+@container (max-width: 480px) {
+  .p-setline {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .p-reason {
   display: flex;
@@ -646,6 +697,10 @@ html.p-resizing * {
 
 /* ---- shared helpers --------------------------------------------------------------------------- */
 /* Long names: one line with an ellipsis; the full name is in the title attribute. */
+/* One line of a two-line cell (file name, then "job id · model"). */
+.p-ellipsis.p-line {
+  display: block;
+}
 .p-ellipsis {
   display: inline-block;
   max-width: 100%;
@@ -861,22 +916,55 @@ html.p-resizing * {
   grid-template-columns: repeat(auto-fit, minmax(120px, 160px));
   gap: 8px;
 }
-.p-glossary__list {
+.p-glossary__text textarea {
+  font-family: inherit;
+  line-height: 1.5;
+}
+.p-glossary__issues {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.p-glossary__preview {
+  max-height: 12rem;
+  overflow: auto;
+}
+/* Setup wizard: model list, inline token/terms block, kept rows of the plan (iteration 5). */
+.p-modelsum {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: 6px;
 }
-.p-glossary__list li,
-.p-glossary__add {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 6px;
+.p-modelsum li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
-.p-glossary__add .v-btn {
-  height: 40px;
+.p-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.p-inline-req {
+  padding: 12px 16px;
+  border-left: 3px solid rgb(var(--v-theme-primary));
+  background: rgb(var(--v-theme-surface-variant));
+  border-radius: 4px;
+}
+/* Output folder of a file (#35). */
+.p-outdir {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.p-outdir__text {
+  min-width: 0;
+}
+.p-break {
+  overflow-wrap: anywhere;
 }
 .p-presetapply {
   display: grid;

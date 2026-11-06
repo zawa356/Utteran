@@ -15,7 +15,7 @@ import { useSetupNav } from "../wizard/useSetupNav";
  * "Repair…" only where something is missing or broken; a working profile is never reinstalled.
  * Nothing is detected or verified; B4 (backend) stays the source of truth.
  */
-const { demo, layoutState, setupState, t } = usePreview();
+const { demo, layout, layoutState, setupState, t } = usePreview();
 const { view, primary, checking } = useEnvironment();
 const { openSetup } = useSetupNav();
 const expert = computed(() => layoutState.value.mode === "expert");
@@ -32,6 +32,7 @@ const isOpen = (name: string) => open.value[name] ?? false;
       <v-spacer />
       <v-btn variant="tonal" :prepend-icon="mdiRadar" :disabled="checking" data-testid="env-redetect" @click="demo.redetect()">{{ t("env.redetect") }}</v-btn>
       <v-btn variant="tonal" color="primary" :prepend-icon="mdiWrenchOutline" data-testid="env-setup" @click="openSetup('add')">{{ t("env.setup") }}</v-btn>
+      <v-btn variant="text" data-testid="env-maintenance" @click="layout.openDialog('maintenance')">{{ t("menu.tools.maintenance") }}</v-btn>
     </div>
     <SetupNotice />
     <div class="p-feedback" role="note" data-testid="env-demo-note">

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { mdiCogOutline, mdiFileDocumentOutline, mdiFolderOutline, mdiInformationOutline, mdiStarOutline, mdiTune } from "@mdi/js";
-import { computed } from "vue";
+import { mdiCogOutline, mdiFileDocumentOutline, mdiInformationOutline, mdiStarOutline, mdiTune } from "@mdi/js";
+import { computed, ref } from "vue";
 import { usePreview } from "../composables";
 import { ACCENT_THEMES, type AccentTheme, type Appearance, APPEARANCES, type PreviewLanguage } from "../domain/demo";
 import { SETTINGS_CATEGORIES, type SettingsCategory } from "../domain/layout";
+import FolderPickerDialog from "../output/FolderPickerDialog.vue";
 import PresetManager from "../settings/PresetManager.vue";
+import SettingLine from "../settings/SettingLine.vue";
 import { ACCENT_SWATCH } from "../theme";
 
 /**
@@ -18,6 +20,7 @@ import { ACCENT_SWATCH } from "../theme";
  */
 const { demo, layout, layoutState, state, t } = usePreview();
 const expert = computed(() => layoutState.value.mode === "expert");
+const picking = ref(false);
 const category = computed(() => layoutState.value.settingsCategory);
 const appearances = computed(() => APPEARANCES.map((v) => ({ value: v, title: t(`theme.${v}`) })));
 const accents = computed(() => ACCENT_THEMES.map((v) => ({ value: v, title: t(`accent.${v}`) })));
@@ -56,20 +59,43 @@ const categories = computed(() => SETTINGS_CATEGORIES.map((id) => ({ id, icon: I
         <!-- general (Normal shows only this) -->
         <template v-if="!expert || category === 'general'">
           <h2 v-if="expert" class="u-subheading">{{ t("settings.cat.general") }}</h2>
-          <div class="u-stack" data-testid="settings-accent">
-            <span id="settings-accent-label" class="text-body-medium font-weight-medium">{{ t("settings.accent") }}</span>
-            <v-btn-toggle :model-value="state.accentTheme" mandatory divided variant="outlined" color="primary" aria-labelledby="settings-accent-label" @update:model-value="(v: AccentTheme) => demo.setAccentTheme(v)">
-              <v-btn v-for="a in accents" :key="a.value" :value="a.value" :data-testid="`settings-accent-${a.value}`">
-                <span class="p-swatch" :style="{ background: ACCENT_SWATCH[a.value] }" aria-hidden="true"></span>{{ a.title }}
-              </v-btn>
-            </v-btn-toggle>
+          <div class="p-setlines">
+            <SettingLine id="accent" :label="t('settings.accent')">
+              <template #default="{ labelledby }">
+                <v-btn-toggle :model-value="state.accentTheme" mandatory divided variant="outlined" color="primary" :aria-labelledby="labelledby" data-testid="settings-accent" @update:model-value="(v: AccentTheme) => demo.setAccentTheme(v)">
+                  <v-btn v-for="a in accents" :key="a.value" :value="a.value" :data-testid="`settings-accent-${a.value}`">
+                    <span class="p-swatch" :style="{ background: ACCENT_SWATCH[a.value] }" aria-hidden="true"></span>{{ a.title }}
+                  </v-btn>
+                </v-btn-toggle>
+              </template>
+            </SettingLine>
+            <SettingLine id="theme" :label="t('settings.theme')">
+              <template #default="{ labelledby }">
+                <v-select :items="appearances" :model-value="state.appearance" :aria-labelledby="labelledby" hide-details class="p-setline__select" data-testid="settings-theme" @update:model-value="(v) => demo.setAppearance(v as Appearance)" />
+              </template>
+            </SettingLine>
+            <SettingLine id="language" :label="t('settings.language')">
+              <template #default="{ labelledby }">
+                <v-select :items="languages" :model-value="state.language" :aria-labelledby="labelledby" hide-details class="p-setline__select" data-testid="settings-language" @update:model-value="(v) => demo.setLanguage(v as PreviewLanguage)" />
+              </template>
+            </SettingLine>
+            <SettingLine id="output" :label="t('settings.output')">
+              <template #default="{ labelledby }">
+                <div class="u-stack" data-testid="settings-output">
+                  <v-radio-group :model-value="state.defaultOutputDir === null ? 'same' : 'folder'" :aria-labelledby="labelledby" hide-details inline @update:model-value="(v) => v === 'same' ? demo.setDefaultOutputDir(null) : (picking = true)">
+                    <v-radio value="same" color="primary" :label="t('output.sameAsInput')" data-testid="settings-output-same" />
+                    <v-radio value="folder" color="primary" :label="t('output.fixedFolder')" data-testid="settings-output-folder" />
+                  </v-radio-group>
+                  <div class="u-row">
+                    <span class="text-body-medium p-break" data-testid="settings-output-value">{{ state.defaultOutputDir ?? t("output.sameAsInput") }}</span>
+                    <v-btn variant="outlined" data-testid="settings-output-change" @click="picking = true">{{ t("settings.change") }}</v-btn>
+                  </div>
+                  <p class="text-body-medium">{{ t("output.defaultHint") }}</p>
+                </div>
+              </template>
+            </SettingLine>
           </div>
-          <v-select :label="t('settings.theme')" :items="appearances" :model-value="state.appearance" data-testid="settings-theme" @update:model-value="(v) => demo.setAppearance(v as Appearance)" />
-          <v-select :label="t('settings.language')" :items="languages" :model-value="state.language" data-testid="settings-language" @update:model-value="(v) => demo.setLanguage(v as PreviewLanguage)" />
-          <div class="u-row" data-testid="settings-output">
-            <v-text-field :label="t('settings.output')" :model-value="t('settings.outputValue')" readonly :prepend-inner-icon="mdiFolderOutline" hide-details class="flex-grow-1" />
-            <v-btn variant="outlined" disabled>{{ t("settings.change") }}</v-btn>
-          </div>
+          <FolderPickerDialog v-model="picking" :current="state.defaultOutputDir" @pick="(p) => demo.setDefaultOutputDir(p)" />
           <v-select v-if="expert" :label="t('settings.startMode')" :items="[t('mode.normal'), t('mode.expert')]" :model-value="t('mode.normal')" disabled :hint="t('settings.later')" persistent-hint />
         </template>
 

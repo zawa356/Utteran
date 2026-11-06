@@ -5,6 +5,7 @@ import { usePreview } from "../composables";
 import AboutView from "../dialogs/AboutView.vue";
 import DiagnosticsView from "../dialogs/DiagnosticsView.vue";
 import LogView from "../dialogs/LogView.vue";
+import MaintenanceView from "../dialogs/MaintenanceView.vue";
 import type { PreviewKey } from "../i18n";
 
 /**
@@ -32,6 +33,7 @@ const close = () => layout.openDialog(null);
       <v-card-text>
         <LogView v-if="dialog === 'systemLog' || dialog === 'jobLog' || dialog === 'setupLog'" :key="dialog" :kind="dialog" />
         <DiagnosticsView v-else-if="dialog === 'diagnostics'" />
+        <MaintenanceView v-else-if="dialog === 'maintenance'" />
         <AboutView v-else />
       </v-card-text>
       <v-card-actions>

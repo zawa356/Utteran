@@ -38,7 +38,7 @@ const open = computed(() => layoutState.value.reviewStripOpen);
         {{ t("toolbar.label") }}
       </v-btn>
       <div v-show="open" id="p-review-controls" class="p-review__controls">
-        <v-select :label="t('toolbar.scenario')" :items="scenarios" :model-value="state.scenario" class="p-review__select" data-testid="toolbar-scenario" @update:model-value="(v) => demo.setScenario(v as Scenario)" />
+        <v-select :label="t('toolbar.scenario')" :items="scenarios" :model-value="state.scenario" class="p-review__select" :menu-props="{ maxHeight: 600 }" :list-props="{ density: 'compact' }" data-testid="toolbar-scenario" @update:model-value="(v) => demo.setScenario(v as Scenario)" />
         <v-select :label="t('toolbar.setup')" :items="setups" :model-value="setupState.example" class="p-review__select p-review__select--sm" data-testid="toolbar-setup" @update:model-value="(v) => setup.setExample(v as SetupExample)" />
         <v-select :label="t('toolbar.env')" :items="envs" :model-value="state.envExample" class="p-review__select p-review__select--sm" data-testid="toolbar-env" @update:model-value="(v) => demo.setEnvExample(v as EnvExample)" />
         <v-select :label="t('toolbar.sync')" :items="syncs" :model-value="state.sync" class="p-review__select p-review__select--sm" data-testid="toolbar-sync" @update:model-value="(v) => demo.setSync(v as SyncExample)" />

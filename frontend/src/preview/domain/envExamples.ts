@@ -28,9 +28,29 @@ export interface EnvState {
   preferred: ProfileName | null;
   /** The (fictional) detection itself failed to load. */
   loadFailed: boolean;
+  /**
+   * ASR models installed per profile (iteration 5, #30: "add a model" must not re-download what is
+   * there). Kept while a profile needs repair; repair never removes a model.
+   */
+  models: Record<ProfileName, string[]>;
+  /** The model a profile uses by default. Set once (first setup of that profile); adding never switches it. */
+  defaultModel: Record<ProfileName, string | null>;
+}
+
+const GPU_MODELS = { models: ["large-v3-turbo"], defaultModel: "large-v3-turbo" };
+const CPU_MODELS = { models: ["small"], defaultModel: "small" };
+function inventory(gpu: ProfileInstall, cpu: ProfileInstall): Pick<EnvState, "models" | "defaultModel"> {
+  const g = gpu === "absent" ? null : GPU_MODELS;
+  const c = cpu === "absent" ? null : CPU_MODELS;
+  return { models: { gpu: g ? [...g.models] : [], cpu: c ? [...c.models] : [] }, defaultModel: { gpu: g?.defaultModel ?? null, cpu: c?.defaultModel ?? null } };
 }
 
 export function envFromExample(example: EnvExample, diarization = true): EnvState {
+  const e = envBase(example, diarization);
+  return { ...e, ...inventory(e.gpu, e.cpu) };
+}
+
+function envBase(example: EnvExample, diarization: boolean): Omit<EnvState, "models" | "defaultModel"> {
   switch (example) {
     case "gpu":
       return { gpu: "ready", cpu: "ready", diarization, gpuDetected: true, preferred: "gpu", loadFailed: false };
@@ -52,7 +72,7 @@ export type ProfileStatus = "ready" | "warning" | "repair" | "unavailable";
 
 export interface EnvFact {
   /** i18n key suffix of the label (env.fact.<label>). */
-  label: "asr" | "model" | "device" | "diarization" | "compute" | "runtime" | "memory" | "speed";
+  label: "asr" | "model" | "models" | "device" | "diarization" | "compute" | "runtime" | "memory" | "speed";
   /** Display value: product-like names stay untranslated; `key:` values are i18n keys. */
   value: string;
 }
@@ -79,6 +99,15 @@ export interface EnvView {
   profiles: EnvProfile[];
 }
 
+/** Default model, plus the installed list when there is more than one. */
+function modelFacts(env: EnvState, p: ProfileName): EnvFact[] {
+  const list = env.models[p];
+  const def = env.defaultModel[p] ?? list[0];
+  const out: EnvFact[] = def ? [{ label: "model", value: def }] : [];
+  if (list.length > 1) out.push({ label: "models", value: list.join(", ") });
+  return out;
+}
+
 function gpuProfile(env: EnvState): EnvProfile | null {
   const base = { id: "demo-profile-gpu", name: "gpu" as const, recommended: false };
   if (env.gpu === "ready")
@@ -87,7 +116,7 @@ function gpuProfile(env: EnvState): EnvProfile | null {
       status: "ready",
       facts: [
         { label: "asr", value: "faster-whisper" },
-        { label: "model", value: "large-v3-turbo" },
+        ...modelFacts(env, "gpu"),
         { label: "device", value: "CUDA" },
         { label: "compute", value: "float16" },
         { label: "diarization", value: env.diarization ? "pyannote" : "key:env.value.notSetUp" },
@@ -104,7 +133,7 @@ function gpuProfile(env: EnvState): EnvProfile | null {
       status: "repair",
       facts: [
         { label: "asr", value: "faster-whisper" },
-        { label: "model", value: "large-v3-turbo" },
+        ...modelFacts(env, "gpu"),
         { label: "device", value: "CUDA" },
         { label: "runtime", value: "key:env.value.broken" },
       ],
@@ -135,7 +164,7 @@ function cpuProfile(env: EnvState): EnvProfile {
       status: "ready",
       facts: [
         { label: "asr", value: "faster-whisper" },
-        { label: "model", value: "small" },
+        ...modelFacts(env, "cpu"),
         { label: "device", value: "CPU" },
         { label: "compute", value: "int8" },
         { label: "diarization", value: env.diarization ? "pyannote (CPU)" : "key:env.value.off" },
@@ -214,18 +243,28 @@ export interface SetupOutcome {
   entry: "first_run" | "add" | "repair";
   device: ProfileName;
   diarization: boolean;
+  /** ASR models the plan installed (empty for repair). */
+  models?: readonly string[];
+  /** The model chosen as the main one; used only if the profile has no default yet. */
+  primaryModel?: string | null;
 }
 
 /**
  * The environment after a SUCCESSFUL setup:
  *  - first run / add: the chosen profile becomes ready; diarization becomes ready when it was
  *    installed; every other profile and an already ready diarization are kept;
- *  - repair: only the repaired profile changes (to ready); nothing else is touched.
+ *  - repair: only the repaired profile changes (to ready); nothing else is touched;
+ *  - models are only ever ADDED to the target profile; its default model is set only when it had none.
  * The preferred profile changes only when there was none yet.
  */
 export function applySetupOutcome(env: EnvState, outcome: SetupOutcome): EnvState {
-  const next: EnvState = { ...env, [outcome.device]: "ready", loadFailed: false };
+  const next: EnvState = { ...env, [outcome.device]: "ready", loadFailed: false, models: { ...env.models }, defaultModel: { ...env.defaultModel } };
   if (outcome.entry !== "repair" && outcome.diarization) next.diarization = true;
+  if (outcome.entry !== "repair") {
+    const before = env.models[outcome.device];
+    next.models[outcome.device] = [...before, ...(outcome.models ?? []).filter((m) => !before.includes(m))];
+    if (next.defaultModel[outcome.device] === null) next.defaultModel[outcome.device] = outcome.primaryModel ?? next.models[outcome.device][0] ?? null;
+  }
   if (next.preferred === null) next.preferred = outcome.device;
   return next;
 }

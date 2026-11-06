@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { envFromExample, type EnvState } from "./envExamples";
 import {
-  credentialStepNeeded,
   DIARIZATION_TERMS,
   envForExample,
   exampleState,
@@ -45,12 +44,13 @@ function toReview(c: SetupController, device: "gpu" | "cpu", diarization: boolea
 }
 
 describe("setup wizard mock (iteration 4, owner memos #23/#24; B8 plan → approve → operation)", () => {
-  it("steps depend on the entry; the credential/terms step only when the plan requires them", () => {
+  it("steps depend on the entry; token and terms are part of the features step (iteration 5, #26)", () => {
     const first = exampleState("first_run");
     expect(wizardSteps(first)).toEqual(["welcome", "environment", "features", "review"]);
-    expect(wizardSteps({ ...first, choices: { ...first.choices, diarization: true } })).toEqual(["welcome", "environment", "features", "credentials", "review"]);
-    // A credential that already exists does not accept the terms: the step is still needed.
-    expect(credentialStepNeeded({ ...first, detected: { gpu: true, credential: true }, choices: { ...first.choices, diarization: true } })).toBe(true);
+    expect(wizardSteps({ ...first, choices: { ...first.choices, diarization: true } })).toEqual(["welcome", "environment", "features", "review"]);
+    // A credential that already exists does not accept the terms: the terms are still required.
+    expect(missingRequirements({ ...first, detected: { gpu: true, credential: true }, choices: { ...first.choices, diarization: true } })).toEqual(["agreement"]);
+    expect(nextBlock({ ...first, step: "features", detected: { gpu: true, credential: true }, choices: { ...first.choices, diarization: true } })).toBe("agreement");
     expect(wizardSteps({ ...first, entry: "add" })[0]).toBe("environment");
     expect(wizardSteps({ ...first, entry: "repair" })).toEqual(["review"]);
   });
@@ -144,24 +144,23 @@ describe("setup wizard mock (iteration 4, owner memos #23/#24; B8 plan → appro
 });
 
 describe("P1-1: credential and terms are separate requirements, enforced by the controller", () => {
-  /** First run with diarization on, at the credential/terms step. */
+  /** First run with diarization switched on, on the features step (where token and terms are shown). */
   function atCredentials(credential: boolean) {
     const ctl = controller("first_run");
     if (credential) ctl.c.store.set({ ...ctl.c.store.get(), detected: { ...ctl.c.store.get().detected, credential: true } });
     ctl.c.next();
     ctl.c.next();
     ctl.c.setChoice("diarization", true);
-    ctl.c.next();
     return ctl;
   }
 
   it("diarization on, credential present, terms NOT accepted: the terms step shows and blocks; approval is refused", () => {
     const { c, notices } = atCredentials(true);
-    expect(c.store.get().step).toBe("credentials");
+    expect(c.store.get().step).toBe("features");
     expect(missingRequirements(c.store.get())).toEqual(["agreement"]);
     expect(nextBlock(c.store.get())).toBe("agreement");
     c.next();
-    expect(c.store.get().step).toBe("credentials");
+    expect(c.store.get().step).toBe("features");
     // Even if the review step is reached by other means, approval is refused.
     c.store.set({ ...c.store.get(), step: "review" });
     expect(nextBlock(c.store.get())).toBe("agreement");
@@ -204,9 +203,10 @@ describe("P1-1: credential and terms are separate requirements, enforced by the 
     expect(c.approveAndStart()).toBe(true);
   });
 
-  it("'continue without diarization' drops the requirement; turning it on again requires the terms again", () => {
+  it("switching diarization off drops the requirement; turning it on again requires the terms again", () => {
     const { c } = atCredentials(true);
-    c.skipDiarization();
+    c.setChoice("diarization", false);
+    c.next();
     expect(c.store.get()).toMatchObject({ step: "review", choices: { diarization: false } });
     expect(missingRequirements(c.store.get())).toEqual([]);
     c.back();
@@ -226,9 +226,9 @@ describe("P1-1: credential and terms are separate requirements, enforced by the 
     expect(c.continueRun()).toBe(false);
     expect(c.store.get().run).toBe("failed");
     c.changeChoices();
-    c.next(); // features → credentials (diarization still on)
-    expect(c.store.get().step).toBe("credentials");
+    expect(c.store.get().step).toBe("features"); // token and terms shown here (diarization still on)
     c.next();
+    expect(c.store.get().step).toBe("review");
     expect(c.approveAndStart()).toBe(true);
     c.interrupt();
     c.setAgreement(DIARIZATION_TERMS, false);
@@ -296,8 +296,7 @@ describe("P1-2: add / repair keep the environment they did not touch", () => {
     const ctl = controller("missing_token");
     expect(ctl.env()).toMatchObject({ gpu: "ready", diarization: false });
     ctl.c.open("add", { device: "gpu", diarization: true });
-    ctl.c.next(); // features
-    ctl.c.next(); // credentials
+    ctl.c.next(); // features (token and terms on the same page)
     ctl.c.registerCredential();
     ctl.c.setAgreement(DIARIZATION_TERMS, true);
     ctl.c.next();
