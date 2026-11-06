@@ -17,6 +17,7 @@ transcription API.
 > `utteran-gui --next-ui` after building `frontend/`. The default GUI is unchanged (legacy UI). Only the runtime
 > environment view and theme/language settings are migrated; see [docs/architecture/ui2/](docs/architecture/ui2/README.md).
 
+> **UI-3-0 design freeze (2026-11-06):** The fifth iteration is the accepted UI/UX design baseline; [PR #38](https://github.com/zawa356/Utteran/pull/38) is merged. See the [design and S1–S5 handoff](docs/architecture/ui3/design-freeze.md) (Japanese). The prototype uses synthetic data and runs **only on the Vite development server**; neither the legacy GUI nor the production `--next-ui` UI was changed. Production migration and Windows/WebView2 acceptance remain open.
 
 ### Phase B9 events, sync and diagnostics (merged into main, unreleased)
 

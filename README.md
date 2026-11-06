@@ -16,6 +16,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 > `utteran-gui --next-ui`を付けたときだけ開きます。既定のGUIは従来の旧UIのままです。移行済みは実行環境の表示と
 > テーマ・表示言語の設定のみです（[docs/architecture/ui2/](docs/architecture/ui2/README.md)）。
 
+> **UI-3-0 設計確定（2026-11-06）:** [第5案の確定仕様・受入/引継ぎ](docs/architecture/ui3/design-freeze.md)を記録し、[PR #38](https://github.com/zawa356/Utteran/pull/38)をmainへ統合しました。**合成データのVite開発専用プロトタイプ**であり、既定GUI/`--next-ui`の製品画面は未変更。UI-3 #21の本番移行とUI-4 #22の実機受入は未完了。
 
 ### Phase B9 Events・Sync・Diagnostics（main統合済み・未リリース）
 

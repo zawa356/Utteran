@@ -1,11 +1,22 @@
 # UI-3-0 レビュー資料・試験結果・ownerへの確認事項・引継ぎ
 
-更新: 2026-11-05 JST（0.1.43）。基点 `main` = `dd115085c08b550c4c8d8a202b25952e90b36bd9`（PR #36 merge、`git fetch`で確認、先行変更なし）。
+更新: 2026-11-06 JST（最終判定追補。旧試験記録は保存、0.1.43）。基点 `main` = `dd115085c08b550c4c8d8a202b25952e90b36bd9`（PR #36 merge、`git fetch`で確認、先行変更なし）。
 CI（GitHub Actions）の結果はDraft PRのchecksを正本とする（この文書へ追記するcommitでCIを再起動し続けないため）。
 
 > **第3イテレーション（2026-11-05）の画像一覧・試験結果・確認事項は[iteration-3 §9〜§11](iteration-3.md#9-レビュー用スクリーンショット)。**
 > 第2イテレーションは[iteration-2 §5〜§8](iteration-2.md#5-レビュー用スクリーンショット生成方法と一覧)。
 > 以下の§2〜§4は第1案（A1/C1）の記録として残す（画像名・件数は第1案時点）。実行方法（§1）は第2案でも同じ。
+
+## 0. 最終受入（2026-11-06）
+
+**UI-3-0の第5案をDesign Freezeとして承認。** ownerはWindowsのブラウザで主要画面を概観した。微細なUI改修は後続S1〜S5に繰り越す。[PR #38](https://github.com/zawa356/Utteran/pull/38)（最終`1f72f28`）はmerge commit `701a94e`でmainに統合済み。
+
+- 最新の正本: [design-freeze.md](design-freeze.md)。第5案とレビューP1修正は[iteration-5.md](iteration-5.md)。
+- Vitest **221 passed**、UI-3 E2E **96 passed**、UI-2 E2E **10 passed**。PR HEAD CI [42170336857](https://github.com/zawa356/Utteran/actions/runs/42170336857) = **14/14 success**、main [42171089712](https://github.com/zawa356/Utteran/actions/runs/42171089712) = **success**。
+- Windowsブラウザでの概観と本番WebView2/DPI/IME/OS pickerの受入は区別する。B4〜B9実API、実モデル/推論、DB履歴/削除、installer/portableは未受入。Issue #21は継続。
+- 画像`i5-01`〜`i5-16`は`frontend/test-results/ui3-screenshots/`の生成物でcommitしない。
+
+**以下の§1〜§6は初期案時点の試験値・確認事項を残した歴史資料**（19 tests、owner承認前などは当時の表記）。最新状態は本節と設計確定文書を優先。
 
 ## 1. 実行方法
 
@@ -109,7 +120,7 @@ CI（GitHub Actions）の結果はDraft PRのchecksを正本とする（この�
 
 ## 6. UI-3 S1–S5・UI-4への引継ぎ
 
-**ownerが本プロトタイプの配置・情報密度・導線を承認するまで、次の段階へ着手しない。** 各段階は画面単位の小PRとし、
+**UI-3-0の画面設計は2026-11-06に承認済み。** 各段階は画面単位の小PRとし、
 プロトタイプの部品（`src/preview/components/*`）は本番の`domain/`（framework非依存）へ状態を移してから`features/`へ移植する。
 プロトタイプのコード自体は本番へimportしない（ESLintで禁止）。
 

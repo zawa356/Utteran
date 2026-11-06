@@ -336,3 +336,10 @@ npm run prototype
 - 本番B8の工程再開には、プランdigest・成果物の同一性・永続journalなど信頼できる証拠が必要（試作は「以前終えたから安全」と判断しない）。
 - 初回セットアップの結果をGUIの既定設定として**保存**する仕組み（GUI設定とB5 policyの正本の整理）は後続。試作はin-memoryのみ。
 - `device`を処理設定へ入れるのは試作の表示整合のため。本番ではprofile/policyが実行デバイスを決める（`CONTRACT_PATH.device = null`のまま）。
+
+## 19. 第5案レビュー・統合・UI-3-0設計確定（2026-11-06）
+
+- レビューP1修正HEAD `1f72f28`：再承認で前プラン工程を再利用しない／初回の選択モデルとジョブsnapshotが一致。コードレビュー合格。
+- PR HEAD CI [42170336857](https://github.com/zawa356/Utteran/actions/runs/42170336857)は14/14成功、main [42171089712](https://github.com/zawa356/Utteran/actions/runs/42171089712)も成功。[PR #38](https://github.com/zawa356/Utteran/pull/38)はmerge commit `701a94e`でmainに統合。
+- ownerはWindowsブラウザで第5案を概観し、UI微調整を後続へ繰り越して**設計をfreeze**。採用仕様・制約・S1〜S5の引継ぎは[design-freeze.md](design-freeze.md)を参照。
+- 実WebView2、DPI・IME・native file I/O、B4〜B9 API、実モデル/推論、installer/portable・既定GUI切替は**未受入**。UI-3 #21は継続。
