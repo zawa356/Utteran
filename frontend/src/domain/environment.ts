@@ -17,6 +17,8 @@ export interface EnvironmentState {
   data: LegacyEnvironment | null;
   readiness: Readiness;
   staleDiscarded: number;
+  /** true while the selection is the saved default profile (not a choice made on this panel). */
+  followsDefault: boolean;
 }
 
 export class EnvironmentController {
@@ -27,6 +29,7 @@ export class EnvironmentController {
     data: null,
     readiness: "unverified",
     staleDiscarded: 0,
+    followsDefault: false,
   });
   private readonly latest = new LatestOnly();
 
@@ -34,6 +37,16 @@ export class EnvironmentController {
 
   /** Select a profile (or the server default with null) and load its snapshot. */
   select(profile: string | null): Promise<void> {
+    this.store.patch({ followsDefault: false });
+    return this.load(profile, false);
+  }
+
+  /**
+   * Show the saved default profile (start-up, or after the default was saved). Like the legacy
+   * GUI's boot, this never re-detects devices (`refresh=false`).
+   */
+  selectDefault(profile: string | null): Promise<void> {
+    this.store.patch({ followsDefault: true });
     return this.load(profile, false);
   }
 

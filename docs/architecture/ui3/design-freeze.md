@@ -61,6 +61,8 @@
 
 各段階は小PRで実装し、旧GUI/CLIの非退行と実APIの自動テストを必須とする。
 
+**受入の運用（2026-11-09 owner方針で追補）:** 各段階のPRはLinux自動試験とWindows CI自動試験（frontend lint/型/Vitest/build、Windows pytest/PowerShell）の全必須ジョブ成功でmerge可否を判断する。WebView2実起動・native picker・Explorer・DPI・IME・installer/portableの手動実機確認はUI-3/UI-4の最終統合ゲートへ集約し、各PRでは求めない。自動CIの成功を実機受入とは扱わない（[s1 §8](s1-settings-and-host.md#8-windows-webview2-実機受入未実施最終ゲートへ集約)）。
+
 ## 5. 未決事項と変更管理
 
 - G-05/G-06: 作業途中の入力/override/セットアップ状態をどこに保存するか。G-15: 保持期間・ACL・消去・backup/restore。

@@ -2,6 +2,7 @@
 import { mdiChevronLeft, mdiChevronRight, mdiCogOutline, mdiFormatListBulleted, mdiHistory, mdiMicrophoneOutline, mdiPackageVariantClosed, mdiWrenchOutline } from "@mdi/js";
 import { computed } from "vue";
 import { useDisplay } from "vuetify";
+import LegacyLink from "../../components/LegacyLink.vue";
 import NotMigrated from "../../components/NotMigrated.vue";
 import { useCore, useI18n } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
@@ -51,7 +52,7 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
         <v-btn value="normal" size="small" data-testid="mode-normal">{{ t("mode.normal") }}</v-btn>
         <v-btn value="expert" size="small" data-testid="mode-expert">{{ t("mode.expert") }}</v-btn>
       </v-btn-toggle>
-      <v-btn href="/" variant="text" size="small" class="mr-2" data-testid="open-legacy">{{ t("app.openLegacy") }}</v-btn>
+      <LegacyLink :label="t('app.openLegacy')" size="small" testid="open-legacy" class="mr-2" />
     </v-app-bar>
     <v-navigation-drawer permanent :rail="rail" rail-width="56" width="232" border="e">
       <nav :aria-label="t('nav.label')">

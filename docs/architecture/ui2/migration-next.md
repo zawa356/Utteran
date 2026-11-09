@@ -1,13 +1,13 @@
 # UI-2 → UI-3 移行計画・backend gap・rollback・owner判断
 
-更新: 2026-11-04 JST（0.1.42）。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
+更新: 2026-11-09 JST（0.1.44、UI-3 S1）。初版2026-11-04（0.1.42）。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
 
 ## 1. 段階の現状
 
 | 段階 | 内容 | UI-2の状態 |
 |---|---|---|
 | S0 | 雛形・host bridge・API client・domain store・i18n・theme・Vitest/Playwright・CI・配信route・CSP nonce・opt-in flag | **完了**（本PR） |
-| S1 設定 | 旧`/api/settings` `/api/token` | **一部**: theme/languageのみ。既定profile・入出力フォルダ・token設定/削除・log表示・wizard再起動は未移行 |
+| S1 設定 | 旧`/api/settings` `/api/token` | **実装（0.1.44、Windows実機未受入）**: theme/language・既定profile・既定入出力フォルダ（native picker）・token状態/登録/削除・log表示/フォルダを開く・wizard状態表示と旧画面への移動。新UIのwizardはS4（[ui3/s1](../ui3/s1-settings-and-host.md)） |
 | S2 環境 | 旧`/api/environment` | **一部**: 読み取り表示・profile選択・再検出・中止・retry。旧UIの環境stripの全項目（native/OpenVINO model等）は未移行 |
 | S3 文字起こし・キュー | 旧`/api/jobs*` `/api/queue` | 未着手（`SingleFlightPoller`は用意済み） |
 | S4 モデル・履歴・旧wizard | 旧API | 未着手 |
@@ -41,13 +41,14 @@
 | 旧（`index.html`） | 新UI | 状態 |
 |---|---|---|
 | `view-settings` theme・language | 設定 | 移行済み（同じ`gui-settings.json`を読み書き＝相互互換） |
-| `view-settings` 既定profile・既定入出力・token・ログ・wizard再起動 | 設定 | 未移行（画面で旧UIを案内） |
+| `view-settings` 既定profile・既定入出力・token・ログ | 設定 | **移行済み（UI-3 S1、0.1.44）**。変更分だけ`PATCH`、tokenは値を保持しない。詳細は[ui3/s1 §2](../ui3/s1-settings-and-host.md#2-api画面の対応表実装前--実装後) |
+| `view-settings` ウィザードを開く | 設定 → 旧画面 | 状態の読み取りと旧画面への移動のみ（新UIのwizardはS4） |
 | `view-workspace` 環境strip・再検出 | 文字起こし（通常）／Expert中央 | 読み取り表示のみ移行。readyとは表示しない |
 | `view-workspace` フォーム・投入・`progress-panel`・`result-panel` | 文字起こし | 未移行 |
 | `view-queue` | キュー／Expert右 | 未移行 |
 | `view-models` / `view-history` / `view-viewer` / `view-wizard` | モデル／結果と履歴／セットアップ | 未移行 |
-| D&D・file dialog・`report_frontend_error` | `host/` | bridge実装済み。file dialog・D&Dを使う画面は未移行（D&D受け口は上記3.） |
-| 共通dialog | Vuetify Dialog/Alert | Alert（領域内error＋retry）のみ使用。確認dialogはUI-3 |
+| D&D・file dialog・`report_frontend_error` | `host/` | bridge実装済み。**フォルダ選択は設定画面で使用（S1）**。入力ファイルdialog・D&Dを使う画面は未移行（S3） |
+| 共通dialog | Vuetify Dialog/Alert | Alert（領域内error＋retry）と確認Dialog（token削除・未保存での離脱、S1） |
 
 ## 4. backend gap（UI-1 G番号、UI-2での扱い）
 
@@ -77,7 +78,8 @@ UI-2で見つけた追加の論点:
 
 - 新UIは`--next-ui`を付けたときだけ表示される。**flagを外せば旧UI**（設定・DB・backendのデータ形式は不変）。
   新UI画面からも「旧画面を開く」で同じsessionのまま`/`へ戻れる。
-- 新UIが書くのは旧UIと同じ`gui-settings.json`のtheme/languageだけで、旧UIはそのまま読める。
+- 新UIが書くのは旧UIと同じ`gui-settings.json`のtheme/language・既定profile・既定入出力フォルダ（UI-3 S1から）で、
+  変更分だけの`PATCH`のためwizard進捗等の他フィールドは保持され、旧UIはそのまま読める。tokenは旧UIと同じOS keyringの同じslot。
 - 不具合時は本PRのrevertで、`create_app`の既定・旧CSP・旧`/launch`は元から不変。
 
 ## 6. owner判断が必要な事項

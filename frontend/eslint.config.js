@@ -44,7 +44,7 @@ export default [
         {
           patterns: [
             { group: ["**/api", "**/api/**", "**/host", "**/host/**", "**/transport/**"], message: "The UI-3-0 prototype must not reach the backend or the host bridge." },
-            { group: ["**/domain/core", "**/composables/core", "**/domain/environment", "**/domain/settings"], message: "The prototype uses only synthetic state (src/preview/domain)." },
+            { group: ["**/domain/core", "**/composables/core", "**/domain/environment", "**/domain/settings", "**/domain/token", "**/domain/logs", "**/domain/wizard"], message: "The prototype uses only synthetic state (src/preview/domain)." },
           ],
         },
       ],

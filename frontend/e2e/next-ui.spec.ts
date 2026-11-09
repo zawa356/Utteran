@@ -74,7 +74,7 @@ test("environment: failure is shown in place and retry recovers", async ({ app }
 
 test("settings: theme/language are saved through the real API, once per click", async ({ app, request }) => {
   await app.getByTestId("nav-settings").click();
-  await expect(app.getByTestId("settings-token")).toContainText("未設定");
+  await expect(app.getByTestId("token-status")).toHaveText("未設定");
   const patches: string[] = [];
   app.on("request", (r) => {
     if (r.method() === "PATCH" && r.url().endsWith("/api/settings")) patches.push(r.postData() ?? "");

@@ -1,5 +1,31 @@
 # AI 作業状態
 
+## 現在地（2026-11-09、PR #40レビュー修正・Windows CI方針、0.1.44据え置き、Draft維持）
+
+- 修正前HEAD `6cbbe8e`（PR #40 HEADと一致、Draft、main `a1cb1b0`）。同じブランチ`claude/wonderful-goldberg-drzjvo`へ通常commit・push。Ready化・merge・tag・releaseなし。
+- P1-1: トークンの「現在の存在状態（GET）」と「直前のPUT/DELETEが未確認」を分離（`statusCurrent`/`unconfirmed`）。GETは置換・削除の因果を証明しないので未確認の注記を残し、旧エラー・完了メッセージは消す。password欄は送信開始時に空にする。
+- P1-2: 503（TokenStoreの書き込み後読み戻し失敗を含む）を「変更されていません」と断定せず、`store_error`の未確認として表示（日英）。E2Eハーネスに読み戻し失敗の合成keyringを追加。
+- P2: 設定の結果不明PATCHは送信時の凍結コピーと項目ごとに照合（`matched`/`mismatched`、因果は断定しない）。照合前の再保存は不可。後続編集は保持し未保存として別表示。
+- CI: `ui3-frontend-windows`（windows-latest: npm ci・lint・vue-tsc・Vitest・build）を追加。**運用: 各PRはLinux＋Windows CIで判断、WebView2・native picker・Explorer・DPI・IME・installer/portableの手動実機確認は最終統合ゲートへ集約**（[ui3/s1 §8・§11](docs/architecture/ui3/s1-settings-and-host.md#11-pr-40レビュー修正2026-11-09)）。required checksへの追加はリポジトリ管理者の作業（未変更）。
+- Python製品コード・API・host・CLI・DB・B4〜B9・preview無変更。
+
+## 現在地（2026-11-09、UI-3 S1 本番設定画面・OS連携、0.1.44・未リリース、Draft PR）
+
+- 基点`main` `a1cb1b0aee4d8cb2c290581521559c1853211c26`（作業直前に`origin/main`と一致、先行コミットなし）。セッション指定ブランチ
+  `claude/wonderful-goldberg-drzjvo`で通常commit・push（force push・merge・Ready化・tag・releaseなし）。commit identityは既存の
+  エージェントcommitと同じClaude名義（owner名義では作らない）。
+- `/next/`（`--next-ui`のときだけ）の設定画面を実APIへ接続: theme/language・既定profile（`null`＝指定なし）・既定入出力フォルダ
+  （`HostBridge.pickPath`、キャンセルno-op、host不在の案内）を変更分だけ`PATCH /api/settings`、token状態/登録/確認付き削除
+  （`/api/token`、値はフォームのローカルrefだけ、unavailable≠未設定、無応答はunknown→再確認）、ログ保存先/fallback/raw警告と
+  サーバー`log_dir`での`POST /api/open-folder`、`GET /api/wizard/status`の読み取りと旧画面への移動（未保存時は確認）。
+  保存の結果不明はGETで再照合し、自動再送しない。起動時は保存済み既定profileで環境を表示（`refresh=false`）。
+- **backend/host/Pythonの製品コードは無変更、新APIなし。** E2Eハーネス`tools/ui2/serve_next_ui.py`のみ変更（in-memory合成keyring、ログ先固定）。
+- 検証（Linux、headless Chromium）: Vitest 255（本番111＋プロトタイプ144）、UI-2/S1 E2E 22（既存10＋S1 12）、プロトタイプE2E 96、
+  lint/typecheck/build/audit 0件、pytest 1292 passed/9 skipped/1 xfailed、ruff・mypy（linux/win32）・schema 8件・`uv lock --check`・BOM・
+  privacy scan blocking 0。CI結果はPR上で確認する。
+- **Windows WebView2実機は未受入**（native folder dialog・再起動後の保持・旧GUIとの一致・Explorer起動・DPI/IME）。手順は
+  [ui3/s1 §8](docs/architecture/ui3/s1-settings-and-host.md#8-windows-webview2-実機受入未実施)。新UIのwizardはS4、B8はS5。
+
 ## 現在地（2026-11-06、UI-3-0 Design Freeze・PR #38 main統合）
 
 - ownerは第5案をWindowsブラウザで概観し、UI-3-0の**画面設計を承認**。微調整は後続S1〜S5へ繰り越す。これは実WebView2/本番接続の受入を意味しない。

@@ -2,16 +2,11 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/errors";
 import type { LegacyApi, LegacyEnvironment } from "../api/legacy";
 import { deferred } from "../test/fakeFetch";
-import { environment } from "../test/legacyFixtures";
+import { environment, unusedApi } from "../test/legacyFixtures";
 import { EnvironmentController } from "./environment";
 
 function api(handler: (profile: string | null, refresh: boolean, signal?: AbortSignal) => Promise<LegacyEnvironment>): LegacyApi {
-  return {
-    getEnvironment: handler,
-    getSettings: () => Promise.reject(new Error("unused")),
-    patchSettings: () => Promise.reject(new Error("unused")),
-    openFolder: () => Promise.reject(new Error("unused")),
-  };
+  return unusedApi({ getEnvironment: handler });
 }
 
 describe("EnvironmentController", () => {

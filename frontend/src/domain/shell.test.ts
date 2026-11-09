@@ -9,11 +9,12 @@ describe("shell state", () => {
     const core = createCore({ fetch: scriptedFetch([]), host: createFakeHost() });
     core.shell.navigate("settings");
     core.shell.showPane("queue");
-    core.settings.store.patch({ draft: { theme: "dark", language: "en" } });
+    const draft = { theme: "dark", language: "en", defaultProfile: null, defaultInputDir: "", defaultOutputDir: "" } as const;
+    core.settings.store.patch({ draft });
     core.shell.setMode("expert");
     core.shell.setMode("normal");
     expect(core.shell.store.get()).toMatchObject({ mode: "normal", section: "settings", expertPane: "queue" });
-    expect(core.settings.store.get().draft).toEqual({ theme: "dark", language: "en" });
+    expect(core.settings.store.get().draft).toEqual(draft);
   });
 
   it("every section declares its migration status; only two are partial", () => {

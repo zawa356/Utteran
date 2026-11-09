@@ -1,6 +1,6 @@
 # Architecture documents — where to start
 
-更新: 2026-11-06 JST（UI-3-0設計確定、開発版0.1.43・未リリース）
+更新: 2026-11-09 JST（UI-3 S1 本番設定画面、開発版0.1.44・未リリース）
 
 このディレクトリには **「現在の実装の正本」** と **「各Phaseの提出・検証記録（歴史資料）」** が混在する。
 UI刷新（U0〜U3）やバックエンド変更を始める前に、まず次の正本を読むこと。
@@ -24,7 +24,8 @@ DTOとAPIの機械可読な正本は、コード（`src/utteran_contracts/`）�
 
 ## UI刷新（UI-1 設計 → UI-2 基盤 → UI-3-0 画面設計）
 
-- [ui3/](ui3/README.md): **UI-3-0設計確定（2026-11-06、`0.1.43`未リリース）**。[design-freeze](ui3/design-freeze.md)が採用仕様・証拠・未実装とS1〜S5引継ぎの正本。[PR #38](https://github.com/zawa356/Utteran/pull/38)をmainに統合（`701a94e`、CI成功）。通常1ファイル中心/Expert可変3ペイン、モデル選択、キューと履歴の分離、個別出力先・用語集一括入力は**合成プロトタイプの設計**。実APIとWindows配布は未受入、UI-3 #21は継続。
+- [ui3/](ui3/README.md): **UI-3 S1（2026-11-09、`0.1.44`未リリース、Draft PR）**: [s1-settings-and-host](ui3/s1-settings-and-host.md)。`--next-ui`の設定画面を旧`/api/settings`・`/api/token`・`/api/open-folder`・`/api/wizard/status`とhost `pickPath`へ接続（backend変更なし、Windows実機未受入）。
+  **UI-3-0設計確定（2026-11-06、`0.1.43`）**。[design-freeze](ui3/design-freeze.md)が採用仕様・証拠・未実装とS1〜S5引継ぎの正本。[PR #38](https://github.com/zawa356/Utteran/pull/38)をmainに統合（`701a94e`、CI成功）。通常1ファイル中心/Expert可変3ペイン、モデル選択、キューと履歴の分離、個別出力先・用語集一括入力は**合成プロトタイプの設計**。実APIとWindows配布は未受入、UI-3 #21は継続。
 
 - [ui2/](ui2/README.md): **次期GUIのfrontend基盤（S0）とopt-in新UI**（2026-11-04、0.1.41→0.1.42。Windows WebView2で条件付き受入、DPI 200%の初期窓に制約）。Vue 3 + Vuetify 4、
   `utteran-gui --next-ui`のときだけ表示。既定GUIは旧UIのまま。設計・実測・UI-3への移行計画。

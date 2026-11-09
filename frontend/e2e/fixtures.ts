@@ -20,19 +20,27 @@ export const test = base.extend<{ app: Page; externalRequests: string[] }>({
     await use(external);
   },
   app: async ({ page, request }, use) => {
-    // Reset the shared synthetic settings file through the real API.
-    const reset = await request.patch("/api/settings", { headers: SESSION_HEADER, data: { theme: "system", language: "ja" } });
+    // Reset the shared synthetic settings file and the in-memory synthetic keyring through the
+    // real API (the harness never touches the real user settings or OS keyring).
+    const reset = await request.patch("/api/settings", {
+      headers: SESSION_HEADER,
+      data: { theme: "system", language: "ja", default_profile: null, default_input_dir: "", default_output_dir: "" },
+    });
     expect(reset.status()).toBe(200);
+    expect((await request.delete("/api/token", { headers: SESSION_HEADER })).status()).toBe(200);
     await page.addInitScript(() => {
       window.__violations = [];
       document.addEventListener("securitypolicyviolation", (event) => {
         window.__violations.push({ directive: event.effectiveDirective, blocked: event.blockedURI });
       });
     });
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.name));
     await page.goto(`/launch?session=${SESSION}`);
     await expect(page.getByTestId("app-ready")).toBeVisible();
     await use(page);
     expect(await page.evaluate(() => window.__violations)).toEqual([]);
+    expect(pageErrors).toEqual([]);
   },
 });
 

@@ -64,3 +64,21 @@ describe("host bridge", () => {
     expect(host.reports).toHaveLength(1);
   });
 });
+
+describe("host bridge — S1 folder kinds", () => {
+  it("pywebview host forwards input_folder/output_folder and returns the chosen string", async () => {
+    const choose = vi.fn(async (kind: string) => (kind === "input_folder" ? "picked-in" : null));
+    const host = createPywebviewHost(fakeWindow({ choose_path: choose, report_frontend_error: async () => true }), 1000);
+    expect(await host.pickPath("input_folder")).toBe("picked-in");
+    expect(await host.pickPath("output_folder")).toBeNull();
+    expect(choose.mock.calls).toEqual([["input_folder"], ["output_folder"]]);
+  });
+
+  it("a native dialog failure rejects (it is not mistaken for a cancel)", async () => {
+    const host = createPywebviewHost(
+      fakeWindow({ choose_path: async () => Promise.reject(new Error("synthetic")), report_frontend_error: async () => true }),
+      1000,
+    );
+    await expect(host.pickPath("output_folder")).rejects.toThrow("synthetic");
+  });
+});

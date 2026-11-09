@@ -126,7 +126,7 @@ CI（GitHub Actions）の結果はDraft PRのchecksを正本とする（この�
 
 | 段階 | 実装順序 | 受入条件 | 禁止範囲 |
 |---|---|---|---|
-| S1 設定の残り | profile、既定入出力フォルダ（native picker）、token（値を出さない・503 keyring）、ログ、wizard再起動 | 旧設定画面と機能表で同等、保存失敗が見える（D-05再発なし）、Windows実機でnative picker | 新UIからv1・DBへ書かない |
+| S1 設定の残り | profile、既定入出力フォルダ（native picker）、token（値を出さない・503 keyring）、ログ、wizard再起動 | 旧設定画面と機能表で同等、保存失敗が見える（D-05再発なし）、Linux＋Windows CIの自動試験。native pickerのWindows実機確認は最終ゲートへ集約（2026-11-09 owner方針、[s1 §8](s1-settings-and-host.md#8-windows-webview2-実機受入未実施最終ゲートへ集約)） | 新UIからv1・DBへ書かない |
 | S2 環境の残り | 環境stripの全項目、`profile_warnings`、B4 ready証拠の表示 | ready判定はbackend正本、frontendに互換表なし、架空のreadyなし | 不成立の組合せを候補に出さない |
 | S3 文字起こし・キュー | 通常A1の5段・Expert C1の3ペインを旧`/api/jobs*`・`/api/queue`（単一in-flight poll）で実装。新UIのnative D&D受け口、最初の自由入力欄（Prompt）とIME | D-03/D-04/D-06/D-07が再現しない、二重投入なし、%を推測しない、IMEのE2E＋Windows実機、旧機能（batch glob・resume・話者数・形式）欠落なし、本プロトタイプの操作E2Eを実API版に移す | v1接続しない、旧SSEは重複排除を決めてから |
 | S4 モデル・結果と履歴・セットアップ | 旧API同等の操作、viewer、旧wizard | 旧→新対応表で欠落なし | — |

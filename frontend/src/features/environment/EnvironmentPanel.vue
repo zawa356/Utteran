@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { mdiRefresh } from "@mdi/js";
-import { computed, onMounted } from "vue";
+import { computed } from "vue";
 import { PROFILES } from "../../api/legacy";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore, useI18n } from "../../composables/core";
@@ -22,10 +22,7 @@ const profileItems = computed(() => [
 ]);
 const selected = computed(() => state.value.requestedProfile ?? DEFAULT);
 const pending = computed(() => state.value.load.phase === "pending");
-// First visit loads the server default; later visits (or a mode switch) keep the state.
-onMounted(() => {
-  if (state.value.load.phase === "idle") void environment.select(null);
-});
+// AppCore.start() loads the saved default profile; later visits (or a mode switch) keep the state.
 
 function onSelect(value: string | null) {
   void environment.select(value === null || value === DEFAULT ? null : value);
