@@ -124,7 +124,9 @@ test("mode switch keeps navigation, environment and an unsaved settings draft", 
   await expect(app.getByTestId("pane-inputs")).toBeVisible();
   await expect(app.getByTestId("pane-queue")).toBeVisible();
   await expect(app.getByTestId("pane-inspector").getByTestId("env-active")).toContainText("intel");
-  await expect(app.getByTestId("pane-queue").getByRole("button")).toHaveCount(0);
+  // UI-3 S3-A: the only control in ③ is the (shared) start button, disabled without an input.
+  await expect(app.getByTestId("pane-queue").getByRole("button")).toHaveCount(1);
+  await expect(app.getByTestId("pane-queue").getByTestId("tx-start")).toBeDisabled();
   await shot(app, "05-expert-3-pane");
   await app.getByTestId("mode-normal").click();
   await app.getByTestId("nav-settings").click();
