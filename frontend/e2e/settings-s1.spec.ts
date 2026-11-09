@@ -12,6 +12,9 @@ import { choose, expect, SESSION, SESSION_HEADER, shot, test } from "./fixtures"
 // Assembled at runtime: no token-shaped literal is committed (AGENTS.md privacy rule).
 const SECRET = ["hf", "synthetic", "e2e", "value", "0001"].join("_");
 const REJECTED = ["synthetic", "keyring", "reject", "0002"].join("-");
+// Written by the synthetic keyring, but its read-back fails → real TokenStore raises → 503.
+const READBACK = ["synthetic", "keyring", "readback", "fail", "0003"].join("-");
+const OTHER = ["hf", "synthetic", "e2e", "value", "0004"].join("_");
 
 declare global {
   interface Window {
@@ -162,30 +165,94 @@ test("token: register, confirm-delete, and the value never appears in DOM, conso
   expect(consoleText.join("\n")).not.toContain(SECRET);
 });
 
-test("token: keyring 503 shows fixed text and keeps the state; no answer → unknown → re-check", async ({ app }) => {
+test("token: keyring 503 never claims 'unchanged'; written-then-read-back-failed is shown as unconfirmed", async ({ app, request }) => {
   await app.getByTestId("nav-settings").click();
   const input = app.getByTestId("token-input").locator("input");
-  await input.fill(REJECTED); // the synthetic keyring raises → real TokenStoreUnavailable → 503
-  await app.getByTestId("token-register").click();
-  await expect(app.getByTestId("token-action-error")).toContainText("OSの資格情報保存機能を利用できません。トークンは変更されていません。");
-  await expect(app.getByTestId("token-action-error")).not.toContainText("keyring");
-  await expect(app.getByTestId("token-status")).toHaveText("未設定");
-  await expect(input).toHaveValue(REJECTED); // kept in the form for an explicit retry only
-  await shot(app, "s1-04-token-503");
 
-  // The PUT reaches the server but the answer is lost.
-  await app.route("**/api/token", async (route) => {
-    if (route.request().method() !== "PUT") return route.continue();
-    await route.fetch();
-    return route.abort("connectionreset");
-  });
-  await input.fill(SECRET);
+  // Write rejected before storing → 503. The UI must not claim either outcome.
+  await input.fill(REJECTED);
   await app.getByTestId("token-register").click();
-  await expect(app.getByTestId("token-unknown")).toBeVisible();
-  await expect(app.getByTestId("token-status")).toBeHidden();
+  await expect(app.getByTestId("token-unconfirmed")).toHaveAttribute("data-reason", "store_error");
+  await expect(app.getByTestId("token-card")).not.toContainText("変更されていません");
+  await expect(app.getByTestId("token-card")).not.toContainText("keyring");
+  await expect(input).toHaveValue(""); // cleared once sent; a retry is a fresh entry
+  await expect(app.getByTestId("token-status")).toHaveText("現在の状態は未確認です。");
+  await app.getByTestId("token-recheck").click();
+  await expect(app.getByTestId("token-status")).toHaveText("未設定");
+
+  // Written, then the read-back fails → real 503 although the token IS stored.
+  await input.fill(READBACK);
+  await app.getByTestId("token-register").click();
+  await expect(app.getByTestId("token-unconfirmed")).toContainText("保存されたかどうかは確認できません");
+  await expect(app.getByTestId("token-done")).toHaveText("");
+  await expect(input).toHaveValue("");
+  expect((await (await request.get("/api/token", { headers: SESSION_HEADER })).json()).configured).toBe(true);
   await app.getByTestId("token-recheck").click();
   await expect(app.getByTestId("token-status")).toHaveText("登録済み（値は表示しません）");
-  await expect(app.getByTestId("token-unknown")).toHaveCount(0);
+  await expect(app.getByTestId("token-unconfirmed-body")).toContainText("置き換わったかどうかは確認できない");
+  await expect(app.getByTestId("token-action-error")).toHaveCount(0);
+  await shot(app, "s1-04-token-503");
+  await app.getByTestId("token-acknowledge").click();
+  await expect(app.getByTestId("token-unconfirmed")).toHaveCount(0);
+});
+
+test("token: lost answers — current presence vs. unconfirmed PUT/DELETE, never a stale error or a kept secret", async ({ app }) => {
+  const consoleText: string[] = [];
+  app.on("console", (m) => consoleText.push(m.text()));
+  await app.getByTestId("nav-settings").click();
+  const input = app.getByTestId("token-input").locator("input");
+  let mode: "applied" | "not-applied" = "applied";
+  await app.route("**/api/token", async (route) => {
+    const method = route.request().method();
+    if (method === "GET") return route.continue();
+    if (mode === "applied") await route.fetch(); // reaches the server, the answer is lost
+    return route.abort("connectionreset");
+  });
+
+  // Missing → PUT applied, answer lost → re-check: "registered now", the PUT stays unconfirmed.
+  await input.fill(SECRET);
+  await app.getByTestId("token-register").click();
+  await expect(app.getByTestId("token-unconfirmed")).toHaveAttribute("data-reason", "no_response");
+  await expect(input).toHaveValue("");
+  await app.getByTestId("token-recheck").click();
+  await expect(app.getByTestId("token-status")).toHaveText("登録済み（値は表示しません）");
+  await expect(app.getByTestId("token-unconfirmed-body")).toContainText("置き換わったかどうかは確認できない");
+  await expect(app.getByTestId("token-action-error")).toHaveCount(0);
+  await expect(app.getByTestId("token-done")).toHaveText("");
+
+  // Registered → PUT of another value NOT applied, answer lost → still "registered", not "replaced".
+  mode = "not-applied";
+  await input.fill(OTHER);
+  await app.getByTestId("token-register").click();
+  await expect(app.getByTestId("token-status")).toHaveText("現在の状態は未確認です。");
+  await app.getByTestId("token-recheck").click();
+  await expect(app.getByTestId("token-status")).toHaveText("登録済み（値は表示しません）");
+  await expect(app.getByTestId("token-unconfirmed-body")).toContainText("置き換わったかどうかは確認できない");
+  await expect(app.getByTestId("token-done")).not.toContainText("登録しました");
+
+  // DELETE applied, answer lost → "missing now", the delete itself unconfirmed.
+  mode = "applied";
+  await app.getByTestId("token-delete").click();
+  await app.getByTestId("token-confirm-delete").click();
+  await expect(app.getByTestId("token-unconfirmed")).toContainText("削除");
+  await app.getByTestId("token-recheck").click();
+  await expect(app.getByTestId("token-status")).toHaveText("未設定");
+  await expect(app.getByTestId("token-unconfirmed-body")).toContainText("直前の削除によるものかどうかは確認できません");
+
+  // Re-check itself failing keeps "unknown".
+  await input.fill(OTHER);
+  await app.getByTestId("token-register").click();
+  await app.unroute("**/api/token");
+  await app.route("**/api/token", (route) => route.abort("connectionreset"));
+  await app.getByTestId("token-recheck").click();
+  await expect(app.getByTestId("token-recheck-failed")).toBeVisible();
+  await expect(app.getByTestId("token-status")).toHaveText("現在の状態は未確認です。");
+
+  for (const value of [SECRET, OTHER]) {
+    expect(await app.content()).not.toContain(value);
+    expect(consoleText.join("\n")).not.toContain(value);
+    expect(await app.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + location.href)).not.toContain(value);
+  }
 });
 
 test("token: store unavailable is not 'not configured'; portable says session only", async ({ app }) => {
@@ -217,7 +284,7 @@ test("token: store unavailable is not 'not configured'; portable says session on
   await page.close();
 });
 
-test("settings: an unanswered PATCH is 'unknown', never resent; a GET re-check resolves it", async ({ app, request }) => {
+test("settings: an unanswered PATCH is re-checked by the fields it sent, separately from later edits", async ({ app, request }) => {
   const calls = recordApi(app);
   await app.getByTestId("nav-settings").click();
   let mode: "lost-before" | "lost-after" = "lost-before";
@@ -229,19 +296,31 @@ test("settings: an unanswered PATCH is 'unknown', never resent; a GET re-check r
   await choose(app, "settings-profile", "Vulkan");
   await app.getByTestId("settings-save").click();
   await expect(app.getByTestId("settings-save-unknown")).toBeVisible();
-  await expect(app.getByTestId("settings-status")).toHaveText("未保存の変更があります。");
+  await expect(app.getByTestId("settings-save-unknown-fields")).toHaveText("送信した項目: 既定プロファイル");
+  // No second save over an unconfirmed one.
+  await choose(app, "settings-theme", "ダーク");
+  await expect(app.getByTestId("settings-save")).toBeDisabled();
   await app.getByTestId("settings-reconcile").click();
-  await expect(app.getByTestId("settings-status")).toHaveText("保存されていませんでした。変更内容は残っています。");
+  await expect(app.getByTestId("settings-reconciled")).toHaveAttribute("data-result", "mismatch");
+  await expect(app.getByTestId("settings-reconciled-mismatched")).toContainText("既定プロファイル");
   await expect(app.getByTestId("settings-profile")).toContainText("Vulkan");
+  await expect(app.getByTestId("settings-theme")).toContainText("ダーク");
 
+  // Applied but lost; then a further edit. The sent fields match; the later edit stays unsaved.
   mode = "lost-after";
   await app.getByTestId("settings-save").click();
-  await expect(app.getByTestId("settings-save-unknown")).toBeVisible();
+  await expect(app.getByTestId("settings-save-unknown-fields")).toHaveText("送信した項目: 外観、既定プロファイル");
+  await choose(app, "settings-language", "English");
   await shot(app, "s1-05-save-unknown");
   await app.getByTestId("settings-reconcile").click();
-  await expect(app.getByTestId("settings-status")).toHaveText("保存されていることを確認しました。");
+  await expect(app.getByTestId("settings-reconciled")).toHaveAttribute("data-result", "match");
+  await expect(app.getByTestId("settings-reconciled-matched")).toContainText("外観、既定プロファイル");
+  await expect(app.getByTestId("settings-status")).toHaveText("未保存の変更があります。");
+  await expect(app.getByTestId("settings-language")).toContainText("English");
+  await expect(app.locator(".v-theme--dark").first()).toBeAttached(); // server-confirmed theme applied
   expect(calls.filter((r) => r.method() === "PATCH")).toHaveLength(2); // one per click, none automatic
-  expect((await (await request.get("/api/settings", { headers: SESSION_HEADER })).json()).default_profile).toBe("vulkan");
+  const stored = await (await request.get("/api/settings", { headers: SESSION_HEADER })).json();
+  expect(stored).toMatchObject({ default_profile: "vulkan", theme: "dark", language: "ja" });
 });
 
 test("logs: server log_dir shown; raw/fallback warnings; open uses exactly that path; failures shown", async ({ app }) => {

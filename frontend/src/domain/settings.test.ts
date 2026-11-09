@@ -161,7 +161,7 @@ describe("SettingsController — five settings via PATCH /api/settings", () => {
     expect(controller.store.get().load.phase).toBe("success");
   });
 
-  it("timeout = unknown outcome: no resend, and a GET re-check tells applied vs not applied", async () => {
+  it("timeout = unknown outcome: no resend, and a GET re-check compares the sent fields", async () => {
     const fake = fakeApi({
       patch: async () => {
         throw new ApiError({ kind: "timeout", outcomeUnknown: true, retryable: true });
@@ -172,18 +172,19 @@ describe("SettingsController — five settings via PATCH /api/settings", () => {
     controller.edit({ defaultProfile: "vulkan" });
     expect(await controller.save()).toBe(false);
     expect(controller.store.get().save.error?.outcomeUnknown).toBe(true);
+    expect(controller.store.get().unconfirmedSave?.patch).toEqual({ defaultProfile: "vulkan" });
     // The server had actually applied it.
     fake.server = settings({ defaultProfile: "vulkan" });
-    expect(await controller.reconcile()).toBe("applied");
+    expect(await controller.reconcile()).toEqual({ matched: ["defaultProfile"], mismatched: [] });
     let state = controller.store.get();
     expect(state.saved?.defaultProfile).toBe("vulkan");
     expect(isDirty(state)).toBe(false);
-    expect(state.save.phase).toBe("success");
+    expect(state.unconfirmedSave).toBeNull();
     expect(fake.patches).toHaveLength(1);
 
     controller.edit({ defaultProfile: "cpu" });
     expect(await controller.save()).toBe(false);
-    expect(await controller.reconcile()).toBe("not_applied");
+    expect(await controller.reconcile()).toEqual({ matched: [], mismatched: ["defaultProfile"] });
     state = controller.store.get();
     expect(state.draft?.defaultProfile).toBe("cpu");
     expect(state.save.phase).toBe("idle");

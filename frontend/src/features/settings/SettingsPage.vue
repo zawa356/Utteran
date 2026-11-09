@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { type DefaultProfile, type Language, PROFILES, type Theme } from "../../api/legacy";
+import { type DefaultProfile, EDITABLE_FIELDS, type EditableField, type Language, PROFILES, type Theme } from "../../api/legacy";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore, useI18n } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
 import { folderTooLong, isDirty } from "../../domain/settings";
+import type { MessageKey } from "../../i18n";
 import FolderField from "./FolderField.vue";
 import LogCard from "./LogCard.vue";
 import SetupCard from "./SetupCard.vue";
@@ -32,8 +33,20 @@ const dirty = computed(() => isDirty(state.value));
 const saving = computed(() => state.value.save.phase === "pending");
 const busy = computed(() => saving.value || state.value.reconcile.phase === "pending");
 const saveError = computed(() => (state.value.save.phase === "error" ? state.value.save.error : null));
-const unknownOutcome = computed(() => saveError.value?.outcomeUnknown === true);
-const canSave = computed(() => dirty.value && !busy.value && state.value.picking === null && !folderTooLong(state.value.draft));
+// A lost PATCH must be re-checked (GET) before another save, so it is never hidden or resent.
+const unconfirmed = computed(() => state.value.unconfirmedSave);
+const canSave = computed(
+  () => dirty.value && !busy.value && unconfirmed.value === null && state.value.picking === null && !folderTooLong(state.value.draft),
+);
+const FIELD_LABEL: Record<EditableField, MessageKey> = {
+  theme: "settings.theme",
+  language: "settings.language",
+  defaultProfile: "settings.profile",
+  defaultInputDir: "settings.inputDir",
+  defaultOutputDir: "settings.outputDir",
+};
+const fieldList = (fields: readonly EditableField[]) => fields.map((f) => t(FIELD_LABEL[f])).join(t("common.listSeparator"));
+const sentFields = computed(() => (unconfirmed.value ? fieldList(EDITABLE_FIELDS.filter((f) => f in unconfirmed.value!.patch)) : ""));
 
 function onProfile(value: string): void {
   settings.edit({ defaultProfile: value === NONE ? null : (value as DefaultProfile) });
@@ -104,22 +117,35 @@ function onProfile(value: string): void {
         <span role="status" aria-live="polite" class="text-body-2" data-testid="settings-status">
           <template v-if="saving">{{ t("settings.saving") }}</template>
           <template v-else-if="state.reconcile.phase === 'pending'">{{ t("settings.reconciling") }}</template>
-          <template v-else-if="state.reconciled === 'applied' && !dirty">{{ t("settings.reconciledApplied") }}</template>
-          <template v-else-if="state.reconciled === 'not_applied' && dirty">{{ t("settings.reconciledNotApplied") }}</template>
           <template v-else-if="state.save.phase === 'success' && !dirty">{{ t("settings.saved") }}</template>
           <template v-else-if="dirty">{{ t("settings.unsaved") }}</template>
         </span>
       </div>
-      <v-alert v-if="unknownOutcome" type="warning" role="alert" :title="t('settings.saveUnknown')" data-testid="settings-save-unknown">
-        {{ t("settings.saveUnknownBody") }}
+      <v-alert v-if="unconfirmed" type="warning" role="alert" :title="t('settings.saveUnknown')" data-testid="settings-save-unknown">
+        <p>{{ t("settings.saveUnknownBody") }}</p>
+        <p class="mt-1" data-testid="settings-save-unknown-fields">{{ t("settings.sentFields", { fields: sentFields }) }}</p>
         <template #append>
           <v-btn variant="text" :loading="state.reconcile.phase === 'pending'" data-testid="settings-reconcile" @click="settings.reconcile()">
             {{ t("settings.reconcile") }}
           </v-btn>
         </template>
       </v-alert>
+      <v-alert
+        v-if="state.reconciled && !unconfirmed"
+        :type="state.reconciled.mismatched.length ? 'warning' : 'info'"
+        role="status"
+        data-testid="settings-reconciled"
+        :data-result="state.reconciled.mismatched.length ? 'mismatch' : 'match'"
+      >
+        <p v-if="state.reconciled.matched.length" data-testid="settings-reconciled-matched">
+          {{ t("settings.reconciledMatched", { fields: fieldList(state.reconciled.matched) }) }}
+        </p>
+        <p v-if="state.reconciled.mismatched.length" data-testid="settings-reconciled-mismatched">
+          {{ t("settings.reconciledMismatched", { fields: fieldList(state.reconciled.mismatched) }) }}
+        </p>
+      </v-alert>
       <ErrorAlert
-        v-else-if="saveError"
+        v-if="saveError && !unconfirmed"
         :error="saveError"
         :title="t('settings.saveFailed')"
         testid="settings-save-error"

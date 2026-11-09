@@ -35,9 +35,12 @@ SESSION = "ui2-e2e-synthetic-session-key"
 DELAYS = {"cuda": 1.5, "intel": 0.2}
 
 
-# A token value containing this marker makes the synthetic keyring fail like a broken OS
-# credential store, so the real ``PUT /api/token`` → 503 path can be exercised end to end.
+# A token value containing REJECT_MARKER makes the synthetic keyring fail like a broken OS
+# credential store before anything is written. READBACK_MARKER stores the value but fails the
+# read-back that ``TokenStore.set()`` performs right after writing, so the real
+# ``PUT /api/token`` answers 503 although the token *was* saved (PR #40 review P1-2).
 REJECT_MARKER = "synthetic-keyring-reject"
+READBACK_MARKER = "synthetic-keyring-readback-fail"
 
 
 class SyntheticKeyring:
@@ -45,10 +48,14 @@ class SyntheticKeyring:
 
     def __init__(self) -> None:
         self._values: dict[tuple[str, str], str] = {}
+        self._fail_next_get = False
         self._lock = threading.Lock()
 
     def get_password(self, service: str, username: str) -> str | None:
         with self._lock:
+            if self._fail_next_get:
+                self._fail_next_get = False
+                raise RuntimeError("synthetic keyring read-back failed")
             return self._values.get((service, username))
 
     def set_password(self, service: str, username: str, password: str) -> None:
@@ -56,6 +63,7 @@ class SyntheticKeyring:
             raise RuntimeError("synthetic keyring rejected the credential")
         with self._lock:
             self._values[(service, username)] = password
+            self._fail_next_get = READBACK_MARKER in password
 
     def delete_password(self, service: str, username: str) -> None:
         with self._lock:

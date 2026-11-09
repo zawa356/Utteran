@@ -53,7 +53,7 @@ describe("TokenController", () => {
     expect(tokenView(token.store.get())).toBe("unavailable");
   });
 
-  it("keyring 503 on PUT: error, status unchanged, nothing claimed", async () => {
+  it("keyring 503 on PUT: error, and the result is unconfirmed (TokenStore may have written first)", async () => {
     const api = unusedApi({
       getToken: async () => tokenState(),
       putToken: async () => {
@@ -66,7 +66,8 @@ describe("TokenController", () => {
     const state = token.store.get();
     expect(state.action.phase).toBe("error");
     expect(state.action.error?.status).toBe(503);
-    expect(tokenView(state)).toBe("missing");
+    expect(state.unconfirmed).toEqual({ kind: "set", reason: "store_error" });
+    expect(tokenView(state)).toBe("unknown"); // neither "unchanged" nor "registered" is claimed
   });
 
   it("timeout on DELETE: 'unknown' until an explicit re-read", async () => {

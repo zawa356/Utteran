@@ -1,6 +1,7 @@
 import { isApiError } from "../api/errors";
 import {
   EDITABLE_FIELDS,
+  type EditableField,
   type EditableSettings,
   type LegacyApi,
   type LegacySettings,
@@ -18,11 +19,21 @@ export type FolderField = "defaultInputDir" | "defaultOutputDir";
 export const FOLDER_PICK_KIND = { defaultInputDir: "input_folder", defaultOutputDir: "output_folder" } as const;
 
 export type PickError = "host_unavailable" | "failed";
+/** A PATCH whose answer was lost (timeout/network): exactly the fields and values it sent. */
+export interface UnconfirmedSave {
+  readonly patch: Readonly<LegacySettingsPatch>;
+}
+
 /**
- * After a save whose outcome is unknown (timeout/network), a re-read tells what the server has:
- * `applied` = the server already holds the draft; `not_applied` = it does not (the draft stays).
+ * Result of re-reading the server after an unconfirmed save, per field of the *sent* PATCH:
+ * `matched` = the server's current value equals what was sent (an observation — another screen
+ * may have saved the same value; it does not prove that this PATCH did it); `mismatched` = not.
+ * Unrelated to whether the current draft has further unsaved edits.
  */
-export type Reconciled = "applied" | "not_applied" | null;
+export interface Reconciled {
+  matched: EditableField[];
+  mismatched: EditableField[];
+}
 
 export interface SettingsState {
   load: Operation;
@@ -33,8 +44,10 @@ export interface SettingsState {
   /** A native folder dialog is open for this field; Save waits until it answers. */
   picking: FolderField | null;
   pickError: { field: FolderField; reason: PickError } | null;
+  /** Set while a lost PATCH has not been re-checked; a new Save is refused meanwhile. */
+  unconfirmedSave: UnconfirmedSave | null;
   reconcile: Operation;
-  reconciled: Reconciled;
+  reconciled: Reconciled | null;
 }
 
 export function draftOf(saved: LegacySettings): SettingsDraft {
@@ -73,6 +86,21 @@ export function isDirty(state: Pick<SettingsState, "draft" | "saved">): boolean 
   return Object.keys(diff(state.draft, state.saved)).length > 0;
 }
 
+/** Per sent field: does the server's current value equal the value that was sent? */
+export function compareSent(sent: Readonly<LegacySettingsPatch>, server: LegacySettings): Reconciled {
+  const matched: EditableField[] = [];
+  const mismatched: EditableField[] = [];
+  for (const field of EDITABLE_FIELDS) {
+    if (!(field in sent)) continue;
+    (sent[field] === server[field] ? matched : mismatched).push(field);
+  }
+  return { matched, mismatched };
+}
+
+function keepUnconfirmedError(state: SettingsState): Operation {
+  return state.unconfirmedSave !== null ? state.save : idleOperation;
+}
+
 export function folderTooLong(draft: SettingsDraft | null): boolean {
   return draft !== null && (draft.defaultInputDir.length > MAX_FOLDER_LENGTH || draft.defaultOutputDir.length > MAX_FOLDER_LENGTH);
 }
@@ -93,6 +121,7 @@ export class SettingsController {
     draft: null,
     picking: null,
     pickError: null,
+    unconfirmedSave: null,
     reconcile: idleOperation,
     reconciled: null,
   });
@@ -121,24 +150,29 @@ export class SettingsController {
   }
 
   /**
-   * Explicit re-read after a save whose outcome is unknown. A GET is safe; the PATCH is not
-   * resent. Reports whether the server already holds the draft.
+   * Explicit re-read after a save whose answer was lost. A GET is safe; the PATCH is never resent.
+   * Compares the sent PATCH (not the whole draft) with the server's current values. Edits made
+   * since are kept (rebase) and stay unsaved. Returns null when there is nothing to check or the
+   * GET failed (then the save stays unconfirmed).
    */
-  async reconcile(): Promise<Reconciled> {
+  async reconcile(): Promise<Reconciled | null> {
     const state = this.store.get();
-    if (state.reconcile.phase === "pending" || state.save.phase === "pending") return null;
-    this.store.patch({ reconcile: started(state.reconcile), reconciled: null });
+    const pending = state.unconfirmedSave;
+    if (pending === null || state.reconcile.phase === "pending" || state.save.phase === "pending") return null;
+    this.store.patch({ reconcile: started(state.reconcile) });
     try {
       const result = await this.latest.run((signal) => this.api.getSettings(signal));
-      if (result.stale) return null;
+      if (result.stale) {
+        this.store.patch({ reconcile: idleOperation });
+        return null;
+      }
       this.adopt(result.value);
-      const reconciled: Reconciled = isDirty(this.store.get()) ? "not_applied" : "applied";
-      const current = this.store.get();
+      const reconciled = compareSent(pending.patch, result.value);
       this.store.patch({
-        reconcile: succeeded(current.reconcile),
+        reconcile: succeeded(this.store.get().reconcile),
         reconciled,
-        // The unknown-outcome error is answered either way: applied → saved, else Save again.
-        save: reconciled === "applied" ? succeeded(current.save) : idleOperation,
+        unconfirmedSave: null,
+        save: idleOperation, // the unknown-outcome error is answered by the observation above
       });
       return reconciled;
     } catch (error) {
@@ -150,12 +184,13 @@ export class SettingsController {
   edit(patch: Partial<SettingsDraft>): void {
     const { draft } = this.store.get();
     if (draft === null) return;
-    this.store.patch({ draft: { ...draft, ...patch }, reconciled: null });
+    this.store.patch({ draft: { ...draft, ...patch } });
   }
 
   revert(): void {
     const { saved } = this.store.get();
-    if (saved) this.store.patch({ draft: draftOf(saved), save: idleOperation, pickError: null, reconciled: null });
+    // An unconfirmed save is not hidden by a revert: it still needs its re-check.
+    if (saved) this.store.patch({ draft: draftOf(saved), save: keepUnconfirmedError(this.store.get()), pickError: null });
   }
 
   /**
@@ -180,11 +215,14 @@ export class SettingsController {
   async save(): Promise<boolean> {
     const state = this.store.get();
     if (state.save.phase === "pending" || state.reconcile.phase === "pending" || state.picking !== null) return false;
+    // A new save would overwrite/hide the lost one; check it first (explicit GET), never resend.
+    if (state.unconfirmedSave !== null) return false;
     if (state.draft === null || state.saved === null) return false;
     if (folderTooLong(state.draft)) return false;
     const patch = diff(state.draft, state.saved);
     if (Object.keys(patch).length === 0) return false;
     this.store.patch({ save: started(state.save), reconciled: null });
+    const sent: Readonly<LegacySettingsPatch> = Object.freeze({ ...patch });
     try {
       const saved = await this.api.patchSettings(patch);
       // A reload that started before the save must not overwrite the newer answer.
@@ -197,7 +235,8 @@ export class SettingsController {
       return true;
     } catch (error) {
       // The draft stays, so the person can retry, re-check or revert; nothing is resent automatically.
-      this.store.patch({ save: failed(this.store.get().save, error) });
+      const operation = failed(this.store.get().save, error);
+      this.store.patch({ save: operation, ...(operation.error?.outcomeUnknown ? { unconfirmedSave: { patch: sent } } : {}) });
       return false;
     }
   }
