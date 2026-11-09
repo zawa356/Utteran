@@ -1,5 +1,22 @@
 # AI 作業状態
 
+## 現在地（2026-11-09、UI-3 S1 本番設定画面・OS連携、0.1.44・未リリース、Draft PR）
+
+- 基点`main` `a1cb1b0aee4d8cb2c290581521559c1853211c26`（作業直前に`origin/main`と一致、先行コミットなし）。セッション指定ブランチ
+  `claude/wonderful-goldberg-drzjvo`で通常commit・push（force push・merge・Ready化・tag・releaseなし）。commit identityは既存の
+  エージェントcommitと同じClaude名義（owner名義では作らない）。
+- `/next/`（`--next-ui`のときだけ）の設定画面を実APIへ接続: theme/language・既定profile（`null`＝指定なし）・既定入出力フォルダ
+  （`HostBridge.pickPath`、キャンセルno-op、host不在の案内）を変更分だけ`PATCH /api/settings`、token状態/登録/確認付き削除
+  （`/api/token`、値はフォームのローカルrefだけ、unavailable≠未設定、無応答はunknown→再確認）、ログ保存先/fallback/raw警告と
+  サーバー`log_dir`での`POST /api/open-folder`、`GET /api/wizard/status`の読み取りと旧画面への移動（未保存時は確認）。
+  保存の結果不明はGETで再照合し、自動再送しない。起動時は保存済み既定profileで環境を表示（`refresh=false`）。
+- **backend/host/Pythonの製品コードは無変更、新APIなし。** E2Eハーネス`tools/ui2/serve_next_ui.py`のみ変更（in-memory合成keyring、ログ先固定）。
+- 検証（Linux、headless Chromium）: Vitest 255（本番111＋プロトタイプ144）、UI-2/S1 E2E 22（既存10＋S1 12）、プロトタイプE2E 96、
+  lint/typecheck/build/audit 0件、pytest 1292 passed/9 skipped/1 xfailed、ruff・mypy（linux/win32）・schema 8件・`uv lock --check`・BOM・
+  privacy scan blocking 0。CI結果はPR上で確認する。
+- **Windows WebView2実機は未受入**（native folder dialog・再起動後の保持・旧GUIとの一致・Explorer起動・DPI/IME）。手順は
+  [ui3/s1 §8](docs/architecture/ui3/s1-settings-and-host.md#8-windows-webview2-実機受入未実施)。新UIのwizardはS4、B8はS5。
+
 ## 現在地（2026-11-06、UI-3-0 Design Freeze・PR #38 main統合）
 
 - ownerは第5案をWindowsブラウザで概観し、UI-3-0の**画面設計を承認**。微調整は後続S1〜S5へ繰り越す。これは実WebView2/本番接続の受入を意味しない。

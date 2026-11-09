@@ -4,6 +4,10 @@
 
 現在のUI-3-0正本: **[設計確定・受入・S1〜S5引継ぎ](design-freeze.md)**。
 
+**2026-11-09 UI-3 S1（本番、opt-in）:** `/next/`の設定画面を実APIとhost bridgeへ接続（テーマ・言語・既定プロファイル・既定入出力フォルダとOSのフォルダ選択・
+Hugging Faceトークンの状態/登録/削除・ログ保存先と「ログフォルダを開く」・セットアップの状態表示と旧画面への移動）。正本は[s1-settings-and-host.md](s1-settings-and-host.md)。
+開発版`0.1.44`、未リリース、Draft PR。**Windows WebView2実機は未受入。**既定GUIは旧画面のまま。
+
 ## 設計基準
 
 - 通常モード: 1ファイル中心、文字起こし・セットアップ・設定の短い導線。Expert: sidebar＋①ファイル②処理設定③キュー投入の可変3ペイン。
@@ -17,6 +21,7 @@
 | 文書 | 役割 |
 |---|---|
 | [design-freeze.md](design-freeze.md) | **確定した設計判断・受入証拠・未実装とS1〜S5引継ぎ** |
+| [s1-settings-and-host.md](s1-settings-and-host.md) | **S1: 本番設定画面・OS連携の実装、API対応表、状態遷移、試験、Windows手順と未検証** |
 | [iteration-5.md](iteration-5.md) | メモ#25〜#36、P1修正、最終レビューとCI |
 | [iteration-4.md](iteration-4.md) | メモ#15〜#24、設定とWizard |
 | [iteration-3.md](iteration-3.md) | メモ#6〜#14、操作導線・可読性 |
