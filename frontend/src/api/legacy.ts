@@ -5,40 +5,16 @@
  * log folder are kept in memory only (shown on the settings page, never logged or reported).
  * Token *values* never pass through here except as the body of an explicit PUT /api/token.
  */
-import { bool, list, optStr, record, str } from "./guards";
+import { bool, record } from "./guards";
 import type { HttpClient } from "./http";
+import { type LegacyEnvironment, parseEnvironment } from "./legacyEnvironment";
+
+export * from "./legacyEnvironment";
 
 export const PROFILES = ["cpu", "cuda", "intel", "vulkan"] as const;
 export type ProfileName = (typeof PROFILES)[number];
 export type Theme = "system" | "dark" | "light";
 export type Language = "ja" | "en";
-
-export interface LegacyProfile {
-  name: string;
-  exists: boolean;
-  compatible: boolean | null;
-}
-
-export interface LegacyOption {
-  id: string;
-  label: string;
-  modelCount: number;
-  deviceIds: string[];
-}
-
-/**
- * `options` are what the profile CLI advertised. They are NOT B4 ready evidence
- * (G-01): the UI must present them as "detected, unverified", never as "ready".
- */
-export interface LegacyEnvironment {
-  profiles: LegacyProfile[];
-  activeProfile: string | null;
-  asr: LegacyOption[];
-  diarization: LegacyOption[];
-  languageCount: number;
-  errors: string[];
-  warnings: string[];
-}
 
 /** The four profile names the legacy settings contract accepts; `null` = "not specified". */
 export type DefaultProfile = ProfileName | null;
@@ -84,44 +60,6 @@ export type LegacySettingsPatch = Partial<EditableSettings>;
 export const MAX_FOLDER_LENGTH = 4096;
 /** TokenPayload: 1..4096 characters. */
 export const MAX_TOKEN_LENGTH = 4096;
-
-function option(value: unknown, where: string): LegacyOption {
-  const r = record(value, where);
-  const models = Array.isArray(r.models) ? r.models : [];
-  const devices = Array.isArray(r.devices) ? r.devices : [];
-  return {
-    id: str(r.id, `${where}.id`),
-    label: optStr(r.label) ?? str(r.id, `${where}.id`),
-    modelCount: models.length,
-    deviceIds: devices.flatMap((d) => {
-      const id = typeof d === "object" && d !== null ? (d as Record<string, unknown>).id : null;
-      return typeof id === "string" ? [id] : [];
-    }),
-  };
-}
-
-export function parseEnvironment(raw: unknown): LegacyEnvironment {
-  const r = record(raw, "environment");
-  const options = record(r.options, "environment.options");
-  return {
-    profiles: list(r.profiles, "profiles").map((p, i) => {
-      const row = record(p, `profiles[${i}]`);
-      return {
-        name: str(row.name, `profiles[${i}].name`),
-        exists: bool(row.exists, `profiles[${i}].exists`),
-        compatible: typeof row.compatible === "boolean" ? row.compatible : null,
-      };
-    }),
-    activeProfile: optStr(r.active_profile),
-    asr: list(options.asr, "options.asr").map((o, i) => option(o, `asr[${i}]`)),
-    diarization: list(options.diarization, "options.diarization").map((o, i) => option(o, `diarization[${i}]`)),
-    languageCount: Array.isArray(options.languages) ? options.languages.length : 0,
-    errors: list(r.errors, "errors").filter((e): e is string => typeof e === "string").map((e) => e.slice(0, 500)),
-    warnings: (Array.isArray(r.profile_warnings) ? r.profile_warnings : [])
-      .filter((e): e is string => typeof e === "string")
-      .map((e) => e.slice(0, 500)),
-  };
-}
 
 function folder(value: unknown): string {
   return typeof value === "string" ? value.slice(0, MAX_FOLDER_LENGTH) : "";
@@ -185,8 +123,18 @@ export function parseWizardStatus(raw: unknown): WizardStatus {
   };
 }
 
-/** GET /api/environment can run the device probe (~95 s worst case, UI-1 R-01). */
-export const ENVIRONMENT_TIMEOUT_MS = 120_000;
+/**
+ * Client-side limit for GET /api/environment (UI-3 S2 §4; was 120 s in UI-2).
+ * The server runs up to six profile CLI calls in sequence: the bootstrap `profiles list`,
+ * `devices --json` (its own ceiling is `_DEVICES_PROBE_TIMEOUT_SECONDS` = 200 s; an uncached
+ * first run measured 94.7 s with 4 of 7 probes timing out, and 7 × 20 s probe timeouts alone
+ * exceed 120 s), then models / native / model path / OpenVINO lists (normally seconds).
+ * 120 s therefore reported a timeout while the server could still answer, and a retry would
+ * start a second probe next to the first. 240 s = the devices ceiling + 40 s for the other calls.
+ * The theoretical worst case (every call at its own 60 s limit, ~500 s) is not waited for: the
+ * person sees elapsed time and can stop waiting at any moment (cancel).
+ */
+export const ENVIRONMENT_TIMEOUT_MS = 240_000;
 
 export interface LegacyApi {
   getEnvironment(profile: string | null, refresh: boolean, signal?: AbortSignal): Promise<LegacyEnvironment>;

@@ -118,3 +118,23 @@ body {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   overflow-wrap: anywhere;
 }
+/* UI-3 S2 environment: four-item summary that wraps, long device/model names that break. */
+.u-env-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px var(--u-gap);
+  margin: 0;
+}
+.u-env-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.u-env-list {
+  margin: 0;
+  padding-left: 1.2em;
+  overflow-wrap: anywhere;
+}
+/* A previous result (not for the current selection) is dimmed in addition to its label. */
+.u-env-stale {
+  opacity: 0.6;
+}
