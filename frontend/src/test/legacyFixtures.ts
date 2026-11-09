@@ -1,4 +1,4 @@
-import type { LegacyEnvironment, LegacySettings } from "../api/legacy";
+import type { LegacyApi, LegacyEnvironment, LegacySettings, TokenState } from "../api/legacy";
 
 /** Synthetic legacy DTOs (no real paths, names or tokens). */
 export function environment(profile: string): LegacyEnvironment {
@@ -16,6 +16,37 @@ export function environment(profile: string): LegacyEnvironment {
   };
 }
 
+export function tokenState(patch: Partial<TokenState> = {}): TokenState {
+  return { configured: false, available: true, sessionOnly: false, ...patch };
+}
+
+/** `log.dir` is a synthetic relative-looking value, never a real machine path. */
 export function settings(patch: Partial<LegacySettings> = {}): LegacySettings {
-  return { theme: "system", language: "ja", defaultProfile: null, tokenConfigured: false, ...patch };
+  return {
+    theme: "system",
+    language: "ja",
+    defaultProfile: null,
+    defaultInputDir: "",
+    defaultOutputDir: "",
+    token: tokenState(),
+    portable: false,
+    log: { dir: "synthetic-logs", fallback: false, rawSubprocessLogs: false },
+    ...patch,
+  };
+}
+
+/** A LegacyApi whose every call rejects unless overridden (tests list exactly what they use). */
+export function unusedApi(overrides: Partial<LegacyApi> = {}): LegacyApi {
+  const unused = () => Promise.reject(new Error("unused"));
+  return {
+    getEnvironment: unused,
+    getSettings: unused,
+    patchSettings: unused,
+    getToken: unused,
+    putToken: unused,
+    deleteToken: unused,
+    getWizardStatus: unused,
+    openFolder: unused,
+    ...overrides,
+  };
 }

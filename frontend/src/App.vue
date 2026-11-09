@@ -18,7 +18,7 @@ watch(
   },
 );
 watch(language, (value) => document.documentElement.setAttribute("lang", value), { immediate: true });
-onMounted(() => void core.settings.load());
+onMounted(() => void core.start());
 </script>
 
 <template>

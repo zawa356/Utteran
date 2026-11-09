@@ -17,7 +17,7 @@ export const SECTION_STATUS: Record<SectionId, MigrationStatus> = {
   models: "not_migrated",
   queue: "not_migrated",
   setup: "not_migrated",
-  settings: "partial", // theme and language only (S1 slice)
+  settings: "partial", // S1: display, defaults, folders, token, logs; setup and Expert categories later
 };
 
 export interface ShellState {

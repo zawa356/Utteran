@@ -86,3 +86,35 @@ body {
   font-weight: 600;
   line-height: 1.4;
 }
+/* Settings (UI-3 S1): short section cards, two columns when wide, one when narrow. */
+.u-card .v-card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.u-card .v-card-subtitle {
+  white-space: normal;
+}
+.u-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--u-gap);
+}
+/* A text field with its buttons beside it; the buttons wrap below on narrow windows. */
+.u-folder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+.u-folder__input {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.u-folder__actions {
+  padding-top: 2px;
+}
+/* Long Windows paths wrap instead of widening the page. */
+.u-path {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  overflow-wrap: anywhere;
+}
