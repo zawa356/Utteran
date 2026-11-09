@@ -12,7 +12,7 @@ export type ExpertPane = "inputs" | "inspector" | "queue";
 export type MigrationStatus = "partial" | "not_migrated";
 
 export const SECTION_STATUS: Record<SectionId, MigrationStatus> = {
-  transcribe: "partial", // read-only environment panel only (S2 slice); no job submission
+  transcribe: "partial", // S3-A: one file, legacy /api/jobs (no diarization, no multi-input/queue)
   results: "not_migrated",
   models: "not_migrated",
   queue: "not_migrated",

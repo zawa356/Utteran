@@ -1,11 +1,14 @@
 import { createHttpClient, type FetchLike } from "../api/http";
 import { createLegacyApi, type LegacyApi } from "../api/legacy";
+import { createLegacyJobsApi, type LegacyJobsApi } from "../api/legacyJobs";
 import type { HostBridge } from "../host";
 import { EnvironmentController } from "./environment";
+import { type EventSourceFactory, JobController } from "./job";
 import { LogFolderController } from "./logs";
 import { SettingsController } from "./settings";
 import { ShellController } from "./shell";
 import { TokenController } from "./token";
+import { TranscriptionFormController } from "./transcription";
 import { WizardStatusController } from "./wizard";
 
 /** Everything the views use, created once and outside Vue (mode switches keep it). */
@@ -18,12 +21,20 @@ export interface AppCore {
   token: TokenController;
   logs: LogFolderController;
   wizard: WizardStatusController;
+  jobsApi: LegacyJobsApi;
+  /** S3-A: one shared form and one job tracker for Normal and Expert (created once). */
+  transcription: TranscriptionFormController;
+  job: JobController;
+  /** App exit: stop polling/SSE and listeners. */
+  dispose(): void;
   /** Start-up reads: settings first, then the environment for the saved default profile. */
   start(): Promise<void>;
 }
 
-export function createCore(deps: { fetch: FetchLike; host: HostBridge }): AppCore {
-  const legacy = createLegacyApi(createHttpClient({ fetch: deps.fetch }));
+export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSource?: EventSourceFactory }): AppCore {
+  const http = createHttpClient({ fetch: deps.fetch });
+  const legacy = createLegacyApi(http);
+  const jobsApi = createLegacyJobsApi(http);
   const settings = new SettingsController(legacy);
   // "Follow the default" on the environment panel reads the *saved* default (never the draft).
   const environment = new EnvironmentController(legacy, { defaultProfile: () => settings.store.get().saved?.defaultProfile ?? null });
@@ -35,8 +46,17 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge }): AppCor
     if (before.defaultProfile === after.defaultProfile || !env.followsDefault || env.load.phase === "idle") return;
     void environment.selectDefault(after.defaultProfile);
   });
+  const transcription = new TranscriptionFormController(environment.store, settings.store);
+  const job = new JobController(jobsApi, { eventSource: deps.eventSource });
   return {
     host: deps.host,
+    jobsApi,
+    transcription,
+    job,
+    dispose() {
+      job.dispose();
+      transcription.dispose();
+    },
     legacy,
     shell: new ShellController(),
     environment,

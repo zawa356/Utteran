@@ -135,7 +135,42 @@ export interface LegacyEnvironment {
   issues: EnvironmentIssue[];
   /** Number of server `profile_warnings`; the texts are rebuilt from `profiles` in the UI language. */
   profileWarningCount: number;
+  /**
+   * UI-3 S3-A submission projection of `options` (see `jobOptions()`): the exact ids the server
+   * validates `POST /api/jobs` against. Separate from the display lists above, which are capped
+   * at 32 and restricted to a short id pattern (whisper.cpp alone has 33 catalog models).
+   */
+  jobOptions: JobOptions;
 }
+
+/** Output formats `TranscriptionPayload.formats` accepts (cli.OUTPUT_FORMATS). */
+export const OUTPUT_FORMATS = ["srt", "vtt", "json", "txt", "md"] as const;
+export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
+/** Languages the current legacy service advertises (`derive_options`); anything else is ignored. */
+export const JOB_LANGUAGES = ["auto", "ja", "en"] as const;
+export type JobLanguage = (typeof JOB_LANGUAGES)[number];
+
+/** One choosable value: `id` is sent unchanged, `label` is display text only. */
+export interface JobChoice {
+  id: string;
+  label: string;
+}
+
+export interface JobBackend extends JobChoice {
+  models: JobChoice[];
+  devices: JobChoice[];
+}
+
+export interface JobOptions {
+  asr: JobBackend[];
+  languages: JobLanguage[];
+  formats: OutputFormat[];
+  /** true when an entry was unreadable or a list exceeded `JOB_LIMITS.items` (shown as a notice). */
+  incomplete: boolean;
+}
+
+/** `TranscriptionPayload` field limits (api.py) and a list cap far above the real catalog. */
+export const JOB_LIMITS = { backend: 100, model: 1000, device: 100, items: 256 } as const;
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}$/;
 // C0/C1 control characters and bidi overrides are removed from anything displayed.
@@ -163,6 +198,16 @@ export function safeText(value: unknown): string | null {
   const cleaned = value.replace(UNSAFE, " ").trim();
   if (cleaned === "") return null;
   return cleaned.length > LIMITS.text ? `${cleaned.slice(0, LIMITS.text - 1)}…` : cleaned;
+}
+
+/**
+ * A value that is sent back to the server exactly as received: a non-empty string within the
+ * payload limit, without control/bidi characters or surrounding whitespace. Never rewritten.
+ */
+export function submitId(value: unknown, max: number): string | null {
+  if (typeof value !== "string" || value === "" || value.length > max) return null;
+  if (value.trim() !== value || new RegExp(UNSAFE.source).test(value)) return null;
+  return value;
 }
 
 function identifier(value: unknown): string | null {
@@ -332,6 +377,58 @@ export function classifyIssue(message: unknown): EnvironmentIssue {
   return { kind: "failed", probe: null, seconds: null };
 }
 
+function jobChoices(value: unknown, max: number, flag: { incomplete: boolean }): JobChoice[] {
+  const rows = arr(value);
+  if (rows === null) {
+    flag.incomplete = true;
+    return [];
+  }
+  const out: JobChoice[] = [];
+  for (const entry of rows) {
+    const r = obj(entry);
+    const id = submitId(r?.id, max);
+    if (!r || id === null) {
+      flag.incomplete = true;
+      continue;
+    }
+    if (out.some((c) => c.id === id)) continue;
+    out.push({ id, label: safeText(r.label) ?? safeText(id) ?? "?" });
+  }
+  if (out.length > JOB_LIMITS.items) flag.incomplete = true;
+  return out.slice(0, JOB_LIMITS.items);
+}
+
+/**
+ * The submission projection of `options` (UI-3 S3-A). Only ASR is projected: S3-A always sends
+ * `diarization_enabled=false`. A backend without models or devices is dropped (nothing to send).
+ * `languages`/`formats` are the server's lists intersected with what the payload accepts.
+ * Nothing here is a readiness claim: the server re-validates every value on POST /api/jobs.
+ */
+export function jobOptions(options: Record<string, unknown>): JobOptions {
+  const flag = { incomplete: false };
+  const asr: JobBackend[] = [];
+  for (const entry of arr(options.asr) ?? []) {
+    const r = obj(entry);
+    const id = submitId(r?.id, JOB_LIMITS.backend);
+    if (!r || id === null) {
+      flag.incomplete = true;
+      continue;
+    }
+    const models = jobChoices(r.models, JOB_LIMITS.model, flag);
+    const devices = jobChoices(r.devices, JOB_LIMITS.device, flag);
+    if (models.length === 0 || devices.length === 0 || asr.some((b) => b.id === id)) continue;
+    asr.push({ id, label: safeText(r.label) ?? safeText(id) ?? "?", models, devices });
+  }
+  const advertised = arr(options.languages) ?? [];
+  const formats = arr(options.formats) ?? [];
+  return {
+    asr: asr.slice(0, JOB_LIMITS.items),
+    languages: JOB_LANGUAGES.filter((l) => advertised.includes(l)),
+    formats: OUTPUT_FORMATS.filter((f) => formats.includes(f)),
+    incomplete: flag.incomplete || asr.length > JOB_LIMITS.items,
+  };
+}
+
 export function parseEnvironment(raw: unknown): LegacyEnvironment {
   const r = record(raw, "environment");
   const options = record(r.options, "environment.options");
@@ -381,5 +478,6 @@ export function parseEnvironment(raw: unknown): LegacyEnvironment {
     guidance: guidance(options.guidance),
     issues: capped(issues),
     profileWarningCount: arr(r.profile_warnings)?.length ?? 0,
+    jobOptions: jobOptions(options),
   };
 }
