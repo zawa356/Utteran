@@ -1,5 +1,17 @@
 # AI 作業状態
 
+## 現在地（2026-11-09、UI-3 S2 実行環境の可視化・A案、0.1.45・未リリース、Draft PR）
+
+- 基点`main` `f3ad48b3e22aded301995c0c08508ab784982f70`（PR #40マージ、作業直前に`origin/main`と一致・作業ツリー無変更）。セッション指定ブランチ
+  `claude/practical-dijkstra-llhp7h`で通常commit・push（force push・merge・Ready化・tag・releaseなし）。commit identityは既存のエージェントcommitと同じClaude名義。
+- owner判断A案: `/next/`の実行環境表示を**既存`GET /api/environment`の観測結果だけ**で完成。旧環境stripの4項目（未取得/不明/なしを区別）、Expertの詳細5カテゴリ、
+  要求profile・サーバーのactive・設定の既定の分離と注記、前回の結果の明示、同一要求の重複抑止、待機の中止（サーバー側は止まらないと明示）、待機上限120→240秒（根拠: devices上限200秒）。
+  DTOはパス・生エラー文・サーバーの可否文を保持しない。**readyとは表示しない。G-01（B4公開read-only API/readiness）は未解決の後続課題。**
+- **Python製品コード・API・DB・worker・旧GUI/CLI・preview無変更。** E2Eハーネスを実`EnvironmentService`＋合成CLI（`tools/ui2/synthetic_environment.py`）へ。parser fixtureも同じ出力から生成しpytestで一致検査。
+- 検証（Linux、headless Chromium）: Vitest 334（本番190＋プロトタイプ144）、E2E 31（UI-2 10＋S1 13＋S2 8）、プロトタイプE2E 96、lint/typecheck/build/audit 0件、
+  pytest 1294 passed/9 skipped/1 xfailed、ruff・mypy（linux/win32）・schema 8件・`uv lock --check`・BOM・privacy scan blocking 0。CI結果はPR上で確認する。
+- **Windows WebView2実機は未受入**（最終統合ゲートへ集約）。詳細[ui3/s2](docs/architecture/ui3/s2-environment-visibility.md)。
+
 ## 現在地（2026-11-09、PR #40レビュー修正・Windows CI方針、0.1.44据え置き、Draft維持）
 
 - 修正前HEAD `6cbbe8e`（PR #40 HEADと一致、Draft、main `a1cb1b0`）。同じブランチ`claude/wonderful-goldberg-drzjvo`へ通常commit・push。Ready化・merge・tag・releaseなし。
