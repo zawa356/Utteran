@@ -10,6 +10,9 @@
 >
 > **追補（2026-11-09、0.1.44）:** UI-3 S1で設定画面を拡張（既定profile・既定入出力フォルダとnative picker・token・ログ・
 > セットアップ状態と旧画面への移動）。本書の記述は0.1.42時点のまま保持し、現状は[ui3/s1-settings-and-host.md](../ui3/s1-settings-and-host.md)を参照。
+>
+> **追補（2026-11-09、0.1.45）:** UI-3 S2で実行環境表示を完成（旧環境stripの4項目・Expert詳細・前回の結果・中止/時間切れ、
+> readyとは表示しない）。現状は[ui3/s2-environment-visibility.md](../ui3/s2-environment-visibility.md)を参照。
 
 ## 現在地
 

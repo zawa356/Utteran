@@ -1,18 +1,39 @@
 import type { LegacyApi, LegacyEnvironment, LegacySettings, TokenState } from "../api/legacy";
 
 /** Synthetic legacy DTOs (no real paths, names or tokens). */
-export function environment(profile: string): LegacyEnvironment {
+export function environment(profile: string, patch: Partial<LegacyEnvironment> = {}): LegacyEnvironment {
+  const device = profile === "cuda" ? "cuda:0" : "cpu";
   return {
     profiles: [
-      { name: "cpu", exists: true, compatible: true },
-      { name: "cuda", exists: true, compatible: true },
+      { name: "cpu", exists: true, compatible: true, compatibilityReason: null },
+      { name: "cuda", exists: true, compatible: true, compatibilityReason: null },
     ],
     activeProfile: profile,
-    asr: [{ id: "faster-whisper", label: "faster-whisper", modelCount: 2, deviceIds: [profile === "cuda" ? "cuda:0" : "cpu"] }],
+    asr: [
+      {
+        id: "faster-whisper",
+        label: "faster-whisper",
+        modelCount: 2,
+        models: [
+          { id: "synthetic-a", label: "synthetic a" },
+          { id: "synthetic-b", label: "synthetic b" },
+        ],
+        deviceIds: [device],
+        devices: [{ id: device, label: device }],
+      },
+    ],
     diarization: [],
     languageCount: 3,
-    errors: [],
-    warnings: [],
+    devices: null,
+    installedModels: [],
+    installedModelCount: 0,
+    installedModelsState: "counted",
+    nativeRunnable: null,
+    openvinoIr: null,
+    guidance: [],
+    issues: [],
+    profileWarningCount: 0,
+    ...patch,
   };
 }
 

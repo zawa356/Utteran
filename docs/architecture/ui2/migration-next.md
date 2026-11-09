@@ -1,6 +1,6 @@
 # UI-2 → UI-3 移行計画・backend gap・rollback・owner判断
 
-更新: 2026-11-09 JST（0.1.44、UI-3 S1）。初版2026-11-04（0.1.42）。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
+更新: 2026-11-09 JST（0.1.45、UI-3 S2）。初版2026-11-04（0.1.42）。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
 
 ## 1. 段階の現状
 
@@ -8,7 +8,7 @@
 |---|---|---|
 | S0 | 雛形・host bridge・API client・domain store・i18n・theme・Vitest/Playwright・CI・配信route・CSP nonce・opt-in flag | **完了**（本PR） |
 | S1 設定 | 旧`/api/settings` `/api/token` | **実装（0.1.44、Windows実機未受入）**: theme/language・既定profile・既定入出力フォルダ（native picker）・token状態/登録/削除・log表示/フォルダを開く・wizard状態表示と旧画面への移動。新UIのwizardはS4（[ui3/s1](../ui3/s1-settings-and-host.md)） |
-| S2 環境 | 旧`/api/environment` | **一部**: 読み取り表示・profile選択・再検出・中止・retry。旧UIの環境stripの全項目（native/OpenVINO model等）は未移行 |
+| S2 環境 | 旧`/api/environment` | **実装（0.1.45、Windows実機未受入）**: 旧環境stripの4項目・Expert詳細（profile存在/互換性・デバイス・検出候補・導入済みモデル・native/OpenVINO・注意）・profile選択（既定に従う/手動）・再検出・待機の中止・retry・前回の結果。readyとは表示しない（G-01は後続）（[ui3/s2](../ui3/s2-environment-visibility.md)） |
 | S3 文字起こし・キュー | 旧`/api/jobs*` `/api/queue` | 未着手（`SingleFlightPoller`は用意済み） |
 | S4 モデル・履歴・旧wizard | 旧API | 未着手 |
 | S5 v1接続 | `/api/v1`（opt-in） | 未着手（client・reducer・coordinatorはcontract＋fake testのみ） |
@@ -43,7 +43,7 @@
 | `view-settings` theme・language | 設定 | 移行済み（同じ`gui-settings.json`を読み書き＝相互互換） |
 | `view-settings` 既定profile・既定入出力・token・ログ | 設定 | **移行済み（UI-3 S1、0.1.44）**。変更分だけ`PATCH`、tokenは値を保持しない。詳細は[ui3/s1 §2](../ui3/s1-settings-and-host.md#2-api画面の対応表実装前--実装後) |
 | `view-settings` ウィザードを開く | 設定 → 旧画面 | 状態の読み取りと旧画面への移動のみ（新UIのwizardはS4） |
-| `view-workspace` 環境strip・再検出 | 文字起こし（通常）／Expert中央 | 読み取り表示のみ移行。readyとは表示しない |
+| `view-workspace` 環境strip・再検出 | 文字起こし（通常）／Expert中央 | **移行済み（UI-3 S2、0.1.45）**: 4項目＋詳細。旧`form-status`の「ready」は移さない。詳細は[ui3/s2 §4.1](../ui3/s2-environment-visibility.md#41-旧gui環境strip--新ui) |
 | `view-workspace` フォーム・投入・`progress-panel`・`result-panel` | 文字起こし | 未移行 |
 | `view-queue` | キュー／Expert右 | 未移行 |
 | `view-models` / `view-history` / `view-viewer` / `view-wizard` | モデル／結果と履歴／セットアップ | 未移行 |
@@ -54,7 +54,7 @@
 
 | ID | UI-2での扱い | 次 |
 |---|---|---|
-| G-01 公開能力・ready証拠 | 旧`options`を「検出結果・未検証」として表示。readyと表示しない | backend Issue（公開read-only API） |
+| G-01 公開能力・ready証拠 | 旧`options`を「検出結果・未検証」として表示。readyと表示しない。**UI-3 S2もowner判断（A案）で同じ扱いに限定**（[ui3/s2 §2](../ui3/s2-environment-visibility.md#2-ソースの意味g-01は未解決)） | backend Issue（公開read-only API）。未解決 |
 | G-02 frontendの互換表 | 移植していない | backendへ移す |
 | G-03 progress | v1にprogressなし。架空の%を出さない | 契約設計 |
 | G-04 SSE実ブラウザ受入 | `SyncCoordinator`はfake EventSourceでのみ検証 | WebView2受入（UI-4） |

@@ -5,7 +5,7 @@ import { useStore } from "../../composables/useStore";
 import type { ExpertPane } from "../../domain/shell";
 import EnvironmentPanel from "../environment/EnvironmentPanel.vue";
 
-/** Expert C structure only (UI-2): no inputs, no submission, no fake queue. */
+/** Expert C structure (UI-2) with the S2 environment details in ② (same controller as Normal). */
 const { shell } = useCore();
 const state = useStore(shell.store);
 const { t } = useI18n();
@@ -37,7 +37,7 @@ const current = (pane: ExpertPane) => ({ "u-pane": true, "u-pane--current": stat
         </v-card>
       </section>
       <section :class="current('inspector')" data-pane="inspector" :aria-label="t('expert.inspector')" data-testid="pane-inspector">
-        <v-card class="pa-3"><EnvironmentPanel /></v-card>
+        <v-card class="pa-3"><EnvironmentPanel detail /></v-card>
       </section>
       <section :class="current('queue')" data-pane="queue" :aria-label="t('expert.queue')" data-testid="pane-queue">
         <v-card class="pa-3 u-stack">

@@ -6,7 +6,7 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.44` (unreleased).
+> Current development version: `0.1.45` (unreleased).
 > APIs and configuration may change before 1.0.
 
 > The current backend (Phase A-B9) structure, feature status, limits and test coverage are maintained in
@@ -15,9 +15,11 @@ transcription API.
 
 > Next GUI (UI-2, preview): a Vue 3 + Vuetify 4 frontend foundation is opened only with the developer flag
 > `utteran-gui --next-ui` after building `frontend/`. The default GUI is unchanged (legacy UI). Migrated so far: the runtime
-> environment view and the settings page (UI-3 S1: theme, language, default profile, default input/output folders with the
+> environment view (UI-3 S2: the legacy environment strip's four items plus details; detections are shown as "whether it runs is
+> unverified") and the settings page (UI-3 S1: theme, language, default profile, default input/output folders with the
 > native folder dialog, Hugging Face token register/delete, log location). Setup is handed over to the legacy screen; see
-> [docs/architecture/ui3/s1-settings-and-host.md](docs/architecture/ui3/s1-settings-and-host.md) (Japanese; 0.1.44, not yet accepted on Windows WebView2).
+> [s2-environment-visibility.md](docs/architecture/ui3/s2-environment-visibility.md) and
+> [s1-settings-and-host.md](docs/architecture/ui3/s1-settings-and-host.md) (Japanese; 0.1.45, not yet accepted on Windows WebView2).
 
 > **UI-3-0 design freeze (2026-11-06):** The fifth iteration is the accepted UI/UX design baseline; [PR #38](https://github.com/zawa356/Utteran/pull/38) is merged. See the [design and S1–S5 handoff](docs/architecture/ui3/design-freeze.md) (Japanese). The prototype uses synthetic data and runs **only on the Vite development server**; neither the legacy GUI nor the production `--next-ui` UI was changed. Production migration and Windows/WebView2 acceptance remain open.
 

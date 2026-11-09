@@ -9,6 +9,11 @@ Hugging Faceトークンの状態/登録/削除・ログ保存先と「ログフ
 開発版`0.1.44`、未リリース、Draft PR。**Windows WebView2実機は未受入。**既定GUIは旧画面のまま。
 同日PR #40レビュー（P1×2・P2×1）を反映し、Windows CI（frontend lint/型/Vitest/build）を追加。**各PRはLinux＋Windows CIで判断し、Windows実機の手動確認は最終統合ゲートへ集約する**（[s1 §8](s1-settings-and-host.md#8-windows-webview2-実機受入未実施最終ゲートへ集約)）。
 
+**2026-11-09 UI-3 S2（本番、opt-in、A案）:** 実行環境表示を既存`GET /api/environment`の観測結果で完成（旧環境stripの4項目・Expertの詳細カテゴリ・
+要求/サーバー選択/設定の既定の区別・前回の結果・待機の中止と240秒の時間切れ）。**B4 readiness（G-01）は未解決の後続課題で、readyとは表示しない。**
+正本は[s2-environment-visibility.md](s2-environment-visibility.md)。開発版`0.1.45`、未リリース、Draft PR。Windows WebView2実機は未受入（最終ゲートへ集約）。
+同日PR #41レビュー（CIブロッカー1件・P2×2: 前回の結果の役割表示、モデル数/native variantの不明と0/なしの区別）を反映（[s2 §12](s2-environment-visibility.md#12-pr-41レビュー修正2026-11-09)）。
+
 ## 設計基準
 
 - 通常モード: 1ファイル中心、文字起こし・セットアップ・設定の短い導線。Expert: sidebar＋①ファイル②処理設定③キュー投入の可変3ペイン。
@@ -22,6 +27,7 @@ Hugging Faceトークンの状態/登録/削除・ログ保存先と「ログフ
 | 文書 | 役割 |
 |---|---|
 | [design-freeze.md](design-freeze.md) | **確定した設計判断・受入証拠・未実装とS1〜S5引継ぎ** |
+| [s2-environment-visibility.md](s2-environment-visibility.md) | **S2: 実行環境の可視化、API projection、旧strip対応、状態・中止・時間制約、試験、G-01と未受入** |
 | [s1-settings-and-host.md](s1-settings-and-host.md) | **S1: 本番設定画面・OS連携の実装、API対応表、状態遷移、試験、Windows手順と未検証** |
 | [iteration-5.md](iteration-5.md) | メモ#25〜#36、P1修正、最終レビューとCI |
 | [iteration-4.md](iteration-4.md) | メモ#15〜#24、設定とWizard |

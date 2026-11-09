@@ -1,0 +1,1221 @@
+{
+  "cpu": {
+    "active_profile": "cpu",
+    "devices": {
+      "auto_selection": {
+        "asr_backend": "faster-whisper",
+        "asr_compute_type": "int8",
+        "asr_device": "cpu",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cpu",
+        "notes": []
+      },
+      "backends": {
+        "faster-whisper": true,
+        "openvino-genai": false,
+        "pyannote": true,
+        "whisper-cpp": true
+      },
+      "cpu": {
+        "avx2": true,
+        "avx512": false,
+        "logical_cores": 8,
+        "physical_cores": 4
+      },
+      "ctranslate2": {
+        "available": true,
+        "cpu_compute_types": [
+          "int8"
+        ],
+        "cpu_status": "completed",
+        "cuda_device_count": 0,
+        "cuda_devices": [],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic"
+      },
+      "cuda_libraries": {
+        "cublas": null,
+        "cudnn": null
+      },
+      "ffmpeg": {
+        "available": true,
+        "error": null,
+        "path": null,
+        "version": null
+      },
+      "native": {
+        "built": false,
+        "variants": {
+          "cpu": false,
+          "openvino": false,
+          "openvino_vulkan": false,
+          "vulkan": false
+        },
+        "whisper_cpp_tag": null
+      },
+      "onnxruntime": {
+        "available": false,
+        "error": null,
+        "status": "completed",
+        "values": []
+      },
+      "openvino": {
+        "available": false,
+        "error": null,
+        "status": "completed",
+        "values": []
+      },
+      "probe_cache_hit": false,
+      "probes": [
+        {
+          "cached": true,
+          "detail": null,
+          "duration_seconds": 0.1,
+          "label": "CTranslate2",
+          "name": "ctranslate2",
+          "status": "completed"
+        },
+        {
+          "cached": false,
+          "detail": null,
+          "duration_seconds": 0.1,
+          "label": "Vulkan",
+          "name": "vulkan",
+          "status": "completed"
+        }
+      ],
+      "profile": {
+        "current": "cpu",
+        "profiles": []
+      },
+      "pytorch": {
+        "available": true,
+        "cuda_available": false,
+        "cuda_devices": [],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic",
+        "xpu_available": false,
+        "xpu_devices": [],
+        "xpu_status": "completed"
+      },
+      "vulkan": {
+        "build_available": false,
+        "build_error": null,
+        "runtime_available": false,
+        "runtime_device": null,
+        "runtime_error": null,
+        "status": "completed"
+      },
+      "warnings": []
+    },
+    "errors": [],
+    "model_path": "synthetic-root/models",
+    "models": [
+      {
+        "approximate_size_bytes": 1,
+        "backend": "faster-whisper",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic large-v3-turbo",
+        "english_only": false,
+        "execution_label": "CPU実行",
+        "format": "synthetic",
+        "gated": false,
+        "gpu_execution": false,
+        "installed": false,
+        "key": "fw-large-v3-turbo",
+        "model_id": "large-v3-turbo",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "この環境ではCTranslate2のGPUが検出されないためCPU実行です。",
+        "recommended": false,
+        "size_bytes": null
+      },
+      {
+        "approximate_size_bytes": 1,
+        "backend": "faster-whisper",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic small",
+        "english_only": false,
+        "execution_label": "CPU実行",
+        "format": "synthetic",
+        "gated": false,
+        "gpu_execution": false,
+        "installed": false,
+        "key": "fw-small",
+        "model_id": "small",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "この環境ではCTranslate2のGPUが検出されないためCPU実行です。",
+        "recommended": false,
+        "size_bytes": null
+      },
+      {
+        "approximate_size_bytes": 1,
+        "backend": "whisper-cpp",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic large-v3-turbo-q5_0",
+        "english_only": false,
+        "execution_label": "CPU実行",
+        "format": "synthetic",
+        "gated": false,
+        "gpu_execution": false,
+        "installed": false,
+        "key": "ggml-large-v3-turbo-q5_0",
+        "model_id": "large-v3-turbo-q5_0",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "対応するGPUネイティブ構成がないため、この環境ではCPU実行です。",
+        "recommended": false,
+        "size_bytes": null
+      },
+      {
+        "approximate_size_bytes": 1,
+        "backend": "pyannote",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic speaker-diarization-3.1",
+        "english_only": false,
+        "execution_label": "CPU実行",
+        "format": "synthetic",
+        "gated": true,
+        "gpu_execution": false,
+        "installed": false,
+        "key": "pyannote-3.1",
+        "model_id": "speaker-diarization-3.1",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "この環境では話者分離はCPU実行です。",
+        "recommended": false,
+        "size_bytes": null
+      }
+    ],
+    "native": {
+      "manifest": {
+        "root": "synthetic-root/native"
+      },
+      "runnable": {}
+    },
+    "openvino_models": [],
+    "options": {
+      "asr": [],
+      "defaults": {
+        "asr_backend": "faster-whisper",
+        "asr_device": "cpu",
+        "asr_model": "",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cpu"
+      },
+      "diarization": [],
+      "formats": [
+        "srt",
+        "vtt",
+        "json",
+        "txt",
+        "md"
+      ],
+      "guidance": [],
+      "languages": [
+        "auto",
+        "ja",
+        "en"
+      ]
+    },
+    "profile_warnings": [
+      "intel profileの依存環境が現在の版と一致しません。既存環境は保持されていますが、セットアップから再構築してください。"
+    ],
+    "profiles": [
+      {
+        "compatibility_reason": null,
+        "compatible": true,
+        "exists": true,
+        "name": "cpu",
+        "path": "synthetic-root/profiles/cpu",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "current_lock_missing",
+        "compatible": null,
+        "exists": true,
+        "name": "cuda",
+        "path": "synthetic-root/profiles/cuda",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "dependency_lock_changed",
+        "compatible": false,
+        "exists": true,
+        "name": "intel",
+        "path": "synthetic-root/profiles/intel",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": null,
+        "compatible": null,
+        "exists": false,
+        "name": "vulkan",
+        "path": "synthetic-root/profiles/vulkan",
+        "updated_at": null
+      }
+    ]
+  },
+  "cuda": {
+    "active_profile": "cuda",
+    "devices": {
+      "auto_selection": {
+        "asr_backend": "faster-whisper",
+        "asr_compute_type": "int8",
+        "asr_device": "cuda:0",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cuda:0",
+        "notes": []
+      },
+      "backends": {
+        "faster-whisper": true,
+        "openvino-genai": false,
+        "pyannote": true,
+        "whisper-cpp": true
+      },
+      "cpu": {
+        "avx2": true,
+        "avx512": false,
+        "logical_cores": 8,
+        "physical_cores": 4
+      },
+      "ctranslate2": {
+        "available": true,
+        "cpu_compute_types": [
+          "int8"
+        ],
+        "cpu_status": "completed",
+        "cuda_device_count": 1,
+        "cuda_devices": [
+          {
+            "compute_types": [],
+            "error": null,
+            "index": 0,
+            "memory_bytes": null,
+            "name": "Synthetic CUDA GPU 0",
+            "usable": true
+          }
+        ],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic"
+      },
+      "cuda_libraries": {
+        "cublas": null,
+        "cudnn": null
+      },
+      "ffmpeg": {
+        "available": true,
+        "error": null,
+        "path": null,
+        "version": null
+      },
+      "native": {
+        "built": false,
+        "variants": {
+          "cpu": false,
+          "openvino": false,
+          "openvino_vulkan": false,
+          "vulkan": false
+        },
+        "whisper_cpp_tag": null
+      },
+      "onnxruntime": {
+        "available": false,
+        "error": null,
+        "status": "completed",
+        "values": []
+      },
+      "openvino": {
+        "available": false,
+        "error": null,
+        "status": "completed",
+        "values": []
+      },
+      "probe_cache_hit": false,
+      "probes": [
+        {
+          "cached": true,
+          "detail": null,
+          "duration_seconds": 0.1,
+          "label": "CTranslate2",
+          "name": "ctranslate2",
+          "status": "completed"
+        },
+        {
+          "cached": false,
+          "detail": null,
+          "duration_seconds": 0.1,
+          "label": "Vulkan",
+          "name": "vulkan",
+          "status": "completed"
+        }
+      ],
+      "profile": {
+        "current": "cuda",
+        "profiles": []
+      },
+      "pytorch": {
+        "available": true,
+        "cuda_available": true,
+        "cuda_devices": [
+          {
+            "compute_types": [],
+            "error": null,
+            "index": 0,
+            "memory_bytes": null,
+            "name": "Synthetic CUDA GPU 0",
+            "usable": true
+          }
+        ],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic",
+        "xpu_available": false,
+        "xpu_devices": [],
+        "xpu_status": "completed"
+      },
+      "vulkan": {
+        "build_available": false,
+        "build_error": null,
+        "runtime_available": false,
+        "runtime_device": null,
+        "runtime_error": null,
+        "status": "completed"
+      },
+      "warnings": []
+    },
+    "errors": [],
+    "model_path": "synthetic-root/models",
+    "models": [
+      {
+        "approximate_size_bytes": 1,
+        "backend": "faster-whisper",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic large-v3-turbo",
+        "english_only": false,
+        "execution_label": "GPU実行可",
+        "format": "synthetic",
+        "gated": false,
+        "gpu_execution": true,
+        "installed": true,
+        "key": "fw-large-v3-turbo",
+        "model_id": "large-v3-turbo",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "この環境のCUDA GPUで実行できます。",
+        "recommended": false,
+        "size_bytes": 1
+      },
+      {
+        "approximate_size_bytes": 1,
+        "backend": "faster-whisper",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic small",
+        "english_only": false,
+        "execution_label": "GPU実行可",
+        "format": "synthetic",
+        "gated": false,
+        "gpu_execution": true,
+        "installed": true,
+        "key": "fw-small",
+        "model_id": "small",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "この環境のCUDA GPUで実行できます。",
+        "recommended": false,
+        "size_bytes": 1
+      },
+      {
+        "approximate_size_bytes": 1,
+        "backend": "whisper-cpp",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic large-v3-turbo-q5_0",
+        "english_only": false,
+        "execution_label": "CPU実行",
+        "format": "synthetic",
+        "gated": false,
+        "gpu_execution": false,
+        "installed": false,
+        "key": "ggml-large-v3-turbo-q5_0",
+        "model_id": "large-v3-turbo-q5_0",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "対応するGPUネイティブ構成がないため、この環境ではCPU実行です。",
+        "recommended": false,
+        "size_bytes": null
+      },
+      {
+        "approximate_size_bytes": 1,
+        "backend": "pyannote",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic speaker-diarization-3.1",
+        "english_only": false,
+        "execution_label": "GPU実行可",
+        "format": "synthetic",
+        "gated": true,
+        "gpu_execution": true,
+        "installed": true,
+        "key": "pyannote-3.1",
+        "model_id": "speaker-diarization-3.1",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "検出済みGPU/XPUで話者分離できます。",
+        "recommended": false,
+        "size_bytes": 1
+      }
+    ],
+    "native": {
+      "manifest": {
+        "root": "synthetic-root/native"
+      },
+      "runnable": {}
+    },
+    "openvino_models": [],
+    "options": {
+      "asr": [
+        {
+          "devices": [
+            {
+              "id": "cpu",
+              "label": "CPU"
+            },
+            {
+              "id": "cuda:0",
+              "label": "Synthetic CUDA GPU 0"
+            }
+          ],
+          "id": "faster-whisper",
+          "label": "faster-whisper",
+          "models": [
+            {
+              "id": "large-v3-turbo",
+              "key": "fw-large-v3-turbo",
+              "label": "Synthetic large-v3-turbo"
+            },
+            {
+              "id": "small",
+              "key": "fw-small",
+              "label": "Synthetic small"
+            }
+          ]
+        }
+      ],
+      "defaults": {
+        "asr_backend": "faster-whisper",
+        "asr_device": "cuda:0",
+        "asr_model": "large-v3-turbo",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cuda:0"
+      },
+      "diarization": [
+        {
+          "devices": [
+            {
+              "id": "cpu",
+              "label": "CPU"
+            },
+            {
+              "id": "cuda:0",
+              "label": "Synthetic CUDA GPU 0"
+            }
+          ],
+          "id": "pyannote",
+          "label": "pyannote.audio",
+          "models": [
+            {
+              "id": "speaker-diarization-3.1",
+              "key": "pyannote-3.1",
+              "label": "Synthetic speaker-diarization-3.1"
+            }
+          ]
+        }
+      ],
+      "formats": [
+        "srt",
+        "vtt",
+        "json",
+        "txt",
+        "md"
+      ],
+      "guidance": [],
+      "languages": [
+        "auto",
+        "ja",
+        "en"
+      ]
+    },
+    "profile_warnings": [
+      "intel profileの依存環境が現在の版と一致しません。既存環境は保持されていますが、セットアップから再構築してください。"
+    ],
+    "profiles": [
+      {
+        "compatibility_reason": null,
+        "compatible": true,
+        "exists": true,
+        "name": "cpu",
+        "path": "synthetic-root/profiles/cpu",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "current_lock_missing",
+        "compatible": null,
+        "exists": true,
+        "name": "cuda",
+        "path": "synthetic-root/profiles/cuda",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "dependency_lock_changed",
+        "compatible": false,
+        "exists": true,
+        "name": "intel",
+        "path": "synthetic-root/profiles/intel",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": null,
+        "compatible": null,
+        "exists": false,
+        "name": "vulkan",
+        "path": "synthetic-root/profiles/vulkan",
+        "updated_at": null
+      }
+    ]
+  },
+  "cuda_models_list_failed": {
+    "active_profile": "cuda",
+    "devices": {
+      "auto_selection": {
+        "asr_backend": "faster-whisper",
+        "asr_compute_type": "int8",
+        "asr_device": "cuda:0",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cuda:0",
+        "notes": []
+      },
+      "backends": {
+        "faster-whisper": true,
+        "openvino-genai": false,
+        "pyannote": true,
+        "whisper-cpp": true
+      },
+      "cpu": {
+        "avx2": true,
+        "avx512": false,
+        "logical_cores": 8,
+        "physical_cores": 4
+      },
+      "ctranslate2": {
+        "available": true,
+        "cpu_compute_types": [
+          "int8"
+        ],
+        "cpu_status": "completed",
+        "cuda_device_count": 1,
+        "cuda_devices": [
+          {
+            "compute_types": [],
+            "error": null,
+            "index": 0,
+            "memory_bytes": null,
+            "name": "Synthetic CUDA GPU 0",
+            "usable": true
+          }
+        ],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic"
+      },
+      "cuda_libraries": {
+        "cublas": null,
+        "cudnn": null
+      },
+      "ffmpeg": {
+        "available": true,
+        "error": null,
+        "path": null,
+        "version": null
+      },
+      "native": {
+        "built": false,
+        "variants": {
+          "cpu": false,
+          "openvino": false,
+          "openvino_vulkan": false,
+          "vulkan": false
+        },
+        "whisper_cpp_tag": null
+      },
+      "onnxruntime": {
+        "available": false,
+        "error": null,
+        "status": "completed",
+        "values": []
+      },
+      "openvino": {
+        "available": false,
+        "error": null,
+        "status": "completed",
+        "values": []
+      },
+      "probe_cache_hit": false,
+      "probes": [
+        {
+          "cached": true,
+          "detail": null,
+          "duration_seconds": 0.1,
+          "label": "CTranslate2",
+          "name": "ctranslate2",
+          "status": "completed"
+        },
+        {
+          "cached": false,
+          "detail": null,
+          "duration_seconds": 0.1,
+          "label": "Vulkan",
+          "name": "vulkan",
+          "status": "completed"
+        }
+      ],
+      "profile": {
+        "current": "cuda",
+        "profiles": []
+      },
+      "pytorch": {
+        "available": true,
+        "cuda_available": true,
+        "cuda_devices": [
+          {
+            "compute_types": [],
+            "error": null,
+            "index": 0,
+            "memory_bytes": null,
+            "name": "Synthetic CUDA GPU 0",
+            "usable": true
+          }
+        ],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic",
+        "xpu_available": false,
+        "xpu_devices": [],
+        "xpu_status": "completed"
+      },
+      "vulkan": {
+        "build_available": false,
+        "build_error": null,
+        "runtime_available": false,
+        "runtime_device": null,
+        "runtime_error": null,
+        "status": "completed"
+      },
+      "warnings": []
+    },
+    "errors": [
+      "CLI exited 1: synthetic model catalog could not be read"
+    ],
+    "model_path": "synthetic-root/models",
+    "models": [],
+    "native": {
+      "manifest": {
+        "root": "synthetic-root/native"
+      },
+      "runnable": {}
+    },
+    "openvino_models": [],
+    "options": {
+      "asr": [],
+      "defaults": {
+        "asr_backend": "faster-whisper",
+        "asr_device": "cuda:0",
+        "asr_model": "",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cuda:0"
+      },
+      "diarization": [],
+      "formats": [
+        "srt",
+        "vtt",
+        "json",
+        "txt",
+        "md"
+      ],
+      "guidance": [],
+      "languages": [
+        "auto",
+        "ja",
+        "en"
+      ]
+    },
+    "profile_warnings": [
+      "intel profileの依存環境が現在の版と一致しません。既存環境は保持されていますが、セットアップから再構築してください。"
+    ],
+    "profiles": [
+      {
+        "compatibility_reason": null,
+        "compatible": true,
+        "exists": true,
+        "name": "cpu",
+        "path": "synthetic-root/profiles/cpu",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "current_lock_missing",
+        "compatible": null,
+        "exists": true,
+        "name": "cuda",
+        "path": "synthetic-root/profiles/cuda",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "dependency_lock_changed",
+        "compatible": false,
+        "exists": true,
+        "name": "intel",
+        "path": "synthetic-root/profiles/intel",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": null,
+        "compatible": null,
+        "exists": false,
+        "name": "vulkan",
+        "path": "synthetic-root/profiles/vulkan",
+        "updated_at": null
+      }
+    ]
+  },
+  "intel": {
+    "active_profile": "intel",
+    "devices": {
+      "auto_selection": {
+        "asr_backend": "whisper-cpp",
+        "asr_compute_type": "int8",
+        "asr_device": "openvino",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cpu",
+        "notes": []
+      },
+      "backends": {
+        "faster-whisper": true,
+        "openvino-genai": false,
+        "pyannote": true,
+        "whisper-cpp": true
+      },
+      "cpu": {
+        "avx2": true,
+        "avx512": false,
+        "logical_cores": 8,
+        "physical_cores": 4
+      },
+      "ctranslate2": {
+        "available": true,
+        "cpu_compute_types": [
+          "int8"
+        ],
+        "cpu_status": "completed",
+        "cuda_device_count": 0,
+        "cuda_devices": [],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic"
+      },
+      "cuda_libraries": {
+        "cublas": null,
+        "cudnn": null
+      },
+      "ffmpeg": {
+        "available": true,
+        "error": null,
+        "path": null,
+        "version": null
+      },
+      "native": {
+        "built": true,
+        "variants": {
+          "cpu": true,
+          "openvino": true,
+          "openvino_vulkan": false,
+          "vulkan": false
+        },
+        "whisper_cpp_tag": "v0.0.0-synthetic"
+      },
+      "onnxruntime": {
+        "available": false,
+        "error": null,
+        "status": "completed",
+        "values": []
+      },
+      "openvino": {
+        "available": true,
+        "error": null,
+        "status": "completed",
+        "values": [
+          "CPU",
+          "GPU.0",
+          "NPU"
+        ]
+      },
+      "probe_cache_hit": false,
+      "probes": [
+        {
+          "cached": true,
+          "detail": null,
+          "duration_seconds": 0.1,
+          "label": "CTranslate2",
+          "name": "ctranslate2",
+          "status": "completed"
+        },
+        {
+          "cached": false,
+          "detail": null,
+          "duration_seconds": 20.0,
+          "label": "Vulkan",
+          "name": "vulkan",
+          "status": "timeout"
+        }
+      ],
+      "profile": {
+        "current": "intel",
+        "profiles": []
+      },
+      "pytorch": {
+        "available": true,
+        "cuda_available": false,
+        "cuda_devices": [],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic",
+        "xpu_available": true,
+        "xpu_devices": [
+          {
+            "compute_types": [],
+            "error": null,
+            "index": 0,
+            "memory_bytes": null,
+            "name": "Synthetic Intel(R) Arc(TM) Graphics <b>XPU</b> with a deliberately very long device name 0",
+            "usable": true
+          }
+        ],
+        "xpu_status": "completed"
+      },
+      "vulkan": {
+        "build_available": false,
+        "build_error": null,
+        "runtime_available": false,
+        "runtime_device": null,
+        "runtime_error": null,
+        "status": "timeout"
+      },
+      "warnings": []
+    },
+    "errors": [
+      "CLI exited 1: cannot read synthetic-root/profiles/intel/models"
+    ],
+    "model_path": null,
+    "models": [
+      {
+        "approximate_size_bytes": 1,
+        "backend": "faster-whisper",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic large-v3-turbo",
+        "english_only": false,
+        "execution_label": "CPU実行",
+        "format": "synthetic",
+        "gated": false,
+        "gpu_execution": false,
+        "installed": false,
+        "key": "fw-large-v3-turbo",
+        "model_id": "large-v3-turbo",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "この環境ではCTranslate2のGPUが検出されないためCPU実行です。",
+        "recommended": false,
+        "size_bytes": null
+      },
+      {
+        "approximate_size_bytes": 1,
+        "backend": "faster-whisper",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic small",
+        "english_only": false,
+        "execution_label": "CPU実行",
+        "format": "synthetic",
+        "gated": false,
+        "gpu_execution": false,
+        "installed": false,
+        "key": "fw-small",
+        "model_id": "small",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "この環境ではCTranslate2のGPUが検出されないためCPU実行です。",
+        "recommended": false,
+        "size_bytes": null
+      },
+      {
+        "approximate_size_bytes": 1,
+        "backend": "whisper-cpp",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic large-v3-turbo-q5_0",
+        "english_only": false,
+        "execution_label": "GPU実行可",
+        "format": "synthetic",
+        "gated": false,
+        "gpu_execution": true,
+        "installed": true,
+        "key": "ggml-large-v3-turbo-q5_0",
+        "model_id": "large-v3-turbo-q5_0",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "この環境ではGPUを利用できます。f16は量子化方式で、GPU可否を決めるものではありません。",
+        "recommended": false,
+        "size_bytes": 1
+      },
+      {
+        "approximate_size_bytes": 1,
+        "backend": "pyannote",
+        "description": "synthetic catalog entry",
+        "display_name": "Synthetic speaker-diarization-3.1",
+        "english_only": false,
+        "execution_label": "GPU実行可",
+        "format": "synthetic",
+        "gated": true,
+        "gpu_execution": true,
+        "installed": false,
+        "key": "pyannote-3.1",
+        "model_id": "speaker-diarization-3.1",
+        "model_size": null,
+        "path": null,
+        "quantization": null,
+        "recommendation_reason": "検出済みGPU/XPUで話者分離できます。",
+        "recommended": false,
+        "size_bytes": null
+      }
+    ],
+    "native": {
+      "manifest": {
+        "root": "synthetic-root/native"
+      },
+      "runnable": {
+        "cpu": true,
+        "openvino": true
+      }
+    },
+    "openvino_models": [
+      {
+        "installed": true,
+        "model_size": "large-v3-turbo",
+        "xml_path": "synthetic-root/models/openvino/encoder.xml"
+      },
+      {
+        "installed": false,
+        "model_size": "small",
+        "xml_path": "synthetic-root/models/openvino/encoder.xml"
+      }
+    ],
+    "options": {
+      "asr": [
+        {
+          "devices": [
+            {
+              "id": "cpu",
+              "label": "cpu"
+            },
+            {
+              "id": "openvino",
+              "label": "openvino"
+            }
+          ],
+          "id": "whisper-cpp",
+          "label": "whisper.cpp",
+          "models": [
+            {
+              "id": "large-v3-turbo-q5_0",
+              "key": "ggml-large-v3-turbo-q5_0",
+              "label": "Synthetic large-v3-turbo-q5_0"
+            }
+          ]
+        }
+      ],
+      "defaults": {
+        "asr_backend": "whisper-cpp",
+        "asr_device": "openvino",
+        "asr_model": "large-v3-turbo-q5_0",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cpu"
+      },
+      "diarization": [],
+      "formats": [
+        "srt",
+        "vtt",
+        "json",
+        "txt",
+        "md"
+      ],
+      "guidance": [
+        "CLIのauto選択に従い、whisper.cppの高速構成を既定にしました。"
+      ],
+      "languages": [
+        "auto",
+        "ja",
+        "en"
+      ]
+    },
+    "profile_warnings": [
+      "intel profileの依存環境が現在の版と一致しません。既存環境は保持されていますが、セットアップから再構築してください。"
+    ],
+    "profiles": [
+      {
+        "compatibility_reason": null,
+        "compatible": true,
+        "exists": true,
+        "name": "cpu",
+        "path": "synthetic-root/profiles/cpu",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "current_lock_missing",
+        "compatible": null,
+        "exists": true,
+        "name": "cuda",
+        "path": "synthetic-root/profiles/cuda",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "dependency_lock_changed",
+        "compatible": false,
+        "exists": true,
+        "name": "intel",
+        "path": "synthetic-root/profiles/intel",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": null,
+        "compatible": null,
+        "exists": false,
+        "name": "vulkan",
+        "path": "synthetic-root/profiles/vulkan",
+        "updated_at": null
+      }
+    ]
+  },
+  "no_profile_parameter": {
+    "active_profile": null,
+    "devices": null,
+    "errors": [],
+    "models": [],
+    "native": null,
+    "options": {
+      "asr": [],
+      "defaults": {},
+      "diarization": [],
+      "formats": [],
+      "guidance": [],
+      "languages": []
+    },
+    "profile_warnings": [
+      "intel profileの依存環境が現在の版と一致しません。既存環境は保持されていますが、セットアップから再構築してください。"
+    ],
+    "profiles": [
+      {
+        "compatibility_reason": null,
+        "compatible": true,
+        "exists": true,
+        "name": "cpu",
+        "path": "synthetic-root/profiles/cpu",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "current_lock_missing",
+        "compatible": null,
+        "exists": true,
+        "name": "cuda",
+        "path": "synthetic-root/profiles/cuda",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "dependency_lock_changed",
+        "compatible": false,
+        "exists": true,
+        "name": "intel",
+        "path": "synthetic-root/profiles/intel",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": null,
+        "compatible": null,
+        "exists": false,
+        "name": "vulkan",
+        "path": "synthetic-root/profiles/vulkan",
+        "updated_at": null
+      }
+    ]
+  },
+  "vulkan_not_built": {
+    "active_profile": null,
+    "devices": null,
+    "errors": [],
+    "models": [],
+    "native": null,
+    "options": {
+      "asr": [],
+      "defaults": {},
+      "diarization": [],
+      "formats": [],
+      "guidance": [],
+      "languages": []
+    },
+    "profile_warnings": [
+      "intel profileの依存環境が現在の版と一致しません。既存環境は保持されていますが、セットアップから再構築してください。"
+    ],
+    "profiles": [
+      {
+        "compatibility_reason": null,
+        "compatible": true,
+        "exists": true,
+        "name": "cpu",
+        "path": "synthetic-root/profiles/cpu",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "current_lock_missing",
+        "compatible": null,
+        "exists": true,
+        "name": "cuda",
+        "path": "synthetic-root/profiles/cuda",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "dependency_lock_changed",
+        "compatible": false,
+        "exists": true,
+        "name": "intel",
+        "path": "synthetic-root/profiles/intel",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": null,
+        "compatible": null,
+        "exists": false,
+        "name": "vulkan",
+        "path": "synthetic-root/profiles/vulkan",
+        "updated_at": null
+      }
+    ]
+  }
+}

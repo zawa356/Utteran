@@ -196,17 +196,33 @@ test("token: keyring 503 never claims 'unchanged'; written-then-read-back-failed
   await expect(app.getByTestId("token-unconfirmed")).toHaveCount(0);
 });
 
-test("token: lost answers — current presence vs. unconfirmed PUT/DELETE, never a stale error or a kept secret", async ({ app }) => {
+test("token: lost answers — current presence vs. unconfirmed PUT/DELETE, never a stale error or a kept secret", async ({ app, request }) => {
   const consoleText: string[] = [];
   app.on("console", (m) => consoleText.push(m.text()));
   await app.getByTestId("nav-settings").click();
   const input = app.getByTestId("token-input").locator("input");
   let mode: "applied" | "not-applied" = "applied";
+  // Server-side outcome of each intercepted browser PUT/DELETE (status only; the body is never logged).
+  const applied: string[] = [];
+  let handled = 0;
+  // Each browser Route is completed exactly once. "applied": the same method and body are sent once
+  // to the real FastAPI through the separate APIRequestContext (it does not pass through page
+  // routes), its success is recorded, and only then is the browser request reset — the server
+  // applied it, the browser never saw the answer. "not-applied": only the reset.
   await app.route("**/api/token", async (route) => {
-    const method = route.request().method();
-    if (method === "GET") return route.continue();
-    if (mode === "applied") await route.fetch(); // reaches the server, the answer is lost
-    return route.abort("connectionreset");
+    const original = route.request();
+    if (original.method() === "GET") return route.continue();
+    if (mode === "applied") {
+      const body = original.postData();
+      const response = await request.fetch("/api/token", {
+        method: original.method(),
+        headers: body === null ? SESSION_HEADER : { ...SESSION_HEADER, "Content-Type": "application/json" },
+        data: body ?? undefined,
+      });
+      applied.push(`${original.method()} ${response.status()}`);
+    }
+    await route.abort("connectionreset");
+    handled += 1;
   });
 
   // Missing → PUT applied, answer lost → re-check: "registered now", the PUT stays unconfirmed.
@@ -214,6 +230,7 @@ test("token: lost answers — current presence vs. unconfirmed PUT/DELETE, never
   await app.getByTestId("token-register").click();
   await expect(app.getByTestId("token-unconfirmed")).toHaveAttribute("data-reason", "no_response");
   await expect(input).toHaveValue("");
+  expect(applied).toEqual(["PUT 200"]); // the server really stored it
   await app.getByTestId("token-recheck").click();
   await expect(app.getByTestId("token-status")).toHaveText("登録済み（値は表示しません）");
   await expect(app.getByTestId("token-unconfirmed-body")).toContainText("置き換わったかどうかは確認できない");
@@ -225,6 +242,7 @@ test("token: lost answers — current presence vs. unconfirmed PUT/DELETE, never
   await input.fill(OTHER);
   await app.getByTestId("token-register").click();
   await expect(app.getByTestId("token-status")).toHaveText("現在の状態は未確認です。");
+  expect(applied).toEqual(["PUT 200"]); // nothing reached the server this time
   await app.getByTestId("token-recheck").click();
   await expect(app.getByTestId("token-status")).toHaveText("登録済み（値は表示しません）");
   await expect(app.getByTestId("token-unconfirmed-body")).toContainText("置き換わったかどうかは確認できない");
@@ -235,13 +253,19 @@ test("token: lost answers — current presence vs. unconfirmed PUT/DELETE, never
   await app.getByTestId("token-delete").click();
   await app.getByTestId("token-confirm-delete").click();
   await expect(app.getByTestId("token-unconfirmed")).toContainText("削除");
+  expect(applied).toEqual(["PUT 200", "DELETE 200"]);
   await app.getByTestId("token-recheck").click();
   await expect(app.getByTestId("token-status")).toHaveText("未設定");
   await expect(app.getByTestId("token-unconfirmed-body")).toContainText("直前の削除によるものかどうかは確認できません");
 
-  // Re-check itself failing keeps "unknown".
+  // Re-check itself failing keeps "unknown". Wait until this PUT's route handler has finished
+  // before replacing the routes (unrouting while a handler still runs raced in CI:
+  // "Route is already handled!").
   await input.fill(OTHER);
   await app.getByTestId("token-register").click();
+  await expect(app.getByTestId("token-unconfirmed")).toHaveAttribute("data-reason", "no_response");
+  await expect.poll(() => handled).toBe(4);
+  expect(applied).toEqual(["PUT 200", "DELETE 200", "PUT 200"]);
   await app.unroute("**/api/token");
   await app.route("**/api/token", (route) => route.abort("connectionreset"));
   await app.getByTestId("token-recheck").click();

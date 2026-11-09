@@ -6,17 +6,18 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.44`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.45`（未release）。API・設定は1.0まで変更されます。
 
 > バックエンド（Phase A〜B9）の現在の構成・提供状況・制約・試験範囲は
 > [docs/architecture/README.md](docs/architecture/README.md)を正本とします。B5〜B9のv1 APIはすべて
 > **main統合済み・未リリース・明示opt-in**で、通常のGUI/CLI起動では有効になりません。
 
 > 次期GUI（UI-2、試験版）: Vue 3 + Vuetify 4の新frontend基盤は、`frontend/`をbuildしたうえで開発者flag
-> `utteran-gui --next-ui`を付けたときだけ開きます。既定のGUIは従来の旧UIのままです。移行済みは実行環境の表示と
-> 設定画面（UI-3 S1: テーマ・表示言語・既定プロファイル・既定入出力フォルダとOSのフォルダ選択・Hugging Faceトークンの登録/削除・
-> ログ保存先の表示）です。セットアップウィザードは旧画面へ案内します（[docs/architecture/ui3/s1-settings-and-host.md](docs/architecture/ui3/s1-settings-and-host.md)、
-> 開発版0.1.44・Windows WebView2実機は未受入）。
+> `utteran-gui --next-ui`を付けたときだけ開きます。既定のGUIは従来の旧UIのままです。移行済みは実行環境の表示（UI-3 S2:
+> 旧画面の環境stripの4項目と詳細、検出結果は「実行可否は未検証」として表示）と設定画面（UI-3 S1: テーマ・表示言語・既定プロファイル・
+> 既定入出力フォルダとOSのフォルダ選択・Hugging Faceトークンの登録/削除・ログ保存先の表示）です。セットアップウィザードは旧画面へ案内します
+> （[s2-environment-visibility.md](docs/architecture/ui3/s2-environment-visibility.md)・[s1-settings-and-host.md](docs/architecture/ui3/s1-settings-and-host.md)、
+> 開発版0.1.45・Windows WebView2実機は未受入）。
 
 > **UI-3-0 設計確定（2026-11-06）:** [第5案の確定仕様・受入/引継ぎ](docs/architecture/ui3/design-freeze.md)を記録し、[PR #38](https://github.com/zawa356/Utteran/pull/38)をmainへ統合しました。**合成データのVite開発専用プロトタイプ**であり、既定GUI/`--next-ui`の製品画面は未変更。UI-3 #21の本番移行とUI-4 #22の実機受入は未完了。
 

@@ -178,6 +178,7 @@ revertはdraftをsavedへ戻すが、unconfirmedSaveは消さない。GET失敗�
 ## 10. 後続へ残したもの
 
 - **S2:** 環境stripの全項目、既定プロファイル選択肢へのB4由来の構築/ready状態の表示（frontend独自の互換表は作らない）。
+  **追補（2026-11-09）:** S2はowner判断（A案）で旧`GET /api/environment`の観測表示として実装（[s2-environment-visibility](s2-environment-visibility.md)）。B4由来のready状態（G-01）は未解決の後続課題。
 - **S3:** 入力ファイルpicker・新UI自身のnative D&D受け口・ジョブ投入、出力先の実パス検証（存在・権限・衝突）、自由入力フォームのIME composition E2E（UI-2からの引継ぎ）。
 - **S4:** 新UIのセットアップウィザード（ワンクリック開始を入れるなら、明示確認→wizard/queue状態照会→`POST /api/wizard/start`の副作用検証→遷移の安全性を試験で実証）、Expertの設定カテゴリ（ログ・高度・プリセット）。
 - **S5:** B8 setup・v1 settings（B5）への接続。

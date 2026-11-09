@@ -24,8 +24,9 @@ export interface AppCore {
 
 export function createCore(deps: { fetch: FetchLike; host: HostBridge }): AppCore {
   const legacy = createLegacyApi(createHttpClient({ fetch: deps.fetch }));
-  const environment = new EnvironmentController(legacy);
   const settings = new SettingsController(legacy);
+  // "Follow the default" on the environment panel reads the *saved* default (never the draft).
+  const environment = new EnvironmentController(legacy, { defaultProfile: () => settings.store.get().saved?.defaultProfile ?? null });
   // A saved default profile is shown on the environment panel only if the panel was following
   // the default (a profile the person picked there is kept). Saving and the environment check
   // are separate operations with separate states; no device re-detection is started.

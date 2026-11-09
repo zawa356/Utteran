@@ -11,7 +11,7 @@ describe("i18n", () => {
   });
 
   it("interpolates parameters and leaves unknown ones visible", () => {
-    expect(translate("en", "env.active", { profile: "cpu" })).toBe("Active profile: cpu");
+    expect(translate("en", "env.active", { profile: "cpu" })).toBe("Profile used by the server: cpu");
     expect(translate("ja", "env.active")).toContain("{profile}");
   });
 

@@ -46,7 +46,8 @@ test("sidebar: un-migrated areas explain themselves and offer no fake actions", 
 });
 
 test("environment: a late answer for an earlier profile does not roll the selection back (D-01)", async ({ app }) => {
-  await expect(app.getByTestId("env-active")).toContainText("cpu");
+  // Real EnvironmentService rule: no default and several built profiles → the server picks none.
+  await expect(app.getByTestId("env-note")).toContainText("どれも選びませんでした");
   await choose(app, "env-profile", /^cuda/); // synthetic cuda answers after 1.5 s
   await expect(app.getByTestId("env-loading")).toBeVisible();
   await choose(app, "env-profile", /^cpu/);
@@ -54,7 +55,7 @@ test("environment: a late answer for an earlier profile does not roll the select
   await app.waitForTimeout(2000); // let the stale cuda answer arrive
   await expect(app.getByTestId("env-active")).toContainText("cpu");
   await expect(app.getByTestId("env-profile")).toContainText("cpu");
-  await expect(app.getByTestId("env-readiness")).toHaveText("未検証");
+  await expect(app.getByTestId("env-readiness")).toHaveText("検出情報・実行可否は未検証");
   await expect(app.getByTestId("env-loading")).toHaveCount(0);
 });
 
