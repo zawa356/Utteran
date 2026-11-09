@@ -5,6 +5,7 @@
 - **基点:** `main` `f3ad48b3e22aded301995c0c08508ab784982f70`（PR #40 / S1のマージコミット。作業直前に`origin/main`と一致、作業ツリーは無変更）。
 - **版:** 開発版 `0.1.45`（未リリース、tag/releaseなし）。§10。
 - **状態:** Linux（Vitest＋headless Chromium＋実FastAPI）の自動試験まで。WindowsはCI（frontend lint/型/Vitest/build、Windows pytest、PowerShell）で判断し、**Windows WebView2実機の手動確認は最終統合ゲートへ集約**（§9）。UI-3全体の完了ではない。
+- **改訂:** 2026-11-09 PR #41レビュー（CIブロッカー1件・P2×2）を反映（§12）。§3・§4.1の該当行も更新。
 - **正本の優先順位:** コード（`src/utteran_gui/environment.py`・`api.py`、`frontend/src/**`）→ 本書 → [design-freeze](design-freeze.md)。
 
 ## 1. 目的と範囲
@@ -33,7 +34,7 @@
 | `options.asr`/`options.diarization` | `asr`/`diarization`: `id`・`label`・`modelCount`（候補内）・`models`・`devices` | リスト自体は**必須**。壊れた要素だけ落とし`issues`に`malformed/options`を記録（全画面は落とさない） |
 | `errors[]` | `issues[]` `{kind: timeout\|failed\|malformed, probe, seconds}` | **必須**。**文字列は保持しない**（`Profile Python is not available: <path>`・stderr等を含み得る）。`CliAdapter`の`CLI timed out after Ns: <args>`から既知の6種のCLI呼出しだけを特定 |
 | `devices`（`cpu`・`ctranslate2.cuda_devices`・`pytorch.cuda_devices`/`xpu_devices`・`openvino.values`・`native`・`probes`・`probe_cache_hit`） | `devices`（`null`＝未取得） | 任意。型が違う値は`null`/空に。GPUは`runtime`別に`usable`をそのプローブの観測として保持。probeの`detail`・`error`、`cuda_libraries`・`ffmpeg.path`は捨てる |
-| `models[]` | `installedModels`（`installed===true`の行だけ）・`installedModelCount` | 任意。`active_profile=null`ならサーバーは問い合わせないので`null`（未取得）。`path`・`execution_label`・`recommendation_reason`は捨てる |
+| `models[]` | `installedModels`（`installed===true`の行だけ）・`installedModelCount`・`installedModelsState`（`counted`/`not_obtained`/`unknown`） | 任意。`active_profile=null`ならサーバーは問い合わせないので**未取得**。`models`が配列でない、または**空配列と同時にモデル一覧由来か由来不明の失敗がある**ときは**不明**（§12）。`path`・`execution_label`・`recommendation_reason`は捨てる |
 | `native`（`native status`） | `nativeRunnable`（`runnable===true`のvariant名） | 任意。`manifest`（パスを含み得る）は捨てる |
 | `openvino_models[]` | `openvinoIr: {installed,total}` | 任意。**導入済みモデル数に加算しない**。`xml_path`は捨てる |
 | `options.guidance` | `guidance: native_not_built\|ggml_model_missing\|other` | 既知の意味だけ日英文言へ。「auto選択に従い既定にしました」は旧フォームの既定の説明なので表示しない |
@@ -60,8 +61,8 @@
 |---|---|---|
 | ハードウェア: `ctranslate2.cuda_devices`＋`pytorch.xpu_devices`の`usable`名、なければ`CPU · N threads` | 同じ規則＋`pytorch.cuda_devices`も対象、名前の重複を除く（同じGPUを2つのruntimeが報告するため）。最大2件＋「ほかN件」。`devices`なし＝**未取得** | 旧GUIは`devices`なしでも`CPU · — threads`と表示していた |
 | プロファイル: `active_profile`または`—` | サーバーの`active_profile`。`null`＝**なし**、未取得＝**未取得**。要求profileとは別に注記 | |
-| 導入済みモデル: `models.filter(installed).length` | 同じ。`active_profile=null`（問い合わせなし）は**未取得**、0件は「0件」 | 旧GUIは問い合わせていなくても0と表示 |
-| ネイティブ構成: `devices.native.variants`の`true`のみ、なければ`—` | 同じ。`devices`なし＝**未取得**、`native`欄なし＝**不明**、該当なし＝**なし** | |
+| 導入済みモデル: `models.filter(installed).length` | 同じ。`active_profile=null`（問い合わせなし）は**未取得**、一覧取得の失敗が疑われる空配列は**不明**、失敗なしの空配列は「0件」 | 旧GUIは問い合わせていない・失敗した場合も0と表示 |
+| ネイティブ構成: `devices.native.variants`の`true`のみ、なければ`—` | 同じ。`devices`なし＝**未取得**、`native`欄なし・`variants`欠落/不正型＝**不明**、`variants: {}`や全false＝**なし** | |
 | `environment-alert`（profileなし／候補なし／errors原文／profile_warnings原文／guidance原文のいずれか1つ） | 注記（§4.3）＋部分失敗の要約＋Expert/詳細の注意一覧（固定文言） | 生の`errors`文字列は表示しない |
 | `form-status`の「ready」（候補が1件以上のとき） | **表示しない**。常に「検出情報・実行可否は未検証」 | G-01 |
 
@@ -164,3 +165,17 @@ S1の方針を継続する。各PRはLinux自動試験＋Windows CI（`UI-3 fron
 - **S4:** モデル管理・セットアップ（要再構築・GGML未取得の案内から新UIの操作へ）。
 - **S5:** v1接続（B4〜B9）。
 - **UI-4:** Windows実機・DPI・IME・installer/portableの受入（§9の項目を含む）。
+
+## 12. PR #41レビュー修正（2026-11-09）
+
+基点HEAD `8ee02c4`。Python製品コード・API・DB・CLI・旧GUI・`frontend/src/preview/**`は無変更。版は`0.1.45`据え置き（同じ未リリース作業単位のレビュー修正）。
+
+| 指摘 | 原因 | 修正 | 回帰試験 |
+|---|---|---|---|
+| **CIブロッカー:** PR側Linux E2Eで`settings-s1.spec.ts`「token: lost answers…」が`route.abort: Route is already handled!`（[run 42556713333](https://github.com/zawa356/Utteran/actions/runs/42556713333)、push側は成功） | 試験側の誤用2点。(1) 同じ`Route`で`route.fetch()`の後に`abort()`していた。(2) 最後の節で、PUTのハンドラが`route.fetch()`を待っている間に`unroute`しており、Playwrightがそのrouteを先に完了させた後で`abort()`が走る競合。修正前の試験はローカルで20回中1回同じエラーで失敗（再現） | 各ブラウザRouteは**一度だけ**完了。「適用」ケースは同じメソッドとbodyを**独立した`APIRequestContext`**（`SESSION_HEADER`、ページのrouteを通らない）から実FastAPIへ1回だけ送り、ステータスを記録してからブラウザ側を`abort("connectionreset")`。「未適用」ケースはabortのみ。最後の節は、そのPUTのハンドラ完了（処理件数）を待ってから`unroute`。製品の`token.ts`/`TokenCard.vue`は無変更 | 4シナリオ（未設定→PUT適用・応答なし→GETで登録済み／登録済み→別値PUT未適用→登録済みだが置換は不明／DELETE適用→未設定／GET再確認失敗→未確認維持）を維持し、**サーバー側の適用結果（`PUT 200`、`DELETE 200`、未適用時は記録なし）を明示的に検査**するassertionを追加。修正後に30回連続成功 |
+| **P2-1:** 前回の結果に現在の選択・既定の役割チップが混入 | `EnvironmentDetails`に現在の`requestedProfile`と現在の保存済み既定を渡していた | 役割は`domain/environmentSummary.ts` `profileRoles(name, state)`で決める。現在の結果のときだけ「この画面で選択」（手動選択の要求のみ）と「取得時の設定の既定」（`dataFor.savedDefault`＝**要求を送った時点の保存済み既定**を記録）を表示。前回の結果（読み込み中・失敗・中止・選択変更後）では「前回の取得時にサーバーが使用」だけを表示し、現在の選択・既定は付けない。既定に従った要求には「この画面で選択」を付けない（試験で発見） | Vitest: `profileRoles`（現在／pending・error・cancelled／既定追従／後から保存した既定）、`dataFor.savedDefault`が要求時の値のまま。E2E 2件: CPU表示中にCUDAが保留・失敗・中止の各段階でCUDAの役割なし、成功で現在の役割、要求数不変・書き込みなし／既定cpu追従中に既定cudaを保存し応答を保留→古い結果にcudaの既定を付けない |
+| **P2-2:** モデル一覧の失敗で「0件」と断定、`variants`欠落で「なし」と断定 | `snapshot()`は`models=[]`で初期化し、`models list`失敗時も`[]`とerrors文字列を返す（payloadだけでは0件と区別不能）。`variants`の欠落・不正型を`[]`に変換していた | `installedModelsState`を追加。空配列＋モデル一覧のtimeout、または**由来を特定できない失敗**（`CLI exited …`等、`probe=null`）がある場合は**不明**（「0件とは限りません」）。行が取れていれば`installed===true`を数える。失敗なしの空配列は0件。`native.variants`は欠落・`null`・配列・文字列を`null`＝**不明**、`{}`・全falseは**なし** | 合成CLIに`models list`だけ失敗する設定を追加し、**実`EnvironmentService`**の出力をfixture `cuda_models_list_failed`として記録（pytestで`models: []`＋errors 1件の現行契約を検査）。Vitest: 不明／真の0件／他の呼出しの失敗では0件／モデルtimeoutは不明／行ありは正確な件数（OpenVINO IR別計数）／`variants`7パターン。E2E: 通常・Expertで「不明」、`variants`欠落で「不明」 |
+
+**契約上の限界（Python変更なしでは解消しない）:** 由来不明の失敗（`CLI exited N: …`はコマンド名を含まない）があると、実際は0件でもモデル数を「不明」と表示する。保守的な側に倒した。正確に区別するには`/api/environment`がCLI呼出しごとの成否を構造化して返す必要がある（backend課題、G-01の公開API設計で扱う候補）。
+
+**試験数（修正後、Linux）:** Vitest 34ファイル・**353件**（本番209＋プロトタイプ144、修正前334件から+19）、E2E **34件**（UI-2 10＋S1 13＋S2 11、S2に3件追加・S1の1件を改修）、プロトタイプE2E 96件。§7の数値は修正前の記録として残す。

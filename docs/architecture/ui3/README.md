@@ -12,6 +12,7 @@ Hugging Faceトークンの状態/登録/削除・ログ保存先と「ログフ
 **2026-11-09 UI-3 S2（本番、opt-in、A案）:** 実行環境表示を既存`GET /api/environment`の観測結果で完成（旧環境stripの4項目・Expertの詳細カテゴリ・
 要求/サーバー選択/設定の既定の区別・前回の結果・待機の中止と240秒の時間切れ）。**B4 readiness（G-01）は未解決の後続課題で、readyとは表示しない。**
 正本は[s2-environment-visibility.md](s2-environment-visibility.md)。開発版`0.1.45`、未リリース、Draft PR。Windows WebView2実機は未受入（最終ゲートへ集約）。
+同日PR #41レビュー（CIブロッカー1件・P2×2: 前回の結果の役割表示、モデル数/native variantの不明と0/なしの区別）を反映（[s2 §12](s2-environment-visibility.md#12-pr-41レビュー修正2026-11-09)）。
 
 ## 設計基準
 

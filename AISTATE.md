@@ -1,5 +1,12 @@
 # AI 作業状態
 
+## 現在地（2026-11-09、PR #41レビュー修正、0.1.45据え置き、Draft維持）
+
+- 修正前HEAD `8ee02c4`（PR #41 HEADと一致、Draft、main `f3ad48b`）。同じブランチ`claude/practical-dijkstra-llhp7h`へ通常commit・push。Ready化・merge・tag・releaseなし。
+- CIブロッカー: S1 E2E「token: lost answers」のPR側失敗（`Route is already handled!`）は試験側のroute二重処理と`unroute`競合。独立`APIRequestContext`で実APIに適用してからブラウザ要求を切断する方式へ（修正前はローカル20回中1回再現、修正後30/30）。製品コード無変更。
+- P2-1: 前回の結果に現在の選択・既定の役割を付けない（`profileRoles`、要求時の保存済み既定を`dataFor.savedDefault`に記録）。P2-2: モデル一覧失敗が疑われる空配列は「不明」、`native.variants`欠落/不正は「不明」。合成CLIに`models list`失敗を追加（実service出力をfixture化）。
+- Vitest 353、E2E 34、プロトタイプE2E 96、pytest 1294 passed/9 skipped/1 xfailed。詳細[ui3/s2 §12](docs/architecture/ui3/s2-environment-visibility.md#12-pr-41レビュー修正2026-11-09)。Windows WebView2実機は未受入（最終ゲート）。
+
 ## 現在地（2026-11-09、UI-3 S2 実行環境の可視化・A案、0.1.45・未リリース、Draft PR）
 
 - 基点`main` `f3ad48b3e22aded301995c0c08508ab784982f70`（PR #40マージ、作業直前に`origin/main`と一致・作業ツリー無変更）。セッション指定ブランチ
