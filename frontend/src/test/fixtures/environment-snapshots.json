@@ -594,6 +594,209 @@
       }
     ]
   },
+  "cuda_models_list_failed": {
+    "active_profile": "cuda",
+    "devices": {
+      "auto_selection": {
+        "asr_backend": "faster-whisper",
+        "asr_compute_type": "int8",
+        "asr_device": "cuda:0",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cuda:0",
+        "notes": []
+      },
+      "backends": {
+        "faster-whisper": true,
+        "openvino-genai": false,
+        "pyannote": true,
+        "whisper-cpp": true
+      },
+      "cpu": {
+        "avx2": true,
+        "avx512": false,
+        "logical_cores": 8,
+        "physical_cores": 4
+      },
+      "ctranslate2": {
+        "available": true,
+        "cpu_compute_types": [
+          "int8"
+        ],
+        "cpu_status": "completed",
+        "cuda_device_count": 1,
+        "cuda_devices": [
+          {
+            "compute_types": [],
+            "error": null,
+            "index": 0,
+            "memory_bytes": null,
+            "name": "Synthetic CUDA GPU 0",
+            "usable": true
+          }
+        ],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic"
+      },
+      "cuda_libraries": {
+        "cublas": null,
+        "cudnn": null
+      },
+      "ffmpeg": {
+        "available": true,
+        "error": null,
+        "path": null,
+        "version": null
+      },
+      "native": {
+        "built": false,
+        "variants": {
+          "cpu": false,
+          "openvino": false,
+          "openvino_vulkan": false,
+          "vulkan": false
+        },
+        "whisper_cpp_tag": null
+      },
+      "onnxruntime": {
+        "available": false,
+        "error": null,
+        "status": "completed",
+        "values": []
+      },
+      "openvino": {
+        "available": false,
+        "error": null,
+        "status": "completed",
+        "values": []
+      },
+      "probe_cache_hit": false,
+      "probes": [
+        {
+          "cached": true,
+          "detail": null,
+          "duration_seconds": 0.1,
+          "label": "CTranslate2",
+          "name": "ctranslate2",
+          "status": "completed"
+        },
+        {
+          "cached": false,
+          "detail": null,
+          "duration_seconds": 0.1,
+          "label": "Vulkan",
+          "name": "vulkan",
+          "status": "completed"
+        }
+      ],
+      "profile": {
+        "current": "cuda",
+        "profiles": []
+      },
+      "pytorch": {
+        "available": true,
+        "cuda_available": true,
+        "cuda_devices": [
+          {
+            "compute_types": [],
+            "error": null,
+            "index": 0,
+            "memory_bytes": null,
+            "name": "Synthetic CUDA GPU 0",
+            "usable": true
+          }
+        ],
+        "cuda_status": "completed",
+        "error": null,
+        "version": "0.0.0-synthetic",
+        "xpu_available": false,
+        "xpu_devices": [],
+        "xpu_status": "completed"
+      },
+      "vulkan": {
+        "build_available": false,
+        "build_error": null,
+        "runtime_available": false,
+        "runtime_device": null,
+        "runtime_error": null,
+        "status": "completed"
+      },
+      "warnings": []
+    },
+    "errors": [
+      "CLI exited 1: synthetic model catalog could not be read"
+    ],
+    "model_path": "synthetic-root/models",
+    "models": [],
+    "native": {
+      "manifest": {
+        "root": "synthetic-root/native"
+      },
+      "runnable": {}
+    },
+    "openvino_models": [],
+    "options": {
+      "asr": [],
+      "defaults": {
+        "asr_backend": "faster-whisper",
+        "asr_device": "cuda:0",
+        "asr_model": "",
+        "diarization_backend": "pyannote",
+        "diarization_device": "cuda:0"
+      },
+      "diarization": [],
+      "formats": [
+        "srt",
+        "vtt",
+        "json",
+        "txt",
+        "md"
+      ],
+      "guidance": [],
+      "languages": [
+        "auto",
+        "ja",
+        "en"
+      ]
+    },
+    "profile_warnings": [
+      "intel profileの依存環境が現在の版と一致しません。既存環境は保持されていますが、セットアップから再構築してください。"
+    ],
+    "profiles": [
+      {
+        "compatibility_reason": null,
+        "compatible": true,
+        "exists": true,
+        "name": "cpu",
+        "path": "synthetic-root/profiles/cpu",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "current_lock_missing",
+        "compatible": null,
+        "exists": true,
+        "name": "cuda",
+        "path": "synthetic-root/profiles/cuda",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": "dependency_lock_changed",
+        "compatible": false,
+        "exists": true,
+        "name": "intel",
+        "path": "synthetic-root/profiles/intel",
+        "updated_at": null
+      },
+      {
+        "compatibility_reason": null,
+        "compatible": null,
+        "exists": false,
+        "name": "vulkan",
+        "path": "synthetic-root/profiles/vulkan",
+        "updated_at": null
+      }
+    ]
+  },
   "intel": {
     "active_profile": "intel",
     "devices": {

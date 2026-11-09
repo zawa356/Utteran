@@ -5,7 +5,7 @@ import { ja } from "../i18n/ja";
 import snapshots from "../test/fixtures/environment-snapshots.json";
 import { environment } from "../test/legacyFixtures";
 import { type EnvironmentState } from "./environment";
-import { noticeCount, profileStatus, selectionNote, summarize } from "./environmentSummary";
+import { noticeCount, profileRoles, profileStatus, selectionNote, summarize } from "./environmentSummary";
 import { idleOperation } from "./operation";
 
 const fixture = snapshots as unknown as Record<string, unknown>;
@@ -26,8 +26,8 @@ function state(patch: Partial<EnvironmentState>): EnvironmentState {
   };
 }
 
-function answered(requested: string | null, data: ReturnType<typeof environment>, followsDefault = false): EnvironmentState {
-  return state({ requestedProfile: requested, data, followsDefault, dataFor: { profile: requested, refresh: false, followsDefault, receivedAt: 0 } });
+function answered(requested: string | null, data: ReturnType<typeof environment>, followsDefault = false, savedDefault: string | null = null): EnvironmentState {
+  return state({ requestedProfile: requested, data, followsDefault, dataFor: { profile: requested, refresh: false, followsDefault, receivedAt: 0, savedDefault } });
 }
 
 describe("the four summary items (legacy environment strip)", () => {
@@ -150,5 +150,44 @@ describe("S2 never claims readiness", () => {
     // The DTO has no field that could express readiness.
     expect(Object.keys(data)).not.toEqual(expect.arrayContaining(["ready"]));
     expect(JSON.stringify(data)).not.toMatch(/"ready"|recommend/i);
+  });
+});
+
+describe("PR #41 review P2-2: summary keeps unknown apart from 0 / none", () => {
+  it("failed model list → models 'unknown'; native variants null → 'unknown'; {} → 'none'", () => {
+    expect(summarize(parseEnvironment(fixture.cuda_models_list_failed)).models).toEqual({ kind: "unknown" });
+    const base = parseEnvironment(fixture.intel);
+    const devices = base.devices!;
+    expect(summarize({ ...base, devices: { ...devices, native: { built: true, variants: null } } }).native).toEqual({ kind: "unknown" });
+    expect(summarize({ ...base, devices: { ...devices, native: { built: true, variants: [] } } }).native).toEqual({ kind: "none" });
+    expect(summarize({ ...base, devices: null }).native).toEqual({ kind: "not_obtained" });
+  });
+});
+
+describe("PR #41 review P2-1: role chips belong to the answer shown, never to the current selection", () => {
+  const cpuAnswer = () => answered("cpu", environment("cpu"), false, "cuda");
+
+  it("current result: server, selection and the default saved at request time", () => {
+    const s = cpuAnswer();
+    expect(profileRoles("cpu", s)).toEqual(["active", "requested"]);
+    expect(profileRoles("cuda", s)).toEqual(["default_at_request"]);
+  });
+
+  it.each(["pending", "error", "cancelled"] as const)("CPU answer shown while CUDA is %s: no CUDA role, CPU only as previous", (phase) => {
+    const previous = cpuAnswer();
+    const s = { ...previous, requestedProfile: "cuda", load: { ...previous.load, phase } };
+    expect(profileRoles("cuda", s)).toEqual([]);
+    expect(profileRoles("cpu", s)).toEqual(["active_previous"]);
+  });
+
+  it("a request that followed the default is not marked 'selected here'", () => {
+    const s = answered("cpu", environment("cpu"), true, "cpu");
+    expect(profileRoles("cpu", s)).toEqual(["active", "default_at_request"]);
+  });
+
+  it("a default saved later is not attached to the old answer", () => {
+    const s = answered("cpu", environment("cpu"), false, null); // default was unset when asked
+    expect(profileRoles("cuda", s)).toEqual([]);
+    expect(profileRoles("cpu", s)).toEqual(["active", "requested"]);
   });
 });

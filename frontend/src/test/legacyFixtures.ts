@@ -27,6 +27,7 @@ export function environment(profile: string, patch: Partial<LegacyEnvironment> =
     devices: null,
     installedModels: [],
     installedModelCount: 0,
+    installedModelsState: "counted",
     nativeRunnable: null,
     openvinoIr: null,
     guidance: [],

@@ -116,7 +116,7 @@ describe("parseEnvironment — fail closed on required fields, tolerate optional
     expect(env.devices?.ctranslate2Available).toBeNull();
     expect(env.devices?.accelerators).toEqual([{ runtime: "pytorch_xpu", index: null, name: "XPU ?", usable: false }]);
     expect(env.devices?.openvino).toBeNull();
-    expect(env.devices?.native).toEqual({ built: null, variants: [] });
+    expect(env.devices?.native).toEqual({ built: null, variants: null }); // invalid variants: unknown, not "none"
     expect(env.installedModels).toBeNull();
     expect(env.installedModelCount).toBeNull();
     expect(env.nativeRunnable).toBeNull();
@@ -174,5 +174,59 @@ describe("classifyIssue (fixed codes, never the text)", () => {
     [42, { kind: "malformed", probe: null, seconds: null }],
   ])("%s", (message, expected) => {
     expect(classifyIssue(message)).toEqual(expected);
+  });
+});
+
+describe("PR #41 review P2-2: an empty model list or native report is not claimed as zero/none", () => {
+  it("only `models list` failed (real service): models [] + an error → unknown, not 0", () => {
+    const env = parseEnvironment(fixture.cuda_models_list_failed);
+    expect(env.activeProfile).toBe("cuda");
+    expect(env.installedModelsState).toBe("unknown");
+    expect(env.installedModelCount).toBeNull();
+    expect(env.installedModels).toBeNull();
+    expect(env.issues).toEqual([{ kind: "failed", probe: null, seconds: null }]);
+    expect(env.devices).not.toBeNull(); // the rest of the answer is still shown
+  });
+
+  it("models [] with no failure is a real zero", () => {
+    const raw = clone("cuda");
+    raw.models = [];
+    const env = parseEnvironment(raw);
+    expect(env.installedModelsState).toBe("counted");
+    expect(env.installedModelCount).toBe(0);
+  });
+
+  it("models [] with a failure attributed to another call is still a zero; with a models timeout it is unknown", () => {
+    const raw = clone("cuda");
+    raw.models = [];
+    raw.errors = ["CLI timed out after 200s: devices --json"];
+    expect(parseEnvironment(raw).installedModelCount).toBe(0);
+    raw.errors = ["CLI timed out after 60s: models list --available --all --json"];
+    expect(parseEnvironment(raw).installedModelsState).toBe("unknown");
+  });
+
+  it("rows obtained: installed=true rows are counted exactly, even next to an unrelated failure", () => {
+    const raw = clone("cuda");
+    raw.errors = ["CLI exited 1: something"];
+    const env = parseEnvironment(raw);
+    expect(env.installedModelsState).toBe("counted");
+    expect(env.installedModelCount).toBe(3); // 3 of 4 catalog rows; OpenVINO IRs are separate
+    expect(env.openvinoIr).toEqual({ installed: 0, total: 0 });
+  });
+
+  it.each([
+    ["missing", undefined, null],
+    ["null", null, null],
+    ["array", ["cpu"], null],
+    ["string", "cpu", null],
+    ["empty object", {}, []],
+    ["all false", { cpu: false, vulkan: false }, []],
+    ["some true", { cpu: true, vulkan: false }, ["cpu"]],
+  ])("native.variants %s", (_name, variants, expected) => {
+    const raw = clone("intel");
+    const native = (raw.devices as Raw).native as Raw;
+    if (variants === undefined) delete native.variants;
+    else native.variants = variants;
+    expect(parseEnvironment(raw).devices?.native?.variants).toEqual(expected);
   });
 });

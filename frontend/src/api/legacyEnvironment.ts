@@ -82,7 +82,8 @@ export interface DeviceObservation {
   /** `devices.openvino.values` (e.g. "CPU", "GPU.0"); `null` = not reported. */
   openvino: { available: boolean | null; devices: string[] } | null;
   /** `devices.native` (whisper.cpp builds in the manifest); `null` = not reported. */
-  native: { built: boolean | null; variants: string[] } | null;
+  /** `variants`: `null` = missing or not an object (unknown); `[]` = reported, none built. */
+  native: { built: boolean | null; variants: string[] | null } | null;
   probes: ProbeObservation[];
   probeCacheHit: boolean | null;
 }
@@ -113,9 +114,19 @@ export interface LegacyEnvironment {
   languageCount: number;
   /** `null` = no device report (no active profile, or the probe failed). */
   devices: DeviceObservation | null;
-  /** Rows of `models[]` with `installed === true`; `null` = not obtained (no active profile) or unreadable. */
+  /**
+   * Rows of `models[]` with `installed === true`; `null` = no count can be claimed (see
+   * `installedModelsState`).
+   */
   installedModels: InstalledModel[] | null;
   installedModelCount: number | null;
+  /**
+   * counted = rows were obtained (an empty list only when no failure could explain it);
+   * not_obtained = no active profile, so the server did not ask; unknown = `models` unreadable,
+   * or `[]` together with a failure that may be the model list (the server initialises
+   * `models = []` and only adds a text to `errors` when `models list` fails).
+   */
+  installedModelsState: "counted" | "not_obtained" | "unknown";
   /** Variants `native status` reported as runnable; `null` = not reported. */
   nativeRunnable: string[] | null;
   /** OpenVINO encoder IRs (`openvino_models`), counted separately from models; `null` = not reported. */
@@ -242,7 +253,7 @@ function devices(value: unknown): DeviceObservation | null {
     native: native
       ? {
           built: tri(native.built),
-          variants: variants ? capped(Object.keys(variants).filter((k) => identifier(k) && variants[k] === true)) : [],
+          variants: variants ? capped(Object.keys(variants).filter((k) => identifier(k) && variants[k] === true)) : null,
         }
       : null,
     probes: capped(
@@ -347,7 +358,14 @@ export function parseEnvironment(raw: unknown): LegacyEnvironment {
   const asr = parsedOptions("asr");
   const diarization = parsedOptions("diarization");
   // Without an active profile the server does not query models (it returns `[]`): not obtained.
-  const models = active === null ? null : installedModels(r.models);
+  // An empty list next to a failure that is the model list — or a failure whose call cannot be
+  // identified (e.g. "CLI exited 1: …" carries no command) — may be the server's initial `[]`:
+  // unknown, never "0". An empty list with no such failure is a real zero.
+  const rows = active === null ? null : arr(r.models);
+  const mayBeModelFailure = issues.some((i) => i.probe === "models" || i.probe === null || i.probe === "profile_runtime");
+  const modelsState: LegacyEnvironment["installedModelsState"] =
+    active === null ? "not_obtained" : rows === null || (rows.length === 0 && mayBeModelFailure) ? "unknown" : "counted";
+  const models = modelsState === "counted" ? installedModels(rows) : null;
   return {
     profiles,
     activeProfile: active,
@@ -357,6 +375,7 @@ export function parseEnvironment(raw: unknown): LegacyEnvironment {
     devices: devices(r.devices),
     installedModels: models === null ? null : capped(models),
     installedModelCount: models === null ? null : models.length,
+    installedModelsState: modelsState,
     nativeRunnable: nativeRunnable(r.native),
     openvinoIr: openvinoIr(r.openvino_models),
     guidance: guidance(options.guidance),

@@ -10,7 +10,7 @@ import { type EnvironmentState, isCurrentResult } from "./environment";
 export interface EnvironmentSummary {
   hardware: { kind: "gpu"; names: string[]; more: number } | { kind: "cpu"; threads: number | null } | { kind: "not_obtained" };
   profile: { kind: "value"; name: string } | { kind: "none" } | { kind: "not_obtained" };
-  models: { kind: "count"; count: number } | { kind: "not_obtained" };
+  models: { kind: "count"; count: number } | { kind: "not_obtained" } | { kind: "unknown" };
   native: { kind: "variants"; names: string[] } | { kind: "none" } | { kind: "unknown" } | { kind: "not_obtained" };
 }
 
@@ -35,8 +35,17 @@ export function summarize(data: LegacyEnvironment | null): EnvironmentSummary {
   return {
     hardware,
     profile: data.activeProfile ? { kind: "value", name: data.activeProfile } : { kind: "none" },
-    models: data.installedModelCount === null ? { kind: "not_obtained" } : { kind: "count", count: data.installedModelCount },
-    native: !devices ? { kind: "not_obtained" } : !devices.native ? { kind: "unknown" } : variants?.length ? { kind: "variants", names: variants } : { kind: "none" },
+    models:
+      data.installedModelsState === "counted" && data.installedModelCount !== null
+        ? { kind: "count", count: data.installedModelCount }
+        : { kind: data.installedModelsState === "not_obtained" ? "not_obtained" : "unknown" },
+    native: !devices
+      ? { kind: "not_obtained" }
+      : !devices.native || variants === null || variants === undefined
+        ? { kind: "unknown" }
+        : variants.length
+          ? { kind: "variants", names: variants }
+          : { kind: "none" },
   };
 }
 
@@ -79,6 +88,29 @@ export function selectionNote(state: EnvironmentState): SelectionNote {
   // With several built profiles and none specified, the server picks none (a choice is needed);
   // with none built, there is nothing to choose.
   return state.data.profiles.some((p) => p.exists) ? { kind: "choose" } : { kind: "none_usable" };
+}
+
+/**
+ * Role chips for one profile row of the details. They describe the answer being shown:
+ * for a previous result (pending, failed, cancelled or a changed selection) only the server's
+ * profile *of that answer* is marked, as such; the current selection and the current saved
+ * default are never attached to it. The default shown is the one saved when that request was sent.
+ */
+export type ProfileRole = "active" | "active_previous" | "requested" | "default_at_request";
+
+export function profileRoles(name: string, state: EnvironmentState): ProfileRole[] {
+  const data = state.data;
+  if (!data) return [];
+  const current = isCurrentResult(state);
+  const roles: ProfileRole[] = [];
+  if (name === data.activeProfile) roles.push(current ? "active" : "active_previous");
+  if (current && state.dataFor) {
+    // "Selected here" only for a manual choice; a request that followed the default is marked by
+    // the default chip instead.
+    if (!state.dataFor.followsDefault && name === state.dataFor.profile) roles.push("requested");
+    if (name === state.dataFor.savedDefault) roles.push("default_at_request");
+  }
+  return roles;
 }
 
 /** Number of separate things worth a warning in the short (Normal) view. */

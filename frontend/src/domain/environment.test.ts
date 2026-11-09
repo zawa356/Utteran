@@ -182,6 +182,17 @@ describe("EnvironmentController", () => {
     expect(controller.store.get().requestedProfile).toBeNull();
   });
 
+  it("records the saved default at request time; a later default change does not rewrite it", async () => {
+    let saved: string | null = "cpu";
+    const answer = deferred<LegacyEnvironment>();
+    const controller = new EnvironmentController(api(() => answer.promise), { defaultProfile: () => saved });
+    const run = controller.select("intel");
+    saved = "cuda"; // saved in S1 while the answer is on its way
+    answer.resolve(environment("intel"));
+    await run;
+    expect(controller.store.get().dataFor?.savedDefault).toBe("cpu");
+  });
+
   it("views: empty (no usable profile) and partial (answered with issues) are not errors", async () => {
     const answers = [
       environment("cpu", { activeProfile: null }),

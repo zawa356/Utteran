@@ -27,8 +27,11 @@ export interface EnvironmentState {
   load: Operation;
   /** The last successful answer — possibly for an *earlier* request (see `dataFor`). */
   data: LegacyEnvironment | null;
-  /** The request that produced `data`, and when it arrived (client clock, ms). */
-  dataFor: (EnvironmentRequest & { receivedAt: number }) | null;
+  /**
+   * The request that produced `data`, when it arrived (client clock, ms) and the saved default
+   * profile *at the time of that request* (a later default is never attached to an old answer).
+   */
+  dataFor: (EnvironmentRequest & { receivedAt: number; savedDefault: string | null }) | null;
   /** Client clock (ms) when the current/last attempt started; elapsed time is shown from this. */
   startedAt: number | null;
   readiness: Readiness;
@@ -150,12 +153,12 @@ export class EnvironmentController {
       startedAt: this.now(),
       abandoned: state.abandoned + (superseded ? 1 : 0),
     });
-    const promise = this.run(request);
+    const promise = this.run(request, this.defaultProfile());
     this.inFlight = { request, promise };
     return promise;
   }
 
-  private async run(request: EnvironmentRequest): Promise<void> {
+  private async run(request: EnvironmentRequest, savedDefault: string | null): Promise<void> {
     try {
       const result = await this.latest.run((signal) => this.api.getEnvironment(request.profile, request.refresh, signal));
       if (result.stale) {
@@ -165,7 +168,7 @@ export class EnvironmentController {
       this.inFlight = null;
       this.store.patch({
         data: result.value,
-        dataFor: { ...request, receivedAt: this.now() },
+        dataFor: { ...request, receivedAt: this.now(), savedDefault },
         load: succeeded(this.store.get().load),
       });
     } catch (error) {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { Page, Request } from "@playwright/test";
 import { choose, expect, SESSION_HEADER, shot, test } from "./fixtures";
 
@@ -240,4 +241,125 @@ test("900×660, English, long names: no horizontal scroll, keyboard reaches the 
     onSelector = await app.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="env-profile"]')));
   }
   expect(onSelector).toBe(true);
+});
+
+// ---- PR #41 review fixes -------------------------------------------------------------------
+
+const snapshots = JSON.parse(readFileSync(new URL("../src/test/fixtures/environment-snapshots.json", import.meta.url), "utf-8")) as Record<string, unknown>;
+const roles = (page: Page, profile: string) => page.getByTestId("pane-inspector").getByTestId(`env-profile-row-${profile}`).locator("[data-role]");
+
+/**
+ * One route handler for `profile` for the whole test (never unrouted while a request is held,
+ * which would complete the Route behind the handler's back). Each request waits until the test
+ * decides its outcome with `next()`; after `passthrough()` requests go straight to the server.
+ */
+async function gateProfile(page: Page, profile: string) {
+  const waiting: ((outcome: "continue" | "abort") => void)[] = [];
+  let passthrough = false;
+  await page.route(`**/api/environment?profile=${profile}*`, async (route) => {
+    if (passthrough) return route.continue();
+    const outcome = await new Promise<"continue" | "abort">((resolve) => waiting.push(resolve));
+    // A request the page itself already aborted (cancel) cannot be continued; that is expected.
+    await (outcome === "abort" ? route.abort("connectionreset") : route.continue()).catch(() => undefined);
+  });
+  return {
+    async next(outcome: "continue" | "abort") {
+      await expect.poll(() => waiting.length).toBeGreaterThan(0);
+      waiting.shift()!(outcome);
+    },
+    passthrough() {
+      passthrough = true;
+    },
+  };
+}
+
+test("P2-1: while CUDA is pending, failed or cancelled, the CPU answer carries no CUDA/current roles", async ({ app }) => {
+  const seen = recordApi(app);
+  await choose(app, "env-profile", /^cpu/);
+  await expect(sum(app, "profile")).toHaveText("cpu");
+  await app.getByTestId("mode-expert").click();
+  await expect(roles(app, "cpu")).toHaveText(["サーバーが使用", "この画面で選択"]);
+
+  // Pending.
+  const cuda = await gateProfile(app, "cuda");
+  await choose(app, "env-profile", /^cuda/);
+  await expect(app.getByTestId("pane-inspector").getByTestId("env-previous")).toBeVisible();
+  await expect(roles(app, "cuda")).toHaveCount(0);
+  await expect(roles(app, "cpu")).toHaveText(["前回の取得時にサーバーが使用"]);
+  // Error.
+  await cuda.next("abort");
+  await expect(app.getByTestId("pane-inspector").getByTestId("env-error")).toBeVisible();
+  await expect(roles(app, "cuda")).toHaveCount(0);
+  await expect(roles(app, "cpu")).toHaveText(["前回の取得時にサーバーが使用"]);
+  // Cancelled (the retry is held, then the wait is stopped).
+  await app.getByTestId("pane-inspector").getByTestId("env-error-retry").click();
+  await expect(app.getByTestId("pane-inspector").getByTestId("env-loading")).toBeVisible();
+  await app.getByTestId("pane-inspector").getByTestId("env-cancel").click();
+  await expect(app.getByTestId("pane-inspector").getByTestId("env-cancelled")).toBeVisible();
+  await expect(roles(app, "cuda")).toHaveCount(0);
+  await expect(roles(app, "cpu")).toHaveText(["前回の取得時にサーバーが使用"]);
+  await cuda.next("continue"); // the late answer of the cancelled request is discarded
+  await expect(app.getByTestId("pane-inspector").getByTestId("env-cancelled")).toBeVisible();
+  await expect(roles(app, "cuda")).toHaveCount(0);
+  // A successful retry shows the current roles again.
+  cuda.passthrough();
+  await app.getByTestId("pane-inspector").getByTestId("env-cancelled-retry").click();
+  await expect(roles(app, "cuda")).toHaveText(["サーバーが使用", "この画面で選択"]);
+  await expect(roles(app, "cpu")).toHaveCount(0);
+  // Mode switches add no request; nothing was written.
+  await app.getByTestId("mode-normal").click();
+  await app.getByTestId("mode-expert").click();
+  expect(envRequests(seen)).toEqual(["?profile=cpu", "?profile=cuda", "?profile=cuda", "?profile=cuda"]);
+  expect(writes(seen)).toEqual([]);
+});
+
+test("P2-1: a default saved while the old answer is shown is not attached to it", async ({ app }) => {
+  // Follow a saved default "cpu" first.
+  await app.getByTestId("nav-settings").click();
+  await choose(app, "settings-profile", "CPU");
+  await app.getByTestId("settings-save").click();
+  await expect(app.getByTestId("settings-status")).toHaveText("保存しました。");
+  await app.getByTestId("mode-expert").click();
+  await app.getByTestId("nav-transcribe").click();
+  await expect(roles(app, "cpu")).toHaveText(["サーバーが使用", "取得時の設定の既定"]);
+  // Save "cuda" while its answer is held: the shown cpu answer must not get the new default.
+  const cuda = await gateProfile(app, "cuda");
+  await app.getByTestId("nav-settings").click();
+  await choose(app, "settings-profile", "CUDA");
+  await app.getByTestId("settings-save").click();
+  await expect(app.getByTestId("settings-status")).toHaveText("保存しました。");
+  await app.getByTestId("nav-transcribe").click();
+  await expect(app.getByTestId("pane-inspector").getByTestId("env-loading")).toBeVisible();
+  await expect(roles(app, "cuda")).toHaveCount(0);
+  await expect(roles(app, "cpu")).toHaveText(["前回の取得時にサーバーが使用"]);
+  await cuda.next("continue");
+  await expect(roles(app, "cuda")).toHaveText(["サーバーが使用", "取得時の設定の既定"]);
+});
+
+test("P2-2: a failed model list is 'unknown', not 0; a missing native variant report is 'unknown'", async ({ app }) => {
+  await app.route("**/api/environment?profile=cuda*", async (route) => {
+    const response = await route.fetch(); // real request through the session; body replaced by the real-service fixture
+    return route.fulfill({ response, json: snapshots.cuda_models_list_failed });
+  });
+  await choose(app, "env-profile", /^cuda/);
+  await expect(sum(app, "profile")).toHaveText("cuda");
+  await expect(sum(app, "models")).toHaveText("不明");
+  await expect(app.getByTestId("env-partial")).toBeVisible();
+  await app.getByTestId("mode-expert").click();
+  const pane = app.getByTestId("pane-inspector");
+  await expect(pane.getByTestId("env-sum-models").locator("dd")).toHaveText("不明");
+  await expect(pane.getByTestId("env-detail-models")).toContainText("0件とは限りません");
+
+  await app.route("**/api/environment?profile=intel*", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as Record<string, Record<string, Record<string, unknown>>>;
+    delete body.devices!.native!.variants;
+    return route.fulfill({ response, json: body });
+  });
+  await choose(app, "env-profile", /^intel/);
+  await expect(pane.getByTestId("env-sum-native").locator("dd")).toHaveText("不明");
+  await expect(pane.getByTestId("env-native")).toContainText("記録上のvariant: 不明");
+  await app.getByTestId("mode-normal").click();
+  await expect(sum(app, "native")).toHaveText("不明");
+  await expect(sum(app, "models")).toHaveText("1件"); // intel's model list itself was fine
 });

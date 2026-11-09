@@ -8,7 +8,8 @@ opened.
 
 Profiles: ``cpu`` (CPU only, no installed model), ``cuda`` (one synthetic CUDA GPU, faster-whisper
 and pyannote models), ``intel`` (XPU, OpenVINO, whisper.cpp native build, needs a rebuild, and a
-failing ``models path`` call -> partial result), ``vulkan`` (not built).
+failing ``models path`` call -> partial result), ``vulkan`` (not built). The fixture also has
+``cuda_models_list_failed``: the same cuda profile where only ``models list`` fails.
 
     uv run python tools/ui2/synthetic_environment.py --write   # regenerate the frontend fixture
     uv run python tools/ui2/synthetic_environment.py --check   # fail if it is out of date
@@ -188,8 +189,11 @@ def _models(profile: str) -> list[dict[str, Any]]:
 class SyntheticCli:
     """Answers ``CliAdapter``'s JSON/text contracts with synthetic data (no subprocess)."""
 
-    def __init__(self, *, delays: bool = True) -> None:
+    def __init__(self, *, delays: bool = True, fail_models_list: bool = False) -> None:
         self.delays = delays
+        # Only `models list` fails: the real service then returns `models: []` (its initial
+        # value) plus one masked error string — indistinguishable from "zero installed" by shape.
+        self.fail_models_list = fail_models_list
 
     def profile_info(self, profile: str) -> ProfileInfo:
         compatible, reason = _COMPATIBLE[profile]
@@ -223,6 +227,8 @@ class SyntheticCli:
                 time.sleep(DEVICE_DELAYS.get(profile, 0.05) + refresh)
             return _devices(profile)
         if command == "models list --available --all --json":
+            if self.fail_models_list:
+                raise CliError("CLI exited 1: synthetic model catalog could not be read")
             return _models(profile)
         if command == "native status --json":
             runnable = {"cpu": True, "openvino": True} if profile == "intel" else {}
@@ -262,7 +268,12 @@ def snapshots() -> dict[str, object]:
         "intel": "intel",
         "vulkan_not_built": "vulkan",
     }
-    return {key: service.snapshot(profile) for key, profile in requests.items()}
+    result: dict[str, object] = {
+        key: service.snapshot(profile) for key, profile in requests.items()
+    }
+    failing = EnvironmentService(SyntheticCli(delays=False, fail_models_list=True))  # type: ignore[arg-type]
+    result["cuda_models_list_failed"] = failing.snapshot("cuda")
+    return result
 
 
 def render() -> str:

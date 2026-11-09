@@ -39,6 +39,14 @@ def test_fixture_covers_the_s2_states_without_real_values() -> None:
     assert data["cpu"]["options"]["asr"] == []  # no installed model: zero candidates
     assert [o["id"] for o in data["cuda"]["options"]["asr"]] == ["faster-whisper"]
     assert data["intel"]["errors"]  # partial: one CLI call failed
+    # Current legacy contract: a failed `models list` still answers `models: []` plus an error,
+    # so the payload alone cannot tell "zero installed" from "could not list" (UI shows unknown).
+    failed = data["cuda_models_list_failed"]
+    assert failed["active_profile"] == "cuda"
+    assert failed["models"] == []
+    assert len(failed["errors"]) == 1
+    assert failed["options"]["asr"] == []  # no installed rows -> no candidates either
+    assert failed["devices"] is not None
     text = json.dumps(data)
     for marker in ("\\\\", "C:", "/home/", "/Users/", "hf_"):
         assert marker not in text

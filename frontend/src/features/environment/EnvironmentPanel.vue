@@ -150,14 +150,13 @@ const noteUnchanged = computed(() => state.value.followsDefault && (note.value?.
         <EnvironmentDetails
           v-if="props.detail"
           :data="state.data"
-          :requested-profile="state.requestedProfile"
-          :default-profile="savedDefault"
+          :state="state"
           open
         />
         <v-expansion-panels v-else variant="accordion" data-testid="env-more">
           <v-expansion-panel :title="t('env.showDetails')">
             <v-expansion-panel-text>
-              <EnvironmentDetails :data="state.data" :requested-profile="state.requestedProfile" :default-profile="savedDefault" />
+              <EnvironmentDetails :data="state.data" :state="state" />
             </v-expansion-panel-text>
           </v-expansion-panel>
         </v-expansion-panels>

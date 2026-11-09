@@ -2,6 +2,8 @@
 import { computed, ref } from "vue";
 import type { LegacyEnvironment, LegacyOption } from "../../api/legacy";
 import { useI18n } from "../../composables/core";
+import type { EnvironmentState } from "../../domain/environment";
+import { type ProfileRole, profileRoles } from "../../domain/environmentSummary";
 import type { MessageKey } from "../../i18n";
 import EnvironmentNotices from "./EnvironmentNotices.vue";
 
@@ -11,12 +13,18 @@ import EnvironmentNotices from "./EnvironmentNotices.vue";
  */
 const props = defineProps<{
   data: LegacyEnvironment;
-  requestedProfile: string | null;
-  defaultProfile: string | null;
+  /** The whole controller state: roles depend on whether `data` is the current result. */
+  state: EnvironmentState;
   open?: boolean;
 }>();
 const { t } = useI18n();
 
+const ROLE_KEYS: Record<ProfileRole, MessageKey> = {
+  active: "env.role.active",
+  active_previous: "env.role.activePrevious",
+  requested: "env.role.requested",
+  default_at_request: "env.role.default",
+};
 const SECTIONS = ["profiles", "devices", "candidates", "models", "notices"] as const;
 const expanded = ref<string[]>(props.open ? [...SECTIONS] : []);
 
@@ -27,11 +35,7 @@ const profiles = computed(() =>
     status: t(p.exists ? "env.status.built" : "env.status.missing"),
     compatible: t(`env.compat.${String(p.compatible)}` as MessageKey),
     reason: p.compatible === false ? t(`env.reason.${p.compatibilityReason ?? "other"}` as MessageKey) : null,
-    roles: [
-      p.name === props.data.activeProfile ? t("env.role.active") : null,
-      p.name === props.requestedProfile ? t("env.role.requested") : null,
-      p.name === props.defaultProfile ? t("env.role.default") : null,
-    ].filter((r): r is string => r !== null),
+    roles: profileRoles(p.name, props.state).map((r) => ({ code: r, label: t(ROLE_KEYS[r]) })),
   })),
 );
 
@@ -61,7 +65,7 @@ const nativeBuilt = computed(() => {
             <span class="font-weight-medium">{{ p.name }}</span>
             — {{ t("env.detail.exists") }}: {{ p.status }} / {{ t("env.detail.compatible") }}: {{ p.compatible }}
             <span v-if="p.reason" class="text-medium-emphasis"> — {{ p.reason }}</span>
-            <v-chip v-for="r in p.roles" :key="r" size="x-small" label class="ms-1">{{ r }}</v-chip>
+            <v-chip v-for="r in p.roles" :key="r.code" size="x-small" label class="ms-1" :data-role="r.code">{{ r.label }}</v-chip>
           </li>
         </ul>
       </v-expansion-panel-text>
@@ -110,7 +114,9 @@ const nativeBuilt = computed(() => {
       <v-expansion-panel-text class="u-stack">
         <div>
           <h4 class="u-subheading">{{ t("env.detail.installed") }}</h4>
-          <p v-if="data.installedModels === null" class="text-body-2">{{ t("env.notObtained") }}</p>
+          <p v-if="data.installedModels === null" class="text-body-2">
+            {{ data.installedModelsState === "unknown" ? t("env.modelsUnknown") : t("env.notObtained") }}
+          </p>
           <ul v-else class="u-env-list" data-testid="env-installed-models">
             <li v-for="(m, i) in data.installedModels" :key="i">{{ m.label }} <span class="text-medium-emphasis">({{ m.backend }})</span></li>
             <li v-if="data.installedModels.length === 0">{{ t("env.none") }}</li>
@@ -121,7 +127,9 @@ const nativeBuilt = computed(() => {
           <h4 class="u-subheading">{{ t("env.detail.native") }}</h4>
           <template v-if="devices?.native">
             <p class="text-body-2">{{ t("env.native.built", { state: nativeBuilt }) }}</p>
-            <p class="text-body-2">{{ t("env.native.variants", { list: list(devices.native.variants) }) }}</p>
+            <p class="text-body-2">
+              {{ t("env.native.variants", { list: devices.native.variants === null ? t("env.unknown") : list(devices.native.variants) }) }}
+            </p>
           </template>
           <p v-else class="text-body-2">{{ devices ? t("env.unknown") : t("env.notObtained") }}</p>
           <p v-if="data.nativeRunnable" class="text-body-2">{{ t("env.native.runnable", { list: list(data.nativeRunnable) }) }}</p>
