@@ -3,7 +3,8 @@
 - **作成:** 2026-11-09 JST。対象 [Issue #21](https://github.com/zawa356/Utteran/issues/21)（親 [Epic #18](https://github.com/zawa356/Utteran/issues/18)）。
 - **基点:** `main` `a1cb1b0aee4d8cb2c290581521559c1853211c26`（作業直前に`origin/main`と一致を確認。先行コミットなし）。
 - **版:** 開発版 `0.1.44`（未リリース、tag/releaseなし）。根拠は§9。
-- **状態:** Linux（headless Chromium＋実FastAPI）での自動試験まで。**Windows WebView2実機は未受入**（§8）。UI-3全体の完了ではない。
+- **状態:** Linux（headless Chromium＋実FastAPI）とWindows CI（frontend lint/型/Vitest/build、既存のWindows pytest/PowerShell）の自動試験まで。**Windows WebView2実機は未受入**で、最終の手動受入ゲートへ集約する（§8）。UI-3全体の完了ではない。
+- **改訂:** 2026-11-09 PR #40レビュー（P1×2・P2×1）を反映（§4.1・§4.2・§11）。
 - **正本の優先順位:** コード（`src/utteran_gui/api.py`・`settings.py`、`frontend/src/**`）→ 本書 → [design-freeze](design-freeze.md)（承認済みUI方針）。
 
 ## 1. 目的と範囲
@@ -61,25 +62,42 @@ UI-3-0で承認した設定画面のうち、**既存の旧API（v0）とhost br
 load: idle → pending → success | error(再試行)
 draft編集 → dirty ─保存→ save: pending ─200→ success（saved=応答、draft=rebase）
                               ├─4xx/5xx→ error（draft保持、再試行は明示操作のみ）
-                              └─timeout/network→ error(outcomeUnknown)
-                                   └─「最新の状態を確認」(GET) → applied（保存済みと確認）| not_applied（draft保持、再保存可）
-picking中・save/reconcile中は保存不可。revertはsavedへ戻す。
+                              └─timeout/network→ error(outcomeUnknown)、unconfirmedSave={送信したPATCHの凍結コピー}
+                                   └─「最新の状態を確認」(GET) → reconciled={matched:[…], mismatched:[…]}（送信した項目ごと）
+picking中・save/reconcile中・unconfirmedSaveがある間は保存不可（未確認の保存を新しい保存で上書き・隠蔽しない）。
+revertはdraftをsavedへ戻すが、unconfirmedSaveは消さない。GET失敗時はunconfirmedSaveを維持。
 ```
+
+- 再照合は**送信したPATCHの項目と値だけ**をGET結果と比べる（現在のdraft全体のdirty判定とは別）。`matched`は「サーバーの現在値が送信値と一致」という観測で、そのPATCHが原因とは断定しない（別画面が同じ値を保存した可能性）。`null`の既定プロファイル・空のフォルダも値として比較する。
+- 結果不明の後に編集した項目は`rebase`で保持され、照合結果（「送信した変更は一致」）と「未保存の変更があります」が同時に表示され得る。一部だけ一致した場合は一致しない項目名を示し、draftに送信値が残るので明示的に保存し直せる。
 
 - テーマ・言語の画面適用は`saved`（サーバー確定値）だけが駆動する。保存失敗・結果不明では見た目が変わらない。
 - 保存中に追加入力した項目、遅いGETの間に入力した項目は保持（`rebase`）。旧GUIで別項目が変わっていた場合、未編集の項目は**古い値を再送しない**。
 
 ### 4.2 トークン
 
+状態を2つに分ける（PR #40レビューP1-1）。`GET /api/token`は**存在の有無だけ**を返すので、直前のPUTで値が置き換わったか、`configured=false`が直前のDELETEによるものかは証明できない。
+
+**(a) 現在の状態（状態行）** — 最後にサーバーから読んだ存在状態:
+
 | 表示 | 条件 |
 |---|---|
 | 確認しています… | 初回GET中 |
 | 登録済み（値は表示しません）／このセッションで使用中 | `configured && available`（session-onlyなら後者） |
 | 未設定 | `!configured && available` |
-| OSの資格情報保存機能を利用できません | `available=false`（**未設定と混同しない**） |
-| 操作の結果を確認できませんでした | PUT/DELETEが無応答（`outcomeUnknown`）。「状態を確認」でGETするまで状態を断定しない |
+| OSの資格情報保存機能を利用できません | `available=false`（**未設定と混同しない**、未確認の操作より優先） |
+| 現在の状態は未確認です | 結果未確認の操作の後、GETが成功するまで（`statusCurrent=false`）。GETが失敗しても維持 |
 
-PUTの`503`は固定文言「OSの資格情報保存機能を利用できません。トークンは変更されていません。」。サーバーの`detail`・`error_message`・backend名は表示しない。削除は確認ダイアログ必須（Escで取消、要求なし）。
+**(b) 直前の操作が未確認（注記、`unconfirmed={kind: set|clear, reason}`）**:
+
+- `reason=no_response`: timeout/network（要求が届いたか不明）。
+- `reason=store_error`: 5xx（例: 503）。`TokenStore.set()`は書き込み後に読み戻しを行うため、**書き込み成功→読み戻し失敗でも503**になる（P1-2）。よって503で「変更されていません」とは表示しない。
+- GET成功後も注記は残り、「上の表示は現在保存されているかどうかだけ。入力した値に置き換わったかは確認できない（必要なら登録し直す）」／「直前の削除によるものかは確認できない」と案内する。消えるのは、次のPUT/DELETEが2xxで確認されたときか、GET後に利用者が「閉じる」を押したときだけ。
+- 422/401等の明確な拒否は通常のエラー表示（未確認扱いにしない）。
+- 「登録しました」「削除しました」は、そのPUT/DELETE自身の2xx応答のときだけ表示し、後続のGETで消える（再照合で完了メッセージを出さない）。GET成功時は前回の操作エラーも消し、状態行と矛盾する表示を残さない。
+- 古いGET応答はPUT/DELETEの応答を上書きしない。操作中の2回目の登録・削除は拒否。自動再送なし。
+
+**入力欄:** 送信を開始した時点で（成否に関係なく）password欄を空にする。再送は常に利用者の再入力による。入力前の検証（空白のみ・4096超）で送らない場合は消さない。値はコンポーネントのローカルrefと`putToken`の引数以外に複製しない。サーバーの`detail`・`error_message`・backend名は表示しない。削除は確認ダイアログ必須（Escで取消、要求なし）。
 
 ### 4.3 フォルダ選択
 
@@ -102,16 +120,16 @@ PUTの`503`は固定文言「OSの資格情報保存機能を利用できませ�
 |---|---|---|
 | 設定GET失敗 | 読み込みエラー＋再試行 | 再試行（GET） |
 | 設定PATCH 4xx/5xx（例: 503） | 「保存できませんでした。変更内容は残っています。」 | 再試行（明示）／元に戻す |
-| 設定PATCH 無応答 | 「保存されたか確認できません」 | 「最新の状態を確認」→ 確認済み or 再保存 |
-| トークンPUT/DELETE 503 | 固定文言 | 「状態を確認」／再試行 |
-| トークンPUT/DELETE 無応答 | 「操作の結果を確認できませんでした」 | 「状態を確認」（GET）まで状態を断定しない |
+| 設定PATCH 無応答 | 「保存されたか確認できません」＋送信した項目名 | 「最新の状態を確認」→ 送信項目ごとの一致/不一致。照合までは保存不可 |
+| トークンPUT/DELETE 503・5xx | 「資格情報ストアのエラーが返されました。保存（削除）されたかどうかは確認できません」 | 「状態を確認」で現在の存在状態だけ確定。必要なら再入力して登録 |
+| トークンPUT/DELETE 無応答 | 「応答がなかったため結果を確認できていません」 | 同上。GET失敗中は「現在の状態は未確認」を維持 |
 | ログフォルダ 400/503 | 「フォルダが見つかりません」／「ファイルマネージャーを起動できません」 | もう一度押す |
 | pickerのhost不在 | 「Windowsデスクトップ版のUtteranが必要」 | パスを直接入力 |
 | wizard status失敗 | 読み込みエラー＋再試行 | 旧画面への移動は可能 |
 
 ## 7. 試験
 
-**Vitest（`npm test`）: 29ファイル・255件成功**（UI-2/S1本番分111、プロトタイプ144は不変）。S1で追加・変更した主な試験:
+**Vitest（`npm test`）: 31ファイル・272件成功**（UI-2/S1本番分128、プロトタイプ144は不変。初版255件にPR #40レビュー分17件を追加、§11）。S1で追加・変更した主な試験:
 
 - `api/legacy.test.ts`（新）: `parseSettings`の正常・欠損・未知フィールド・`default_profile=null`・空フォルダ・`token_store_available=false`・portable/session-only・fallback/raw、token/wizardのparse、PATCH本文（null/空文字）、`PUT /api/settings`を使わないこと。
 - `domain/settings.test.ts`: 5項目のdiff・部分PATCH・theme/language非退行・二重送信1回・保存中の追加入力保持・失敗時draft不変・revert・旧GUIでの別項目変更を再送しない・遅いGETが保存結果を上書きしない・結果不明→GET再照合（applied/not_applied）・4096超を送らない、fake hostでのpicker（種類・draftのみ・キャンセルno-op・host不在・選択中の保存/二重picker拒否）。
@@ -119,7 +137,7 @@ PUTの`503`は固定文言「OSの資格情報保存機能を利用できませ�
 - `domain/logs.test.ts`（新）: サーバー`log_dir`だけを開く、400/503、wizardはGETのみ（POST・`/api/v1`なし）、起動時の既定profile表示と保存後の追従/非追従。
 - `host/host.test.ts`: `input_folder`/`output_folder`の転送、dialog失敗はキャンセル扱いしない。
 
-**Playwright E2E（実FastAPI、`npm run e2e`）: 22件成功**（既存`next-ui.spec.ts` 10件＋`settings-s1.spec.ts` 12件）。既存10件はトークン表示のtestid変更（`settings-token`→`token-status`）のみ調整。
+**Playwright E2E（実FastAPI、`npm run e2e`）: 23件成功**（既存`next-ui.spec.ts` 10件＋`settings-s1.spec.ts` 13件。レビュー修正でトークン2件・設定1件を改訂/追加）。既存10件はトークン表示のtestid変更（`settings-token`→`token-status`）のみ調整。
 
 - 実`GET/PATCH /api/settings`でprofile/フォルダ保存→再読込→旧GUI（`/`）の`#default-output`等と一致、PATCHは変更分だけ（`null`/`""`の消去を含む）、wizard進捗不変、`PUT /api/settings`なし。
 - 実`GET/PUT/DELETE /api/token`（ハーネスの合成in-memory keyring、実`TokenStore`経由）で登録/確認付き削除。DOM・console・storage・URL・`/api/settings`応答に合成値が出ないこと。keyring失敗（合成値に拒否マーカー→実`TokenStoreUnavailable`→503）、無応答（`route.fetch`後に切断）→unknown→再確認、`available=false`、portable session-only。
@@ -134,14 +152,21 @@ PUTの`503`は固定文言「OSの資格情報保存機能を利用できませ�
 
 **E2Eハーネスの変更（`tools/ui2/serve_next_ui.py`、製品からimportされない）:** read-onlyだった`SyntheticKeyring`を**プロセス内のin-memory**に変更（拒否マーカー付きの値だけ失敗）、ログ保存先を一時ディレクトリに固定（実`config.toml`やユーザーのログ先を読まない）、旧画面の`/logo`用にリポジトリのアイコンを一時ディレクトリへ複製。各テストはfixtureでAPI経由で設定5項目とトークンをリセットする（設定ファイルは起動ごとの一時ディレクトリ、実keyring・実ユーザー設定は使わない）。
 
-## 8. Windows WebView2 実機受入（未実施）
+## 8. Windows WebView2 実機受入（未実施、最終ゲートへ集約）
 
-この作業環境（Linuxコンテナ）ではWindows WebView2・OSダイアログ・IME・OS DPIを試験できない。**以下はすべて未受入**であり、Draft PRのまま提出する。UI-4 #22の全画面受入とは区別する。
+**受入の運用（owner方針、2026-11-09〜継続適用）:**
+
+- **各フェーズ／修正PR（S1〜S5）:** Linux自動試験＋**Windows CI自動試験**（`UI-3 frontend Windows`＝lint・vue-tsc・Vitest・build、既存の`Windows pytest (no models)`・`Windows PowerShell 5.1 parse and headless startup`）の全必須ジョブ成功を確認してmerge可否を判断する。各PRでownerに実機確認を求めない。
+- **最終統合（UI-3/UI-4の最終ゲート）:** WebView2の実起動、OSネイティブpicker、Explorer、DPI 125/150/200%、IME、installer/portableの**手動実機確認をまとめて行う**。それまで既定GUIの切替・正式リリースはしない。
+- 自動CIの成功を実機受入完了とは書かない。S1の実機未確認項目は下記のとおり記録し、最終ゲートで消化する。
+- Windows CIジョブは合成試験のみ（fake host/fetch）で、実トークン・OSキーチェーン・ユーザープロファイル・OSダイアログに触れない。新ジョブを必須チェックにするにはリポジトリ管理者がbranch protectionのrequired checksへ`UI-3 frontend Windows (npm ci, lint, types, unit, build)`を追加する必要がある（本作業では保護ルールを変更していない）。
+
+この作業環境（Linuxコンテナ）ではWindows WebView2・OSダイアログ・IME・OS DPIを試験できない。**以下はすべて未受入（最終実機受入待ち）**。UI-4 #22の全画面受入と合わせて実施する。
 
 1. `uv sync --extra gui`、`cd frontend && npm ci && npm run build`、`uv run utteran-gui --next-ui`で起動（引数なしの起動が旧GUIのままであることも確認）。
 2. 設定 → 「既定の入力フォルダ」の「選択…」でOSのフォルダ選択が開くこと。1回選択、出力側も1回選択、もう一度開いてキャンセル（値が変わらないこと）。
 3. 既定プロファイルとフォルダを保存 → アプリを終了・再起動 → 値が保持されていること。旧GUI（`--next-ui`なし）の設定画面でも同じ値が表示されること。テーマ/言語の保存と表示が壊れていないこと。
-4. 合成トークン（本物のHF tokenは不要。例: `hf_`で始まる任意の文字列）を登録→「登録済み」、削除→確認→「未設定」。値が再表示されないこと。keyringが使えない条件は自動試験で代替済みだが実機は未確認。
+4. 合成トークン（本物のHF tokenは不要。例: `hf_`で始まる任意の文字列）を登録→「登録済み」、削除→確認→「未設定」。値が再表示されず、送信後に入力欄が空になること。keyringの503（書き込み後の読み戻し失敗を含む）は自動試験で代替済みだが実機は未確認。
 5. ログ保存先の表示と「ログフォルダを開く」でExplorerが開くこと。rawログを有効にした場合の警告（`config.toml`の`[general] raw_subprocess_logs = true`）。
 6. 「セットアップを開く（旧画面）」で旧画面へ移動し、［設定］→［ウィザードを開く］が使えること。未保存の変更がある場合の確認ダイアログ。
 7. DevToolsでCSP違反0。DPI 125/150/200%とIME（日本語のフォルダ名を直接入力）をS1の入力欄で最低限確認。
@@ -157,3 +182,17 @@ PUTの`503`は固定文言「OSの資格情報保存機能を利用できませ�
 - **S4:** 新UIのセットアップウィザード（ワンクリック開始を入れるなら、明示確認→wizard/queue状態照会→`POST /api/wizard/start`の副作用検証→遷移の安全性を試験で実証）、Expertの設定カテゴリ（ログ・高度・プリセット）。
 - **S5:** B8 setup・v1 settings（B5）への接続。
 - **UI-4:** 窓を閉じる際の未保存確認、Windows実機・DPI・IME・installer/portableの受入。
+
+## 11. PR #40レビュー修正（2026-11-09）
+
+レビュー [#5820580886](https://github.com/zawa356/Utteran/pull/40#pullrequestreview-5820580886) の3件。Python製品コード・API契約・host・CLI・DB・B4〜B9・`frontend/src/preview/**`は無変更。版は`0.1.44`のまま（同じ未リリース作業単位のレビュー修正。UI-3-0の各イテレーションと同じ扱い）。
+
+| 指摘 | 原因 | 修正 | 観測できること／断定しないこと |
+|---|---|---|---|
+| P1-1 トークンの結果不明とGET再確認の混同 | 結果不明後のGET成功で`outcomeUnknown`だけ消え`action.error`が残り、「登録済み」と旧エラーが同時表示。入力欄は`set()`が`true`のときだけ消去 | `TokenController`に`statusCurrent`と`unconfirmed{kind,reason}`を分離。GET成功は現在の存在状態だけを更新し、前回操作の表示（成功・エラー）を消す。未確認の記録はGETでは消さない。`TokenCard`は送信開始時に入力欄を空にする | 観測: 現在の存在／利用不可。断定しない: PUTによる置換、DELETEによる未設定 |
+| P1-2 503で「変更されていません」と断定 | `TokenStore.set()`は書き込み後の読み戻し失敗でも`TokenStoreUnavailable`→503 | 5xxを`store_error`の未確認として扱い、文言を「保存（削除）されたかどうかは確認できません」に変更（日英）。固定文言のまま例外本文は出さない。E2Eハーネスに「書き込み成功・読み戻しだけ失敗」の合成keyringを追加し、実APIの503で検証 | 観測: 503が返った事実。断定しない: 保存の有無 |
+| P2 設定の再照合がdraft全体で判定 | `reconcile()`が`isDirty`（現在のdraft全体）で判定し、後続編集があると適用済みでも「保存されていませんでした」 | 保存時に送信PATCHを凍結して`unconfirmedSave`に保持し、GET後に送信項目ごとに`matched`/`mismatched`を返す。照合前の新しい保存は拒否、revertでも記録は消さない。後続編集は`rebase`で保持し「未保存の変更があります」を別に表示 | 観測: サーバーの現在値と送信値の一致。断定しない: 一致がそのPATCHによること |
+
+**回帰試験（先行コードで失敗→修正後に成功を確認）:** `domain/token.review.test.ts` 11件（修正前は9件失敗。残る2件＝古いGETとPUTの競合・GET失敗時のunknown維持は修正前から成立）、`domain/settings.review.test.ts` 6件（修正前は6件すべて失敗）。既存`token.test.ts`の「503で状態不変」は誤った期待だったため「未確認」へ改訂、`settings.test.ts`の照合試験を新しい戻り値へ改訂。E2E: 503（書き込み前の拒否／書き込み後の読み戻し失敗）、応答喪失（未設定→PUT適用、登録済み→別値PUT未適用、DELETE適用、再確認GETの失敗）、設定PATCH喪失後の後続編集と送信項目ごとの照合。skip/xfailの追加なし。
+
+**CI:** `.github/workflows/ci.yml`にjob `ui3-frontend-windows`（`UI-3 frontend Windows (npm ci, lint, types, unit, build)`、`windows-latest`、`frontend/.nvmrc`、npm 11.21.1固定、既存と同じactionのSHA pin）を追加。既存のWindows pytest・PowerShellジョブは変更なし。

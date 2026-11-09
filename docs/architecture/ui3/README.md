@@ -7,6 +7,7 @@
 **2026-11-09 UI-3 S1（本番、opt-in）:** `/next/`の設定画面を実APIとhost bridgeへ接続（テーマ・言語・既定プロファイル・既定入出力フォルダとOSのフォルダ選択・
 Hugging Faceトークンの状態/登録/削除・ログ保存先と「ログフォルダを開く」・セットアップの状態表示と旧画面への移動）。正本は[s1-settings-and-host.md](s1-settings-and-host.md)。
 開発版`0.1.44`、未リリース、Draft PR。**Windows WebView2実機は未受入。**既定GUIは旧画面のまま。
+同日PR #40レビュー（P1×2・P2×1）を反映し、Windows CI（frontend lint/型/Vitest/build）を追加。**各PRはLinux＋Windows CIで判断し、Windows実機の手動確認は最終統合ゲートへ集約する**（[s1 §8](s1-settings-and-host.md#8-windows-webview2-実機受入未実施最終ゲートへ集約)）。
 
 ## 設計基準
 

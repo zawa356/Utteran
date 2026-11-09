@@ -1,5 +1,14 @@
 # AI 作業状態
 
+## 現在地（2026-11-09、PR #40レビュー修正・Windows CI方針、0.1.44据え置き、Draft維持）
+
+- 修正前HEAD `6cbbe8e`（PR #40 HEADと一致、Draft、main `a1cb1b0`）。同じブランチ`claude/wonderful-goldberg-drzjvo`へ通常commit・push。Ready化・merge・tag・releaseなし。
+- P1-1: トークンの「現在の存在状態（GET）」と「直前のPUT/DELETEが未確認」を分離（`statusCurrent`/`unconfirmed`）。GETは置換・削除の因果を証明しないので未確認の注記を残し、旧エラー・完了メッセージは消す。password欄は送信開始時に空にする。
+- P1-2: 503（TokenStoreの書き込み後読み戻し失敗を含む）を「変更されていません」と断定せず、`store_error`の未確認として表示（日英）。E2Eハーネスに読み戻し失敗の合成keyringを追加。
+- P2: 設定の結果不明PATCHは送信時の凍結コピーと項目ごとに照合（`matched`/`mismatched`、因果は断定しない）。照合前の再保存は不可。後続編集は保持し未保存として別表示。
+- CI: `ui3-frontend-windows`（windows-latest: npm ci・lint・vue-tsc・Vitest・build）を追加。**運用: 各PRはLinux＋Windows CIで判断、WebView2・native picker・Explorer・DPI・IME・installer/portableの手動実機確認は最終統合ゲートへ集約**（[ui3/s1 §8・§11](docs/architecture/ui3/s1-settings-and-host.md#11-pr-40レビュー修正2026-11-09)）。required checksへの追加はリポジトリ管理者の作業（未変更）。
+- Python製品コード・API・host・CLI・DB・B4〜B9・preview無変更。
+
 ## 現在地（2026-11-09、UI-3 S1 本番設定画面・OS連携、0.1.44・未リリース、Draft PR）
 
 - 基点`main` `a1cb1b0aee4d8cb2c290581521559c1853211c26`（作業直前に`origin/main`と一致、先行コミットなし）。セッション指定ブランチ
