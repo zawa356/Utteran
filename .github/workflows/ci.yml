@@ -343,6 +343,35 @@ jobs:
         working-directory: tools/ui1/spike
         run: node e2e/run.mjs --out=report.json
 
+  # UI-3 frontend on Windows (owner policy 2026-11-09): every phase/fix PR runs the production
+  # frontend's lint, vue-tsc, Vitest and Vite build on windows-latest as well, next to the Linux
+  # ui2-frontend job. Synthetic tests only (fake host/fetch): no real token, OS keyring, user
+  # profile or OS dialog is touched. This is NOT a WebView2 acceptance — native picker, Explorer,
+  # DPI, IME and installer/portable stay in the final manual Windows gate (UI-3/UI-4).
+  ui3-frontend-windows:
+    name: UI-3 frontend Windows (npm ci, lint, types, unit, build)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: frontend/.nvmrc
+      - name: Pin npm (package.json packageManager)
+        run: npm install -g npm@11.21.1 && npm --version
+      - name: Install exactly the committed lockfile
+        run: npm ci --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Type check (vue-tsc)
+        run: npm run typecheck
+      - name: Unit and contract tests (Vitest)
+        run: npm test
+      - name: Build into src/utteran_gui/web-next
+        run: npm run build
+
   # UI-2 next frontend (frontend/, served only with `utteran-gui --next-ui`). Independent job:
   # clean `npm ci` from the committed lockfile, blocking production-dependency audit, lint,
   # vue-tsc, Vitest, Vite build, Python tests that require the real build, Playwright E2E
