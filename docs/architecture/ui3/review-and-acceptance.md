@@ -128,7 +128,7 @@ CI（GitHub Actions）の結果はDraft PRのchecksを正本とする（この�
 |---|---|---|---|
 | S1 設定の残り | profile、既定入出力フォルダ（native picker）、token（値を出さない・503 keyring）、ログ、wizard再起動 | 旧設定画面と機能表で同等、保存失敗が見える（D-05再発なし）、Linux＋Windows CIの自動試験。native pickerのWindows実機確認は最終ゲートへ集約（2026-11-09 owner方針、[s1 §8](s1-settings-and-host.md#8-windows-webview2-実機受入未実施最終ゲートへ集約)） | 新UIからv1・DBへ書かない |
 | S2 環境の残り | 環境stripの全項目、`profile_warnings`、B4 ready証拠の表示 | ready判定はbackend正本、frontendに互換表なし、架空のreadyなし | 不成立の組合せを候補に出さない |
-| S3 文字起こし・キュー（**S3-A実装済み 0.1.46**: 1ファイル・旧`/api/jobs`・D-03/D-04/D-06/D-07の再発防止・SSEはevent id重複排除。残りはS3-B。[s3a](s3a-legacy-transcription.md)） | 通常A1の5段・Expert C1の3ペインを旧`/api/jobs*`・`/api/queue`（単一in-flight poll）で実装。新UIのnative D&D受け口、最初の自由入力欄（Prompt）とIME | D-03/D-04/D-06/D-07が再現しない、二重投入なし、%を推測しない、IMEのE2E＋Windows実機、旧機能（batch glob・resume・話者数・形式）欠落なし、本プロトタイプの操作E2Eを実API版に移す | v1接続しない、旧SSEは重複排除を決めてから |
+| S3 文字起こし・キュー（**S3-A実装済み 0.1.46**: 1ファイル・旧`/api/jobs`・D-03/D-04/D-06/D-07の再発防止・SSEはevent id重複排除。[s3a](s3a-legacy-transcription.md)。**S3-B1実装済み 0.1.47**: 入力一覧・ファイル別override・出力先・旧APIへの順次投入（共通single-flightゲート、部分受付・結果不明で停止）。[s3b1](s3b1-multi-input-and-admission.md)。残りはS3-B2（複数ジョブ監視・取消）とS5） | 通常A1の5段・Expert C1の3ペインを旧`/api/jobs*`・`/api/queue`（単一in-flight poll）で実装。新UIのnative D&D受け口、最初の自由入力欄（Prompt）とIME | D-03/D-04/D-06/D-07が再現しない、二重投入なし、%を推測しない、IMEのE2E＋Windows実機、旧機能（batch glob・resume・話者数・形式）欠落なし、本プロトタイプの操作E2Eを実API版に移す | v1接続しない、旧SSEは重複排除を決めてから |
 | S4 モデル・結果と履歴・セットアップ | 旧API同等の操作、viewer、旧wizard | 旧→新対応表で欠落なし | — |
 | S5 v1接続 | B9 #37（epoch跨ぎ`queue_revision`）をPython正本とTSで解消した後、Preset/Policy、Job/Queue CAS、Setup B8、events/sync | 旧/新queue排他（G-09）、一方向DB migrationのowner承認 | owner承認前のactivate |
 | UI-4 #22 | DPI 200%の初期窓収容、installer/portable同梱、WebView2実機E2E、起動時間/RAM、既定切替判断 | 実機で受入 | 承認前の既定切替 |
