@@ -16,7 +16,12 @@ Hugging Faceトークンの状態/登録/削除・ログ保存先と「ログフ
 
 **2026-11-09 UI-3 S3-A（本番、opt-in）:** 通常モードで1ファイルの文字起こしを旧`/api/jobs`へ投入し、`GET /api/jobs/{id}`を正本に進捗・取消・終了を表示
 （話者分離オフ、SSEは速報でevent idにより重複排除、非冪等POSTは自動再送せず結果不明を表示、legacy job/queueは非永続）。Expertは同じ1件を3ペインで表示。
-正本は[s3a-legacy-transcription.md](s3a-legacy-transcription.md)。開発版`0.1.46`、未リリース、Draft PR。複数入力・ファイル別override・キュー・同一入力の再投入・出力命名はS3-B。Windows WebView2実機は未受入（最終ゲートへ集約）。
+正本は[s3a-legacy-transcription.md](s3a-legacy-transcription.md)。開発版`0.1.46`、未リリース（PR #42でmainへ統合）。Windows WebView2実機は未受入（最終ゲートへ集約）。
+
+**2026-11-10 UI-3 S3-B1（本番、opt-in）:** 複数入力の一覧（picker追加・複数D&D・手入力の追加、上限100、重複は補助判定）、共通設定＋ファイル別override＋出力先、
+旧`POST /api/jobs`を1件ずつ順に呼ぶ段階的な投入（全件preflight・投入時凍結・単件開始と共通の送信ゲート・拒否/結果不明で停止・停止は送信中をabortしない）。
+受付サマリーは実行状態の正本ではない。正本は[s3b1-multi-input-and-admission.md](s3b1-multi-input-and-admission.md)。開発版`0.1.47`、未リリース、Draft PR。
+S3-B2（複数ジョブの監視・取消・絞込み）とS5（B7・同一入力の独立再実行・出力命名）は後続。Windows WebView2実機は未受入。
 
 ## 設計基準
 
@@ -31,6 +36,7 @@ Hugging Faceトークンの状態/登録/削除・ログ保存先と「ログフ
 | 文書 | 役割 |
 |---|---|
 | [design-freeze.md](design-freeze.md) | **確定した設計判断・受入証拠・未実装とS1〜S5引継ぎ** |
+| [s3b1-multi-input-and-admission.md](s3b1-multi-input-and-admission.md) | **S3-B1: 入力一覧・ファイル別override・出力先、段階的な受付（共通送信ゲート・preflight・凍結・部分受付）、旧APIの副作用、試験、S3-B2/S5引継ぎ** |
 | [s3a-legacy-transcription.md](s3a-legacy-transcription.md) | **S3-A: 1ファイルの文字起こし（旧`/api/jobs`）、DTO、状態遷移、制約、試験、S3-Bへの未決ゲート** |
 | [s2-environment-visibility.md](s2-environment-visibility.md) | **S2: 実行環境の可視化、API projection、旧strip対応、状態・中止・時間制約、試験、G-01と未受入** |
 | [s1-settings-and-host.md](s1-settings-and-host.md) | **S1: 本番設定画面・OS連携の実装、API対応表、状態遷移、試験、Windows手順と未検証** |

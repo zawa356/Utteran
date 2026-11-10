@@ -63,11 +63,18 @@ async function withNativeBridge(page: Page): Promise<void> {
   await expect(page.getByTestId("app-ready")).toBeVisible();
 }
 
+/** S3-B1: a typed path is added to the shared list by an explicit "Add" and becomes the current file. */
+async function addTyped(page: Page, path: string): Promise<void> {
+  await page.getByTestId("tx-input-path").locator("input").fill(path);
+  await page.getByTestId("tx-input-add-typed").click();
+  await expect(page.getByTestId("tx-input-current")).toHaveText(path);
+}
+
 /** cuda profile, typed input/output, model "small" on CPU. */
-async function fillForm(page: Page, name: string, output = OUT): Promise<void> {
+async function fillForm(page: Page, name: string | null, output = OUT): Promise<void> {
   await choose(page, "env-profile", /^cuda/);
   await expect(page.getByTestId("tx-profile")).toContainText("cuda");
-  await page.getByTestId("tx-input-path").locator("input").fill(input(name));
+  if (name !== null) await addTyped(page, input(name));
   if (output !== "") await page.getByTestId("tx-output-path").locator("input").fill(output);
   await choose(page, "tx-model", /small/);
   await choose(page, "tx-device", /^CPU$/);
@@ -93,8 +100,9 @@ test("normal: one file → real POST once → GET is the status → completed wi
   await expect(app.getByTestId("tx-start")).toBeDisabled();
   await expect(app.getByTestId("tx-block")).toContainText("同時に1件");
   // Editing the form while running does not change the running job's snapshot.
-  await app.getByTestId("tx-input-path").locator("input").fill(input("next.wav"));
+  await addTyped(app, input("next.wav"));
   await expect(app.getByTestId("tx-snapshot")).toContainText("meeting.wav");
+  await expect(app.getByTestId("tx-block")).toContainText("同時に1件");
   await expect(app.getByTestId("tx-stage")).toContainText(/工程/);
   await shot(app, "s3a-02-running");
 
@@ -117,8 +125,12 @@ test("normal: one file → real POST once → GET is the status → completed wi
   expect(await app.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   expect(app.url()).not.toContain("synthetic");
 
-  // Same input again is not offered in S3-A; another file is.
+  // Same input again is not offered; another file is. (S3-B1: adding it again is a duplicate.)
   await app.getByTestId("tx-input-path").locator("input").fill(input("meeting.wav"));
+  await app.getByTestId("tx-input-add-typed").click();
+  await expect(app.getByTestId("tx-list-notice")).toContainText("既に一覧にある");
+  await choose(app, "tx-input-choose", /meeting\.wav/);
+  await expect(app.getByTestId("tx-input-status")).toHaveText("受付済み");
   await expect(app.getByTestId("tx-block")).toContainText("同じ入力ファイル");
   await expect(app.getByTestId("tx-start")).toBeDisabled();
   await app.getByTestId("tx-dismiss").first().click();
@@ -150,7 +162,7 @@ test("failure: the guidance is a fixed text; 'done' with exit 0 followed by exit
   await shot(app, "s3a-04-failed");
 
   await app.getByTestId("tx-dismiss").first().click();
-  await app.getByTestId("tx-input-path").locator("input").fill(input("lying-done.wav"));
+  await addTyped(app, input("lying-done.wav"));
   await app.getByTestId("tx-start").click();
   await expect(status(app)).toHaveText("失敗", { timeout: 20_000 });
   await expect(app.getByTestId("tx-exit-code")).toHaveText("終了コード: 3");
@@ -168,7 +180,7 @@ test("cancel: 202 is only 'requested'; 'cancelled' appears after GET; mode switc
   await app.getByTestId("nav-transcribe").click();
   await app.getByTestId("mode-normal").click();
   await expect(status(app)).toHaveText("実行中");
-  await expect(app.getByTestId("tx-input-path").locator("input")).toHaveValue(input("slow.wav"));
+  await expect(app.getByTestId("tx-input-current")).toHaveText(input("slow.wav"));
 
   await app.getByTestId("tx-cancel").click();
   // The cancel answer itself may already be terminal (the tree kill is fast), so the transient
@@ -253,27 +265,29 @@ test("SSE cut: polling alone follows the job to its GET-confirmed end; reconnect
   expect(sse.length).toBeLessThanOrEqual(3);
 });
 
-test("native drop (pywebview event) takes one file; several or a folder are refused; browser picker explains", async ({ app }) => {
+test("native drop (pywebview event) adds files to the list; a folder is refused and counted; browser picker explains", async ({ app }) => {
+  // S3-B1 (revised from S3-A "several are refused"): several files are added in one drop.
   const dispatch = (detail: unknown) => app.evaluate((d) => window.dispatchEvent(new CustomEvent("utteran-input-dropped", { detail: d })), detail);
   await dispatch([
     { path: input("a.wav"), kind: "file" },
     { path: input("b.wav"), kind: "file" },
   ]);
-  await expect(app.getByTestId("tx-drop-notice")).toContainText("2件がドロップされたため、どれも入力にしませんでした");
-  await expect(app.getByTestId("tx-input-path").locator("input")).toHaveValue("");
-  await dispatch([{ path: MEDIA, kind: "folder" }]);
-  await expect(app.getByTestId("tx-drop-notice")).toContainText("フォルダは入力にできません");
-  await dispatch([{ path: input("a.wav"), kind: "file" }]);
-  await expect(app.getByTestId("tx-input-path").locator("input")).toHaveValue(input("a.wav"));
+  await expect(app.getByTestId("tx-list-notice")).toHaveText("2件を追加しました。");
+  await expect(app.getByTestId("tx-input-current")).toHaveText(input("a.wav"));
   await expect(app.getByTestId("tx-input-source")).toHaveText("ドロップで指定");
-  await expect(app.getByTestId("tx-drop-notice")).toHaveCount(0);
+  await dispatch([{ path: MEDIA, kind: "folder" }]);
+  await expect(app.getByTestId("tx-list-notice")).toContainText("フォルダ 1件");
+  await expect(app.getByTestId("tx-input-summary")).toContainText("入力 2件");
+  await dispatch([{ path: input("c.wav"), kind: "file" }]);
+  await expect(app.getByTestId("tx-input-current")).toHaveText(input("c.wav"));
   // The drop target the native shell binds exists before Vue renders.
   expect(await app.evaluate(() => document.querySelector("#input-drop-zone #app") !== null)).toBe(true);
   // On another page no input area listens: a drop there changes nothing.
   await app.getByTestId("nav-settings").click();
-  await dispatch([{ path: input("c.wav"), kind: "file" }]);
+  await dispatch([{ path: input("d.wav"), kind: "file" }]);
   await app.getByTestId("nav-transcribe").click();
-  await expect(app.getByTestId("tx-input-path").locator("input")).toHaveValue(input("a.wav"));
+  await expect(app.getByTestId("tx-input-current")).toHaveText(input("c.wav"));
+  await expect(app.getByTestId("tx-input-summary")).toContainText("入力 3件");
   // Plain browser: no native dialog (pywebview never becomes ready).
   await app.getByTestId("tx-input-pick").click();
   await expect(app.getByTestId("tx-input-pick-error")).toContainText("ブラウザ表示ではOSのファイル選択を使えません", { timeout: 10_000 });
@@ -283,7 +297,7 @@ test("native dialogs: chosen file/folder fill the form; cancel changes nothing",
   await withNativeBridge(app);
   await app.evaluate((p) => (window.__nextPick = p), input("picked.wav"));
   await app.getByTestId("tx-input-pick").click();
-  await expect(app.getByTestId("tx-input-path").locator("input")).toHaveValue(input("picked.wav"));
+  await expect(app.getByTestId("tx-input-current")).toHaveText(input("picked.wav"));
   await expect(app.getByTestId("tx-input-source")).toHaveText("ファイル選択で指定");
   await app.evaluate(() => (window.__nextPick = null));
   await app.getByTestId("tx-output-pick").click();
@@ -296,11 +310,12 @@ test("native dialogs: chosen file/folder fill the form; cancel changes nothing",
 
 test("unsafe values: a relative path is refused before sending; HTML-looking names stay text", async ({ app }) => {
   const seen = recordApi(app);
-  await fillForm(app, "x.wav");
+  await fillForm(app, null);
   await app.getByTestId("tx-input-path").locator("input").fill("relative/x.wav");
   await expect(app.getByTestId("tx-input-path")).toContainText("絶対パス");
+  await expect(app.getByTestId("tx-input-add-typed")).toBeDisabled();
   await expect(app.getByTestId("tx-start")).toBeDisabled();
-  await app.getByTestId("tx-input-path").locator("input").fill(input("<img src=x onerror=alert(1)>.wav"));
+  await addTyped(app, input("<img src=x onerror=alert(1)>.wav"));
   await app.getByTestId("tx-start").click();
   await expect(status(app)).toHaveText("完了", { timeout: 20_000 });
   await expect(app.getByTestId("tx-outputs")).toContainText("<img src=x onerror=alert(1)>.srt");

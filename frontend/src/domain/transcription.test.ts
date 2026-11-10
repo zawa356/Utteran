@@ -7,7 +7,7 @@ import type { EnvironmentState } from "./environment";
 import { idleOperation, type Operation } from "./operation";
 import type { SettingsState } from "./settings";
 import { Store } from "./store";
-import { evaluate, TranscriptionFormController } from "./transcription";
+import { type CommonDraft, evaluate, TranscriptionFormController, type TranscriptionDraft } from "./transcription";
 
 const IN = ["", "synthetic", "media", "meeting.wav"].join("/");
 const OUT = ["", "synthetic", "out"].join("/");
@@ -42,6 +42,9 @@ function settingsState(defaultOutputDir = ""): SettingsState {
   };
 }
 
+/** S3-B1: the input lives in the shared list; the common draft is evaluated with one input. */
+const withInput = (draft: CommonDraft, inputPath = IN): TranscriptionDraft => ({ ...draft, inputPath, inputSource: "typed" });
+
 function harness(data: LegacyEnvironment | null = environment("cuda"), defaultOutputDir = OUT) {
   const env = new Store<EnvironmentState>(envState(data));
   const set = new Store<SettingsState>(settingsState(defaultOutputDir));
@@ -52,8 +55,7 @@ function harness(data: LegacyEnvironment | null = environment("cuda"), defaultOu
 describe("choices come only from the current environment answer", () => {
   it("no static fallback while loading, failed, previous or without a profile", () => {
     const { form } = harness();
-    form.edit({ inputPath: IN });
-    const draft = form.store.get().draft;
+    const draft = withInput(form.store.get().draft);
     const block = (state: EnvironmentState) => evaluate(draft, state).issues.find((i) => i.field === "environment")?.problem;
     expect(block(envState(null, "idle"))).toBe("not_loaded");
     expect(block(envState(environment("cuda"), "pending"))).toBe("loading");
@@ -66,14 +68,16 @@ describe("choices come only from the current environment answer", () => {
   });
 
   it("fills a level only when it has exactly one choice, and builds the exact request", () => {
-    const { form, draft } = harness();
+    const { env, form, draft } = harness();
     // Backend and device are single choices here; the model (two) must be chosen.
     expect(draft()).toMatchObject({ asrBackend: "faster-whisper", asrModel: null, asrDevice: "cuda:0" });
-    form.edit({ inputPath: IN });
-    expect(form.evaluation().request).toBeNull();
-    expect(form.evaluation().issues).toEqual([{ field: "asrModel", problem: "missing" }]);
+    const now = () => evaluate(withInput(draft()), env.get());
+    expect(now().request).toBeNull();
+    expect(now().issues).toEqual([{ field: "asrModel", problem: "missing" }]);
+    // Without an input the common settings report only the missing input.
+    expect(form.evaluation().issues).toEqual([{ field: "input", problem: "empty" }, { field: "asrModel", problem: "missing" }]);
     form.choose("asrModel", "synthetic-b");
-    expect(form.evaluation().request).toEqual({
+    expect(now().request).toEqual({
       inputPath: IN,
       outputDir: OUT,
       profile: "cuda",
@@ -133,59 +137,26 @@ describe("output folder", () => {
   });
 });
 
-describe("input: picker and native drop (one file only)", () => {
+describe("common output folder picker (inputs are added by the shared list, see inputCollection.test.ts)", () => {
   it("picker success, cancel (no change) and missing host", async () => {
-    const { form, draft } = harness();
+    const { form, draft } = harness(environment("cuda"), "");
     const host = createFakeHost();
-    host.nextPick = IN;
-    await form.pick("input_file", host);
-    expect(draft()).toMatchObject({ inputPath: IN, inputSource: "picker" });
+    host.nextPick = OUT;
+    await form.pick("output_folder", host);
+    expect(draft()).toMatchObject({ outputDir: OUT, outputSource: "picker" });
     host.nextPick = null;
-    await form.pick("input_file", host);
-    expect(draft().inputPath).toBe(IN);
-    expect(host.picks).toEqual(["input_file", "input_file"]);
+    await form.pick("output_folder", host);
+    expect(draft().outputDir).toBe(OUT);
+    expect(host.picks).toEqual(["output_folder", "output_folder"]);
     const broken = { ...host, pickPath: () => Promise.reject(new HostUnavailableError()) };
     await form.pick("output_folder", broken);
     expect(form.store.get().pickError).toEqual({ target: "output_folder", reason: "host_unavailable" });
     expect(draft().outputDir).toBe(OUT);
   });
 
-  it("drops: one file is taken; several, a folder or unknown are refused as a whole", () => {
-    const { form, draft } = harness();
-    form.acceptDrop([
-      { path: IN, kind: "file" },
-      { path: `${IN}.2`, kind: "file" },
-    ]);
-    expect(form.store.get().dropNotice).toEqual({ kind: "multiple", count: 2 });
-    expect(draft().inputPath).toBe("");
-    form.acceptDrop([{ path: "/synthetic/media", kind: "folder" }]);
-    expect(form.store.get().dropNotice).toEqual({ kind: "folder" });
-    form.acceptDrop([{ path: IN, kind: "unknown" }]);
-    expect(form.store.get().dropNotice).toEqual({ kind: "unknown" });
-    form.acceptDrop([]);
-    expect(form.store.get().dropNotice).toEqual({ kind: "unknown" });
-    form.acceptDrop([{ path: IN, kind: "file" }]);
-    const after = form.store.get();
-    expect(after.draft).toMatchObject({ inputPath: IN, inputSource: "drop" });
-    expect(after.dropNotice).toBeNull();
-    form.acceptDrop([{ path: IN, kind: "file" }]); // the same notification twice
-    expect(form.store.get()).toBe(after);
-  });
-
-  it("the fake host delivers drops to a subscriber until it unsubscribes", () => {
-    const { form, draft } = harness();
-    const host = createFakeHost();
-    const unsubscribe = host.onDroppedPaths((paths) => form.acceptDrop(paths));
-    host.drop([{ path: IN, kind: "file" }]);
-    expect(draft().inputPath).toBe(IN);
-    unsubscribe();
-    host.drop([{ path: `${IN}.x`, kind: "file" }]);
-    expect(draft().inputPath).toBe(IN);
-  });
-
   it("nothing is written to browser storage or the URL", () => {
     const { form } = harness();
-    form.edit({ inputPath: IN });
+    form.edit({ outputDir: `${OUT}/x` });
     expect(globalThis.localStorage?.length ?? 0).toBe(0);
     expect(globalThis.sessionStorage?.length ?? 0).toBe(0);
   });

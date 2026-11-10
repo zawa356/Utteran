@@ -1,5 +1,25 @@
 # AI 作業状態
 
+## 現在地（2026-11-10、PR #43レビュー修正、0.1.47据え置き、Draft維持）
+
+- 修正前HEAD `1811ea2`（PR #43 HEADと一致、Draft、作業ツリー無変更）。同じブランチ`claude/clever-brahmagupta-ks0x4a`へ通常commit・push。Ready化・merge・tag・releaseなし。
+- P2-1: 混在選択での出力形式の一括編集を、集合の置換から形式ごとの差分（`formatChanges`）へ。未操作の形式は各行の値を保持、行ごとに0件は拒否。
+- P2-2: 順次投入の対象行をゲートに予約して「投入待ち」として表示・ロック（一覧から外せない・編集できない）。送らせない操作は明示の停止だけ。
+- 回帰試験は修正前に失敗することを確認（Vitest 2件・E2E 2件）。Vitest 436、E2E 52。応答喪失E2Eの共有request contextのECONNRESET（試験側）を専用contextで解消。詳細[ui3/s3b1 §13](docs/architecture/ui3/s3b1-multi-input-and-admission.md#13-pr-43レビュー修正2026-11-10版0147据え置き)。Windows WebView2実機は未受入。
+
+## 現在地（2026-11-10、UI-3 S3-B1 複数入力・ファイル別設定・段階的な受付、0.1.47・未リリース、Draft PR）
+
+- 作業開始ゲート: PR #42（S3-A）が`main`へマージ済み（`c56d370`、S3-A HEAD `c6be1ea`を含む）を確認してから着手。基点`main` `c56d37060997428275e11826be5b6b2aa2bac630`、
+  開始時の作業ツリー無変更。セッション指定ブランチ`claude/clever-brahmagupta-ks0x4a`（`origin/main`へfast-forward）で通常commit・push。force push・merge・Ready化・tag・releaseなし。commit identityは既存のエージェントcommitと同じClaude名義。
+- 共通送信ゲート`AdmissionGate`（single-flight＋batch lease＋ページ内ledger）を新設し、S3-Aの単独開始と順次投入の両方の`POST /api/jobs`をここへ一本化。4xx=拒否、応答なし・読めない2xx・5xx=結果不明。
+  入力一覧`InputCollectionController`（通常のprimary＝Expertの一覧の1行、上限100、重複は補助判定、受付済み/不明/送信中はロック）、共通設定＋leaf override＋出力先inherit/custom、
+  `BatchSubmitter`（全件preflight・開始時凍結・1件ずつ・拒否/不明で停止・停止は送信中をabortしない・再開は未投入だけ・終了後に設定を読み直す）。複数ジョブの監視はS3-B2、B7・同一入力の再実行・出力命名はS5。
+- **Python製品コード・API・DB・worker・旧GUI/CLI・preview無変更。** 旧APIの`remember_directories`副作用（最後に受理されたフォルダが既定に残る）は表示し、pytest・E2Eで固定。
+- 検証（Linux、headless Chromium）: Vitest 432（S3-A時点400）、E2E 50（UI-2 10＋S1 13＋S2 11＋S3-A 10＋S3-B1 6）、プロトタイプE2E 96、lint/typecheck/build/audit 0件、
+  pytest 1301 passed/9 skipped/1 xfailed、ruff・mypy（linux/win32）・schema 8件・`uv lock --check`・BOM成功。反復とCI結果はPRに記録。
+- 既存試験の改訂（削除・skipなし）: S3-Aの入力系単体試験の移設、S3-A E2Eの「追加」操作・複数ドロップ対応、UI-2 E2Eの③ボタン数。詳細[ui3/s3b1 §7.1](docs/architecture/ui3/s3b1-multi-input-and-admission.md#71-既存試験の改訂削除skipなし)。
+- **Windows WebView2実機は未受入**（native pickerの連続追加・Explorerからの複数/フォルダ混在ドロップ・IME・DPI・実GPUの順次投入は最終統合ゲート）。
+
 ## 現在地（2026-11-10、PR #42レビュー修正、0.1.46据え置き、Draft維持）
 
 - 修正前HEAD `cb91b9b`（PR #42 HEADと一致、Draft、main `79fa692`）。同じブランチ`claude/eager-gates-ncpesb`へ通常commit・push。Ready化・merge・tag・releaseなし。

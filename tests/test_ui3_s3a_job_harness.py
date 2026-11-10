@@ -145,3 +145,29 @@ def test_post_remembers_folders_as_settings_defaults(client: TestClient) -> None
     settings = client.get("/api/settings").json()
     assert settings["default_output_dir"] == "synthetic-out"
     assert settings["default_input_dir"] == "synthetic-media"
+
+
+def test_sequential_posts_are_separate_jobs_and_the_last_accepted_folder_wins(
+    client: TestClient,
+) -> None:
+    """UI-3 S3-B1 "batch" = one POST per file, one after another (no batch route exists).
+
+    Each POST is its own job with its own id; the serial in-process queue keeps the order. A
+    refusal in between creates no job and does not touch the remembered folders, and the folder
+    defaults follow the *last accepted* POST (the frontend freezes every body before sending,
+    so this server-side change never alters a later body).
+    """
+    first = client.post("/api/jobs", json=_body("one.wav", output_dir="synthetic-out/one"))
+    refused = client.post("/api/jobs", json=_body("reject.wav", output_dir="synthetic-out/no"))
+    second = client.post("/api/jobs", json=_body("two.wav", output_dir="synthetic-out/two"))
+    assert [first.status_code, refused.status_code, second.status_code] == [202, 400, 202]
+    ids = [first.json()["id"], second.json()["id"]]
+    assert ids[0] != ids[1]
+    queue = client.get("/api/queue").json()
+    assert [item["id"] for item in queue] == ids
+    assert all(item["kind"] == "transcription" for item in queue)
+    settings = client.get("/api/settings").json()
+    assert settings["default_output_dir"] == str(Path("synthetic-out/two"))
+    for job_id in ids:
+        _wait(client, job_id, {"completed", "failed", "cancelled"})
+    assert client.post("/api/batch", json={"items": []}).status_code in {404, 405}

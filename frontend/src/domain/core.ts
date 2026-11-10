@@ -2,7 +2,10 @@ import { createHttpClient, type FetchLike } from "../api/http";
 import { createLegacyApi, type LegacyApi } from "../api/legacy";
 import { createLegacyJobsApi, type LegacyJobsApi } from "../api/legacyJobs";
 import type { HostBridge } from "../host";
+import { AdmissionGate } from "./admission";
+import { BatchSubmitter } from "./batchSubmission";
 import { EnvironmentController } from "./environment";
+import { InputCollectionController } from "./inputCollection";
 import { type EventSourceFactory, JobController } from "./job";
 import { LogFolderController } from "./logs";
 import { SettingsController } from "./settings";
@@ -22,9 +25,14 @@ export interface AppCore {
   logs: LogFolderController;
   wizard: WizardStatusController;
   jobsApi: LegacyJobsApi;
-  /** S3-A: one shared form and one job tracker for Normal and Expert (created once). */
+  /** S3-A: one shared form (S3-B1: the common settings) and one job tracker for Normal and Expert (created once). */
   transcription: TranscriptionFormController;
   job: JobController;
+  /** S3-B1: the one door to `POST /api/jobs`, shared by the single start and the batch. */
+  gate: AdmissionGate;
+  /** S3-B1: the one input list (Normal's current file = its primary row). */
+  inputs: InputCollectionController;
+  batch: BatchSubmitter;
   /** App exit: stop polling/SSE and listeners. */
   dispose(): void;
   /** Start-up reads: settings first, then the environment for the saved default profile. */
@@ -47,13 +55,23 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     void environment.selectDefault(after.defaultProfile);
   });
   const transcription = new TranscriptionFormController(environment.store, settings.store);
-  const job = new JobController(jobsApi, { eventSource: deps.eventSource });
+  const gate = new AdmissionGate(jobsApi);
+  const job = new JobController(jobsApi, { eventSource: deps.eventSource, gate });
+  const inputs = new InputCollectionController(gate, transcription.store, environment.store);
+  // Each accepted legacy POST may rewrite the server's default folders (`remember_directories`).
+  // After a batch, re-read the settings (a GET; unsaved settings edits are rebased, never lost)
+  // so the screen shows the server's current values. Nothing is PATCHed back.
+  const batch = new BatchSubmitter(gate, inputs, { afterRun: () => void settings.load() });
   return {
     host: deps.host,
     jobsApi,
     transcription,
     job,
+    gate,
+    inputs,
+    batch,
     dispose() {
+      batch.dispose();
       job.dispose();
       transcription.dispose();
     },

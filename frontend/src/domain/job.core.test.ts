@@ -35,14 +35,17 @@ describe("S3-A in AppCore", () => {
     const form = core.transcription;
     expect(form.store.get().draft).toMatchObject({ outputDir: OUT, outputSource: "saved_default", asrBackend: "faster-whisper", asrModel: null });
     host.nextPick = IN;
-    await form.pick("input_file", host);
+    // S3-B1: the picked file is added to the one shared list and becomes Normal's current file.
+    await core.inputs.pick(host);
     form.choose("asrModel", "small");
     form.choose("asrDevice", "cpu");
-    const request = form.evaluation().request;
+    const primary = core.inputs.primary()!;
+    const request = core.inputs.evaluateRow(primary).request;
     expect(request).toMatchObject({ profile: "cuda", asrModel: "small", asrDevice: "cpu", outputDir: OUT, inputPath: IN });
-    await core.job.submit(request!);
+    await core.job.submit(request!, { clientFileId: primary.clientFileId });
     await vi.advanceTimersByTimeAsync(0);
-    const before = { form: form.store.get(), job: core.job.store.get() };
+    expect(core.inputs.statusOf(primary)).toBe("accepted");
+    const before = { form: form.store.get(), inputs: core.inputs.store.get(), job: core.job.store.get() };
 
     core.shell.setMode("expert");
     core.shell.navigate("settings");
@@ -50,6 +53,7 @@ describe("S3-A in AppCore", () => {
     core.shell.setMode("normal");
     expect(core.transcription).toBe(form);
     expect(form.store.get()).toBe(before.form);
+    expect(core.inputs.store.get()).toBe(before.inputs);
     expect(core.job.store.get().tracking).toBe("active");
 
     finish();

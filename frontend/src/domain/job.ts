@@ -8,19 +8,23 @@ import {
   parseJobEvent,
   SSE_EVENTS,
   type TranscriptionRequest,
-  transcriptionBody,
 } from "../api/legacyJobs";
 import { SingleFlightPoller } from "../transport/poller";
 import { browserScheduler, type Scheduler } from "../transport/scheduler";
+import { AdmissionGate, type GateBlock, type SubmittedSnapshot } from "./admission";
 import { toApiError } from "./operation";
-import { samePath } from "./paths";
 import { Store } from "./store";
+
+export type { SubmittedSnapshot } from "./admission";
 
 /**
  * One legacy transcription job at a time (UI-3 S3-A).
  *
- * - `POST /api/jobs` is not idempotent (no server idempotency key). It is sent once per click
- *   and never resent; a lost answer becomes `unknown` ("may have started").
+ * - `POST /api/jobs` is not idempotent (no server idempotency key). It is sent once per click,
+ *   only through the shared `AdmissionGate` (S3-B1: the batch uses the same door), and never
+ *   resent; a lost answer becomes `unknown` ("may have started").
+ * - This controller follows exactly one job in detail. Jobs accepted by an S3-B1 batch are only
+ *   listed as accepted (with their id); following many jobs is S3-B2.
  * - `GET /api/jobs/{id}` is the only source of status. SSE (`/events`) only makes progress appear
  *   sooner and asks for an early GET; its `done` never decides the outcome.
  * - `POST /api/jobs/{id}/cancel` → 202 means *requested*. "Cancelled" is shown only after GET.
@@ -34,14 +38,6 @@ export type Tracking = "none" | "active" | "terminal" | "lost";
 export type SseState = "off" | "connecting" | "open" | "closed" | "unsupported";
 export type CancelPhase = "idle" | "pending" | "requested" | "failed" | "unknown" | "too_late";
 
-/** A frozen, in-memory copy of exactly what was sent. Not a durable (B7) job snapshot. */
-export interface SubmittedSnapshot {
-  readonly body: Readonly<Record<string, unknown>>;
-  readonly request: Readonly<TranscriptionRequest>;
-  /** Client clock (ms). */
-  readonly submittedAt: number;
-}
-
 export interface JobState {
   submit: { phase: SubmitPhase; error: ApiError | null; startedAt: number | null };
   snapshot: SubmittedSnapshot | null;
@@ -54,7 +50,7 @@ export interface JobState {
   queueCheck: { phase: "idle" | "pending" | "done" | "error"; active: number | null; error: ApiError | null };
 }
 
-export type SubmitBlock = "busy" | "unknown_unresolved" | "same_input";
+export type SubmitBlock = "busy" | "batch" | "unknown_unresolved" | "same_input";
 
 export interface EventSourceLike {
   addEventListener(type: string, listener: (event: MessageEvent) => void): void;
@@ -72,6 +68,8 @@ export interface JobControllerOptions {
   pollIntervalMs?: number;
   /** SSE is opened at most this many times per job; afterwards polling alone tracks it. */
   maxSseConnections?: number;
+  /** The shared start door (AppCore passes one gate to the job and the batch). */
+  gate?: AdmissionGate;
 }
 
 export const POLL_INTERVAL_MS = 2000;
@@ -96,11 +94,11 @@ export class JobController {
   private source: EventSourceLike | null = null;
   private sseConnections = 0;
   /**
-   * Every input this screen sent that was accepted or may have been (unknown), for the whole page
-   * lifetime (dismiss does not clear it). Memory only; a reload, another window or another client
-   * is not covered — the authoritative same-input rule belongs to the backend (S3-B gate).
+   * Every input sent that was accepted or may have been (unknown) is guarded by the gate for the
+   * whole page lifetime (dismiss does not clear it). Memory only; a reload, another window or
+   * another client is not covered — the authoritative same-input rule belongs to the backend (S5).
    */
-  private readonly sentInputs: string[] = [];
+  readonly gate: AdmissionGate;
   private readonly scheduler: Scheduler;
   private readonly now: () => number;
   private readonly pollIntervalMs: number;
@@ -114,42 +112,52 @@ export class JobController {
     this.now = options.now ?? (() => Date.now());
     this.pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
     this.maxSse = options.maxSseConnections ?? MAX_SSE_CONNECTIONS;
+    this.gate = options.gate ?? new AdmissionGate(api, this.now);
   }
 
   /** Why a new submission is not offered (null = it may be sent). */
   blockFor(request: TranscriptionRequest | null): SubmitBlock | null {
     const s = this.store.get();
     if (s.submit.phase === "pending" || s.tracking === "active") return "busy";
+    const gate: GateBlock | null = this.gate.blockFor(null);
+    if (gate !== null) return gate;
     if (s.submit.phase === "unknown") return "unknown_unresolved";
-    // S3-A does not offer re-running the same input: the core derives its job id from the input
-    // fingerprint, so a second run may share history/stage cache (S3-B gate). Use the legacy GUI.
-    if (request && this.sentInputs.some((sent) => samePath(request.inputPath, sent))) return "same_input";
+    // Re-running the same input is not offered: the core derives its job id from the input
+    // fingerprint, so a second run may share history/stage cache (S5 gate). Use the legacy GUI.
+    if (request && this.gate.isGuarded(request.inputPath)) return "same_input";
     return null;
   }
 
-  /** Sends one POST. Returns false (and sends nothing) when blocked or already sending. */
-  async submit(request: TranscriptionRequest): Promise<boolean> {
+  /**
+   * Sends one POST through the shared gate. Returns false (and sends nothing) when blocked or
+   * already sending. `clientFileId` ties the attempt to an input row (S3-B1 list).
+   */
+  async submit(request: TranscriptionRequest, tag: { clientFileId?: string | null } = {}): Promise<boolean> {
     if (this.blockFor(request) !== null) return false;
     this.stopMonitoring();
     const generation = ++this.generation;
-    const frozen = Object.freeze({ ...request, formats: Object.freeze([...request.formats]) as unknown as TranscriptionRequest["formats"] });
-    const snapshot: SubmittedSnapshot = Object.freeze({ body: Object.freeze(transcriptionBody(frozen)), request: frozen, submittedAt: this.now() });
-    this.store.set({ ...initial, snapshot, submit: { phase: "pending", error: null, startedAt: this.now() } });
-    try {
-      const job = await this.api.startJob(frozen);
-      if (generation !== this.generation) return false;
-      this.rememberInput(frozen.inputPath);
-      this.store.patch({ submit: { ...this.store.get().submit, phase: "accepted" }, job });
-      this.track(generation, job);
-      return true;
-    } catch (error) {
-      if (generation !== this.generation) return false;
-      const apiError = toApiError(error);
-      // Only a lost answer may have started a job; a received rejection (400/409/422/503…) did not.
-      if (apiError.outcomeUnknown) this.rememberInput(frozen.inputPath);
-      this.store.patch({ submit: { ...this.store.get().submit, phase: apiError.outcomeUnknown ? "unknown" : "rejected", error: apiError } });
+    this.store.set({ ...initial, submit: { phase: "pending", error: null, startedAt: this.now() } });
+    const answer = this.gate.admit(request, { clientFileId: tag.clientFileId ?? null, origin: "single" });
+    // `admit` records (and freezes) the attempt synchronously before awaiting: show that copy.
+    const gate = this.gate.store.get();
+    const sending = gate.records.find((r) => r.seq === gate.inFlight) ?? null;
+    if (sending) this.store.patch({ snapshot: sending.snapshot });
+    const result = await answer;
+    if (generation !== this.generation) return false;
+    if (result.kind === "blocked") {
+      // Lost a race with another sender between blockFor and admit: nothing was sent.
+      this.store.set(initial);
       return false;
     }
+    const snapshot: SubmittedSnapshot = result.record.snapshot;
+    if (result.kind === "accepted") {
+      this.store.patch({ snapshot, submit: { ...this.store.get().submit, phase: "accepted" }, job: result.job });
+      this.track(generation, result.job);
+      return true;
+    }
+    // Only an answer that may have created a job is unknown; a received 4xx refusal did not.
+    this.store.patch({ snapshot, submit: { ...this.store.get().submit, phase: result.kind, error: result.error } });
+    return false;
   }
 
   /** Requests cancellation once; the GET status decides when it is cancelled. */
@@ -208,10 +216,6 @@ export class JobController {
   dispose(): void {
     this.generation += 1;
     this.stopMonitoring();
-  }
-
-  private rememberInput(path: string): void {
-    if (!this.sentInputs.some((sent) => samePath(path, sent))) this.sentInputs.push(path);
   }
 
   private track(generation: number, job: JobView): void {

@@ -7,10 +7,11 @@ import { MAX_JOB_PATH_LENGTH } from "../../domain/paths";
 import type { MessageKey } from "../../i18n";
 
 /**
- * S3-A processing settings: choices come only from the *current* environment answer
- * (`jobOptions`), never from a static table. Labels are display text; the ids are sent.
+ * Common processing settings (S3-A form, S3-B1: shared by every input that does not override a
+ * value). Choices come only from the *current* environment answer (`jobOptions`), never from a
+ * static table. Labels are display text; the ids are sent.
  */
-const { core, form, evaluation, issue } = useTranscription();
+const { core, form, common: evaluation, commonIssue: issue } = useTranscription();
 const { t } = useI18n();
 const draft = computed(() => form.value.draft);
 const options = computed(() => evaluation.value.options);
@@ -32,6 +33,7 @@ function outputProblem(): string[] {
 <template>
   <section class="u-stack" aria-labelledby="tx-options-heading" data-testid="tx-options">
     <h2 id="tx-options-heading" class="u-subheading">{{ t("tx.options.title") }}</h2>
+    <p class="text-caption" data-testid="tx-options-common">{{ t("tx.options.common") }}</p>
     <v-alert v-if="envBlock" type="info" role="status" data-testid="tx-env-block">{{ t(`tx.env.${envBlock.problem}` as MessageKey) }}</v-alert>
     <template v-else>
       <p class="text-body-2" data-testid="tx-profile">{{ t("tx.options.profile", { profile: evaluation.profile ?? "" }) }}</p>
@@ -116,7 +118,7 @@ function outputProblem(): string[] {
     <p v-if="draft.outputSource" class="text-caption" data-testid="tx-output-source">{{ t(`tx.output.source.${draft.outputSource}` as MessageKey) }}</p>
     <p v-else-if="draft.outputDir === ''" class="text-caption" data-testid="tx-output-no-default">{{ t("tx.output.noDefault") }}</p>
     <p v-if="form.picking === 'output_folder'" role="status" class="text-body-2">{{ t("tx.output.picking") }}</p>
-    <v-alert v-if="form.pickError?.target === 'output_folder'" type="info" role="status" data-testid="tx-output-pick-error">
+    <v-alert v-if="form.pickError" type="info" role="status" data-testid="tx-output-pick-error">
       {{ form.pickError.reason === "host_unavailable" ? t("tx.pick.hostUnavailable") : t("tx.pick.failed") }}
     </v-alert>
     <ul class="text-caption u-notes">
