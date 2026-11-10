@@ -154,3 +154,21 @@ body {
 #input-drop-zone {
   min-height: 100vh;
 }
+/* S3-B1 input list: a field with its button on one line (wraps on narrow screens). */
+.u-row--field {
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
+.u-row--field > .v-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+@media (max-width: 599px) {
+  .u-row--field {
+    flex-wrap: wrap;
+  }
+}
+.u-input-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}

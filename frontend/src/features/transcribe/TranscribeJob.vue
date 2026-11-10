@@ -11,7 +11,7 @@ import type { MessageKey } from "../../i18n";
  * S3-A run panel. The status shown is always the last `GET /api/jobs/{id}` answer (SSE only
  * advances the stage display); "cancelled" only after GET says so.
  */
-const { core, job, evaluation, block } = useTranscription();
+const { core, job, evaluation, block, primary } = useTranscription();
 const { t } = useI18n();
 
 const s = computed(() => job.value);
@@ -74,7 +74,7 @@ const elapsed = computed(() => Math.max(0, Math.floor((clock.value - (s.value.su
 
 function start() {
   const request = evaluation.value.request;
-  if (request) void core.job.submit(request);
+  if (request) void core.job.submit(request, { clientFileId: primary.value?.clientFileId ?? null });
 }
 
 const openFailed = ref(false);

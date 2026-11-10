@@ -1,16 +1,15 @@
 import { PROFILES, type ProfileName } from "../api/legacy";
 import type { JobBackend, JobLanguage, JobOptions, OutputFormat } from "../api/legacyEnvironment";
 import type { TranscriptionRequest } from "../api/legacyJobs";
-import { type DroppedPath, type HostBridge, HostUnavailableError } from "../host";
+import { type HostBridge, HostUnavailableError } from "../host";
 import { type EnvironmentState, isCurrentResult } from "./environment";
 import { checkPath, type PathProblem } from "./paths";
 import type { SettingsState } from "./settings";
 import { type ReadonlyStore, Store } from "./store";
 
 /**
- * The S3-A transcription form (one input file). Lives outside Vue, so navigation and mode
- * switches keep it. In memory only: no path is written to localStorage/sessionStorage/URL, and
- * nothing here PATCHes settings or re-detects the environment.
+ * Everything one `POST /api/jobs` needs, for one input (S3-A form shape). Built per input row by
+ * `inputCollection.effectiveDraft()` (common settings + that row's overrides and output).
  */
 export interface TranscriptionDraft {
   inputPath: string;
@@ -25,19 +24,25 @@ export interface TranscriptionDraft {
   formats: OutputFormat[];
 }
 
+/**
+ * The common processing settings (S3-B1): the S3-A form without its input, which now lives in the
+ * shared input list (`InputCollectionController`). Lives outside Vue, so navigation and mode
+ * switches keep it. In memory only: no path is written to localStorage/sessionStorage/URL, and
+ * nothing here PATCHes settings or re-detects the environment.
+ */
+export type CommonDraft = Omit<TranscriptionDraft, "inputPath" | "inputSource">;
+
 /** Legacy form defaults (web/app.js): language "ja", formats srt/json/md. */
 export const DEFAULT_LANGUAGE: JobLanguage = "ja";
 export const DEFAULT_FORMATS: readonly OutputFormat[] = ["srt", "json", "md"];
 
-export type PickTarget = "input_file" | "output_folder";
-export type DropNotice = { kind: "multiple"; count: number } | { kind: "folder" } | { kind: "unknown" };
+export type PickError = "host_unavailable" | "failed";
 
 export interface FormState {
-  draft: TranscriptionDraft;
-  picking: PickTarget | null;
-  pickError: { target: PickTarget; reason: "host_unavailable" | "failed" } | null;
-  /** Why the last drop was refused (S3-A takes exactly one file). */
-  dropNotice: DropNotice | null;
+  draft: CommonDraft;
+  /** Only the common output folder is picked here (inputs are picked by the input list). */
+  picking: "output_folder" | null;
+  pickError: { target: "output_folder"; reason: PickError } | null;
 }
 
 /** Why the environment cannot supply choices right now (no static fallback is ever offered). */
@@ -115,7 +120,7 @@ export function evaluate(draft: TranscriptionDraft, env: EnvironmentState): Form
  * Keep only choices the current answer offers; fill a level only when it has exactly one choice
  * (the only legal value — not a recommendation). Returns the same object when nothing changes.
  */
-export function reconcile(draft: TranscriptionDraft, options: JobOptions | null): TranscriptionDraft {
+export function reconcile<D extends CommonDraft>(draft: D, options: JobOptions | null): D {
   if (options === null) return draft;
   let { asrBackend, asrModel, asrDevice } = draft;
   if (asrBackend !== null && !options.asr.some((b) => b.id === asrBackend)) asrBackend = null;
@@ -134,10 +139,8 @@ export function reconcile(draft: TranscriptionDraft, options: JobOptions | null)
   return { ...draft, asrBackend, asrModel, asrDevice };
 }
 
-export function emptyDraft(): TranscriptionDraft {
+export function emptyDraft(): CommonDraft {
   return {
-    inputPath: "",
-    inputSource: null,
     outputDir: "",
     outputSource: null,
     asrBackend: null,
@@ -149,7 +152,7 @@ export function emptyDraft(): TranscriptionDraft {
 }
 
 export class TranscriptionFormController {
-  readonly store = new Store<FormState>({ draft: emptyDraft(), picking: null, pickError: null, dropNotice: null });
+  readonly store = new Store<FormState>({ draft: emptyDraft(), picking: null, pickError: null });
   private readonly unsubscribers: (() => void)[] = [];
 
   constructor(
@@ -162,16 +165,16 @@ export class TranscriptionFormController {
     this.syncChoices();
   }
 
+  /** The common settings evaluated without an input (choices, profile, setting issues). */
   evaluation(): FormEvaluation {
-    return evaluate(this.store.get().draft, this.environment.get());
+    return evaluate({ ...this.store.get().draft, inputPath: "", inputSource: null }, this.environment.get());
   }
 
-  edit(patch: Partial<Pick<TranscriptionDraft, "inputPath" | "outputDir" | "language" | "formats">>): void {
+  edit(patch: Partial<Pick<CommonDraft, "outputDir" | "language" | "formats">>): void {
     const { draft } = this.store.get();
-    const next: TranscriptionDraft = { ...draft, ...patch };
-    if (patch.inputPath !== undefined) next.inputSource = "typed";
+    const next: CommonDraft = { ...draft, ...patch };
     if (patch.outputDir !== undefined) next.outputSource = "typed";
-    this.store.patch({ draft: next, dropNotice: null });
+    this.store.patch({ draft: next });
   }
 
   /** Changing the backend clears model/device (they belong to one backend), then refills singles. */
@@ -187,41 +190,17 @@ export class TranscriptionFormController {
     this.store.patch({ draft: { ...draft, formats } });
   }
 
-  async pick(target: PickTarget, host: HostBridge): Promise<void> {
+  async pick(target: "output_folder", host: HostBridge): Promise<void> {
     if (this.store.get().picking !== null) return;
     this.store.patch({ picking: target, pickError: null });
     try {
       const path = await host.pickPath(target);
       this.store.patch({ picking: null });
       if (path === null) return; // cancelled: nothing changes
-      const { draft } = this.store.get();
-      this.store.patch({
-        draft: target === "input_file" ? { ...draft, inputPath: path, inputSource: "picker" } : { ...draft, outputDir: path, outputSource: "picker" },
-        dropNotice: null,
-      });
+      this.store.patch({ draft: { ...this.store.get().draft, outputDir: path, outputSource: "picker" } });
     } catch (error) {
       this.store.patch({ picking: null, pickError: { target, reason: error instanceof HostUnavailableError ? "host_unavailable" : "failed" } });
     }
-  }
-
-  /**
-   * A native drop. Exactly one *file* is taken; several items, a folder or an unknown kind are
-   * refused as a whole (the first item is never picked silently). An empty drop changes nothing.
-   */
-  acceptDrop(paths: DroppedPath[]): void {
-    if (paths.length === 0) return;
-    if (paths.length > 1) return this.store.patch({ dropNotice: { kind: "multiple", count: paths.length } });
-    const [only] = paths as [DroppedPath];
-    if (only.kind === "folder") return this.store.patch({ dropNotice: { kind: "folder" } });
-    if (only.kind !== "file" || only.path === "") return this.store.patch({ dropNotice: { kind: "unknown" } });
-    const { draft } = this.store.get();
-    if (draft.inputPath === only.path && draft.inputSource === "drop") return; // duplicate notification
-    this.store.patch({ draft: { ...draft, inputPath: only.path, inputSource: "drop" }, dropNotice: null });
-  }
-
-  clearInput(): void {
-    const { draft } = this.store.get();
-    this.store.patch({ draft: { ...draft, inputPath: "", inputSource: null }, dropNotice: null });
   }
 
   dispose(): void {
