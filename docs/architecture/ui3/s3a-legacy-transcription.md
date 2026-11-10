@@ -4,6 +4,7 @@
 - **基点:** `main` `79fa6924ec2d7e7e3b15a96dbe5c89e5b8379866`（PR #41 / S2のマージコミット。作業直前に`origin/main`と一致、作業ツリー無変更、open PRは無関係の#23のみ）。
 - **版:** 開発版 `0.1.46`（未リリース、tag/releaseなし）。§11。
 - **状態:** Linux（Vitest＋headless Chromium＋実FastAPI）とpytestの自動試験まで。WindowsはCIで判断し、**Windows WebView2実機（native picker・D&D・IME・DPI）の手動確認は最終統合ゲートへ集約**（§10）。
+- **改訂:** 2026-11-10 PR #42レビュー（P2×2）を反映（§12）。§4.4・§9も更新。
 - **正本の優先順位:** コード（`src/utteran_gui/api.py`・`jobs.py`・`operation_queue.py`・`environment.py`・`cli.py`、`frontend/src/**`）→ 本書 → [design-freeze](design-freeze.md)。
 
 ## 1. 目的と範囲
@@ -85,7 +86,7 @@ idle ──submit──▶ pending ──202──▶ accepted + tracking=active
 
 ### 4.4 同じ入力の再投入（S3-Aでは提供しない）
 
-直前に受理（または結果不明）となった入力と同じパス（Windows風のパスは大文字小文字・区切りを無視、POSIXは完全一致）は投入不可とし、旧画面への導線を出す。理由: coreの`src/utteran/jobs.py::job_id_from_input_hash()`は入力fingerprintからcore job IDを作るため、出力先が違っても保存履歴・stage cacheが独立した新しい実行になるとは限らない（S3-Bの設計ゲート）。メモリ内の判定でありページ再読込で消える。シンボリックリンク・8.3形式・`..`は解決しない。受信した拒否の後は再送可能。
+このページでこれまでに受理（または結果不明）となった**すべての**入力と同じパス（Windows風のパスは大文字小文字・区切りを無視、POSIXは完全一致）は投入不可とし、旧画面への導線を出す。理由: coreの`src/utteran/jobs.py::job_id_from_input_hash()`は入力fingerprintからcore job IDを作るため、出力先が違っても保存履歴・stage cacheが独立した新しい実行になるとは限らない（S3-Bの設計ゲート）。表示の片付けでは解除しない（A→B→Aも拒否、§12）。メモリ内の判定でありページ再読込で消え、別window・別クライアント・旧GUIからの投入は対象外。シンボリックリンク・8.3形式・`..`は解決しない。受信した拒否の後は再送可能。
 
 ## 5. 画面
 
@@ -153,7 +154,7 @@ S3-A specを3回反復して30/30成功。各試験の後に旧キューの未�
 ## 9. S3-Bへの引継ぎ（明示的な未決ゲート）
 
 1. **出力命名:** 案`<入力stem>_<YYYYMMDD-HHMMSS>_<短い実行識別子>.<拡張子>`（例`meeting_20261109-143025_a8f2c1d4.srt`）。正式実装前にtimezone/時刻形式、既存ファイル・同時出力の原子的予約、backend exporterとcore manifest・履歴参照の整合、Windowsの禁止文字・長さ、再実行時の挙動を検証。**GUIが完了後にrenameする方式は禁止**。
-2. **同一入力:** core job ID（入力hash）とhistories/stage cacheの共有。独立履歴を保証できるまで再投入を正式解放しない。
+2. **同一入力:** core job ID（入力hash）とhistories/stage cacheの共有。独立履歴を保証できるまで再投入を正式解放しない。S3-Aのfrontend判定はページ内メモリだけで、再読込・別window/別クライアント・symlink/8.3名/`..`・大文字小文字を区別するWindowsフォルダ等の完全な同一性を保証できない。**正式な同一入力ルールはbackendを権威（authority）とする**ことをS3-Bの要件とする。
 3. **独立した再実行の不変snapshot:** retry（UI-3-0は同Job ID/attempt+1）とB7（新Job ID＋元snapshotのコピー）の意味の違いを隠さない。旧APIに同義のretry endpointは無い。
 4. **出力衝突の排他**（同時ジョブ・同名出力）。
 5. **キュー表示の片付けは表示のみ**（履歴・成果物を削除しない）。
@@ -169,3 +170,14 @@ S3-A specを3回反復して30/30成功。各試験の後に旧キューの未�
 ## 11. 版
 
 `0.1.45`→`0.1.46`（`pyproject.toml`・`uv.lock`のutteran行・README日英・`変更履歴.md`）。`frontend/src/preview/`の合成版数は変更しない。tag・releaseなし。
+
+## 12. PR #42レビュー修正（2026-11-10）
+
+基点HEAD `cb91b9b`。Python製品コード・API・DB・CLI・旧GUI・`frontend/src/preview/**`は無変更。版は`0.1.46`据え置き（同じ未リリース作業単位のレビュー修正）。
+
+| 指摘 | 原因 | 修正 | 回帰試験 |
+|---|---|---|---|
+| **P2-1:** 同一入力の再投入禁止が直近の1件しか守らない（A受理→終端→B受理→終端→Aを再POSTできる） | `JobController.lastInput`が単一値で、次の受理で上書きされていた | 受理済み・結果不明の入力を**ページの寿命の間すべて**保持（`sentInputs`、`samePath`で重複排除）。表示の片付けでは解除しない。受信した拒否は対象外のまま | Vitest 2件: A→終端→片付け→B→終端→片付け→Aは拒否（POST 2回だけ）／結果不明A→B→A、Windows表記の同等パス（大文字小文字・区切り）で拒否、受信拒否のCは再送可。**修正前のコードでは2件とも失敗**することを確認 |
+| **P2-2:** 「lost POST answer」E2Eが1つのroute handler内で`route.fetch()`→`route.abort()`（PR #41で`Route is already handled!`の間欠失敗を起こした型） | S1で直した方式を再利用していなかった | S1と同じ方式へ: 傍受したPOSTのbodyを**別の`APIRequestContext`**で実FastAPIへ1回送り、ステータスとjob IDを記録してから、ブラウザのRouteは`abort("connectionreset")`だけで**1回だけ**完了。`route.fetch()`は使わない | サーバー側POSTが**202で1回**・job IDが実在し`starting/running`、ブラウザ側は結果不明・3秒待っても再送なし（ブラウザPOST 1回・handler 1回）、参考キュー1件、同一入力ブロックを検査。ローカルで20回反復20/20 |
+
+**試験数（修正後、Linux）:** Vitest 39ファイル・**400件**（+2）、E2E 44件（S3-Aの1件を改修）、プロトタイプE2E 96件。§7の数値は修正前の記録として残す。

@@ -95,8 +95,12 @@ export class JobController {
   private poller: SingleFlightPoller | null = null;
   private source: EventSourceLike | null = null;
   private sseConnections = 0;
-  /** Input of the last submission that was accepted or may have been (unknown). */
-  private lastInput: string | null = null;
+  /**
+   * Every input this screen sent that was accepted or may have been (unknown), for the whole page
+   * lifetime (dismiss does not clear it). Memory only; a reload, another window or another client
+   * is not covered — the authoritative same-input rule belongs to the backend (S3-B gate).
+   */
+  private readonly sentInputs: string[] = [];
   private readonly scheduler: Scheduler;
   private readonly now: () => number;
   private readonly pollIntervalMs: number;
@@ -119,7 +123,7 @@ export class JobController {
     if (s.submit.phase === "unknown") return "unknown_unresolved";
     // S3-A does not offer re-running the same input: the core derives its job id from the input
     // fingerprint, so a second run may share history/stage cache (S3-B gate). Use the legacy GUI.
-    if (request && this.lastInput !== null && samePath(request.inputPath, this.lastInput)) return "same_input";
+    if (request && this.sentInputs.some((sent) => samePath(request.inputPath, sent))) return "same_input";
     return null;
   }
 
@@ -134,7 +138,7 @@ export class JobController {
     try {
       const job = await this.api.startJob(frozen);
       if (generation !== this.generation) return false;
-      this.lastInput = frozen.inputPath;
+      this.rememberInput(frozen.inputPath);
       this.store.patch({ submit: { ...this.store.get().submit, phase: "accepted" }, job });
       this.track(generation, job);
       return true;
@@ -142,7 +146,7 @@ export class JobController {
       if (generation !== this.generation) return false;
       const apiError = toApiError(error);
       // Only a lost answer may have started a job; a received rejection (400/409/422/503…) did not.
-      if (apiError.outcomeUnknown) this.lastInput = frozen.inputPath;
+      if (apiError.outcomeUnknown) this.rememberInput(frozen.inputPath);
       this.store.patch({ submit: { ...this.store.get().submit, phase: apiError.outcomeUnknown ? "unknown" : "rejected", error: apiError } });
       return false;
     }
@@ -204,6 +208,10 @@ export class JobController {
   dispose(): void {
     this.generation += 1;
     this.stopMonitoring();
+  }
+
+  private rememberInput(path: string): void {
+    if (!this.sentInputs.some((sent) => samePath(path, sent))) this.sentInputs.push(path);
   }
 
   private track(generation: number, job: JobView): void {

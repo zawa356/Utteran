@@ -192,20 +192,40 @@ test("refusal: 400 creates no job and the server text (with a path) is not shown
   await expect(app.getByTestId("tx-start")).toBeEnabled();
 });
 
-test("lost POST answer: 'unknown', never resent; the queue is only a reference", async ({ app }) => {
+test("lost POST answer: 'unknown', never resent; the queue is only a reference", async ({ app, request }) => {
   const seen = recordApi(app);
+  // Same pattern as the S1 token test (PR #41): each browser Route is completed exactly once.
+  // The intercepted POST body is sent once to the real FastAPI through the separate
+  // APIRequestContext (it does not pass through page routes); its answer is recorded, and only
+  // then is the browser request reset — the server accepted the job, the page never saw it.
+  const applied: { status: number; id: string }[] = [];
+  let handled = 0;
   await app.route("**/api/jobs", async (route) => {
-    if (route.request().method() !== "POST") return route.fallback();
-    await route.fetch(); // the real server accepts and starts the job…
-    await route.abort("connectionreset"); // …but the answer never reaches the page.
+    const original = route.request();
+    if (original.method() !== "POST") return route.fallback();
+    const response = await request.fetch("/api/jobs", {
+      method: "POST",
+      headers: { ...SESSION_HEADER, "Content-Type": "application/json" },
+      data: original.postData() ?? undefined,
+    });
+    const body = (await response.json()) as { id?: string };
+    applied.push({ status: response.status(), id: String(body.id ?? "") });
+    await route.abort("connectionreset");
+    handled += 1;
   });
   await fillForm(app, "slow.wav");
   await app.getByTestId("tx-start").click();
   await expect(app.getByTestId("tx-unknown")).toContainText("開始されたかどうか不明です");
+  await expect.poll(() => handled).toBe(1);
+  // The server really accepted exactly one job (202) for this one click.
+  expect(applied.map((a) => a.status)).toEqual([202]);
+  expect(applied[0]!.id).toMatch(/^[0-9a-f]{32}$/);
   await expect(app.getByTestId("tx-start")).toBeDisabled();
   await expect(app.getByTestId("tx-block")).toContainText("結果が不明");
+  // No automatic resend: still one browser POST and one server-side POST after waiting.
   await app.waitForTimeout(3000);
   expect(posts(seen).filter((p) => p === "POST /api/jobs")).toHaveLength(1);
+  expect(handled).toBe(1);
   await app.getByTestId("tx-check-queue").click();
   await expect(app.getByTestId("tx-queue-result")).toHaveText("受付済み・実行中の文字起こし: 1件");
   await shot(app, "s3a-06-unknown");
@@ -213,7 +233,12 @@ test("lost POST answer: 'unknown', never resent; the queue is only a reference",
   await expect(app.getByTestId("tx-unknown")).toHaveCount(0);
   // The same input stays blocked (it may be running); nothing was resent.
   await expect(app.getByTestId("tx-block")).toContainText("同じ入力ファイル");
+  await expect(app.getByTestId("tx-start")).toBeDisabled();
   expect(posts(seen).filter((p) => p === "POST /api/jobs")).toHaveLength(1);
+  expect(applied).toHaveLength(1);
+  // The job the server accepted is the one in the queue (checked via the real API).
+  const job = (await (await request.get(`/api/jobs/${applied[0]!.id}`, { headers: SESSION_HEADER })).json()) as { status: string };
+  expect(["starting", "running"]).toContain(job.status);
 });
 
 test("SSE cut: polling alone follows the job to its GET-confirmed end; reconnects are bounded", async ({ app }) => {

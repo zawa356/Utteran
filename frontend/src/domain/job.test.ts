@@ -312,6 +312,47 @@ describe("JobController (legacy /api/jobs, one job at a time)", () => {
     expect(t.calls.length).toBe(calls);
   });
 
+  it("same-input guard covers every accepted input, not only the last (A → B → A is refused; PR #42 P2-1)", async () => {
+    const t = setup(false);
+    const a = request(`${ROOT}/a.wav`);
+    const b = request(`${ROOT}/b.wav`);
+    t.api.start.mockResolvedValueOnce(view(A, "running")).mockResolvedValueOnce(view(B, "running"));
+    t.api.get.mockResolvedValueOnce(view(A, "completed")).mockResolvedValueOnce(view(B, "completed"));
+    expect(await t.controller.submit(a)).toBe(true);
+    await settle();
+    expect(t.state().tracking).toBe("terminal");
+    t.controller.dismiss();
+    expect(await t.controller.submit(b)).toBe(true);
+    await settle();
+    expect(t.state().tracking).toBe("terminal");
+    t.controller.dismiss();
+    expect(t.controller.blockFor(a)).toBe("same_input");
+    expect(t.controller.blockFor(b)).toBe("same_input");
+    expect(await t.controller.submit(a)).toBe(false);
+    expect(t.calls.filter((c) => c === "POST /api/jobs")).toHaveLength(2);
+  });
+
+  it("an unknown-outcome input stays guarded after another file is sent; Windows-equivalent spellings match", async () => {
+    const t = setup(false);
+    const drive = ["D:", "synthetic", "Media", "a.wav"].join("\\");
+    const sameDrive = ["d:", "SYNTHETIC", "media", "A.WAV"].join("/");
+    t.api.start.mockRejectedValueOnce(new ApiError({ kind: "timeout", outcomeUnknown: true }));
+    await t.controller.submit(request(drive));
+    t.controller.dismiss();
+    t.api.start.mockResolvedValueOnce(view(B, "completed"));
+    expect(await t.controller.submit(request(`${ROOT}/b.wav`))).toBe(true);
+    t.controller.dismiss();
+    expect(t.controller.blockFor(request(drive))).toBe("same_input");
+    expect(t.controller.blockFor(request(sameDrive))).toBe("same_input");
+    expect(await t.controller.submit(request(sameDrive))).toBe(false);
+    expect(t.calls.filter((c) => c === "POST /api/jobs")).toHaveLength(2);
+    // A received refusal never starts anything and is not guarded.
+    t.api.start.mockRejectedValueOnce(new ApiError({ kind: "conflict", status: 409 }));
+    await t.controller.submit(request(`${ROOT}/c.wav`));
+    t.controller.dismiss();
+    expect(t.controller.blockFor(request(`${ROOT}/c.wav`))).toBeNull();
+  });
+
   it("an immediately terminal 202 is shown as such without monitoring", async () => {
     const t = setup();
     t.api.start.mockResolvedValueOnce(view(A, "cancelled"));

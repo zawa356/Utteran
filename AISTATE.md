@@ -1,5 +1,12 @@
 # AI 作業状態
 
+## 現在地（2026-11-10、PR #42レビュー修正、0.1.46据え置き、Draft維持）
+
+- 修正前HEAD `cb91b9b`（PR #42 HEADと一致、Draft、main `79fa692`）。同じブランチ`claude/eager-gates-ncpesb`へ通常commit・push。Ready化・merge・tag・releaseなし。
+- P2-1: 同一入力の再投入禁止を「直近1件」から「ページ内で受理/結果不明となった全入力」へ（A→B→Aを拒否、片付けで解除しない）。完全な同一性判定はbackend権威をS3-B要件として文書化。
+- P2-2: lost POST E2Eを`route.fetch()`→`abort()`から、S1と同じ別`APIRequestContext`で実FastAPIへ1回適用→ブラウザ側abortの方式へ（サーバー202×1を検査、20回反復20/20）。
+- Vitest 400、E2E 44、プロトタイプE2E 96。詳細[ui3/s3a §12](docs/architecture/ui3/s3a-legacy-transcription.md#12-pr-42レビュー修正2026-11-10)。Windows WebView2実機は未受入（最終ゲート）。
+
 ## 現在地（2026-11-09、UI-3 S3-A 本番文字起こしの基本フロー、0.1.46・未リリース、Draft PR）
 
 - 基点`main` `79fa6924ec2d7e7e3b15a96dbe5c89e5b8379866`（PR #41マージ、作業直前に`origin/main`と一致・作業ツリー無変更、open PRは無関係の#23のみ）。
