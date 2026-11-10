@@ -56,6 +56,7 @@
 2. **S2 環境・モデル:** B4正本の候補/ready理由・profile切替。成立しない構成の静的な表示はしない。
    **追補（2026-11-09 owner判断・A案）:** S2は旧`GET /api/environment`の観測表示に限定して実装した（[s2-environment-visibility](s2-environment-visibility.md)）。B4の候補/ready理由（G-01: 公開read-only API）は未解決の後続課題として残す。設計思想（frontendに互換表を持たない、readyを捏造しない）は不変。
 3. **S3 文字起こし・キュー:** 通常/Expertから実APIへ段階接続。重複admission・idempotency・ファイル衝突・immutable snapshot・IME・D&Dを検証。旧APIとv1 APIを無条件に混在させない。
+   **追補（2026-11-09）:** S3をS3-A（1ファイルの基本フロー、旧`/api/jobs`、[s3a-legacy-transcription](s3a-legacy-transcription.md)、`0.1.46`）とS3-B（複数入力・ファイル別override・Expertキュー・同一入力の再投入・出力命名）に分割。S3-Aの凍結コピーはメモリ内だけでB7の不変snapshotではない。idempotency・同一入力のcore履歴共有・出力衝突はS3-B/S5の設計ゲートとして[s3a §9](s3a-legacy-transcription.md#9-s3-bへの引継ぎ明示的な未決ゲート)に記録。
 4. **S4 結果・履歴・モデル・セットアップ:** viewer/再出力/管理を実接続し、履歴保持と成果物削除、実用語集TXT取込を安全に設計する。
 5. **S5 v1接続:** B9 Issue #37、G-09排他とDB migration/復旧を先に解決。owner承認なしにactivate・既定切替しない。
 6. **UI-4 #22:** Windows WebView2/IME/OS DPI 200%初期窓、installer/portable、起動/RAMと実機回帰の受入。

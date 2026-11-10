@@ -4,8 +4,11 @@ Used by the Playwright E2E (``frontend/playwright.config.ts``) and for manual br
 Only the profile CLI (behind the *real* ``EnvironmentService``, see ``synthetic_environment.py``),
 the keyring and the log-location probe are replaced by synthetic stand-ins: routing, ``/launch``
 cookie, session check, CSP nonce, asset serving, ``/api/environment``, ``/api/settings``,
-``/api/token`` (through the real ``TokenStore``), ``/api/wizard/status`` and ``/api/open-folder``
-are the production code paths. Nothing here is imported by the product.
+``/api/token`` (through the real ``TokenStore``), ``/api/wizard/status``, ``/api/open-folder`` and
+(UI-3 S3-A) ``/api/jobs*`` and ``/api/queue`` through the real ``JobManager``/``OperationQueue``
+are the production code paths; only the transcription command is a synthetic process
+(``synthetic_jobs.py``: no model download, no ASR, no file written).
+Nothing here is imported by the product.
 
     uv run python tools/ui2/serve_next_ui.py --port 8791
 
@@ -32,6 +35,7 @@ from utteran_gui.settings import SettingsStore, TokenStore  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from synthetic_environment import synthetic_environment_service  # noqa: E402
+from synthetic_jobs import synthetic_job_manager  # noqa: E402
 
 SESSION = "ui2-e2e-synthetic-session-key"
 
@@ -88,6 +92,7 @@ def build_app(data_dir: Path, next_ui_root: Path | None = None) -> Any:
         settings_store=SettingsStore(data_dir / "gui-settings.json"),
         token_store=TokenStore(SyntheticKeyring()),
         environment_service=synthetic_environment_service(),
+        job_manager=synthetic_job_manager(data_dir),
         enable_next_ui=True,
         next_ui_root=next_ui_root,
     )

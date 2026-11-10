@@ -1,5 +1,25 @@
 # AI 作業状態
 
+## 現在地（2026-11-10、PR #42レビュー修正、0.1.46据え置き、Draft維持）
+
+- 修正前HEAD `cb91b9b`（PR #42 HEADと一致、Draft、main `79fa692`）。同じブランチ`claude/eager-gates-ncpesb`へ通常commit・push。Ready化・merge・tag・releaseなし。
+- P2-1: 同一入力の再投入禁止を「直近1件」から「ページ内で受理/結果不明となった全入力」へ（A→B→Aを拒否、片付けで解除しない）。完全な同一性判定はbackend権威をS3-B要件として文書化。
+- P2-2: lost POST E2Eを`route.fetch()`→`abort()`から、S1と同じ別`APIRequestContext`で実FastAPIへ1回適用→ブラウザ側abortの方式へ（サーバー202×1を検査、20回反復20/20）。
+- Vitest 400、E2E 44、プロトタイプE2E 96。詳細[ui3/s3a §12](docs/architecture/ui3/s3a-legacy-transcription.md#12-pr-42レビュー修正2026-11-10)。Windows WebView2実機は未受入（最終ゲート）。
+
+## 現在地（2026-11-09、UI-3 S3-A 本番文字起こしの基本フロー、0.1.46・未リリース、Draft PR）
+
+- 基点`main` `79fa6924ec2d7e7e3b15a96dbe5c89e5b8379866`（PR #41マージ、作業直前に`origin/main`と一致・作業ツリー無変更、open PRは無関係の#23のみ）。
+  セッション指定ブランチ`claude/eager-gates-ncpesb`で通常commit・push（force push・merge・Ready化・tag・releaseなし）。commit identityは既存のエージェントcommitと同じClaude名義。
+- `/next/`の通常モードで1ファイルを旧`POST /api/jobs`へ投入（話者分離は明示的にオフ）。`GET /api/jobs/{id}`が状態の正本、SSEは速報（event idで重複排除、自動再接続なし・最大3回）、
+  `SingleFlightPoller`でbounded polling、取消は要求→GETで確定。非冪等POSTは自動再送せず結果不明を表示（`/api/queue`は参考のみ）。D-03/D-04/D-06/D-07の再発防止を試験。
+  候補は現在の環境結果だけ（送信用の別投影`jobOptions`）。同一入力の再投入・複数入力・キュー・出力命名はS3-Bの未決ゲート（[ui3/s3a §9](docs/architecture/ui3/s3a-legacy-transcription.md#9-s3-bへの引継ぎ明示的な未決ゲート)）。
+- **Python製品コード・API・DB・worker・旧GUI/CLI・preview無変更。** native D&Dは`frontend/index.html`の静的`#input-drop-zone`で既存の`app.py`結合を利用。
+  E2Eハーネスに実`JobManager`/`OperationQueue`＋合成文字起こしプロセス（`tools/ui2/synthetic_jobs.py`・`synthetic_transcribe.py`）。
+- 検証（Linux、headless Chromium）: Vitest 398（本番254＋プロトタイプ144）、E2E 44（UI-2 10＋S1 13＋S2 11＋S3-A 10、S3-Aは3回反復30/30）、プロトタイプE2E 96、
+  lint/typecheck/build/audit 0件、pytest 1300 passed/9 skipped/1 xfailed、ruff・mypy（linux/win32）・schema 8件・`uv lock --check`・BOM成功。CI結果はPRに記録。
+- **Windows WebView2実機は未受入**（native picker・Explorerからのドロップ・IME・DPI・実GPUの実ジョブは最終統合ゲート）。詳細[ui3/s3a](docs/architecture/ui3/s3a-legacy-transcription.md)。
+
 ## 現在地（2026-11-09、PR #41レビュー修正、0.1.45据え置き、Draft維持）
 
 - 修正前HEAD `8ee02c4`（PR #41 HEADと一致、Draft、main `f3ad48b`）。同じブランチ`claude/practical-dijkstra-llhp7h`へ通常commit・push。Ready化・merge・tag・releaseなし。

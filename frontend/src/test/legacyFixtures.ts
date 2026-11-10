@@ -33,6 +33,22 @@ export function environment(profile: string, patch: Partial<LegacyEnvironment> =
     guidance: [],
     issues: [],
     profileWarningCount: 0,
+    jobOptions: {
+      asr: [
+        {
+          id: "faster-whisper",
+          label: "faster-whisper",
+          models: [
+            { id: "synthetic-a", label: "synthetic a" },
+            { id: "synthetic-b", label: "synthetic b" },
+          ],
+          devices: [{ id: device, label: device }],
+        },
+      ],
+      languages: ["auto", "ja", "en"],
+      formats: ["srt", "vtt", "json", "txt", "md"],
+      incomplete: false,
+    },
     ...patch,
   };
 }

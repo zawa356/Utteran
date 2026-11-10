@@ -24,7 +24,8 @@ DTOとAPIの機械可読な正本は、コード（`src/utteran_contracts/`）�
 
 ## UI刷新（UI-1 設計 → UI-2 基盤 → UI-3-0 画面設計）
 
-- [ui3/](ui3/README.md): **UI-3 S2（2026-11-09、`0.1.45`未リリース、Draft PR）**: [s2-environment-visibility](ui3/s2-environment-visibility.md)。`--next-ui`の実行環境表示を旧`GET /api/environment`の観測結果で完成（旧環境stripの4項目・Expert詳細、readyとは表示しない。B4 readiness＝G-01は後続、backend変更なし、Windows実機未受入）。
+- [ui3/](ui3/README.md): **UI-3 S3-A（2026-11-09、`0.1.46`未リリース、Draft PR）**: [s3a-legacy-transcription](ui3/s3a-legacy-transcription.md)。`--next-ui`で1ファイルの文字起こしを旧`/api/jobs`へ投入・進捗・取消（話者分離なし、GETが状態の正本、非冪等POSTは自動再送しない、legacy queueは非永続。backend変更なし、Windows実機未受入）。S2は[s2-environment-visibility](ui3/s2-environment-visibility.md)（`0.1.45`）。
+- 同上 **UI-3 S2（2026-11-09、`0.1.45`未リリース、Draft PR）**: [s2-environment-visibility](ui3/s2-environment-visibility.md)。`--next-ui`の実行環境表示を旧`GET /api/environment`の観測結果で完成（旧環境stripの4項目・Expert詳細、readyとは表示しない。B4 readiness＝G-01は後続、backend変更なし、Windows実機未受入）。
   **UI-3 S1（2026-11-09、`0.1.44`）**: [s1-settings-and-host](ui3/s1-settings-and-host.md)。`--next-ui`の設定画面を旧`/api/settings`・`/api/token`・`/api/open-folder`・`/api/wizard/status`とhost `pickPath`へ接続（backend変更なし、Windows実機未受入）。
   **UI-3-0設計確定（2026-11-06、`0.1.43`）**。[design-freeze](ui3/design-freeze.md)が採用仕様・証拠・未実装とS1〜S5引継ぎの正本。[PR #38](https://github.com/zawa356/Utteran/pull/38)をmainに統合（`701a94e`、CI成功）。通常1ファイル中心/Expert可変3ペイン、モデル選択、キューと履歴の分離、個別出力先・用語集一括入力は**合成プロトタイプの設計**。実APIとWindows配布は未受入、UI-3 #21は継続。
 

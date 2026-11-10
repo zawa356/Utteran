@@ -26,7 +26,7 @@ const ICONS: Record<SectionId, string> = {
   settings: mdiCogOutline,
 };
 // Where each un-migrated area is planned (docs/architecture/ui2/migration-next.md).
-const STAGE: Partial<Record<SectionId, string>> = { results: "UI-3 S4", models: "UI-3 S4", queue: "UI-3 S3", setup: "UI-3 S4 / S5" };
+const STAGE: Partial<Record<SectionId, string>> = { results: "UI-3 S4", models: "UI-3 S4", queue: "UI-3 S3-B", setup: "UI-3 S4 / S5" };
 const sections = computed(() => SECTIONS.map((id) => ({ id, title: t(`section.${id}`), status: SECTION_STATUS[id], icon: ICONS[id] })));
 const currentTitle = computed(() => t(`section.${state.value.section}`));
 </script>

@@ -6,6 +6,7 @@ import "./styles/app.css";
 import App from "./App.vue";
 import { CORE } from "./composables/core";
 import { createCore } from "./domain/core";
+import { browserEventSource } from "./domain/job";
 import { createPywebviewHost } from "./host/pywebview";
 import { componentDefaults, darkTheme, lightTheme } from "./styles/theme";
 
@@ -15,7 +16,9 @@ const nonceMeta = document.querySelector<HTMLMetaElement>('meta[name="csp-nonce"
 const cspNonce = /^[A-Za-z0-9_-]{16,}$/.test(nonceMeta) && !nonceMeta.startsWith("__") ? nonceMeta : undefined;
 
 const host = createPywebviewHost(window);
-const core = createCore({ fetch: window.fetch.bind(window), host });
+const core = createCore({ fetch: window.fetch.bind(window), host, eventSource: browserEventSource() });
+// Release the job poller/SSE when the page goes away (the server job itself keeps running).
+window.addEventListener("pagehide", () => core.dispose());
 
 window.addEventListener("error", (event) => {
   host.reportError({ kind: "error", message: String(event.message), source: event.filename, line: event.lineno, column: event.colno });

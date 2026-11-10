@@ -138,3 +138,19 @@ body {
 .u-env-stale {
   opacity: 0.6;
 }
+/* S3-A transcription form. */
+.u-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.u-notes {
+  margin: 0;
+  padding-left: 1.25em;
+}
+.u-break {
+  overflow-wrap: anywhere;
+}
+#input-drop-zone {
+  min-height: 100vh;
+}
