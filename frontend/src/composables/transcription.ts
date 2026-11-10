@@ -1,5 +1,5 @@
 import { computed } from "vue";
-import { evaluateRow, isLocked, type RowEvaluation, rowStatus } from "../domain/inputCollection";
+import { evaluateRow, isLocked, type RowEvaluation } from "../domain/inputCollection";
 import type { FormIssue } from "../domain/transcription";
 import { evaluate } from "../domain/transcription";
 import { useCore } from "./core";
@@ -31,7 +31,7 @@ export function useTranscription() {
   const statusOf = (id: string) => {
     const row = list.value.rows.find((r) => r.clientFileId === id);
     // `gate.value` is read so the status follows every ledger change.
-    return row && gate.value ? rowStatus(core.gate.latestFor(row.clientFileId, row.attemptFloor)) : "not_submitted";
+    return row && gate.value ? core.inputs.statusOf(row) : "not_submitted";
   };
   const primaryStatus = computed(() => (primary.value ? statusOf(primary.value.clientFileId) : "not_submitted"));
   const primaryLocked = computed(() => isLocked(primaryStatus.value));

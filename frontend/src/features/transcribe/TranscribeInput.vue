@@ -19,7 +19,7 @@ const { t } = useI18n();
 const rows = computed(() => list.value.rows);
 const choices = computed(() => rows.value.map((r) => ({ title: `${fileName(r.inputPath) ?? "?"} — ${t(`tx.row.status.${statusOf(r.clientFileId)}` as MessageKey)}`, value: r.clientFileId })));
 const counts = computed(() => {
-  const c = { not_submitted: 0, pending: 0, accepted: 0, rejected: 0, unknown: 0 };
+  const c = { not_submitted: 0, queued: 0, pending: 0, accepted: 0, rejected: 0, unknown: 0 };
   for (const r of rows.value) c[statusOf(r.clientFileId)] += 1;
   return c;
 });
@@ -58,7 +58,7 @@ const batchCounts = computed(() => (batchRun.value ? countItems(batchRun.value.i
 
     <div v-if="rows.length > 1 || batchRun" class="u-stack" data-testid="tx-input-summary">
       <p class="text-body-2">
-        {{ t("tx.input.summary", { total: rows.length, open: counts.not_submitted, accepted: counts.accepted, rejected: counts.rejected, unknown: counts.unknown }) }}
+        {{ t("tx.input.summary", { total: rows.length, open: counts.not_submitted + counts.queued, accepted: counts.accepted, rejected: counts.rejected, unknown: counts.unknown }) }}
       </p>
       <p v-if="batchRunning && batchCounts" class="text-body-2" role="status" data-testid="tx-input-batch">{{ t("tx.input.batchRunning", { accepted: batchCounts.accepted, total: batchRun!.items.length }) }}</p>
       <div class="u-row">

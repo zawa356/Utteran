@@ -50,7 +50,8 @@ export interface InputRow {
   readonly attemptFloor: number;
 }
 
-export type RowStatus = "not_submitted" | "pending" | "accepted" | "rejected" | "unknown";
+/** `queued` = frozen in a running batch and not sent yet (it will be, unless the batch is stopped). */
+export type RowStatus = "not_submitted" | "queued" | "pending" | "accepted" | "rejected" | "unknown";
 
 export type ListNotice =
   | { kind: "added"; count: number }
@@ -60,14 +61,33 @@ export type ListNotice =
   | { kind: "drop"; added: number; duplicates: number; folders: number; unknown: number; invalid: number }
   | { kind: "removed"; removed: number; kept: number };
 
-/** A pending bulk edit for the selection; nothing changes until `applyStaged()`. */
+/**
+ * A pending bulk edit for the selection; nothing changes until `applyStaged()`. Formats are
+ * per-format changes (on = add, off = remove), so a format nobody touched stays as each row has
+ * it — a mixed selection never collapses to the formats all rows share (PR #43 P2-1).
+ */
 export interface StagedEdit {
   asrBackend?: string;
   asrModel?: string;
   asrDevice?: string;
   language?: JobLanguage;
-  formats?: readonly OutputFormat[];
+  formatChanges?: Readonly<Partial<Record<OutputFormat, boolean>>>;
   output?: OutputChoice;
+}
+
+/** A row's formats after per-format changes: kept order, removals dropped, additions appended. */
+export function applyFormatChanges(formats: readonly OutputFormat[], changes: Readonly<Partial<Record<OutputFormat, boolean>>>): OutputFormat[] {
+  const kept = formats.filter((f) => changes[f] !== false);
+  const added = (Object.keys(changes) as OutputFormat[]).filter((f) => changes[f] === true && !kept.includes(f));
+  return [...kept, ...added];
+}
+
+/** Tri-state of one format over rows: a staged change wins; otherwise all / some / none have it. */
+export function formatState(rows: readonly InputRow[], common: CommonDraft, staged: StagedEdit, format: OutputFormat): { checked: boolean; indeterminate: boolean } {
+  const change = staged.formatChanges?.[format];
+  if (change !== undefined) return { checked: change, indeterminate: false };
+  const withIt = rows.filter((r) => effectiveDraft(r, common).formats.includes(format)).length;
+  return { checked: withIt > 0 && withIt === rows.length, indeterminate: withIt > 0 && withIt < rows.length };
 }
 
 export interface CollectionState {
@@ -82,13 +102,15 @@ export interface CollectionState {
   staged: StagedEdit;
 }
 
-export function rowStatus(record: AdmissionRecord | null): RowStatus {
-  return record === null ? "not_submitted" : record.phase;
+export function rowStatus(record: AdmissionRecord | null, reserved = false): RowStatus {
+  // A row reset after a refusal has no record above its floor, so it can be queued again.
+  if (record === null) return reserved ? "queued" : "not_submitted";
+  return record.phase;
 }
 
-/** Sending, accepted or unknown: never removed, edited or re-sent from this list. */
+/** Queued, sending, accepted or unknown: never removed, edited or re-sent from this list. */
 export function isLocked(status: RowStatus): boolean {
-  return status === "pending" || status === "accepted" || status === "unknown";
+  return status === "queued" || status === "pending" || status === "accepted" || status === "unknown";
 }
 
 /**
@@ -191,7 +213,7 @@ export class InputCollectionController {
   }
 
   statusOf(row: InputRow): RowStatus {
-    return rowStatus(this.gate.latestFor(row.clientFileId, row.attemptFloor));
+    return rowStatus(this.gate.latestFor(row.clientFileId, row.attemptFloor), this.gate.isReserved(row.clientFileId));
   }
 
   recordOf(row: InputRow): AdmissionRecord | null {
@@ -278,7 +300,7 @@ export class InputCollectionController {
 
   /**
    * Remove rows from this list (display only: no server job, output or history is touched).
-   * Sending, accepted and unknown rows are kept and counted.
+   * Queued (in a running batch), sending, accepted and unknown rows are kept and counted.
    */
   remove(ids: readonly string[]): void {
     const { rows, primaryId } = this.store.get();
@@ -334,16 +356,24 @@ export class InputCollectionController {
     }
   }
 
+  /** Stage one format for the whole selection (on = add to every row, off = remove from every row). */
+  stageFormat(format: OutputFormat, on: boolean): void {
+    const staged = this.store.get().staged;
+    this.store.patch({ staged: { ...staged, formatChanges: Object.freeze({ ...staged.formatChanges, [format]: on }) } });
+  }
+
   discardStaged(): void {
     this.store.patch({ staged: {} });
   }
 
-  /** Staged values that cannot be applied: an unusable custom folder, or no format at all. */
+  /** Staged values that cannot be applied: an unusable custom folder, or a row left with no format. */
   stagedProblems(): { output: PathProblem | null; formats: boolean } {
     const staged = this.store.get().staged;
+    const common = this.form.get().draft;
+    const changes = staged.formatChanges;
     return {
       output: staged.output?.kind === "custom" ? checkPath(staged.output.path, "output_folder") : null,
-      formats: staged.formats !== undefined && staged.formats.length === 0,
+      formats: changes !== undefined && this.editableSelection().some((r) => applyFormatChanges(effectiveDraft(r, common).formats, changes).length === 0),
     };
   }
 
@@ -355,13 +385,19 @@ export class InputCollectionController {
     const problems = this.stagedProblems();
     if (problems.output !== null || problems.formats) return 0;
     const options = this.currentOptions();
+    const common = this.form.get().draft;
     this.updateRows(ids, (row) => {
       let overrides: SettingOverrides = { ...row.overrides };
       if (staged.asrBackend !== undefined) overrides = withBackend(overrides, staged.asrBackend, options);
       if (staged.asrModel !== undefined) overrides.asrModel = staged.asrModel;
       if (staged.asrDevice !== undefined) overrides.asrDevice = staged.asrDevice;
       if (staged.language !== undefined) overrides.language = staged.language;
-      if (staged.formats !== undefined) overrides.formats = Object.freeze([...staged.formats]);
+      if (staged.formatChanges !== undefined) {
+        const current = effectiveDraft(row, common).formats;
+        const next = applyFormatChanges(current, staged.formatChanges);
+        // Only a real change creates an override; an inheriting row with the same set keeps inheriting.
+        if (!sameValue(current, next)) overrides.formats = Object.freeze(next);
+      }
       return { ...row, overrides, output: staged.output ?? row.output };
     });
     this.store.patch({ staged: {} });

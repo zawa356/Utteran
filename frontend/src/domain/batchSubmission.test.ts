@@ -56,7 +56,7 @@ describe("staged sending through the shared gate", () => {
     h.set.set(settingsState(`${OUT}/server-changed`)); // the server-side default moved (remember_directories)
     h.inputs.selectAll();
     h.inputs.stage({ language: "auto" });
-    expect(h.inputs.applyStaged()).toBe(2); // only the two not yet sent are editable
+    expect(h.inputs.applyStaged()).toBe(0); // queued rows of the running batch are locked (PR #43 P2-2)
     h.jobs.acceptAt(0);
     await settle();
     expect(h.jobs.posts).toHaveLength(2);
@@ -213,5 +213,49 @@ describe("staged sending through the shared gate", () => {
     await started;
     expect(globalThis.localStorage?.length ?? 0).toBe(0);
     expect(globalThis.sessionStorage?.length ?? 0).toBe(0);
+  });
+});
+
+describe("PR #43 P2-2: rows of a running batch stay in the list", () => {
+  it("removing waiting rows while the first POST is pending keeps them (and their frozen sends) visible; stop sends none of them", async () => {
+    const { h, ids, phases } = three();
+    const started = h.batch.start();
+    expect(h.jobs.posts).toHaveLength(1); // a is pending
+    h.inputs.clearSelection();
+    h.inputs.toggle(ids[1]!, true);
+    h.inputs.toggle(ids[2]!, true);
+    h.inputs.removeSelected();
+    // Nothing that the batch will (or may) send disappears from the list.
+    expect(h.inputs.store.get().rows.map((r) => r.clientFileId)).toEqual(ids);
+    expect(h.inputs.store.get().notice).toEqual({ kind: "removed", removed: 0, kept: 2 });
+    expect(h.inputs.store.get().rows.map((r) => h.inputs.statusOf(r))).toEqual(["pending", "queued", "queued"]);
+    // The explicit way to keep b/c from being sent is Stop.
+    h.batch.requestStop();
+    h.jobs.acceptAt(0);
+    await started;
+    await settle();
+    expect(h.jobs.posts).toHaveLength(1);
+    expect(phases()).toEqual(["accepted", "not_sent", "not_sent"]);
+    // After the run, never-sent rows are ordinary rows again and can be removed.
+    expect(h.inputs.store.get().rows.map((r) => h.inputs.statusOf(r))).toEqual(["accepted", "not_submitted", "not_submitted"]);
+    h.inputs.removeSelected();
+    expect(h.inputs.store.get().rows.map((r) => r.clientFileId)).toEqual([ids[0]]);
+  });
+
+  it("without Stop, every row the list shows as waiting is exactly what is sent next (no hidden sends)", async () => {
+    const { h, ids } = three();
+    const started = h.batch.start();
+    h.inputs.selectAll();
+    h.inputs.removeSelected();
+    h.jobs.acceptAt(0);
+    await settle();
+    h.jobs.acceptAt(1);
+    await settle();
+    h.jobs.acceptAt(2);
+    await started;
+    const shown = h.inputs.store.get().rows.map((r) => r.clientFileId);
+    const sentFor = h.gate.store.get().records.map((r) => r.clientFileId);
+    expect(sentFor).toEqual(ids);
+    for (const id of sentFor) expect(shown).toContain(id);
   });
 });

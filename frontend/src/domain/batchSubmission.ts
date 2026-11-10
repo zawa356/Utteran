@@ -22,6 +22,8 @@ import type { FormIssue } from "./transcription";
  *   the batch stops at once, nothing is resent or "reconciled" automatically.
  * - Stop never aborts the request in flight; it stops the not-yet-sent rest after that answer.
  *   Cancelling an accepted job on the server is a separate operation (S3-A detail / S3-B2).
+ * - The rows of a running batch are reserved in the gate: the list shows them as queued and
+ *   locks them, so the only way to keep them from being sent is Stop (PR #43 P2-2).
  * - Continuing later is a new batch over rows that were never sent (accepted/unknown rows are
  *   never targets; a refused row only after an explicit reset).
  */
@@ -125,6 +127,9 @@ export class BatchSubmitter {
     if (failures.length > 0) return this.refuse("invalid", failures);
     const lease = this.gate.acquireLease();
     if (lease === null) return this.refuse("busy");
+    // Reserved rows are locked in the list (not removable, not editable) until the run ends, so
+    // the list never hides a row whose frozen request is still going to be sent (PR #43 P2-2).
+    this.gate.reserve(lease, requests.map((r) => r.clientFileId));
 
     const id = ++this.runId;
     this.stopRequested = false;

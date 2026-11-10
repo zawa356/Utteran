@@ -3,7 +3,7 @@ import { HostUnavailableError } from "../host";
 import { createFakeHost } from "../host/fake";
 import { b1Harness, envState, media, MEDIA, OUT, settingsState, twoBackends } from "../test/admissionHarness";
 import { environment } from "../test/legacyFixtures";
-import { effectiveDraft, MAX_INPUTS, summarize } from "./inputCollection";
+import { applyFormatChanges, effectiveDraft, formatState, MAX_INPUTS, summarize } from "./inputCollection";
 
 const rows = (h: ReturnType<typeof b1Harness>) => h.inputs.store.get().rows;
 const notice = (h: ReturnType<typeof b1Harness>) => h.inputs.store.get().notice;
@@ -234,16 +234,21 @@ describe("common settings + per-row overrides", () => {
   it("a mixed selection is shown as mixed (never the first row's value); bulk apply changes only the selection", () => {
     const { h, ids, only, eff } = three();
     only(ids[0]!);
-    h.inputs.stage({ formats: ["vtt"] });
+    for (const f of ["srt", "json", "md"] as const) h.inputs.stageFormat(f, false);
+    h.inputs.stageFormat("vtt", true);
     h.inputs.applyStaged();
     h.inputs.selectAll();
     const draft = h.form.store.get().draft;
     expect(summarize(h.inputs.selected(), draft, "formats")).toMatchObject({ count: 3, mixed: true, value: null, overridden: 1 });
     expect(summarize(h.inputs.selected(), draft, "language")).toMatchObject({ mixed: false, value: "ja", overridden: 0 });
     // Same set in another order is not "mixed".
-    only(ids[1]!, ids[2]!);
-    h.inputs.stage({ formats: ["md", "srt", "json"] });
+    only(ids[1]!);
+    h.inputs.stageFormat("json", false);
     h.inputs.applyStaged();
+    h.inputs.stageFormat("json", true);
+    h.inputs.applyStaged();
+    expect(rows(h)[1]!.overrides.formats).toEqual(["srt", "md", "json"]);
+    only(ids[1]!, ids[2]!);
     expect(summarize(h.inputs.selected(), h.form.store.get().draft, "formats").mixed).toBe(false);
     only(ids[1]!);
     h.inputs.stage({ language: "en" });
@@ -252,16 +257,62 @@ describe("common settings + per-row overrides", () => {
     expect(eff(0).formats).toEqual(["vtt"]);
   });
 
-  it("formats need at least one: an empty staged set is refused (and is not 'use common')", () => {
+  it("formats need at least one: a change leaving a row with none is refused (and is not 'use common')", () => {
     const { h, ids, only } = three();
     only(ids[0]!);
-    h.inputs.stage({ formats: [] });
+    for (const f of ["srt", "json", "md"] as const) h.inputs.stageFormat(f, false);
     expect(h.inputs.stagedProblems().formats).toBe(true);
     expect(h.inputs.applyStaged()).toBe(0);
     expect(rows(h)[0]!.overrides).toEqual({});
     // A staged edit belongs to its selection: changing the selection discards it.
     h.inputs.toggle(ids[1]!, true);
     expect(h.inputs.store.get().staged).toEqual({});
+  });
+
+  it("PR #43 P2-1: toggling one format on a mixed selection changes only that format in each row", () => {
+    const { h, ids, only, eff } = three();
+    // a: srt+json, b: srt+md (c keeps the common srt+json+md).
+    only(ids[0]!);
+    h.inputs.stageFormat("md", false);
+    h.inputs.applyStaged();
+    only(ids[1]!);
+    h.inputs.stageFormat("json", false);
+    h.inputs.applyStaged();
+    only(ids[0]!, ids[1]!);
+    const draft = () => h.form.store.get().draft;
+    const state = (f: "srt" | "json" | "md" | "vtt") => formatState(h.inputs.selected(), draft(), h.inputs.store.get().staged, f);
+    expect([state("srt"), state("json"), state("md")]).toEqual([
+      { checked: true, indeterminate: false },
+      { checked: false, indeterminate: true },
+      { checked: false, indeterminate: true },
+    ]);
+    h.inputs.stageFormat("json", true);
+    expect(state("json")).toEqual({ checked: true, indeterminate: false });
+    expect(state("md")).toEqual({ checked: false, indeterminate: true }); // untouched: still mixed
+    expect([eff(0).formats, eff(1).formats]).toEqual([["srt", "json"], ["srt", "md"]]); // nothing before Apply
+    expect(h.inputs.applyStaged()).toBe(2);
+    expect([eff(0).formats, eff(1).formats, eff(2).formats]).toEqual([["srt", "json"], ["srt", "md", "json"], ["srt", "json", "md"]]);
+    // Turning one off removes only that one.
+    h.inputs.stageFormat("srt", false);
+    h.inputs.applyStaged();
+    expect([eff(0).formats, eff(1).formats]).toEqual([["json"], ["md", "json"]]);
+    // A change that would leave any row with no format is refused as a whole.
+    h.inputs.stageFormat("json", false);
+    expect(h.inputs.stagedProblems().formats).toBe(true);
+    expect(h.inputs.applyStaged()).toBe(0);
+    expect([eff(0).formats, eff(1).formats]).toEqual([["json"], ["md", "json"]]);
+    // Changing the selection discards the unapplied change.
+    h.inputs.toggle(ids[2]!, true);
+    expect(h.inputs.store.get().staged).toEqual({});
+  });
+
+  it("a format change that leaves an inheriting row's set unchanged does not create an override", () => {
+    const { h, ids, only } = three();
+    only(ids[0]!);
+    h.inputs.stageFormat("srt", true); // already on
+    h.inputs.applyStaged();
+    expect(rows(h)[0]!.overrides).toEqual({});
+    expect(applyFormatChanges(["srt", "json"], { vtt: true, json: false })).toEqual(["srt", "vtt"]);
   });
 
   it("output: inherit the saved default, or a custom folder per row; an invalid custom folder is refused", () => {

@@ -51,6 +51,8 @@ export interface GateState {
   inFlight: number | null;
   /** A batch holds the door between its POSTs. */
   lease: "batch" | null;
+  /** Rows a running batch has frozen and will send (or may still send); released when it ends. */
+  reserved: readonly string[];
   records: readonly AdmissionRecord[];
 }
 
@@ -83,7 +85,7 @@ function freeze(request: TranscriptionRequest, now: number): SubmittedSnapshot {
 }
 
 export class AdmissionGate {
-  readonly store = new Store<GateState>({ inFlight: null, lease: null, records: [] });
+  readonly store = new Store<GateState>({ inFlight: null, lease: null, reserved: [], records: [] });
   private seq = 0;
   private leaseId = 0;
   private activeLease: number | null = null;
@@ -115,10 +117,21 @@ export class AdmissionGate {
     return { id: this.activeLease };
   }
 
+  /** Releasing the lease also releases the rows the batch reserved. */
   releaseLease(token: LeaseToken): void {
     if (this.activeLease !== token.id) return;
     this.activeLease = null;
-    this.store.patch({ lease: null });
+    this.store.patch({ lease: null, reserved: [] });
+  }
+
+  /** The lease holder marks the rows whose frozen requests it is going to send. */
+  reserve(token: LeaseToken, clientFileIds: readonly string[]): void {
+    if (this.activeLease !== token.id) return;
+    this.store.patch({ reserved: Object.freeze([...clientFileIds]) });
+  }
+
+  isReserved(clientFileId: string): boolean {
+    return this.store.get().reserved.includes(clientFileId);
   }
 
   /** Latest attempt for a row, ignoring attempts before `floor` (a reset refusal). */

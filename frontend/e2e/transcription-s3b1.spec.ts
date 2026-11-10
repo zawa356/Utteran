@@ -1,4 +1,4 @@
-import type { APIRequestContext, Page, Request } from "@playwright/test";
+import { type APIRequestContext, type Page, request as playwrightRequest, type Request } from "@playwright/test";
 import { choose, expect, SESSION_HEADER, shot, test } from "./fixtures";
 
 /**
@@ -178,12 +178,15 @@ test("a lost answer stops at once as 'unknown' and is never resent; the server r
   // reset — the server accepted the job, the page never saw the answer.
   const applied: { status: number; id: string }[] = [];
   let seen = 0;
+  // A dedicated context: the shared `request` may hold a pooled keep-alive connection the server
+  // has already closed (ECONNRESET before the POST is sent). A POST is never retried here.
+  const direct = await playwrightRequest.newContext({ baseURL: new URL(app.url()).origin });
   await app.route("**/api/jobs", async (route) => {
     const original = route.request();
     if (original.method() !== "POST") return route.fallback();
     seen += 1;
     if (seen !== 2) return route.fallback();
-    const response = await request.fetch("/api/jobs", { method: "POST", headers: { ...SESSION_HEADER, "Content-Type": "application/json" }, data: original.postData() ?? undefined });
+    const response = await direct.fetch("/api/jobs", { method: "POST", headers: { ...SESSION_HEADER, "Content-Type": "application/json" }, data: original.postData() ?? undefined });
     const body = (await response.json()) as { id?: string };
     applied.push({ status: response.status(), id: String(body.id ?? "") });
     await route.abort("connectionreset");
@@ -210,6 +213,7 @@ test("a lost answer stops at once as 'unknown' and is never resent; the server r
   await expect(app.getByTestId("tx-list-remove")).toBeDisabled();
   const job = (await (await request.get(`/api/jobs/${applied[0]!.id}`, { headers: SESSION_HEADER })).json()) as { status: string };
   expect(["starting", "running"]).toContain(job.status);
+  await direct.dispose();
 });
 
 test("stop while a POST is in flight: it is not aborted; edits meanwhile do not change what was frozen; no single start can slip in", async ({ app, request }) => {
@@ -268,13 +272,14 @@ test("frozen at start: settings changed while the first POST is held never reach
   await drop(app, ["frozen-1.wav", "frozen-2.wav"]);
   await app.getByTestId("tx-batch-start").click();
   await expect(app.getByTestId("tx-batch-phase")).toHaveText("投入中（1件ずつ送信しています）");
-  // The common language, formats and the second file's own folder change while it waits.
+  // The common language and formats change while it waits; the queued second file itself is
+  // locked (its request is already fixed; PR #43 P2-2), so its own settings cannot be edited.
   await choose(app, "tx-language", /英語/);
   await app.getByTestId("tx-format-vtt").locator("input").check();
   await selectOnly(app, "frozen-2.wav");
-  await app.getByTestId("tx-ov-output-custom").click();
-  await app.getByTestId("tx-ov-output-path").locator("input").fill(`${OUT}/late`);
-  await app.getByTestId("tx-ov-apply").click();
+  await expect(row(app, "frozen-2.wav").getByTestId("tx-row-status")).toHaveText("投入待ち");
+  await expect(app.getByTestId("tx-ov-locked")).toContainText("1件");
+  await expect(app.getByTestId("tx-ov-empty")).toBeVisible();
   await expect(app.getByTestId("tx-batch-phase")).toHaveText("すべての開始要求に受付の応答がありました", { timeout: 30_000 });
   expect(bodies(rec).map((b) => [b.language, b.output_dir, b.formats])).toEqual([
     ["ja", OUT, ["srt", "json", "md"]],
@@ -307,4 +312,56 @@ test("adding: several drops, a folder and duplicates are explained; typed paths 
   await app.getByTestId("tx-input-path").locator("input").press("Enter");
   await expect(app.getByTestId("tx-list-count")).toHaveText("3件（選択 3件）");
   await shot(app, "s3b1-06-list");
+});
+
+test("PR #43 P2-1: toggling one format on a mixed selection keeps every other format of each file", async ({ app, request }) => {
+  const rec = recordApi(app);
+  await expert(app, request);
+  await drop(app, ["mix-a.wav", "mix-b.wav"]);
+  // a: srt+json, b: srt+md (common is srt+json+md).
+  await selectOnly(app, "mix-a.wav");
+  await app.getByTestId("tx-ov-format-md").locator("input").click();
+  await app.getByTestId("tx-ov-apply").click();
+  await selectOnly(app, "mix-b.wav");
+  await app.getByTestId("tx-ov-format-json").locator("input").click();
+  await app.getByTestId("tx-ov-apply").click();
+  await app.getByTestId("tx-list-select-all").click();
+  // json is on for a only → indeterminate; turning it on must not drop b's md.
+  await app.getByTestId("tx-ov-format-json").locator("input").click();
+  await app.getByTestId("tx-ov-apply").click();
+  await app.getByTestId("tx-batch-start").click();
+  await expect(app.getByTestId("tx-batch-phase")).toHaveText("すべての開始要求に受付の応答がありました", { timeout: 30_000 });
+  const formats = bodies(rec).map((b) => [...(b.formats as string[])].sort());
+  expect(formats).toEqual([
+    ["json", "srt"],
+    ["json", "md", "srt"],
+  ]);
+});
+
+test("PR #43 P2-2: rows waiting in a running batch cannot be removed; Stop is the way to keep them from being sent", async ({ app, request }) => {
+  const rec = recordApi(app);
+  await expert(app, request);
+  let held = 0;
+  await app.route("**/api/jobs", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    held += 1;
+    if (held === 1) await new Promise((resolve) => setTimeout(resolve, 2500));
+    return route.fallback();
+  });
+  await drop(app, ["wait-a.wav", "wait-b.wav", "wait-c.wav"]);
+  await app.getByTestId("tx-batch-start").click();
+  await expect(app.getByTestId("tx-batch-phase")).toHaveText("投入中（1件ずつ送信しています）");
+  await app.getByTestId("tx-list-select-none").click();
+  await row(app, "wait-b.wav").getByTestId("tx-list-check").click();
+  await row(app, "wait-c.wav").getByTestId("tx-list-check").click();
+  await expect(app.getByTestId("tx-list-remove")).toBeDisabled();
+  await expect(app.getByTestId("tx-list-queued-note")).toContainText("以降の投入を停止");
+  await expect(row(app, "wait-b.wav").getByTestId("tx-row-status")).toHaveText("投入待ち");
+  await app.getByTestId("tx-batch-stop").click();
+  await expect(app.getByTestId("tx-batch-phase")).toHaveText("投入を途中で止めました", { timeout: 30_000 });
+  await app.waitForTimeout(1500);
+  expect(starts(rec)).toHaveLength(1);
+  await expect(app.getByTestId("tx-list-count")).toHaveText(/^3件/);
+  // After the run the never-sent rows are ordinary rows again.
+  await expect(app.getByTestId("tx-list-remove")).toBeEnabled();
 });

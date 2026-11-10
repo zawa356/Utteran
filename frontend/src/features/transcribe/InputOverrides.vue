@@ -3,7 +3,7 @@ import { computed } from "vue";
 import type { JobLanguage, OutputFormat } from "../../api/legacyEnvironment";
 import { useI18n } from "../../composables/core";
 import { useTranscription } from "../../composables/transcription";
-import { effectiveDraft, type FieldSummary, type OverrideField, summarize } from "../../domain/inputCollection";
+import { type FieldSummary, formatState as stateOf, type OverrideField, summarize } from "../../domain/inputCollection";
 import { MAX_JOB_PATH_LENGTH } from "../../domain/paths";
 import type { MessageKey } from "../../i18n";
 
@@ -44,20 +44,18 @@ function hint(field: OverrideField | "output"): string {
   const parts: string[] = [];
   if (s.mixed) parts.push(t("tx.ov.mixed", { count: s.count }));
   parts.push(s.overridden > 0 ? t("tx.ov.overridden", { count: s.overridden }) : t("tx.ov.inherited"));
-  if (field !== "output" && staged.value[field as keyof typeof staged.value] !== undefined) parts.push(t("tx.ov.staged"));
+  const pending = field === "formats" ? staged.value.formatChanges !== undefined : field !== "output" && staged.value[field] !== undefined;
+  if (pending) parts.push(t("tx.ov.staged"));
   return parts.join(" · ");
 }
 
-// Formats: checked = every row has it (or staged), indeterminate = only some rows have it.
+// Formats: checked = every row has it, indeterminate = only some rows have it. A click stages a
+// change of that one format only; every other format stays as each row has it (PR #43 P2-1).
 function formatState(f: OutputFormat): { checked: boolean; indeterminate: boolean } {
-  if (staged.value.formats) return { checked: staged.value.formats.includes(f), indeterminate: false };
-  const withIt = rows.value.filter((r) => effectiveDraft(r, form.value.draft).formats.includes(f)).length;
-  return { checked: withIt === rows.value.length && withIt > 0, indeterminate: withIt > 0 && withIt < rows.value.length };
+  return stateOf(rows.value, form.value.draft, staged.value, f);
 }
 function toggleFormat(f: OutputFormat, on: boolean) {
-  const base = (options.value?.formats ?? []).filter((x) => formatState(x).checked);
-  const next = on ? [...new Set([...base, f])] : base.filter((x) => x !== f);
-  core.inputs.stage({ formats: next });
+  core.inputs.stageFormat(f, on);
 }
 
 const outputSummary = computed(() => sum("output"));

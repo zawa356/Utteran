@@ -20,6 +20,8 @@ const rows = computed(() => list.value.rows);
 const selectedCount = computed(() => rows.value.filter((r) => r.selected).length);
 const removable = computed(() => rows.value.filter((r) => r.selected && !isLocked(statusOf(r.clientFileId))).length);
 const confirming = ref(false);
+// Rows of a running batch: frozen and still going to be sent, so they are not removable here.
+const queuedSelected = computed(() => rows.value.filter((r) => r.selected && statusOf(r.clientFileId) === "queued").length);
 
 function overridden(id: string): boolean {
   const row = rows.value.find((r) => r.clientFileId === id);
@@ -47,6 +49,7 @@ function removeSelected() {
       <v-btn variant="text" size="small" :disabled="selectedCount === 0" data-testid="tx-list-select-none" @click="core.inputs.clearSelection()">{{ t("tx.list.selectNone") }}</v-btn>
       <v-btn variant="text" size="small" color="error" :disabled="removable === 0" data-testid="tx-list-remove" @click="confirming = true">{{ t("tx.list.remove", { count: removable }) }}</v-btn>
     </div>
+    <p v-if="queuedSelected > 0" class="text-caption" role="status" data-testid="tx-list-queued-note">{{ t("tx.list.queuedNote", { count: queuedSelected }) }}</p>
     <v-alert v-if="confirming" type="warning" density="compact" data-testid="tx-list-remove-confirm">
       {{ t("tx.list.removeConfirm", { count: removable }) }}
       <div class="u-row mt-2">

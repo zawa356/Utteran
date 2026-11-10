@@ -7,7 +7,7 @@ import type { MessageKey } from "../../i18n";
 /** Admission state of one input (what the start request got back) — never "running" or "done". */
 const props = defineProps<{ status: RowStatus; testid?: string }>();
 const { t } = useI18n();
-const color = computed(() => ({ not_submitted: undefined, pending: "info", accepted: "primary", rejected: "error", unknown: "warning" })[props.status]);
+const color = computed(() => ({ not_submitted: undefined, queued: "info", pending: "info", accepted: "primary", rejected: "error", unknown: "warning" })[props.status]);
 </script>
 
 <template>
