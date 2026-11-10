@@ -1,5 +1,12 @@
 # AI 作業状態
 
+## 現在地（2026-11-10、PR #43レビュー修正、0.1.47据え置き、Draft維持）
+
+- 修正前HEAD `1811ea2`（PR #43 HEADと一致、Draft、作業ツリー無変更）。同じブランチ`claude/clever-brahmagupta-ks0x4a`へ通常commit・push。Ready化・merge・tag・releaseなし。
+- P2-1: 混在選択での出力形式の一括編集を、集合の置換から形式ごとの差分（`formatChanges`）へ。未操作の形式は各行の値を保持、行ごとに0件は拒否。
+- P2-2: 順次投入の対象行をゲートに予約して「投入待ち」として表示・ロック（一覧から外せない・編集できない）。送らせない操作は明示の停止だけ。
+- 回帰試験は修正前に失敗することを確認（Vitest 2件・E2E 2件）。Vitest 436、E2E 52。応答喪失E2Eの共有request contextのECONNRESET（試験側）を専用contextで解消。詳細[ui3/s3b1 §13](docs/architecture/ui3/s3b1-multi-input-and-admission.md#13-pr-43レビュー修正2026-11-10版0147据え置き)。Windows WebView2実機は未受入。
+
 ## 現在地（2026-11-10、UI-3 S3-B1 複数入力・ファイル別設定・段階的な受付、0.1.47・未リリース、Draft PR）
 
 - 作業開始ゲート: PR #42（S3-A）が`main`へマージ済み（`c56d370`、S3-A HEAD `c6be1ea`を含む）を確認してから着手。基点`main` `c56d37060997428275e11826be5b6b2aa2bac630`、
