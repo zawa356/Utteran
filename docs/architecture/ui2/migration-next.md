@@ -1,6 +1,10 @@
 # UI-2 → UI-3 移行計画・backend gap・rollback・owner判断
 
-更新: 2026-11-10 JST（0.1.47、UI-3 S3-B1）。初版2026-11-04（0.1.42）。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
+更新: 2026-11-11 JST（0.1.48、B9 Issue #37修正）。初版2026-11-04（0.1.42）。
+
+> **現在の計画（2026-11-11 owner方針、以下の本文より優先）:** 旧UIは旧API、**新UIは`/api/v1`を正規の接続先とする**。
+> 進行順は **Issue #37修正（0.1.48で解消）→ v1起動/旧・新queue排他（G-09）の設計・実装 → B4 ready/smoke → 新UIのv1投入接続 → v1上のS3-B2**。
+> 本文の「S3-B2は旧API、S5で初めてv1へ接続」は当時の計画の記録であり、今後の指示ではない。v1のactivate・既定切替・実ユーザーDBのmigrationはowner承認後のみ。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
 
 ## 1. 段階の現状
 
@@ -67,7 +71,9 @@
 
 UI-2で見つけた追加の論点:
 
-- **B9 `EventReducer.apply_sync`は別epochのsyncで`queue_revision`をresetしない**（store counterのため）。backup復元等で
+- **【0.1.48で解消、Issue #37】** 別epochの`/sync`でqueue revisionも再初期化するようPython正本・TS portを修正し、共通fixtureで一致を確認
+  （[b9/sync.md](../b9/sync.md#epochとrevisionの有効範囲issue-370148)）。以下は当時の記録:
+  **B9 `EventReducer.apply_sync`は別epochのsyncで`queue_revision`をresetしない**（store counterのため）。backup復元等で
   queue revisionが下がると（例: 旧epoch rev=100 → 復元後rev=5）、以後のqueue event（rev 6等）が`stale`になる。
   frontend portはparityのため同じ挙動。PR #36レビューにより、**S5（v1実接続）前のblocking課題**として、
   B9本体の契約・testと同時に修正し、TS/Python parityを維持する（UI-2には混ぜない）。
@@ -92,4 +98,4 @@ UI-2で見つけた追加の論点:
    既定化（UI-4 #22）では200%での初期窓の画面収容、installer/portable、起動時間・RAMの受入が残る。
 5. installer/portableへ新UIを同梱する時期（`build.ps1`に`npm ci && npm run build`を組み込むか）。現在は
    build済みのときだけ`gui.spec`が同梱し、`build.ps1`は変更していない。
-6. B9 reducerの`queue_revision`のepoch跨ぎ（上記4.）。
+6. ~~B9 reducerの`queue_revision`のepoch跨ぎ（上記4.）。~~ 0.1.48で解消（Issue #37）。

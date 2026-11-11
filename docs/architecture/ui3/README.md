@@ -23,6 +23,9 @@ Hugging Faceトークンの状態/登録/削除・ログ保存先と「ログフ
 受付サマリーは実行状態の正本ではない。正本は[s3b1-multi-input-and-admission.md](s3b1-multi-input-and-admission.md)。開発版`0.1.47`、未リリース、Draft PR。
 S3-B2（複数ジョブの監視・取消・絞込み）とS5（B7・同一入力の独立再実行・出力命名）は後続。Windows WebView2実機は未受入。
 
+**2026-11-11 B9 Issue #37（0.1.48、未リリース、Draft PR）:** v1接続の前提だったreducerのepoch跨ぎ`queue_revision`を修正（Python正本・TS port、新UIは未接続・v1は未activate）。
+owner方針で新UIの正規の接続先は`/api/v1`。順序はv1起動/G-09排他 → B4 ready/smoke → 新UIのv1投入接続 → v1上のS3-B2（[ui2/migration-next](../ui2/migration-next.md)冒頭）。
+
 ## 設計基準
 
 - 通常モード: 1ファイル中心、文字起こし・セットアップ・設定の短い導線。Expert: sidebar＋①ファイル②処理設定③キュー投入の可変3ペイン。

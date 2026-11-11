@@ -57,3 +57,22 @@
 | schema `--check` 8種、`uv lock --check` | 成功 | 成功（events.schema.jsonは`next_cursor`最大長のみ再生成） |
 
 wheel・public scan・GitHub Actionsの結果はPR本文「Review fixes」に記録する。
+
+## Issue #37 epoch跨ぎの`queue_revision`（2026-11-11、0.1.48、基点main `e7b32da`）
+
+### 修正前Red（commit `f972553`、修正前のreducer）
+
+| テスト | 期待 | 実際 |
+|---|---|---|
+| pytest `test_reducer_epoch_change_reinitialises_queue_revision` | 新epoch `/sync`後のqueue revision 5 | **100**（旧epochの値を`max()`で保持） |
+| pytest／Vitest（tolerate・resync） 共通fixture「Issue #37: sync from another epoch re-initialises the queue revision」 | 新epochのrev 6 `queue_changed`が`applied` | **`stale`** |
+| Vitest `sync.test.ts`「a /sync from a restored store … is adopted」 | resync後のqueue revision 5→6 | 100のまま（rev 6は`stale`） |
+
+直接原因は`apply_sync()`/`applySync()`の別epoch分岐でqueue revisionだけ初期化しないこと（他の失敗はなし: pytest 2 failed/28 passed、Vitest 3 failed/27 passed）。
+
+### 修正後Green
+
+- 共通fixtureに2ケース追加（A rev100→B rev5→B rev6・旧epoch eventは`resync`・旧resource状態を残さない・新epoch内の既知以下は`stale`・seq重複は`duplicate`／同epochの古い`/sync`・遅れたGET・同revisionのqueue eventは巻き戻さない）。既存ケースは無変更。
+- pytest直接テスト1件、Vitest `SyncCoordinator` 2件（新epochへの復旧で小さいqueue revisionを採用・旧streamの後着frameを無視・再投入なし／`stop()`後に届いた`/sync`を適用しない）。
+- `SyncCoordinator`・server（`read_sync`・SSE・410/`resync_required`）は無変更。既存のstream規則テスト（`cursor_conflict`・expired・重複・filtered gap許容とunfiltered `resync`の差）はそのまま成功。
+- 実測値はPR本文と下記に記録する。

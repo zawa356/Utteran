@@ -1,5 +1,15 @@
 # AI 作業状態
 
+## 現在地（2026-11-11、B9 Issue #37 epoch切替時の`queue_revision`、0.1.48・未リリース、Draft PR）
+
+- 基点`main` `e7b32da3c19a20df7fc501e4c2e3d2613c3f04af`（PR #43統合後、作業直前に`origin/main`と一致・作業ツリー無変更、#37は未修正）。
+  セッション指定ブランチ`claude/pensive-bohr-cwifu3`で通常commit・push。force push・merge・Ready化・tag・releaseなし。commit identityは既存のエージェントcommitと同じClaude名義。
+- `EventReducer.apply_sync()`（Python正本）と`applySync()`（TS）の別epoch分岐でqueue revisionも0へ戻し、新epochのsnapshot値を採用。同epochの`max()`は維持。
+  修正前Red（新epoch後のqueue revision 期待5・実際100、rev 6 `queue_changed`が`stale`）をcommit `f972553`で記録してから修正。
+- 共通fixture 2ケース・pytest 1件・Vitest `SyncCoordinator` 2件を追加。`SyncCoordinator`・server・schema・DB・旧GUI/CLIは無変更。v1は未activate、実ユーザーDBに触れていない。
+- 最新のowner方針: 旧UIは旧API、新UIは`/api/v1`が正規。次はv1起動/G-09排他 → B4 ready/smoke → 新UIのv1投入接続 → v1上のS3-B2（[ui2/migration-next](docs/architecture/ui2/migration-next.md)冒頭）。
+- 検証値はPR本文に記録（Linux container）。Windows CIは最終HEADの結果をPRに記録。Windows実機は対象外。
+
 ## 現在地（2026-11-10、PR #43レビュー修正、0.1.47据え置き、Draft維持）
 
 - 修正前HEAD `1811ea2`（PR #43 HEADと一致、Draft、作業ツリー無変更）。同じブランチ`claude/clever-brahmagupta-ks0x4a`へ通常commit・push。Ready化・merge・tag・releaseなし。

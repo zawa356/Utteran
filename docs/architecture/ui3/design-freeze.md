@@ -60,6 +60,8 @@
    **追補（2026-11-10 owner承認の分割）:** S3-B1＝複数入力・ファイル別override・段階的な一括投入（実装済み、[s3b1](s3b1-multi-input-and-admission.md)、`0.1.47`）、S3-B2＝Expertの実キュー管理、S5＝B7永続化・同一入力の独立再実行・日時＋実行ID出力名。B1の「一括」は旧APIへの順次POSTでありatomic batchではない。同一入力の再投入はS5まで提供しない（ページ内ガードは補助判定）。
 4. **S4 結果・履歴・モデル・セットアップ:** viewer/再出力/管理を実接続し、履歴保持と成果物削除、実用語集TXT取込を安全に設計する。
 5. **S5 v1接続:** B9 Issue #37、G-09排他とDB migration/復旧を先に解決。owner承認なしにactivate・既定切替しない。
+   **追補（2026-11-11）:** Issue #37は0.1.48で解消（reducerのみ、v1は未activate）。owner方針により新UIは`/api/v1`を正規の接続先とし、
+   順序はv1起動/G-09排他 → B4 ready/smoke → 新UIのv1投入接続 → v1上のS3-B2（[ui2/migration-next](../ui2/migration-next.md)冒頭）。
 6. **UI-4 #22:** Windows WebView2/IME/OS DPI 200%初期窓、installer/portable、起動/RAMと実機回帰の受入。
 
 各段階は小PRで実装し、旧GUI/CLIの非退行と実APIの自動テストを必須とする。
