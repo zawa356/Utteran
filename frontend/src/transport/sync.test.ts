@@ -166,6 +166,64 @@ describe("SyncCoordinator (B9 /sync + /events)", () => {
     expect(h.coordinator.reducer.epoch).toBe(OTHER);
   });
 
+  it("Issue #37: a /sync from a restored store (new epoch, lower queue revision) is adopted", async () => {
+    const queued = (cursor: string, queueRevision: number): SyncSnapshot => ({
+      ...snapshot(cursor),
+      queue: { revision: queueRevision, dispatch: "running", activeItemId: null, itemCount: 0 },
+    });
+    const queueFrame = (seq: number, revision: number, epoch: string) => ({
+      ...frame(seq, revision, "running", epoch),
+      resource_id: "queue",
+      resource_kind: "queue",
+      type: "queue_changed",
+    });
+    const h = harness([queued(`${EPOCH}:10`, 100), queued(`${OTHER}:3`, 5)]);
+    h.coordinator.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const old = h.last();
+    old.open();
+    expect(h.coordinator.reducer.queueRevision).toBe(100);
+    old.emit("resync_required", { schema_version: 1, type: "resync_required", reason_code: "event_cursor_expired" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.coordinator.reducer.epoch).toBe(OTHER);
+    expect(h.coordinator.reducer.queueRevision).toBe(5);
+    expect(h.coordinator.reducer.revisions.get(JOB)).toBe(1); // nothing kept from the old epoch
+    const current = h.last();
+    expect(current.url).toBe(`/api/v1/events?after=${OTHER}:3`);
+    current.open();
+    // A late frame of the closed old stream is never applied.
+    old.emit("queue_changed", queueFrame(11, 101, EPOCH));
+    expect(h.coordinator.reducer.queueRevision).toBe(5);
+    current.emit("queue_changed", queueFrame(4, 6, OTHER));
+    expect(h.coordinator.reducer.queueRevision).toBe(6);
+    expect(h.coordinator.snapshot.stats.applied).toBe(1);
+    current.emit("queue_changed", queueFrame(5, 6, OTHER));
+    expect(h.coordinator.snapshot.stats.stale).toBe(1);
+    expect(h.fetchSync).toHaveBeenCalledTimes(2); // nothing re-submitted or retried
+  });
+
+  it("a /sync answered after stop() or after a newer resync is discarded", async () => {
+    let release: ((value: SyncSnapshot) => void) | null = null;
+    const fetchSync = vi.fn(
+      () =>
+        new Promise<SyncSnapshot>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const coordinator = new SyncCoordinator({
+      fetchSync,
+      eventsUrl: () => "/api/v1/events",
+      openEvents: (url) => new FakeSource(url),
+      scheduler: browserScheduler,
+    });
+    coordinator.start();
+    coordinator.stop();
+    (release as unknown as (value: SyncSnapshot) => void)(snapshot(`${OTHER}:3`));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(coordinator.reducer.epoch).toBeNull();
+    expect(coordinator.snapshot.connection).toBe("stopped");
+  });
+
   it("an unparsable frame triggers resync instead of being ignored", async () => {
     const h = harness([snapshot(`${EPOCH}:5`), snapshot(`${EPOCH}:5`)]);
     h.coordinator.start();

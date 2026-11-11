@@ -6,7 +6,7 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.47` (unreleased).
+> Current development version: `0.1.48` (unreleased).
 > APIs and configuration may change before 1.0.
 
 > The current backend (Phase A-B9) structure, feature status, limits and test coverage are maintained in

@@ -101,6 +101,12 @@ class EventReducer:
     events at or below the known revision are ignored; a seq gap is *not* an error (resource
     filters skip rows); an event from another epoch, or a GET older than what is known, is
     discarded / answered with ``resync``. Reconnecting never starts or retries work.
+
+    Revisions (resource and queue) and the cursor are only comparable inside one epoch: a
+    ``/sync`` from another epoch (e.g. after a backup restore, Issue #37) is the new
+    authority and re-initialises all of them, even when its queue revision is lower. Inside
+    one epoch nothing moves backwards. A resource GET carries no epoch, so not applying a
+    response from an older epoch is the caller's job (the UI's SyncCoordinator generation).
     """
 
     epoch: str | None = None
@@ -114,7 +120,7 @@ class EventReducer:
         epoch, seq = _seq(snapshot.event_cursor)
         if self.epoch != epoch:
             self.epoch, self.cursor, self.seen = epoch, 0, set()
-            self.revisions, self.statuses = {}, {}
+            self.revisions, self.statuses, self.queue_revision = {}, {}, 0
         self.cursor = max(self.cursor, seq)
         for resource in snapshot.resources:
             self.apply_resource(resource.id, resource.revision, resource.status.value)

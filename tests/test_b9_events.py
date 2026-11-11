@@ -377,6 +377,58 @@ def test_reducer_ordering_rules() -> None:
     assert reducer.apply_event(event(10, job, 4, "b" * 32)) == "resync"  # other epoch
 
 
+def _queue_sync(cursor: str, queue_revision: int) -> SyncSnapshot:
+    return SyncSnapshot.model_validate(
+        {
+            "schema_version": 1,
+            "snapshot_token": "0" * 32,
+            "event_cursor": cursor,
+            "resources": [],
+            "next_cursor": None,
+            "queue": {
+                "schema_version": 1,
+                "revision": queue_revision,
+                "dispatch": "running",
+                "active_item_id": None,
+                "items": [],
+            },
+            "inventory_revision": None,
+        }
+    )
+
+
+def _queue_event(cursor: str, revision: int) -> EventEnvelope:
+    return EventEnvelope.model_validate(
+        {
+            "schema_version": 1,
+            "id": cursor,
+            "resource_id": "queue",
+            "resource_kind": "queue",
+            "resource_revision": revision,
+            "timestamp": "2026-11-11T00:00:00Z",
+            "type": "queue_changed",
+            "payload": {"status": "running", "reason_code": None, "attempt_id": None},
+        }
+    )
+
+
+def test_reducer_epoch_change_reinitialises_queue_revision() -> None:
+    """Issue #37: a revision is only comparable inside one epoch (e.g. a restored backup)."""
+    a, b = "a" * 32, "b" * 32
+    reducer = EventReducer()
+    reducer.apply_sync(_queue_sync(f"{a}:10", 100))
+    assert reducer.queue_revision == 100
+    reducer.apply_sync(_queue_sync(f"{b}:3", 5))  # new epoch, lower queue revision
+    assert (reducer.epoch, reducer.cursor, reducer.queue_revision) == (b, 3, 5)
+    assert reducer.apply_event(_queue_event(f"{b}:4", 6)) == "applied"
+    assert reducer.queue_revision == 6
+    assert reducer.apply_event(_queue_event(f"{a}:11", 101)) == "resync"  # old epoch
+    assert reducer.apply_event(_queue_event(f"{b}:5", 6)) == "stale"
+    # Same epoch: an older /sync never rolls the queue revision or the cursor back.
+    reducer.apply_sync(_queue_sync(f"{b}:2", 4))
+    assert (reducer.cursor, reducer.queue_revision) == (5, 6)
+
+
 # --------------------------------------------------------------------------- 5. compaction
 
 
