@@ -63,7 +63,7 @@ POSIXではディレクトリ0700・ファイル0600に揃える。**Windows ACL
   （Windowsでは終了から解放までわずかな遅延があり得る）。CLI・旧バイナリ・非協調プロセスは排除しない。
 - **開発用root（`--next-ui-v1`）**: v1 DBは専用markerのある開発用data rootにだけ作る。既存データのあるディレクトリは採用・初期化しない。
 - **停止時の結果**: `JobRuntime.shutdown()`は`rolled_back`/`not_active`/`active_attempt`/`ownership_lost`/`shutdown_failed`を返す。
-  `rolled_back`以外では旧queueを再開しない。`create_app()`はactivate後の後段失敗でruntimeを停止する。
+  `rolled_back`以外では旧queueを再開せず、GUIロックも明示解放しない（プロセス終了時にOSが解放）。`create_app()`は`activate()`を最後の手順にする。
   試験は合成fixtureのみ（[ui3/g09 §5–6](../ui3/g09-next-ui-v1-startup.md#5-起動失敗停止rollback)）。実DB復元・Windows ACL・secure deleteはG-15等の別ゲート。
 
 ## Outbox compaction

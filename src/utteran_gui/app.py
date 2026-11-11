@@ -259,12 +259,27 @@ def create_mode_app(mode: LaunchMode, session_key: str, *, repo_root: Path, auth
     return create_app(session_key, repo_root=repo_root)
 
 
-def shutdown_v1_runtime(app: Any) -> str | None:
+def _v1_runtime(app: Any) -> Any:
+    return getattr(getattr(app, "state", None), "v1_jobs_runtime", None)
+
+
+def shutdown_v1_runtime(app: Any, timeout: float = 30.0) -> str | None:
     """Stop a v1 runtime the server lifespan did not stop; return its fixed result code."""
-    runtime = getattr(getattr(app, "state", None), "v1_jobs_runtime", None)
+    runtime = _v1_runtime(app)
     if runtime is None or getattr(runtime, "state", None) != "active":
         return None
-    return str(runtime.shutdown())
+    return str(runtime.shutdown(timeout))
+
+
+def v1_runtime_released(app: Any) -> bool:
+    """True only when no v1 runtime exists or its rollback provably completed.
+
+    ``JobRuntime`` leaves ``state == "active"`` whenever deactivate() was refused
+    (``active_attempt``, ``ownership_lost``) or failed (``shutdown_failed``), so an
+    unproven stop never counts as stopped and the GUI lock is kept until process exit.
+    """
+    runtime = _v1_runtime(app)
+    return runtime is None or getattr(runtime, "state", None) != "active"
 
 
 def report_startup_refusal(refusal: StartupRefused) -> None:
@@ -342,24 +357,29 @@ def _run_gui(mode: LaunchMode, started: float, session: _GuiSession) -> None:
     try:
         host, port = server_socket.getsockname()[:2]
         port = int(port)
-        # create_app() itself stops a v1 runtime it activated before failing.
+        # activate() is create_app()'s last step: when create_app() raises, no v1
+        # runtime is running (activate() itself stops what it started on failure).
         app = create_mode_app(
             mode, session_key, repo_root=project_root(), authority=f"{host}:{port}"
         )
     except BaseException:
         server_socket.close()
         raise
-    log_stage("fastapi_app_created", next_ui=next_ui, mode=mode)
-    config = uvicorn.Config(app, log_level="warning", access_log=False)
-    server = uvicorn.Server(config)
-    thread = threading.Thread(
-        target=server.run,
-        kwargs={"sockets": [server_socket]},
-        name="utteran-gui-server",
-        daemon=True,
-    )
+    # From here on a v1 runtime may be active: every exit path goes through the
+    # finally below, and only a proven stop lets the caller release the lock.
     session.stopped = False
+    server: Any = None
+    thread: threading.Thread | None = None
     try:
+        log_stage("fastapi_app_created", next_ui=next_ui, mode=mode)
+        config = uvicorn.Config(app, log_level="warning", access_log=False)
+        server = uvicorn.Server(config)
+        thread = threading.Thread(
+            target=server.run,
+            kwargs={"sockets": [server_socket]},
+            name="utteran-gui-server",
+            daemon=True,
+        )
         log_stage("uvicorn_thread_starting", port=port)
         thread.start()
         deadline = time.monotonic() + 10.0
@@ -408,19 +428,27 @@ def _run_gui(mode: LaunchMode, started: float, session: _GuiSession) -> None:
     finally:
         # Order: frontend/uvicorn (its lifespan shutdown stops the v1 runtime) ->
         # any v1 runtime the lifespan did not stop -> the caller releases the lock.
-        server.should_exit = True
-        if thread.is_alive():
+        if server is not None:
+            server.should_exit = True
+        if thread is not None and thread.is_alive():
             thread.join(timeout=SERVER_JOIN_TIMEOUT[mode])
         server_socket.close()
-        if thread.is_alive():
-            log_stage("gui_shutdown_incomplete", level=logging.ERROR)
+        if thread is not None and thread.is_alive():
+            log_stage("gui_shutdown_incomplete", level=logging.ERROR, reason="server_running")
         else:
-            code = shutdown_v1_runtime(app)
+            # The lifespan normally stopped the runtime; retry briefly only if it did not
+            # (server never started, or its rollback was refused).
+            code = shutdown_v1_runtime(app, timeout=5.0)
             if code is not None:
                 level = logging.INFO if code == "rolled_back" else logging.ERROR
                 log_stage("v1_runtime_shutdown", level=level, code=code)
-            session.stopped = True
-            log_stage("gui_shutdown_complete")
+            if v1_runtime_released(app):
+                session.stopped = True
+                log_stage("gui_shutdown_complete")
+            else:
+                # active_attempt / ownership_lost / shutdown_failed: the v1 executor may
+                # still own work a legacy GUI cannot see, so keep the lock until exit.
+                log_stage("gui_shutdown_incomplete", level=logging.ERROR, reason="v1_runtime")
 
 
 if __name__ == "__main__":

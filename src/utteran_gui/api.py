@@ -229,25 +229,22 @@ def create_app(
             )
             if enable_v1_setup and getattr(v1_runtime, "setup", None) is None:
                 raise ValueError("v1 setup requires a job runtime with setup components")
-            v1_runtime.activate()  # explicit opt-in cutover: refuses if legacy work exists
-            try:
-                app.state.v1_jobs_runtime = v1_runtime
-                register_job_routes(v1_app, v1_runtime)
-                if enable_v1_setup:
-                    # Same sub-app and same runtime: setup and jobs share one heavy slot.
-                    from utteran_gui.setup_api import register_setup_routes
+            # activate() (the explicit opt-in cutover) is deferred to the very end of
+            # create_app(): routes read the runtime lazily, so every step that can fail
+            # (route registration, mounts, StaticFiles, middleware) runs before any
+            # legacy-queue close, DB backup/migration or dispatcher start (G-09).
+            app.state.v1_jobs_runtime = v1_runtime
+            register_job_routes(v1_app, v1_runtime)
+            if enable_v1_setup:
+                # Same sub-app and same runtime: setup and jobs share one heavy slot.
+                from utteran_gui.setup_api import register_setup_routes
 
-                    register_setup_routes(v1_app, v1_runtime)
-                if enable_v1_events:
-                    # B9: SSE /events, /sync and diagnostics on the same sub-app and session.
-                    from utteran_gui.events_api import register_event_routes
+                register_setup_routes(v1_app, v1_runtime)
+            if enable_v1_events:
+                # B9: SSE /events, /sync and diagnostics on the same sub-app and session.
+                from utteran_gui.events_api import register_event_routes
 
-                    register_event_routes(v1_app, v1_runtime, v1_events_config)
-            except BaseException:
-                # G-09: a failure after activate() must not leave a running dispatcher.
-                # shutdown() reopens the legacy queue only when that is provably safe.
-                v1_runtime.shutdown()
-                raise
+                register_event_routes(v1_app, v1_runtime, v1_events_config)
         elif enable_v1_setup or enable_v1_events:
             raise ValueError("v1 setup/events require the v1 job runtime")
         app.mount("/api/v1", v1_app)
@@ -725,6 +722,11 @@ def create_app(
             raise HTTPException(status_code=503, detail="Could not open folder") from None
         return Response(status_code=204)
 
+    v1_runtime_to_activate = getattr(app.state, "v1_jobs_runtime", None)
+    if v1_runtime_to_activate is not None:
+        # Last step, nothing after it can fail: refuses if legacy work exists; on its own
+        # failure activate() stops what it started and reopens only the queue it closed.
+        v1_runtime_to_activate.activate()
     return app
 
 

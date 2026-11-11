@@ -559,28 +559,58 @@ def test_app_construction_failure_closes_the_socket_and_releases(
     assert_released(marked_root)
 
 
-def test_late_create_app_failure_stops_the_activated_runtime(
-    marked_root: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "failing",
+    [
+        "utteran_gui.events_api.register_event_routes",
+        "utteran_gui.setup_api.register_setup_routes",
+        "utteran_gui.api.StaticFiles",  # mounts after route registration
+        "utteran_gui.api.try_load_bundle",  # next-UI bundle after the v1 mount
+    ],
+)
+def test_any_create_app_failure_happens_before_activation(
+    marked_root: Path, monkeypatch: pytest.MonkeyPatch, failing: str
 ) -> None:
-    import utteran_gui.events_api as events_api
-
+    """PR #46 review P2: activate() is create_app()'s last step, so nothing can fail after it."""
     monkeypatch.setenv("UTTERAN_DATA_ROOT", str(marked_root))
-    runtimes: list[JobRuntime] = []
+    activations: list[JobRuntime] = []
     real_activate = JobRuntime.activate
 
     def activate(self: JobRuntime) -> Any:
-        runtimes.append(self)
+        activations.append(self)
         return real_activate(self)
 
     monkeypatch.setattr(JobRuntime, "activate", activate)
-    monkeypatch.setattr(
-        events_api, "register_event_routes", Mock(side_effect=RuntimeError("synthetic"))
-    )
+    module, _, name = failing.rpartition(".")
+    monkeypatch.setattr(sys.modules[module], name, Mock(side_effect=RuntimeError("synthetic")))
     with pytest.raises(RuntimeError, match="synthetic"):
         launcher.create_mode_app("next_ui_v1", "k" * 43, repo_root=ROOT, authority="127.0.0.1:1")
-    assert runtimes and runtimes[0].state == "inactive"
-    assert not runtimes[0].legacy_queue.closed  # safe rollback reopened the legacy queue
+    assert activations == []  # no legacy-queue close, backup, migration or dispatcher
+    assert sqlite_files(marked_root / "data" / "control-v1") == []
     assert not any(t.name == "utteran-v1-dispatch" for t in threading.enumerate())
+
+
+def test_activation_is_the_last_step_of_create_app(
+    marked_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UTTERAN_DATA_ROOT", str(marked_root))
+    seen: dict[str, Any] = {}
+    real_activate = JobRuntime.activate
+
+    def activate(self: JobRuntime) -> Any:
+        # Every route and mount already exists when the cutover happens.
+        app = seen["app"] = sys._getframe(1).f_locals["app"]
+        seen["paths"] = {getattr(route, "path", "") for route in app.routes}
+        return real_activate(self)
+
+    monkeypatch.setattr(JobRuntime, "activate", activate)
+    app = launcher.create_mode_app("next_ui_v1", "k" * 43, repo_root=ROOT, authority="127.0.0.1:1")
+    try:
+        assert seen["app"] is app
+        assert {"/api/v1", "/assets", "/launch", "/api/jobs"} <= seen["paths"]
+        assert app.state.v1_jobs_runtime.state == "active"
+    finally:
+        assert app.state.v1_jobs_runtime.shutdown() == "rolled_back"
 
 
 def test_unreadable_control_store_fails_closed_without_losing_bytes(
@@ -658,11 +688,101 @@ def test_server_that_does_not_stop_keeps_the_lock_until_process_exit(
     monkeypatch.setitem(launcher.SERVER_JOIN_TIMEOUT, "next_ui_v1", 0.05)
     try:
         stages = launch(["--next-ui-v1"], marked_root, FakeWebview())
-        assert ("gui_shutdown_incomplete", {"level": 40}) in stages
+        assert ("gui_shutdown_incomplete", {"level": 40, "reason": "server_running"}) in stages
         with pytest.raises(StartupRefused, match="gui_already_running"):
             GuiInstanceLock(marked_root).acquire()  # not released early
     finally:
         block.set()
+
+
+@pytest.mark.parametrize("failing", ["Config", "Server", "Thread"])
+def test_server_construction_failure_after_activation_cleans_up(
+    launch: Callable[..., Any], marked_root: Path, monkeypatch: pytest.MonkeyPatch, failing: str
+) -> None:
+    """PR #46 review P2: a failure building uvicorn/thread still stops the runtime."""
+    import uvicorn
+
+    sockets: list[Any] = []
+    runtimes: list[Any] = []
+    real_bind, real_create = launcher.bind_loopback_socket, launcher.create_mode_app
+
+    def bind() -> Any:
+        sockets.append(real_bind())
+        return sockets[-1]
+
+    def create(*args: Any, **kwargs: Any) -> Any:
+        app = real_create(*args, **kwargs)
+        runtimes.append(app.state.v1_jobs_runtime)
+        return app
+
+    boom = Mock(side_effect=RuntimeError("synthetic construction failure"))
+    if failing == "Thread":
+        monkeypatch.setattr(launcher, "threading", SimpleNamespace(Thread=boom))
+    else:
+        monkeypatch.setattr(uvicorn, failing, boom)  # patch the real module's attribute
+    monkeypatch.setattr(launcher, "bind_loopback_socket", bind)
+    monkeypatch.setattr(launcher, "create_mode_app", create)
+    with pytest.raises(RuntimeError, match="synthetic construction failure"):
+        launch(["--next-ui-v1"], marked_root, FakeWebview())
+    assert runtimes[0].state == "inactive" and not runtimes[0].legacy_queue.closed
+    assert sockets[0].fileno() == -1
+    assert not any(t.name == "utteran-v1-dispatch" for t in threading.enumerate())
+    assert_released(marked_root)
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (RuntimeStateError("active_attempt"), "active_attempt"),
+        (RuntimeStateError("ownership_lost"), "ownership_lost"),
+        (OSError("synthetic backup failure"), "shutdown_failed"),
+    ],
+)
+def test_refused_v1_shutdown_keeps_the_gui_lock(
+    launch: Callable[..., Any],
+    marked_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error: BaseException,
+    code: str,
+) -> None:
+    """PR #46 review P1: an unproven v1 stop must not release the per-root GUI lock."""
+    locks: list[GuiInstanceLock] = []
+    runtimes: list[JobRuntime] = []
+    real_guard, real_create = launcher.acquire_startup_guard, launcher.create_mode_app
+    real_deactivate = JobRuntime.deactivate
+
+    def guard(mode: Any) -> GuiInstanceLock:
+        locks.append(real_guard(mode))
+        return locks[-1]
+
+    def create(*args: Any, **kwargs: Any) -> Any:
+        app = real_create(*args, **kwargs)
+        runtimes.append(app.state.v1_jobs_runtime)
+        return app
+
+    def refuse(self: JobRuntime, timeout: float = 30.0) -> Path:
+        raise error
+
+    monkeypatch.setattr(launcher, "acquire_startup_guard", guard)
+    monkeypatch.setattr(launcher, "create_mode_app", create)
+    monkeypatch.setattr(JobRuntime, "deactivate", refuse)
+    try:
+        stages = launch(["--next-ui-v1"], marked_root, FakeWebview())
+        names = [name for name, _ in stages]
+        # Both the lifespan stop and the launcher's retry were refused with this code.
+        assert ("v1_runtime_shutdown", {"level": 40, "code": code}) in stages
+        assert ("gui_shutdown_incomplete", {"level": 40, "reason": "v1_runtime"}) in stages
+        assert "gui_shutdown_complete" not in names
+        assert locks[0].held  # not released while the runtime may still own work
+        with pytest.raises(StartupRefused, match="gui_already_running"):
+            GuiInstanceLock(marked_root).acquire()  # a legacy GUI cannot start meanwhile
+        assert runtimes[0].state == "active" and runtimes[0].legacy_queue.closed
+    finally:
+        monkeypatch.setattr(JobRuntime, "deactivate", real_deactivate)
+        for runtime in runtimes:
+            runtime.shutdown()  # test cleanup only: the real process would exit here
+        for lock in locks:
+            lock.release()
 
 
 # --------------------------------------------------------------------------- 7. shutdown codes

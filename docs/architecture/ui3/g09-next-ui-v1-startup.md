@@ -84,12 +84,17 @@
 ## 5. 起動失敗・停止・rollback
 
 - `activate()`の順序（旧queue idle確認→所有tokenでclose→DBを開く前にbackup→layout migration→recovery paused/held→dispatcher開始）は不変。旧job/historyの自動移行なし。
-- `create_app()`内で`activate()`成功後にroute登録等が失敗した場合は`shutdown()`を呼んでdispatcherを止める（0.1.49で追加）。
+- `activate()`は`create_app()`の**最後の手順**（直後は`return`のみ）。route登録・mount・StaticFiles・middlewareの失敗はすべてactivate前に起き、
+  旧queueのclose・backup・migration・dispatcher開始は行われない（routeはruntimeを遅延参照する。PR #46レビューP2で変更）。
 - `JobRuntime.shutdown()`は例外を投げないが成功も装わない: `rolled_back`／`not_active`／`active_attempt`／`ownership_lost`／`shutdown_failed`（backup失敗等）を返し、
   拒否は固定code（`v1_runtime_shutdown_refused`）でログする。`active_attempt`・`ownership_lost`・`shutdown_failed`では旧queueを再開しない（fail closed）。
   利用者に「強制rollback」操作は出さない。ブラウザを旧画面へ戻してもv1は自動`deactivate()`しない。
 - 停止順序: WebView終了（通常・`Ctrl+C`・WebView作成失敗）→uvicorn停止（lifespan shutdownがv1 runtimeを止める）→lifespanが止めなかったruntimeを停止
-  （uvicorn起動失敗時など）→ロック解放。v1ではuvicornのjoin上限を45秒（runtime停止の30秒を含む）、旧モードは従来の5秒。
+  （uvicorn起動失敗時など、再試行は5秒）→ロック解放。v1ではuvicornのjoin上限を45秒（runtime停止の30秒を含む）、旧モードは従来の5秒。
+  app構築の成功直後から（uvicornの`Config`/`Server`/threadの構築を含む）すべての経路が同じ後始末を通る（PR #46レビューP2）。
+- **ロックを解放するのは停止が証明できたときだけ**（PR #46レビューP1）: サーバースレッドが止まり、かつv1 runtimeが無いか`state != active`（rollback完了）。
+  `active_attempt`・`ownership_lost`・`shutdown_failed`ではv1の実行主体がまだ仕事を持ち得るため、ロックを明示解放せず
+  （`gui_shutdown_incomplete reason=v1_runtime`）、プロセス終了時のOS解放に任せる。旧GUIはv1のSQLite fencingに参加しないため。
   サーバーが期限内に止まらなければロックを明示解放せず、プロセス終了時のOS解放に任せる（`gui_shutdown_incomplete`）。
 - 起動前段の失敗（data root・ロック・socket bind・app構築・DB不正）では、作った資源（socket・ロック）を解放してから例外を伝える。不正DBのbyteは変えない。
 - **OS強制終了**: cleanupの実行を前提にしない。OSがロックを解放し、次回起動の`activate()`がbackup→recovery（paused/held、確認できないownerは`recovery_required`）で安全性を確保する。
@@ -105,7 +110,7 @@
 | ロック | 同上: 同一root排他・再取得・継承不可・lock非削除・別root独立 |
 | 実プロセス | `tests/test_g09_startup_guard.py`: 6組合せの同一root拒否と無変更、別root並行、強制kill＋生存子で再取得、v1 activate中のkill後の再起動 |
 | 起動・認証 | 同上: 実uvicorn＋実loopback HTTPでv1起動E2E（上記§4）、旧2モードはv1 404・DBなし・ロック保持 |
-| 失敗/停止 | 同上: 拒否時にapp・ログ・DBを作らない、bind失敗、app構築失敗、activate後の後段失敗、不正DB、WebView作成失敗、Ctrl+C、uvicorn起動失敗、停止しないサーバー、`shutdown()`の結果code |
+| 失敗/停止 | 同上: 拒否時にapp・ログ・DBを作らない、bind失敗、app構築失敗、create_app内の任意の失敗がactivate前に起きること（route登録・StaticFiles・bundle）、activateが最後の手順であること、uvicorn `Config`/`Server`/thread構築失敗、不正DB、WebView作成失敗、Ctrl+C、uvicorn起動失敗、停止しないサーバー、**shutdown拒否（3コード）でロックを保持**、`shutdown()`の結果code |
 | 既存 | `test_backend_foundation_e2e.py`（再起動で`active_attempt`を返し旧queueは閉じたまま、を追補）、B7/B8/B9、UI-2 launcher |
 
 **非対象（明記）:** 実モデル・GPU ASR、B4 smoke、製品S3-B2、実ユーザーDB restore、Windows手動WebView2/DPI/IME。CI成功を実機受入とは呼ばない。
