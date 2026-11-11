@@ -326,6 +326,187 @@
    "final": {
     "cursor": "6"
    }
+  },
+  {
+   "name": "Issue #37: sync from another epoch re-initialises the queue revision (A rev100 -> B rev5 -> B rev6)",
+   "steps": [
+    {
+     "op": "sync",
+     "event_cursor": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:10",
+     "resources": [
+      {
+       "id": "job_11111111111111111111111111111111",
+       "kind": "job",
+       "revision": 7,
+       "status": "running"
+      }
+     ],
+     "queue_revision": 100
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:11",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 101,
+     "type": "queue_changed",
+     "status": "running",
+     "expect": "applied"
+    },
+    {
+     "op": "sync",
+     "event_cursor": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:3",
+     "resources": [
+      {
+       "id": "job_22222222222222222222222222222222",
+       "kind": "job",
+       "revision": 1,
+       "status": "queued"
+      }
+     ],
+     "queue_revision": 5
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:12",
+     "resource_id": "job_11111111111111111111111111111111",
+     "resource_kind": "job",
+     "resource_revision": 8,
+     "type": "state_changed",
+     "status": "cancelled",
+     "expect": "resync"
+    },
+    {
+     "op": "event",
+     "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:12",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 102,
+     "type": "queue_changed",
+     "status": "running",
+     "expect": "resync"
+    },
+    {
+     "op": "resource",
+     "id": "job_11111111111111111111111111111111",
+     "revision": 1,
+     "status": "queued",
+     "expect": "applied"
+    },
+    {
+     "op": "event",
+     "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:4",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 6,
+     "type": "queue_changed",
+     "status": "running",
+     "expect": "applied"
+    },
+    {
+     "op": "event",
+     "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:5",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 6,
+     "type": "queue_changed",
+     "status": "paused",
+     "expect": "stale"
+    },
+    {
+     "op": "event",
+     "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:6",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 4,
+     "type": "queue_changed",
+     "status": "paused",
+     "expect": "stale"
+    },
+    {
+     "op": "event",
+     "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:4",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 7,
+     "type": "queue_changed",
+     "status": "paused",
+     "expect": "duplicate"
+    }
+   ],
+   "final": {
+    "cursor": "6",
+    "statuses": {
+     "job_11111111111111111111111111111111": "queued",
+     "job_22222222222222222222222222222222": "queued"
+    },
+    "queue_revision": 6
+   }
+  },
+  {
+   "name": "Issue #37: an older sync of the same epoch never rolls back queue revision, statuses or cursor",
+   "steps": [
+    {
+     "op": "sync",
+     "event_cursor": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:5",
+     "resources": [
+      {
+       "id": "job_11111111111111111111111111111111",
+       "kind": "job",
+       "revision": 3,
+       "status": "running"
+      }
+     ],
+     "queue_revision": 9
+    },
+    {
+     "op": "sync",
+     "event_cursor": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:2",
+     "resources": [
+      {
+       "id": "job_11111111111111111111111111111111",
+       "kind": "job",
+       "revision": 1,
+       "status": "queued"
+      }
+     ],
+     "queue_revision": 4
+    },
+    {
+     "op": "resource",
+     "id": "job_11111111111111111111111111111111",
+     "revision": 2,
+     "status": "cancelled",
+     "expect": "stale"
+    },
+    {
+     "op": "event",
+     "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:6",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 9,
+     "type": "queue_changed",
+     "status": "paused",
+     "expect": "stale"
+    },
+    {
+     "op": "event",
+     "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:7",
+     "resource_id": "queue",
+     "resource_kind": "queue",
+     "resource_revision": 10,
+     "type": "queue_changed",
+     "status": "running",
+     "expect": "applied"
+    }
+   ],
+   "final": {
+    "cursor": "7",
+    "statuses": {
+     "job_11111111111111111111111111111111": "running"
+    },
+    "queue_revision": 10
+   }
   }
  ]
 }
