@@ -1,10 +1,16 @@
 # UI-2 → UI-3 移行計画・backend gap・rollback・owner判断
 
-更新: 2026-11-11 JST（0.1.48、B9 Issue #37修正）。初版2026-11-04（0.1.42）。
+更新: 2026-11-11 JST（0.1.49、G-09 開発専用`--next-ui-v1`起動・GUIプロセス排他）。初版2026-11-04（0.1.42）。
 
 > **現在の計画（2026-11-11 owner方針、以下の本文より優先）:** 旧UIは旧API、**新UIは`/api/v1`を正規の接続先とする**。
 > 進行順は **Issue #37修正（0.1.48で解消）→ v1起動/旧・新queue排他（G-09）の設計・実装 → B4 ready/smoke → 新UIのv1投入接続 → v1上のS3-B2**。
-> 本文の「S3-B2は旧API、S5で初めてv1へ接続」は当時の計画の記録であり、今後の指示ではない。v1のactivate・既定切替・実ユーザーDBのmigrationはowner承認後のみ。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
+> 本文の「S3-B2は旧API、S5で初めてv1へ接続」は当時の計画の記録であり、今後の指示ではない。
+>
+> **G-09の実装状況（0.1.49、未リリース）:** v1起動基盤だけを実装した（[ui3/g09](../ui3/g09-next-ui-v1-startup.md)）。起動モードは3つ:
+> 引数なし＝旧UI＋旧API（完全互換）、`--next-ui`＝Vue新UI＋旧API（従来どおり、v1は有効にしない）、`--next-ui-v1`＝**暫定・開発専用**のVue新UI＋B5/B7/B8/B9 v1
+> （開発用markerのある専用data rootでのみ起動、同一rootのGUI二重起動は全モードで拒否）。`--next-ui-v1`では現行S3-A/B1の旧投入は**409**（fallbackなし）で、
+> 実ジョブのUI受入モードではない。暫定フラグは新UIのv1投入接続が完成し`--next-ui`（または既定切替S6）へ統合された時点で廃止する。
+> 残るゲート: **B4 ready/smoke → 新UIのv1投入接続（409の解消） → v1上のS3-B2** → 最終統合ゲート（Windows WebView2実機）。v1のactivate・既定切替・実ユーザーDBのmigrationはowner承認後のみ。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
 
 ## 1. 段階の現状
 
@@ -63,7 +69,7 @@
 | G-03 progress | v1にprogressなし。架空の%を出さない | 契約設計 |
 | G-04 SSE実ブラウザ受入 | `SyncCoordinator`はfake EventSourceでのみ検証 | WebView2受入（UI-4） |
 | G-05/G-06 override・入力リストの保存 | 永続化しない（sessionのみ） | **owner判断**（UI-3設計時） |
-| G-09 旧/新queueの併存 | 新UIはv1を有効化しない | S5前に設計 |
+| G-09 旧/新queueの併存 | `--next-ui`はv1を有効化しない。**0.1.49:** 開発専用`--next-ui-v1`・開発用root・同一rootのGUIプロセス排他・停止/復旧境界を実装（[ui3/g09](../ui3/g09-next-ui-v1-startup.md)） | 起動基盤は解消。CLI・旧バイナリとの排他、新UIのv1投入接続は後続 |
 | G-10 旧SSE再接続 | 新UIは旧SSEを使っていない | S3で方針決定 |
 | G-11/G-12 | **実装済み** | — |
 | G-13 code→文言 | ja/en辞書＋未知codeのkind fallback | v1 code網羅表をS5で |

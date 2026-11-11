@@ -6,12 +6,15 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.48` (unreleased).
+> Current development version: `0.1.49` (unreleased).
 > APIs and configuration may change before 1.0.
 
 > The current backend (Phase A-B9) structure, feature status, limits and test coverage are maintained in
 > [docs/architecture/README.md](docs/architecture/README.md). The B5-B9 v1 APIs are all **merged into main,
 > unreleased and explicit opt-in**; normal GUI/CLI startup does not enable them.
+> The temporary developer flag `utteran-gui --next-ui-v1` (0.1.49) starts v1 only with a dedicated empty directory as
+> `UTTERAN_DATA_ROOT` and is **development-only**. The new UI is not yet connected to v1, so submitting a transcription
+> from it returns 409 in this mode ([G-09](docs/architecture/ui3/g09-next-ui-v1-startup.md)).
 
 > Next GUI (UI-2, preview): a Vue 3 + Vuetify 4 frontend foundation is opened only with the developer flag
 > `utteran-gui --next-ui` after building `frontend/`. The default GUI is unchanged (legacy UI). Migrated so far: transcription

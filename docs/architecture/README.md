@@ -1,6 +1,6 @@
 # Architecture documents — where to start
 
-更新: 2026-11-09 JST（UI-3 S2 実行環境の可視化、開発版0.1.45・未リリース）
+更新: 2026-11-11 JST（G-09 開発専用`--next-ui-v1`起動・GUIプロセス排他、開発版0.1.49・未リリース）
 
 このディレクトリには **「現在の実装の正本」** と **「各Phaseの提出・検証記録（歴史資料）」** が混在する。
 UI刷新（U0〜U3）やバックエンド変更を始める前に、まず次の正本を読むこと。
@@ -24,6 +24,7 @@ DTOとAPIの機械可読な正本は、コード（`src/utteran_contracts/`）�
 
 ## UI刷新（UI-1 設計 → UI-2 基盤 → UI-3-0 画面設計）
 
+- **G-09（2026-11-11、`0.1.49`未リリース、Draft PR）**: [ui3/g09](ui3/g09-next-ui-v1-startup.md)。暫定・開発専用`--next-ui-v1`（専用markerのdata rootのみ、ポート先取り後に実authorityでB5〜B9）、同一data rootのGUIプロセス排他（全モード、OSロック。CLI・旧バイナリは対象外）、停止順序と`shutdown()`結果code。既定・`--next-ui`・API・schema・DBは不変。新UIのv1製品接続は未完了（旧投入は409）。
 - B9 **Issue #37（2026-11-11、`0.1.48`未リリース、Draft PR）**: 別epochの`/sync`でqueue revisionも再初期化（Python `EventReducer`・TS port・共通fixture。[b9/sync](b9/sync.md#epochとrevisionの有効範囲issue-370148)）。API・schema・DB・旧GUI・v1の既定は不変。新UIの正規の接続先は`/api/v1`（owner方針、[ui2/migration-next](ui2/migration-next.md)冒頭）。
 - [ui3/](ui3/README.md): **UI-3 S3-B1（2026-11-10、`0.1.47`未リリース、Draft PR）**: [s3b1-multi-input-and-admission](ui3/s3b1-multi-input-and-admission.md)。`--next-ui`で複数入力の一覧・ファイル別override・出力先、旧`POST /api/jobs`を1件ずつ順に呼ぶ段階的な投入（トランザクションではない。全件preflight・投入時凍結・単件と共通のsingle-flightゲート・4xx=拒否/応答なし・5xx=結果不明で停止）。複数ジョブの監視はS3-B2、B7/同一入力の再実行/出力命名はS5。backend変更なし、Windows実機未受入。
 - 同上 **UI-3 S3-A（2026-11-09、`0.1.46`）**: [s3a-legacy-transcription](ui3/s3a-legacy-transcription.md)。`--next-ui`で1ファイルの文字起こしを旧`/api/jobs`へ投入・進捗・取消（話者分離なし、GETが状態の正本、非冪等POSTは自動再送しない、legacy queueは非永続。backend変更なし、Windows実機未受入）。S2は[s2-environment-visibility](ui3/s2-environment-visibility.md)（`0.1.45`）。

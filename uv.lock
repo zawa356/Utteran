@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'win32' and extra != 'extra-7-utteran-cpu' and extra != 'extra-7-utteran-cuda' and extra == 'extra-7-utteran-xpu'",
@@ -4034,7 +4034,7 @@ wheels = [
 
 [[package]]
 name = "utteran"
-version = "0.1.48"
+version = "0.1.49"
 source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },

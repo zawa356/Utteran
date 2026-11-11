@@ -229,7 +229,10 @@ def create_app(
             )
             if enable_v1_setup and getattr(v1_runtime, "setup", None) is None:
                 raise ValueError("v1 setup requires a job runtime with setup components")
-            v1_runtime.activate()  # explicit opt-in cutover: refuses if legacy work exists
+            # activate() (the explicit opt-in cutover) is deferred to the very end of
+            # create_app(): routes read the runtime lazily, so every step that can fail
+            # (route registration, mounts, StaticFiles, middleware) runs before any
+            # legacy-queue close, DB backup/migration or dispatcher start (G-09).
             app.state.v1_jobs_runtime = v1_runtime
             register_job_routes(v1_app, v1_runtime)
             if enable_v1_setup:
@@ -489,8 +492,16 @@ def create_app(
             repo_root, probes=hardware.system_probes(popen_factory=supervisor.popen)
         ).to_dict()
 
+    def refuse_when_v1_owns_slot() -> None:
+        # G-09: once the opt-in v1 runtime closed the legacy queue, new legacy work is
+        # refused before any probe/subprocess/settings side effect. Reads and cancels
+        # of existing legacy items stay available. submit() still checks under its lock.
+        if selected_queue.closed:
+            raise HTTPException(status_code=409, detail=V1_OWNS_SLOT)
+
     @app.post("/api/wizard/jobs", status_code=202)
     def start_wizard_job(payload: WizardJobPayload) -> dict[str, object]:
+        refuse_when_v1_owns_slot()
         try:
             if payload.kind == "venv_build":
                 return selected_wizard.start_venv_build(payload.profile)
@@ -523,6 +534,7 @@ def create_app(
 
     @app.post("/api/models/actions", status_code=202)
     def start_model_action(payload: ModelActionPayload) -> dict[str, object]:
+        refuse_when_v1_owns_slot()
         try:
             return selected_wizard.start_model_action(
                 payload.profile, payload.action, payload.model_ref
@@ -578,6 +590,7 @@ def create_app(
 
     @app.post("/api/jobs", status_code=202)
     def start_job(payload: TranscriptionPayload) -> dict[str, object]:
+        refuse_when_v1_owns_slot()
         snapshot = selected_environment.snapshot(payload.profile)
         _validate_dynamic_selection(payload, snapshot)
         try:
@@ -709,6 +722,11 @@ def create_app(
             raise HTTPException(status_code=503, detail="Could not open folder") from None
         return Response(status_code=204)
 
+    v1_runtime_to_activate = getattr(app.state, "v1_jobs_runtime", None)
+    if v1_runtime_to_activate is not None:
+        # Last step, nothing after it can fail: refuses if legacy work exists; on its own
+        # failure activate() stops what it started and reopens only the queue it closed.
+        v1_runtime_to_activate.activate()
     return app
 
 

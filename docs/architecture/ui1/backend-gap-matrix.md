@@ -30,7 +30,7 @@
 | G-06 | 入力一覧（複数ファイル）の永続化 | 旧GUIは1入力（フォルダ＋glob）。B7 batch投入はあるが「投入前の作業リスト」は無い | ワークスペース（入力リスト）を保存するか否か。private DB retention方針に依存 | owner判断 | セッション内のみ保持 |
 | G-07 | 実機Jobを新UIから実行 | 標準collectorにsmoke ready証拠なし→409 | 実smoke provider・B4 ready昇格の受入 | backend＋実機 | 409を「未検証環境」と説明し、旧経路を案内 |
 | G-08 | 新UIのSetup（B8） | API・実行器はあるがfake runnerのみ受入 | 実setup.ps1・実DL・GPUの受入、B8成功→B4 readyの関係定義 | 実機受入 | 旧wizardを維持（S4）、B8画面はS5以降 |
-| G-09 | 旧/新UI併存時の正本 | 旧queue（in-memory）とv1 queue（DB）は排他 | 切替単位・rollback手順（v1 activate後に旧へ戻す手順） | 設計＋運用 | 1プロセスで混在させない（frontend-architecture参照） |
+| G-09 | 旧/新UI併存時の正本 | 旧queue（in-memory）とv1 queue（DB）は同一プロセス内で排他。**0.1.49で一部解消**: 開発専用`--next-ui-v1`（専用markerのdata rootのみ）、同一data rootの協調GUIプロセス間のOSロック（3モード共通、kill後にOSが回収）、ポート先取り後のv1構築、旧投入の早期409、shutdownの結果code（[ui3/g09](../ui3/g09-next-ui-v1-startup.md)） | **残り:** CLI・旧バイナリ・非協調プロセスとの排他（ガード対象外）、新UIのv1投入接続、製品としての切替単位とrollback手順のowner判断 | 設計＋運用 | `--next-ui`はv1を有効化しない。v1は開発用rootでのみ。旧画面へ戻ってもv1を自動deactivateしない |
 | G-10 | 旧SSEの再接続 | `Last-Event-ID`無視・cursor 0から再送（D-08） | 旧経路を延命するなら再開対応、しないならUI-2で旧SSEを使わない | backend小修正 or 方針 | UI-2のtransportでidによる重複排除 |
 | G-11 | UIキットの実行時style | CSPが`style-src 'self'`のみ（nonceなし） | index配信ごとのnonce生成とCSPヘッダの一致 | backend小修正 | `'unsafe-inline'`は使わない |
 | G-12 | 新frontend資産の配信 | `/assets`は`web/`固定 | build成果物（例`web-next/`）の配信route、旧UIとの切替flag | backend小修正 | — |
@@ -43,4 +43,4 @@
 - **UI-2（frontend基盤）で扱う**: G-10（新transportで重複排除）、G-13（code→文言）、D-01〜D-07の再発防止をコアで担保。
 - **UI-2の前提となる小さなbackend変更（別PR）**: G-11（CSP nonce）、G-12（新資産の配信と切替flag）。
 - **別backend Issue**: G-01、G-02、G-03、G-07、G-08（実機）、G-04（WebView2受入、UI-4と連携）。
-- **owner判断**: G-05、G-06、G-09のrollback方針、G-15。
+- **owner判断**: G-05、G-06、G-09の製品としてのrollback方針（起動基盤は0.1.49で実装）、G-15。

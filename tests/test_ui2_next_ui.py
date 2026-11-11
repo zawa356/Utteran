@@ -344,7 +344,13 @@ def test_native_startup_avoids_host_inline_style_only_for_next_ui(
     monkeypatch.setitem(
         sys.modules, "uvicorn", SimpleNamespace(Config=Mock(), Server=lambda _: server)
     )
-    monkeypatch.setattr(launcher, "threading", SimpleNamespace(Thread=Mock()))
+    # A finished server thread: the launcher then stops everything and releases the lock.
+    thread = Mock()
+    thread.is_alive.return_value = False
+    monkeypatch.setattr(launcher, "threading", SimpleNamespace(Thread=Mock(return_value=thread)))
+    # G-09: every GUI mode takes the per-data-root instance lock; keep it in tmp_path,
+    # never in the real default user data directory.
+    monkeypatch.setenv("UTTERAN_DATA_ROOT", str(tmp_path / "data"))
     monkeypatch.setattr(launcher, "bind_loopback_socket", lambda: server_socket)
     monkeypatch.setattr(launcher, "project_root", lambda: tmp_path)
     monkeypatch.setattr(launcher, "set_windows_app_user_model_id", lambda: True)

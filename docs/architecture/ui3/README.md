@@ -26,6 +26,10 @@ S3-B2（複数ジョブの監視・取消・絞込み）とS5（B7・同一入�
 **2026-11-11 B9 Issue #37（0.1.48、未リリース、Draft PR）:** v1接続の前提だったreducerのepoch跨ぎ`queue_revision`を修正（Python正本・TS port、新UIは未接続・v1は未activate）。
 owner方針で新UIの正規の接続先は`/api/v1`。順序はv1起動/G-09排他 → B4 ready/smoke → 新UIのv1投入接続 → v1上のS3-B2（[ui2/migration-next](../ui2/migration-next.md)冒頭）。
 
+**2026-11-11 G-09（0.1.49、未リリース、Draft PR）:** 暫定・開発専用`utteran-gui --next-ui-v1`（専用markerのdata rootのみ、ポート先取り後にB5/B7/B8/B9を同一originで有効化）、
+同一data rootのGUIプロセス排他（3モード共通のOSロック）、起動失敗・停止・rollbackの境界。正本は[g09-next-ui-v1-startup.md](g09-next-ui-v1-startup.md)。
+**v1の製品接続ではない**: 現行S3-A/B1の旧投入はこのモードで409。Vue画面・Design Freezeは不変。実ジョブ・B4 ready/smoke・S3-B2・Windows WebView2実機は未受入。
+
 ## 設計基準
 
 - 通常モード: 1ファイル中心、文字起こし・セットアップ・設定の短い導線。Expert: sidebar＋①ファイル②処理設定③キュー投入の可変3ペイン。

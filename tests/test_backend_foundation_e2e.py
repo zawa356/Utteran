@@ -524,6 +524,9 @@ def test_restart_with_unverifiable_owner_never_starts_a_second_child(
         running = first.runtime.store.active_job()  # type: ignore[union-attr]
         assert running is not None
         first.client.__exit__(None, None, None)  # app shutdown leaves the attempt for recovery
+        # G-09: the refusal is reported, not hidden, and the legacy queue stays closed.
+        assert first.runtime.shutdown(timeout=0.1) == "active_attempt"
+        assert first.runtime.state == "active" and first.queue.closed
 
         second = stack_factory(verifier=UnknownVerifier())
         jobs = {j["id"]: j for j in second.call("GET", "/api/v1/jobs").json()["items"]}
