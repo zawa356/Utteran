@@ -20,6 +20,7 @@
 `create_app(..., enable_v1_settings=True, v1_authority=..., enable_v1_jobs=True)`。
 `enable_v1_jobs`単独はValueError。jobs routeは**B5と同じsub-app**に登録し、`/api/v1`のmountは1個。
 本番（`app.py`）での自動有効化は行わない（別承認）。
+**追補（0.1.49、G-09）:** `app.py`は暫定・開発専用フラグ`--next-ui-v1`のときだけ、ポート先取り後に実authorityでB5/B7/B8/B9を有効化する（開発用markerのあるdata rootに限る。既定・`--next-ui`は不変）。自動有効化・既定切替はしない（[ui3/g09](../ui3/g09-next-ui-v1-startup.md)）。
 
 ## Cutover（`JobRuntime.activate`）
 
@@ -44,6 +45,7 @@
 
 排他の範囲: 旧Queue排他は**同一Pythonプロセス内**。別OSプロセス間の共有DBの実行権は、SQLiteの単一
 heavy slot（部分UNIQUE index＋lease PK）とfencing tokenが保証する。
+0.1.49から、同じdata rootの**協調するGUIプロセス同士**はOSロック（`gui-instance.lock`）で排他する（旧queueの別プロセス同時稼働の防止）。CLI・旧バイナリは対象外。`shutdown()`はrollback拒否を結果code（`active_attempt`/`ownership_lost`/`shutdown_failed`）で返し、旧queueを再開しない。
 
 制約: v3 DBは旧B6コード（0.1.35）では開けない（`store_schema_unsupported`）。旧版は新Jobを
 表示できないため、旧版バイナリへの戻しは**DBを残したまま旧GUI/APIのみ使用**する形に限られる。

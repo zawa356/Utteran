@@ -1,5 +1,16 @@
 # AI 作業状態
 
+## 現在地（2026-11-11、G-09 開発専用`--next-ui-v1`起動・GUIプロセス排他・復旧境界、0.1.49・未リリース、Draft PR）
+
+- 基点`main` `9690a9db879abe5e04ca5f8b907b346a31af4f47`（PR #44統合後、作業直前に`origin/main`と一致・作業ツリー無変更）。セッション指定ブランチ
+  `claude/phase-g09-implementation-doecvu`で通常commit・push。force push・merge・Ready化・tag・releaseなし。commit作者は指示書どおり`zawa356`（既存履歴と同じアドレス）、trailerなし。
+- 3モード: 引数なし＝旧UI＋旧API、`--next-ui`＝Vue＋旧API（不変）、`--next-ui-v1`＝**暫定・開発専用**Vue＋B5/B7/B8/B9（厳密一致、専用markerのdata rootのみ、
+  `UTTERAN_DISTRIBUTION`・凍結版・home・既定ユーザー領域・既存データは拒否）。socketを`create_app()`より前にbindし実authorityでv1を構築。
+- 全モードがdata rootごとの`gui-instance.lock`（POSIX `flock`／Windows `msvcrt.locking`、継承不可、unlinkしない）をAPI構築前に取得。同一rootの2つ目のGUIは拒否（意図した挙動変更）。
+  **CLI・旧バイナリ・非協調プロセスは対象外。** v1所有中の旧投入3種は副作用前に409。`JobRuntime.shutdown()`は結果codeを返す。`create_app()`はactivate後の失敗でruntimeを停止。
+- 試験は合成fixtureのみ（実プロセスの競合・強制kill・実loopback HTTP）。実装前commit `824431f`で28件Redを確認。Vue画面・API wire・schema・DB layout・CLIは不変。
+  **新UIのv1投入接続・B4 ready/smoke・S3-B2・Windows WebView2実機・実DB restore（G-15）は未着手/未受入。** 詳細[ui3/g09](docs/architecture/ui3/g09-next-ui-v1-startup.md)。CI結果はPR本文に記録。
+
 ## 現在地（2026-11-11、B9 Issue #37 epoch切替時の`queue_revision`、0.1.48・未リリース、Draft PR）
 
 - 基点`main` `e7b32da3c19a20df7fc501e4c2e3d2613c3f04af`（PR #43統合後、作業直前に`origin/main`と一致・作業ツリー無変更、#37は未修正）。

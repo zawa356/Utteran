@@ -14,6 +14,11 @@
 またはcookie `utteran_gui_session`）・Host（=`v1_authority`）・Origin**を検証する。書込みは`Origin`か session headerが必要（CSRF）。
 失敗は`401 session_required` / `403 host_rejected` / `403 origin_rejected` / `403 origin_required`。
 
+GUI起動（`utteran_gui.app`、0.1.49）: 引数なし＝既定、`--next-ui`＝`enable_next_ui`のみ、`--next-ui-v1`（暫定・開発専用、厳密一致）＝`enable_next_ui`＋上表の4つ全部。
+`--next-ui-v1`は開発用markerのある`UTTERAN_DATA_ROOT`でのみ起動し、`v1_authority`は**先にbindしたsocketの実アドレス**から作る。
+全モードがdata rootごとのGUIロックを取得する。v1が旧queueを所有している間、旧`POST /api/jobs`・`/api/wizard/jobs`・`/api/models/actions`は副作用前に409。
+詳細は[ui3/g09](../ui3/g09-next-ui-v1-startup.md)。
+
 ## 現行endpointインデックス（実route、2026-11-03）
 
 既定 `create_app()` のroute（golden固定は`tests/test_b9_events.py`ほか）:

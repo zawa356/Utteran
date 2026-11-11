@@ -59,6 +59,20 @@
 | `tools/public_history_baseline.json` / `tests/test_public_history_delta.py` | updated | cutoverを書換え後SHA `e0960bd`へ変更 |
 | `testing-and-operations.md` / `validation.md` / `変更履歴.md` / `AISTATE.md` | updated | 新しいcutover、SHA対応表、旧SHAが書換え前の記録であることの注記 |
 
+## G-09 開発専用`--next-ui-v1`起動・GUIプロセス排他（2026-11-11、0.1.49）
+
+| 文書・ファイル | 判定 | 理由・変更内容 |
+|---|---|---|
+| `docs/architecture/ui3/g09-next-ui-v1-startup.md` | **new** | 3モード、開発用root条件とmarker、GUIロックの方式と保護範囲、ポート先取り、停止順序・失敗時、試験、後続ゲート |
+| `docs/architecture/ui2/migration-next.md` | updated | 冒頭の最新方針にG-09実装状況・3モード・暫定フラグの廃止条件・後続ゲート。G-09行。旧計画は履歴として保持 |
+| `docs/architecture/ui1/backend-gap-matrix.md` | updated | G-09を「一部解消」とし、残る制約（CLI・旧バイナリ・非協調プロセス、v1投入接続、owner判断）を明記 |
+| `docs/architecture/backend/persistence-recovery.md` / `interfaces.md` | updated | 同一プロセス排他とGUIプロセス間排他の区別、開発用root、shutdown結果code、GUI起動モードと有効化引数 |
+| `docs/architecture/b7/compatibility.md` | updated | `app.py`のv1有効化は開発専用フラグに限る旨、GUIプロセス排他の追補（当時の本文は保持） |
+| `docs/architecture/README.md` / `ui3/README.md` / `AISTATE.md` / `変更履歴.md` / `README.md` / `README.en.md` / `AGENTS.md` | updated | 0.1.49開発版・未リリース・v1製品接続は未完了、実行境界に`--next-ui-v1`を追記 |
+| `docs/architecture/ui3/design-freeze.md` / `s3a-legacy-transcription.md` / `s3b1-multi-input-and-admission.md` | reviewed-no-change | 画面設計・旧API投入の仕様は不変（`--next-ui-v1`で旧投入が409になる点はg09に集約） |
+| `docs/architecture/b9/sync.md` / `backend/README.md` | reviewed-no-change | reducer・同期仕様、B5〜B9の提供状況は不変（v1は引き続き明示opt-in） |
+| `docs/リリース手順.md` | reviewed-no-change | 規則どおりpatchを0.1.49へ（`pyproject.toml`・`uv.lock`。`__version__`はmetadata由来）。手順変更なし |
+
 ## リンク検証
 
 `tests/test_docs_links.py`が`AGENTS.md`、`README.md`、`README.en.md`、`docs/architecture/README.md`、

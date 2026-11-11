@@ -57,6 +57,14 @@ POSIXではディレクトリ0700・ファイル0600に揃える。**Windows ACL
   slotを保持し、二重起動しない（`test_restart_with_unverifiable_owner_never_starts_a_second_child`）。
   OS identityは`utteran_gui.process_verifier`（observe-only）。実process kill・Windows reparse判定は実機未受入。
 - **cutover/rollback**: 旧queue idle時のみ所有権tokenで閉じる。active attemptがあればrollback拒否。
+- **GUIプロセス排他（G-09、0.1.49）**: 上記`close_for`は**同一プロセス内**の排他。別GUIプロセスについては、全起動モードが
+  `<data root>/gui-instance.lock`のOSロック（POSIX `flock`、Windows `msvcrt.locking`、継承不可、unlinkしない）をAPI構築前に取得し、
+  同じrootの2つ目のGUIを拒否する。OSがプロセス終了時（kill含む）に解放するため、次回起動は上記recoveryで安全性を確保する
+  （Windowsでは終了から解放までわずかな遅延があり得る）。CLI・旧バイナリ・非協調プロセスは排除しない。
+- **開発用root（`--next-ui-v1`）**: v1 DBは専用markerのある開発用data rootにだけ作る。既存データのあるディレクトリは採用・初期化しない。
+- **停止時の結果**: `JobRuntime.shutdown()`は`rolled_back`/`not_active`/`active_attempt`/`ownership_lost`/`shutdown_failed`を返す。
+  `rolled_back`以外では旧queueを再開しない。`create_app()`はactivate後の後段失敗でruntimeを停止する。
+  試験は合成fixtureのみ（[ui3/g09 §5–6](../ui3/g09-next-ui-v1-startup.md#5-起動失敗停止rollback)）。実DB復元・Windows ACL・secure deleteはG-15等の別ゲート。
 
 ## Outbox compaction
 
