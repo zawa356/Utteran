@@ -39,8 +39,16 @@ def dev_root(tmp_path: Path, name: str = "dev-root") -> Path:
 
 
 def snapshot_tree(root: Path) -> dict[str, bytes]:
+    # A held lock file is not readable on Windows (mandatory byte-range lock), and its
+    # content is never written anyway: record only that it exists.
     return {
-        str(p.relative_to(root)): p.read_bytes() if p.is_file() else b"<dir>"
+        str(p.relative_to(root)): (
+            b"<lock>"
+            if p.name == "gui-instance.lock"
+            else p.read_bytes()
+            if p.is_file()
+            else b"<dir>"
+        )
         for p in sorted(root.rglob("*"))
     }
 
