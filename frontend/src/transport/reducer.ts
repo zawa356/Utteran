@@ -54,8 +54,9 @@ export class EventReducer {
       this.seen = new Set();
       this.revisions.clear();
       this.statuses.clear();
-      // Parity with B9: queue_revision is NOT reset on an epoch change (it is a store
-      // counter). Recorded as an open question in docs/architecture/ui2/migration-next.md.
+      // Revisions are only comparable inside one epoch (Issue #37): the new epoch's queue
+      // revision is adopted even when it is lower (e.g. a restored backup).
+      this.queueRevision = 0;
     }
     if (parsed.seq > this.cursor) this.cursor = parsed.seq;
     for (const resource of snapshot.resources) this.applyResource(resource.id, resource.revision, resource.status);
