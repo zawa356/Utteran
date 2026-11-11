@@ -230,18 +230,24 @@ def create_app(
             if enable_v1_setup and getattr(v1_runtime, "setup", None) is None:
                 raise ValueError("v1 setup requires a job runtime with setup components")
             v1_runtime.activate()  # explicit opt-in cutover: refuses if legacy work exists
-            app.state.v1_jobs_runtime = v1_runtime
-            register_job_routes(v1_app, v1_runtime)
-            if enable_v1_setup:
-                # Same sub-app and same runtime: setup and jobs share one heavy slot.
-                from utteran_gui.setup_api import register_setup_routes
+            try:
+                app.state.v1_jobs_runtime = v1_runtime
+                register_job_routes(v1_app, v1_runtime)
+                if enable_v1_setup:
+                    # Same sub-app and same runtime: setup and jobs share one heavy slot.
+                    from utteran_gui.setup_api import register_setup_routes
 
-                register_setup_routes(v1_app, v1_runtime)
-            if enable_v1_events:
-                # B9: SSE /events, /sync and diagnostics on the same sub-app and session.
-                from utteran_gui.events_api import register_event_routes
+                    register_setup_routes(v1_app, v1_runtime)
+                if enable_v1_events:
+                    # B9: SSE /events, /sync and diagnostics on the same sub-app and session.
+                    from utteran_gui.events_api import register_event_routes
 
-                register_event_routes(v1_app, v1_runtime, v1_events_config)
+                    register_event_routes(v1_app, v1_runtime, v1_events_config)
+            except BaseException:
+                # G-09: a failure after activate() must not leave a running dispatcher.
+                # shutdown() reopens the legacy queue only when that is provably safe.
+                v1_runtime.shutdown()
+                raise
         elif enable_v1_setup or enable_v1_events:
             raise ValueError("v1 setup/events require the v1 job runtime")
         app.mount("/api/v1", v1_app)
@@ -489,8 +495,16 @@ def create_app(
             repo_root, probes=hardware.system_probes(popen_factory=supervisor.popen)
         ).to_dict()
 
+    def refuse_when_v1_owns_slot() -> None:
+        # G-09: once the opt-in v1 runtime closed the legacy queue, new legacy work is
+        # refused before any probe/subprocess/settings side effect. Reads and cancels
+        # of existing legacy items stay available. submit() still checks under its lock.
+        if selected_queue.closed:
+            raise HTTPException(status_code=409, detail=V1_OWNS_SLOT)
+
     @app.post("/api/wizard/jobs", status_code=202)
     def start_wizard_job(payload: WizardJobPayload) -> dict[str, object]:
+        refuse_when_v1_owns_slot()
         try:
             if payload.kind == "venv_build":
                 return selected_wizard.start_venv_build(payload.profile)
@@ -523,6 +537,7 @@ def create_app(
 
     @app.post("/api/models/actions", status_code=202)
     def start_model_action(payload: ModelActionPayload) -> dict[str, object]:
+        refuse_when_v1_owns_slot()
         try:
             return selected_wizard.start_model_action(
                 payload.profile, payload.action, payload.model_ref
@@ -578,6 +593,7 @@ def create_app(
 
     @app.post("/api/jobs", status_code=202)
     def start_job(payload: TranscriptionPayload) -> dict[str, object]:
+        refuse_when_v1_owns_slot()
         snapshot = selected_environment.snapshot(payload.profile)
         _validate_dynamic_selection(payload, snapshot)
         try:

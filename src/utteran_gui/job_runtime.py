@@ -12,6 +12,7 @@ reopen the legacy queue while any attempt is active or unverified.
 from __future__ import annotations
 
 import contextlib
+import logging
 import secrets
 import threading
 from collections.abc import Callable
@@ -193,7 +194,28 @@ class JobRuntime:
             self.setup_executor = None
             return backup
 
-    def shutdown(self, timeout: float = 30.0) -> None:
-        """App shutdown: same as rollback, but an active attempt is left for recovery."""
-        with contextlib.suppress(RuntimeStateError):
+    def shutdown(self, timeout: float = 30.0) -> str:
+        """App shutdown: same as rollback, but an active attempt is left for recovery.
+
+        Never raises for a refused rollback, but never reports one as success either:
+        returns ``"rolled_back"`` or the fixed refusal code (``not_active``,
+        ``active_attempt``, ``ownership_lost``, ``shutdown_failed``) and logs a refusal by
+        code only. Except for ``rolled_back`` the legacy queue stays closed (fail closed)
+        and the next start's recovery decides (paused / held / recovery_required).
+        """
+        try:
             self.deactivate(timeout)
+        except RuntimeStateError as exc:
+            if exc.code != "not_active":
+                logging.getLogger(__name__).error(
+                    "v1_runtime_shutdown_refused", extra={"gui_fields": {"code": exc.code}}
+                )
+            return exc.code
+        except Exception as exc:  # e.g. the rollback backup failed (disk full, readonly)
+            # Dispatcher already stopped; the legacy queue was not reopened (fail closed).
+            logging.getLogger(__name__).error(
+                "v1_runtime_shutdown_refused",
+                extra={"gui_fields": {"code": "shutdown_failed", "error": type(exc).__name__}},
+            )
+            return "shutdown_failed"
+        return "rolled_back"

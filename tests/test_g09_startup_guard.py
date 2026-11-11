@@ -24,6 +24,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -143,6 +144,33 @@ def finish(proc: subprocess.Popen[str]) -> None:
             stream.close()
 
 
+# Windows documents that byte-range locks of a terminated process are released by the OS
+# after a delay that "depends upon available system resources"; POSIX releases at once.
+RECLAIM_SECONDS = 15.0
+
+
+def reacquire_after_kill(acquire: Callable[[], Any]) -> Any:
+    deadline = time.monotonic() + RECLAIM_SECONDS
+    while True:
+        try:
+            return acquire()
+        except StartupRefused as refused:
+            if refused.code != "gui_already_running" or time.monotonic() > deadline:
+                raise
+            time.sleep(0.2)
+
+
+def spawned_lock(mode: str, root: Path) -> Any:
+    proc = spawn(mode, root, hold=False)
+    try:
+        line = readline(proc)
+    finally:
+        finish(proc)
+    if line != "LOCKED":
+        raise StartupRefused(line.split()[-1])  # type: ignore[arg-type]
+    return line
+
+
 @pytest.fixture
 def marked_root(tmp_path: Path) -> Path:
     root = dev_root(tmp_path)
@@ -204,12 +232,8 @@ def test_hard_kill_releases_the_lock_even_with_a_surviving_child(marked_root: Pa
         assert readline(first) == "LOCKED"
         first.kill()  # SIGKILL / TerminateProcess: no cleanup code runs
         first.wait(timeout=30)
-        second = spawn("legacy", marked_root, hold=False)
-        try:
-            # The inherited-handle child is still alive but never holds the lock.
-            assert readline(second) == "LOCKED"
-        finally:
-            finish(second)
+        # The inherited-handle child is still alive but never holds the lock.
+        assert reacquire_after_kill(lambda: spawned_lock("legacy", marked_root)) == "LOCKED"
     finally:
         finish(first)
         if child_pid is not None:
@@ -231,7 +255,7 @@ def test_killed_v1_gui_restarts_with_dispatch_paused_and_no_second_writer(
     store = marked_root / "data" / "control-v1" / "operations.sqlite3"
     assert store.is_file()
     monkeypatch.setenv("UTTERAN_DATA_ROOT", str(marked_root))
-    lock = launcher.acquire_startup_guard("next_ui_v1")
+    lock = reacquire_after_kill(lambda: launcher.acquire_startup_guard("next_ui_v1"))
     try:
         from fastapi.testclient import TestClient
 
