@@ -1,5 +1,19 @@
 # AI 作業状態
 
+## 現在地（2026-11-12、UI-3 S5-A 新UIからv1単一ジョブ投入・状態確認、0.1.51・未リリース、Draft PR）
+
+- 基点`main` `397ef75181b61798434c51b35323b845a613fe1d`（PR #47統合、0.1.50。作業直前に`origin/main`と一致、main CI run 43139952925は成功）。
+  セッション指定ブランチ`claude/tender-dirac-mnvg6r`で通常commit・push。force push・merge・Ready化・tag・releaseなし。commit作者は既存履歴と同じ`zawa356`。依存追加なし。
+- モード: サーバーが`/next/`に`utteran-api-mode`（`legacy`/`v1-dev`）を書く。v1 settings＋jobsをmountしたapp（`--next-ui-v1`）だけ`v1-dev`。frontendはmeta 1個の厳密一致だけで判定。
+- v1経路（単一入力のみ）: Preset/Policy一覧（全page、上限超過は表示）→ `?revision=N`で凍結 → 差分を`common_overrides` → `POST /validations`（画面の有効設定と完全一致のときだけ続行）
+  → `POST /execution-resolutions` → `POST /jobs`（凍結session＋token、`resume_mode=resume`）→ `GET /jobs/{id}` polling。queue `paused`は明示再開のみ、取消は協調的のみ。
+  4xx=拒否、network/timeout/5xx/読めない2xx=不明（同key・同body再照合のみ）。B7の同key replayは初回の202を再現（指示書の「200 replay」は既存契約で読み替え）。
+- 旧UI・`--next-ui`は不変（Playwright `legacy` project既存52件＋mode 1件）。v1では旧start/cancelをclientで閉鎖、S3-B1一括は無効表示、ファイル別overrideは開始前に拒否（S5-B）。
+- 発見・修正: B5 `Repository`の新規store初回openの並行競合（E2Eで`store_schema_unsupported`）。非作成者は作成者のcommitを既存timeout内で待機。修正前の試験2件Redを確認。
+- Preset雛形（`frontend/src/domain/v1/presetTemplate.json`）は旧core既定値のB5形式。宣言差分（話者分離オフ・backend明示・prompt null）以外は既定と同一であることをPython試験で検証。
+- **未検証**: Windows WebView2実機（IME・D&D・DPI・CSP）、実モデル推論、実B4 smoke証拠でのready（Cloudは合成証拠のみ）。後続: S5-B（原子的batch）→ v1上のS3-B2。
+  詳細[ui3/s5a](docs/architecture/ui3/s5a-v1-single-job.md)。CI結果はPR本文に記録。
+
 ## 現在地（2026-11-12、B4 ready/smoke 明示実行・private evidence、0.1.50・未リリース、Draft PR）
 
 - 基点`main` `92370405ea560b671400dee9f354d3c63365cc96`（PR #46統合、0.1.49。作業直前に`origin/main`と一致）。セッション指定ブランチ`claude/determined-hamilton-mqpa2c`で通常commit・push。

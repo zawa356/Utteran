@@ -20,6 +20,8 @@ Priority when sources disagree: code → offline schemas (`docs/architecture/b*/
   it never enables v1, and the legacy CSP/`/launch` stay unchanged by default. Never relax `script-src` or add `unsafe-*`.
 - `--next-ui-v1` (G-09) is a temporary development-only flag: exact argv match, a marked dedicated `UTTERAN_DATA_ROOT` only,
   socket bound before `create_app()`. Every GUI mode takes the per-data-root OS lock before building the app; never weaken it.
+- The Vue UI's API mode comes only from the server-rendered `<meta name="utteran-api-mode">` (`legacy` | `v1-dev`, S5-A);
+  never from URL, storage or input. In `v1-dev` transcription goes through B5/B7 only (no legacy start, no fallback).
 - `utteran_contracts` must not import `utteran`, `utteran_gui`, or inference libraries.
   The GUI process never imports core `utteran`; it talks to profile venvs via subprocesses.
 - Fail closed: no silent fallback to an unsupported backend or the legacy CLI; unknown store schema is refused;

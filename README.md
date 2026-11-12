@@ -6,13 +6,15 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.50`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.51`（未release）。API・設定は1.0まで変更されます。
 
 > バックエンド（Phase A〜B9）の現在の構成・提供状況・制約・試験範囲は
 > [docs/architecture/README.md](docs/architecture/README.md)を正本とします。B5〜B9のv1 APIはすべて
 > **main統合済み・未リリース・明示opt-in**で、通常のGUI/CLI起動では有効になりません。
 > 開発者向けの暫定フラグ`utteran-gui --next-ui-v1`（0.1.49）は、専用の空ディレクトリを`UTTERAN_DATA_ROOT`に指定したときだけv1を起動する**開発専用モード**です。
-> 新UIのv1への製品接続は未完了で、このモードでは新UIからの文字起こし投入は409になります（[G-09](docs/architecture/ui3/g09-next-ui-v1-startup.md)）。
+> 0.1.51（UI-3 S5-A）から、このモードの新UIは**単一ファイル**を保存済みPreset/Policy → 実行可否の確認（B5検証・B7 resolution）→ 永続ジョブ投入 → 状態表示の
+> v1経路だけで扱います（旧APIへは投入しない。複数ファイルの一括投入は未対応）。開発専用で、Windows WebView2実機・実モデルでは未確認です
+> （[S5-A](docs/architecture/ui3/s5a-v1-single-job.md)、[G-09](docs/architecture/ui3/g09-next-ui-v1-startup.md)）。`--next-ui`と既定GUIは従来どおり旧APIです。
 > 0.1.50の開発用`python -m utteran_gui.capability_smoke`は、同じ専用rootでB4のready証拠を明示的に1回だけ作る**開発専用の入口**です。
 > 通常の起動・APIはsmokeを実行せず、実機（Windows・GPU）での成功は未確認です（[B4 smoke](docs/architecture/b4/smoke.md)）。
 
