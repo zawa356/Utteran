@@ -3,6 +3,8 @@
 Only managed models are inspected. Legacy device caches lack profile-scoped
 observation times and driver identities, so they cannot establish B4 readiness.
 An injected provider can supply stronger evidence through the same pure evaluator.
+Since 0.1.50 ``local_provider`` also *reads* (never writes or runs) explicit smoke
+evidence below a G-09-marked development data root (``capabilities.evidence``).
 """
 
 from __future__ import annotations
@@ -18,7 +20,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from utteran.capabilities import fingerprints as _fingerprints
 from utteran.capabilities.evaluator import digest, evidence_fingerprint, make_inventory
+from utteran.capabilities.evidence import apply_smoke_evidence, evidence_directory
 from utteran.capabilities.recipes import RECIPES
 from utteran.config import EnvironmentTokenProvider
 from utteran.models.catalog import list_models
@@ -261,7 +265,7 @@ def local_provider(
     request: InventoryRefreshRequest, now: datetime
 ) -> tuple[DeploymentInventory, ...]:
     paths = resolve_data_paths()
-    return collect_managed_deployments(
+    deployments = collect_managed_deployments(
         request.profile_id,
         request.settings,
         request.execution_path,
@@ -270,6 +274,15 @@ def local_provider(
         repo_root=Path.cwd(),
         model_root=paths.models,
         native_root=paths.native,
+    )
+    # 0.1.50: adopt explicit smoke evidence, read-only, and only for an exactly matching
+    # freshly computed scope. Without a G-09-marked data root this is a no-op.
+    return apply_smoke_evidence(
+        deployments,
+        request.settings,
+        now=now,
+        directory=evidence_directory(paths),
+        fingerprints=_fingerprints.current_fingerprints,
     )
 
 
