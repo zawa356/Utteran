@@ -119,23 +119,33 @@ def base_deployment(recipe_id: str = "fw-cpu", **updates: Any) -> DeploymentInve
         )
         | updates
     )
-    return DeploymentInventory(identity=identity, observations=(), required_memory_bytes=None,
-                               available_memory_bytes=None)
+    return DeploymentInventory(
+        identity=identity, observations=(), required_memory_bytes=None, available_memory_bytes=None
+    )
 
 
 def collected(settings: ProcessingSettings, recipe_id: str = "fw-cpu", **updates: Any):
     """Base deployment with the collector's own venv/model/native observations."""
     d = base_deployment(recipe_id, **updates)
     fp = evidence_fingerprint(d.identity, settings)
-    facts = [("venv", "profile-manifest", "passed", "supported"),
-             ("model", "model-files", "passed", "supported"),
-             ("native", "native-manifest", "failed", "native_missing")]
+    facts = [
+        ("venv", "profile-manifest", "passed", "supported"),
+        ("model", "model-files", "passed", "supported"),
+        ("native", "native-manifest", "failed", "native_missing"),
+    ]
     return d.model_copy(
         update={
             "observations": tuple(
                 CapabilityObservation.model_validate(
-                    dict(kind=k, source=s, state=st, reason_code=c, fingerprint=fp,
-                         observed_at=NOW, expires_at=NOW + timedelta(minutes=5))
+                    dict(
+                        kind=k,
+                        source=s,
+                        state=st,
+                        reason_code=c,
+                        fingerprint=fp,
+                        observed_at=NOW,
+                        expires_at=NOW + timedelta(minutes=5),
+                    )
                 )
                 for k, s, st, c in facts
             )
@@ -302,8 +312,16 @@ def test_resealed_but_misnamed_record_is_scope_mismatch(settings, directory) -> 
 @pytest.mark.parametrize("state,outcome", [("pending", "running"), ("failed", "inference_failed")])
 def test_only_passed_records_are_adopted(settings, directory, state, outcome) -> None:
     scope = scope_for(settings, base_deployment())
-    write_evidence(directory, record(scope, state=state, outcome=outcome,
-                                     encoder_observed="unknown", decoder_observed="unknown"))
+    write_evidence(
+        directory,
+        record(
+            scope,
+            state=state,
+            outcome=outcome,
+            encoder_observed="unknown",
+            decoder_observed="unknown",
+        ),
+    )
     assert inspect_evidence(directory, scope, now=NOW)[0] == "not_passed"
 
 
@@ -313,9 +331,10 @@ def test_time_window_is_checked_and_never_extended(settings, directory) -> None:
     before = snapshot(directory)
     assert inspect_evidence(directory, scope, now=NOW - timedelta(seconds=1))[0] == "future"
     assert inspect_evidence(directory, scope, now=NOW + EVIDENCE_TTL)[0] == "expired"
-    assert inspect_evidence(directory, scope, now=NOW + EVIDENCE_TTL - timedelta(seconds=1))[
-        0
-    ] == "adopted"
+    assert (
+        inspect_evidence(directory, scope, now=NOW + EVIDENCE_TTL - timedelta(seconds=1))[0]
+        == "adopted"
+    )
     assert snapshot(directory) == before  # reading never touches expiry or files
     with pytest.raises(ValueError):
         inspect_evidence(directory, scope, now=NOW.replace(tzinfo=None))
@@ -434,8 +453,10 @@ def test_memory_shortage_blocks(settings, directory) -> None:
 
 def test_route_mismatch_blocks_and_requested_values_are_not_copied(settings, directory) -> None:
     d = collected(settings)
-    write_evidence(directory, record(scope_for(settings, d), encoder_observed="cuda",
-                                     encoder_device_index_observed=0))
+    write_evidence(
+        directory,
+        record(scope_for(settings, d), encoder_observed="cuda", encoder_device_index_observed=0),
+    )
     c = candidate(settings, overlay(settings, d, directory))
     assert c.runnable == "blocked" and "smoke_route_mismatch" in issue_codes(c)
 
@@ -487,18 +508,32 @@ def test_settings_runtime_and_hardware_changes_invalidate_evidence(settings, dir
     other = settings.to_wire()
     other["asr"]["language"] = "ja"
     other_settings = ProcessingSettings.model_validate(other)
-    (merged,) = apply_smoke_evidence((collected(other_settings),), other_settings, now=NOW,
-                                     directory=directory, fingerprints=fixed)
+    (merged,) = apply_smoke_evidence(
+        (collected(other_settings),),
+        other_settings,
+        now=NOW,
+        directory=directory,
+        fingerprints=fixed,
+    )
     assert merged.identity.runtime_fingerprint is None
     for fps in ((digest("new driver/runtime"), HARDWARE), (RUNTIME, digest("new cpu"))):
-        (merged,) = apply_smoke_evidence((d,), settings, now=NOW, directory=directory,
-                                         fingerprints=lambda _device, fps=fps: fps)
+        (merged,) = apply_smoke_evidence(
+            (d,), settings, now=NOW, directory=directory, fingerprints=lambda _device, fps=fps: fps
+        )
         assert merged == d
 
 
 def test_overlay_ignores_non_worker_and_non_fw_deployments(settings, directory) -> None:
     cli = collected(settings, execution_path="cli")
-    write_evidence(directory, record(scope_for(settings, cli)))
+    # Even a record for the exact CLI identity+fingerprints is never consulted.
+    forged = ExecutionIdentity.model_validate(
+        {
+            **cli.identity.model_dump(mode="json"),
+            "runtime_fingerprint": RUNTIME,
+            "hardware_fingerprint": HARDWARE,
+        }
+    )
+    write_evidence(directory, record(evidence_fingerprint(forged, settings)))
     assert overlay(settings, cli, directory) == cli
     assert smoke_identity(base_deployment("wc-cpu", model_family="ggml").identity, fixed) is None
 
@@ -508,8 +543,16 @@ def test_failed_resmoke_replaces_previous_success(settings, directory) -> None:
     scope = scope_for(settings, d)
     write_evidence(directory, record(scope))
     assert candidate(settings, overlay(settings, d, directory)).runnable == "ready"
-    write_evidence(directory, record(scope, state="pending", outcome="running",
-                                     encoder_observed="unknown", decoder_observed="unknown"))
+    write_evidence(
+        directory,
+        record(
+            scope,
+            state="pending",
+            outcome="running",
+            encoder_observed="unknown",
+            decoder_observed="unknown",
+        ),
+    )
     assert candidate(settings, overlay(settings, d, directory)).runnable != "ready"
 
 
@@ -528,7 +571,6 @@ def test_metadata_fingerprints_are_cpu_only_and_stable() -> None:
     assert first == (runtime_fingerprint("cpu"), hardware_fingerprint("cpu"))
     # The dev environment has faster-whisper/ctranslate2 metadata installed.
     assert first[0] is not None
-    assert "ctranslate2" not in sys.modules or True  # importing is not required
 
 
 def test_fingerprint_module_has_no_heavy_import_or_subprocess(tmp_path) -> None:

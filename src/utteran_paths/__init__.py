@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +13,20 @@ from platformdirs import user_cache_dir, user_config_dir, user_data_dir, user_lo
 DATA_ROOT_ENV = "UTTERAN_DATA_ROOT"
 DISTRIBUTION_ENV = "UTTERAN_DISTRIBUTION"
 TOKEN_MODE_ENV = "UTTERAN_TOKEN_MODE"
+
+# G-09 dedicated development data root marker (shared by the GUI guard and core B4
+# evidence). Fixed content: no path, user name, time or other private value.
+DEV_MARKER_NAME = ".utteran-dev-data-root"
+DEV_MARKER_CONTENT = (
+    json.dumps(
+        {"kind": "utteran-dev-data-root", "purpose": "next-ui-v1", "schema_version": 1},
+        sort_keys=True,
+    )
+    + "\n"
+)
+_MARKER_READ_LIMIT = 4096
+# Interrupted B4 evidence writers may leave ``.<scope>.<random>.tmp`` files behind.
+EVIDENCE_TEMP_PATTERN = r"^\.[a-f0-9]{64}\.[a-f0-9]{16}\.tmp$"
 
 
 @dataclass(frozen=True)
@@ -98,6 +114,15 @@ class DataPaths:
         )
 
     @property
+    def capability_evidence(self) -> Path | None:
+        """B4 private smoke evidence (0.1.50). Only below an explicit data root.
+
+        The platform default layout has no evidence location at all, so default
+        user installs can never read or write smoke evidence.
+        """
+        return self.root / "cache" / "capability-evidence-v1" if self.root else None
+
+    @property
     def memory_calibration(self) -> Path:
         return (
             self.root / "config" / "memory-calibration.json"
@@ -122,3 +147,20 @@ def is_portable_distribution() -> bool:
 def uses_session_token() -> bool:
     """Return the token policy fixed by the build artifact."""
     return os.environ.get(TOKEN_MODE_ENV) == "session"
+
+
+def is_marked_dev_root(root: Path) -> bool:
+    """True only when ``root`` holds the exact G-09 marker as a regular, non-link file.
+
+    Read-only: never creates the marker (that is ``validate_dev_data_root``'s job).
+    """
+    marker = root / DEV_MARKER_NAME
+    try:
+        info = os.lstat(marker)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > _MARKER_READ_LIMIT:
+            return False
+        with open(marker, "rb") as source:
+            content = source.read(_MARKER_READ_LIMIT + 1)
+    except OSError:
+        return False
+    return content == DEV_MARKER_CONTENT.encode("utf-8")

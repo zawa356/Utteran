@@ -18,13 +18,14 @@ The CLI, older binaries and other non-cooperating processes are not excluded.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from pathlib import Path
 from typing import Literal
 
-from utteran_paths import DATA_ROOT_ENV, DISTRIBUTION_ENV
+# The marker name/content live in utteran_paths (unchanged values) so that core B4
+# evidence can require the same marker without importing the GUI package.
+from utteran_paths import DATA_ROOT_ENV, DEV_MARKER_CONTENT, DEV_MARKER_NAME, DISTRIBUTION_ENV
 
 LaunchMode = Literal["legacy", "next_ui", "next_ui_v1"]
 
@@ -34,15 +35,6 @@ NEXT_UI_FLAG = "--next-ui"
 NEXT_UI_V1_FLAG = "--next-ui-v1"
 
 LOCK_FILE_NAME = "gui-instance.lock"
-DEV_MARKER_NAME = ".utteran-dev-data-root"
-# Fixed marker content: no path, user name, time or other private value.
-DEV_MARKER_CONTENT = (
-    json.dumps(
-        {"kind": "utteran-dev-data-root", "purpose": "next-ui-v1", "schema_version": 1},
-        sort_keys=True,
-    )
-    + "\n"
-)
 
 RefusalCode = Literal[
     "dev_root_required",
