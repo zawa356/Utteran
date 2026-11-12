@@ -76,3 +76,12 @@ B5へpolicy/preset採用、B7へrevision再確認/token/job snapshot/attempt/fal
 [compatibility](compatibility.md) / [validation](validation.md)
 
 PR #25のP2/P3レビュー修正・検証は[追補](pr25-review-validation.md)。
+
+## 0.1.50 追補: 明示smokeとprivate evidence（2026-11-12）
+
+標準collectorは今もsmokeを生成しない。代わりに、開発専用の明示入口`python -m utteran_gui.capability_smoke`が
+profile内の単発子process（`utteran.capabilities.smoke`）でfw-cpu/fw-cudaのsmokeを1回実行し、G-09 markerのある専用data rootに
+version付きprivate evidenceを書く。`bridge refresh/resolve`（＝B7のadmission/prestart）の`local_provider`はそれを**読むだけ**で、
+新しく算出したidentity＋settingsのscopeと厳密一致する場合だけ観測へ統合する。bridge・evaluator・resolver・DTO・schemaは変更なし。
+CPUだけがruntime/hardware/memoryの根拠を持ち得る。CUDAは実routeをattestできてもidentity・VRAMが未観測のため`unknown`。
+設計・形式・失効規則は[smoke](smoke.md)、実機手順（未実施）は[smoke-local-acceptance](smoke-local-acceptance.md)。

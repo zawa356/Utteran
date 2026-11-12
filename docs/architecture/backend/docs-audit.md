@@ -73,6 +73,19 @@
 | `docs/architecture/b9/sync.md` / `backend/README.md` | reviewed-no-change | reducer・同期仕様、B5〜B9の提供状況は不変（v1は引き続き明示opt-in） |
 | `docs/リリース手順.md` | reviewed-no-change | 規則どおりpatchを0.1.49へ（`pyproject.toml`・`uv.lock`。`__version__`はmetadata由来）。手順変更なし |
 
+## B4 ready/smoke 明示実行・private evidence（2026-11-12、0.1.50）
+
+| 文書・ファイル | 判定 | 理由・変更内容 |
+|---|---|---|
+| `docs/architecture/b4/smoke.md` | **new** | Gap調査（CTranslate2が観測できるroute・identity・memory）、責務境界、evidence形式v1・採用条件・失効・再smoke、実行制御、限界、Cloud確認範囲 |
+| `docs/architecture/b4/smoke-local-acceptance.md` | **new** | Windows実機の受入手順（**未実施**）。専用root作成、profile/モデル準備、settings、smoke、ready確認、CUDA、後片付け |
+| `docs/architecture/b4/README.md` / `observations.md` | updated | 0.1.50追補。標準collectorの制約は不変で、`local_provider`だけが証拠を読取専用で重ねる |
+| `docs/architecture/backend/README.md` / `docs/architecture/README.md` / `ui2/migration-next.md` | updated | B4明示smoke行、B7実行の条件、次の工程（Windows受入→新UIのv1投入接続） |
+| `AISTATE.md` / `変更履歴.md` / `README.md` / `README.en.md` | updated | 0.1.50開発版・未リリース、開発専用入口、実機未確認 |
+| `docs/architecture/b4/capabilities.schema.json` ほか7 schema | reviewed-no-change | DTO・wire形式を変えていない（`--check`成功） |
+| `docs/architecture/b3/*` / `b7/*` / `ui3/g09-next-ui-v1-startup.md` | reviewed-no-change | worker protocol・B7 admission/prestart・G-09 marker/ロックの仕様は不変（marker定数は値を変えず`utteran_paths`へ移設） |
+| `docs/リリース手順.md` | reviewed-no-change | 規則どおりpatchを0.1.50へ（`pyproject.toml`・`uv.lock`）。手順変更なし |
+
 ## リンク検証
 
 `tests/test_docs_links.py`が`AGENTS.md`、`README.md`、`README.en.md`、`docs/architecture/README.md`、
