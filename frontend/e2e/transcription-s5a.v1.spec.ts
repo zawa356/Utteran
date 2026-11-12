@@ -45,6 +45,7 @@ async function setOutput(page: Page): Promise<void> {
 }
 
 async function createPreset(page: Page, name: string, model = "large-v3-turbo"): Promise<void> {
+  await listsLoaded(page);
   await page.getByTestId("v1-preset-create-open").click();
   await page.getByTestId("v1-preset-name").locator("input").fill(name);
   await page.getByTestId("v1-preset-model").locator("input").fill(model);
@@ -54,8 +55,14 @@ async function createPreset(page: Page, name: string, model = "large-v3-turbo"):
   await expect(page.getByTestId("v1-preset-frozen")).toContainText(name);
 }
 
+/** Both lists answered (a select opened while its list re-renders loses the click). */
+async function listsLoaded(page: Page): Promise<void> {
+  await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
+}
+
 /** Select the first saved Preset/Policy (created by the first test). */
 async function useSaved(page: Page, presetName = "S5-A 合成"): Promise<void> {
+  await listsLoaded(page);
   await choose(page, "v1-preset-select", new RegExp(presetName));
   await expect(page.getByTestId("v1-preset-frozen")).toContainText("revision 1");
   await choose(page, "v1-policy-select", /CPU only/);
@@ -158,6 +165,7 @@ test("refusals are shown with reasons and create no job: unready model (409), ba
   await addInput(app, input("other.wav"));
   await setOutput(app);
   await createPreset(app, "S5-A unready", "small");
+  await listsLoaded(app);
   await choose(app, "v1-policy-select", /CPU only/);
   await app.getByTestId("v1-check").click();
   await expect(app.getByTestId("v1-rejected")).toBeVisible();
@@ -213,7 +221,11 @@ test("cooperative cancel: requested first, cancelled only when GET says so; no f
   await expect(app.getByTestId("v1-resolution")).toBeVisible();
   await app.getByTestId("v1-submit").click();
   await expect(app.getByTestId("v1-status")).toHaveText(/実行中/, { timeout: 20_000 });
+  // Cancel against the settled running revision: a cancel sent while the dispatcher still moves
+  // dispatch_started → launch_confirmed is (correctly) a 412 that is re-read, never resent.
+  await expect(app.getByTestId("v1-job-reason")).toContainText("起動を確認", { timeout: 20_000 });
   await app.getByTestId("v1-cancel").click();
+  await expect(app.getByTestId("v1-cancel-state")).toContainText(/取消を要求しました|ジョブは終了しています/);
   await expect(app.getByTestId("v1-cancel-state")).toBeVisible();
   await expect(app.getByTestId("v1-status")).toHaveText(/取消済み/, { timeout: 20_000 });
   const cancel = seen.find((r) => line(r).endsWith("/cancel"))!;

@@ -58,7 +58,7 @@ const draft = computed(() => form.value.draft);
 </script>
 
 <template>
-  <section class="u-stack" aria-labelledby="v1-settings-heading" data-testid="v1-settings">
+  <section class="u-stack" aria-labelledby="v1-settings-heading" data-testid="v1-settings" :data-lists="`${library.presets.phase}/${library.policies.phase}`">
     <h2 id="v1-settings-heading" class="u-subheading">{{ t("v1.lib.title") }}</h2>
     <p class="text-caption">{{ t("v1.lib.explain") }}</p>
 
