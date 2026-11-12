@@ -212,6 +212,17 @@ def test_evidence_directory_requires_explicit_marked_root(tmp_path: Path, root: 
     assert not value.exists()  # resolving never creates anything
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_marker_acceptance_matches_g09(tmp_path: Path, newline: str) -> None:
+    from utteran_gui.instance_guard import validate_dev_data_root
+
+    root = tmp_path / "r"
+    root.mkdir()
+    (root / DEV_MARKER_NAME).write_bytes(DEV_MARKER_CONTENT.replace("\n", newline).encode())
+    assert validate_dev_data_root({"UTTERAN_DATA_ROOT": str(root)}) is not None
+    assert is_marked_dev_root(root)
+
+
 def test_marker_constants_are_shared_with_g09_guard() -> None:
     from utteran_gui import instance_guard
 

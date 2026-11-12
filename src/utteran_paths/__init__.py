@@ -163,4 +163,10 @@ def is_marked_dev_root(root: Path) -> bool:
             content = source.read(_MARKER_READ_LIMIT + 1)
     except OSError:
         return False
-    return content == DEV_MARKER_CONTENT.encode("utf-8")
+    try:
+        text = content.decode("utf-8")
+    except UnicodeError:
+        return False
+    # Same acceptance as G-09's validate_dev_data_root (Path.read_text translates
+    # newlines), so a root G-09 accepts is never refused here, e.g. a CRLF marker.
+    return text.replace("\r\n", "\n").replace("\r", "\n") == DEV_MARKER_CONTENT
