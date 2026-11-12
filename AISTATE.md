@@ -16,6 +16,8 @@
   詳細[b4/smoke](docs/architecture/b4/smoke.md)。CI結果はPR本文に記録。
 - PR #47オーナーレビュー（HEAD `50e62d3`、blockingなし）: replica単位read-backを共通モデル実行先からの派生attestationとして使う設計を承認（whisper.cpp/OpenVINO等へ一般化しない）。
   Ready/mergeはWindows fw-cpu実機smoke（ロード→推論→別processでready→変更・期限後の失効）とCUDAのunknown/fail-closed観測の記録後に判断。
+- Windows実機受入（オーナー実施、Windows 11・`large-v3-turbo`、HEAD `69a39eb`）: **fw-cpu合格**（smoke `[passed]`、別processで`unknown`→`ready`、settings変更・TTL超過で失効、GUI起動中は拒否）。
+  手順書の誤記（`windows-cpu`→`win-cpu`）と、実ロードに同revisionの`vocabulary.json`が必要だった点を手順書に反映（版0.1.50据置）。CUDA実機・GUI経由`/api/v1` resolutionは未実施。
 
 ## 現在地（2026-11-11、PR #46 ownerレビュー修正、0.1.49据え置き、Draft維持）
 

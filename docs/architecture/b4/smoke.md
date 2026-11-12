@@ -140,7 +140,8 @@ identityを作り直し、そのscopeの記録が採用条件を満たすとき�
 3. required memoryは短尺fixtureのピークで、将来の任意の音声長に対するメモリ保証ではない。available memoryはsmoke時点の値で、refresh時に再測定しない（TTLで鮮度を制限）。
 4. settings全体がscopeに入るため、smokeはジョブと**同じeffective settings**で実行する必要がある。
 5. 証拠はmarker付き開発rootにしか置けない。配布版・既定レイアウトでは常に`ready=0`のまま（意図どおり）。
-6. **B3の既存条件によりworker対象モデルが限られる**: B3/B4は`preprocessor_config.json`を必須とする。catalogの`tiny`/`base`/`small`/`medium`
+6. **B3の既存条件によりworker対象モデルが限られる**: B3/B4は`preprocessor_config.json`を必須とする（4ファイルの存在は事前判定の最低条件で、
+   実ロードの完全性は保証しない。`large-v3-turbo`の実機では同revisionの`vocabulary.json`も必要だった。[smoke-local-acceptance](smoke-local-acceptance.md)手順2）。catalogの`tiny`/`base`/`small`/`medium`
    （Systran配布）はこのファイルを含まないため、smoke対象は実質`large-v3-turbo`/`large-v3`/`kotoba-whisper-v2.0`（HF APIのファイル一覧で確認）。本PRでは条件を変えていない。
 
 ## 7. Cloudでの確認範囲（2026-11-12、Linux container、**実機受入ではない**）

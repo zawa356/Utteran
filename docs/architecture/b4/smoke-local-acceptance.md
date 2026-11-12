@@ -1,8 +1,9 @@
-# B4 smoke — Windowsローカル実機受入手順（**未実施**）
+# B4 smoke — Windowsローカル実機受入手順
 
 更新: 2026-11-12 JST（開発版`0.1.50`）。設計は[smoke](smoke.md)。
 
-> **本書は手順書であり、実施結果ではない。** Cloud工程では実施していない。成功件数・実行時間・メモリ値は実測するまで記入しない。
+> **本書は手順書である。** fw-cpuはオーナーがWindows 11実機（`large-v3-turbo`）で実施し合格（結果はPR #47のオーナーレビューに記録）。
+> CUDA実機と任意のGUI経由`/api/v1` resolutionは**未実施**。Cloud工程では実施していない。
 > 実ユーザーのdata root・既定のユーザー領域・既存データのあるディレクトリでは**絶対に実行しない**。
 
 ## 0. 前提
@@ -13,7 +14,7 @@
 | checkout | 本ブランチのHEAD（0.1.50）。repo直下で作業する |
 | GUI環境 | repo直下の`.venv`（`uv sync --extra dev --extra gui --locked`済み） |
 | 推論profile | 専用root内に`setup.ps1 -Profile cpu`（CUDA時は`cuda`）で**このcheckoutから**作成したもの。lockが違えば`profile_incompatible`で止まる |
-| モデル | `large-v3-turbo`（または`large-v3`/`kotoba-whisper-v2.0`）。**B3/B4はmodel.bin・config.json・tokenizer.json・preprocessor_config.jsonを要求**し、catalogの`tiny`/`base`/`small`/`medium`は`preprocessor_config.json`を含まないため対象外（既存B3の条件） |
+| モデル | `large-v3-turbo`（または`large-v3`/`kotoba-whisper-v2.0`）。B3/B4の**事前判定**はmodel.bin・config.json・tokenizer.json・preprocessor_config.jsonの存在を要求し、catalogの`tiny`/`base`/`small`/`medium`は`preprocessor_config.json`を含まないため対象外（既存B3の条件）。**この4ファイルは事前判定の最低条件であり、CTranslate2の実ロードに必要なファイル一式の保証ではない**（手順2） |
 | network | モデル取得（手順2）だけ。smoke自体はofflineで動き、ダウンロード・sync・変換を一切しない |
 | GUI | 同じrootのGUIは**終了しておく**（起動中はsmokeが`gui_already_running`で拒否） |
 
@@ -33,9 +34,15 @@ smoke入口は**markerを作らない**。markerの無いrootは`dev_root_not_ma
 ```powershell
 $env:UTTERAN_DATA_ROOT = $Root
 .\setup.ps1 -Profile cpu -Yes
-& "$Root\.venvs\windows-cpu\Scripts\utteran.exe" models download faster-whisper:large-v3-turbo
-Get-ChildItem "$Root\models\faster-whisper\large-v3-turbo" -Name   # 4ファイルの存在を目視確認
+& "$Root\.venvs\win-cpu\Scripts\utteran.exe" models download faster-whisper:large-v3-turbo
+Get-ChildItem "$Root\models\faster-whisper\large-v3-turbo" -Name   # 取得したファイル一式を目視確認
 ```
+
+- B3/B4の事前判定に必要な4ファイル（model.bin・config.json・tokenizer.json・preprocessor_config.json）に加え、**CTranslate2の実ロードに必要なファイルも揃っていること**を確認する。
+  `large-v3-turbo`の実機受入では、4ファイルだけの状態でsmokeが`[backend_unavailable]`（exit 1、内部では`Cannot load the vocabulary from the model directory`）となり、
+  **同じrevisionの`vocabulary.json`**を加えると成功した。
+- 不足している場合は、同じrevisionからモデルを正規の手順で再取得するか、検証済みの複製から復元する。**語彙ファイル等を手で作成・改変しない。**
+- 必要なファイルの組合せはモデル（配布元・revision）ごとに異なり得る。上記は`large-v3-turbo`での実測であり、他モデルに一律の個数・名前を当てはめない。
 
 ## 3. smoke用のsettingsを作る
 
@@ -62,7 +69,7 @@ echo "exit=$LASTEXITCODE"
 ## 5. readyの確認（metadata-only、件数とcodeだけ）
 
 ```powershell
-$Py = "$Root\.venvs\windows-cpu\Scripts\python.exe"
+$Py = "$Root\.venvs\win-cpu\Scripts\python.exe"
 cmd /c "`"$Py`" -I -B -c `"import sys,json,collections; from datetime import UTC,datetime; from utteran_contracts import ProcessingSettings; from utteran_contracts.capabilities import InventoryRefreshRequest; from utteran.capabilities.collector import refresh_inventory; s=ProcessingSettings.model_validate_json(sys.stdin.buffer.read()); inv=refresh_inventory(InventoryRefreshRequest(schema_version=1, profile_id='cpu', settings=s, execution_path='worker', revision=1), now=datetime.now(UTC)); print(dict(collections.Counter(c.runnable for c in inv.candidates))); print(sorted({i.code for c in inv.candidates if c.deployment.identity.recipe_id=='fw-cpu' and c.deployment.identity.model_id=='large-v3-turbo' for i in c.issues}))`" < `"$Settings`""
 ```
 
@@ -83,6 +90,7 @@ cmd /c "`"$Py`" -I -B -c `"import sys,json,collections; from datetime import UTC
 想定される`unknown`/失敗（偽装せずそのまま記録する）:
 
 - モデル未導入・ファイル不足 → `[model_missing]`。lock不一致 → `[profile_incompatible]`。
+- 4ファイルはあるがCTranslate2の実ロードに必要なファイル（例: `large-v3-turbo`の`vocabulary.json`）が無い → `[backend_unavailable]`（手順2）。
 - CPU名が読めない環境 → smokeは`passed`でも手順5は`unknown`（`evidence_scope_incomplete`）。
 - メモリ値が取れない → `unknown`（`memory_unknown`）。
 - CTranslate2が実効compute typeを別名で返す → `[compute_mismatch]`（CPU `int8`→`int8_float32`だけは許容済み）。
