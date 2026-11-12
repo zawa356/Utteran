@@ -64,6 +64,10 @@ Hub cache探索、driver/GPU probe、IR変換、memory推定、pyannote依存解
 未導入候補として扱う。追加観測は明示providerで差替可能。合成passedはテスト専用で実機証明にしない。
 取得日時が判明しない旧device cacheを今の観測として再stampしない。
 
+**0.1.50:** 本節の制約は標準collector自体については不変。`local_provider`だけが、専用data rootに明示smokeが残した
+private evidenceを読取専用で重ねる（runtime/hardware fingerprintはCPUのmetadataから毎回再計算、smoke/memoryは記録の値と期限のまま）。
+詳細と限界は[smoke](smoke.md)。
+
 ## 公開と読取専用
 
 repr/strは値なし、public_projectionはcontract名/versionだけ。to_wireは**private**。

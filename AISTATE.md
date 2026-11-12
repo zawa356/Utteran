@@ -1,5 +1,20 @@
 # AI 作業状態
 
+## 現在地（2026-11-12、B4 ready/smoke 明示実行・private evidence、0.1.50・未リリース、Draft PR）
+
+- 基点`main` `92370405ea560b671400dee9f354d3c63365cc96`（PR #46統合、0.1.49。作業直前に`origin/main`と一致）。セッション指定ブランチ`claude/determined-hamilton-mqpa2c`で通常commit・push。
+  force push・merge・Ready化・tag・releaseなし。commit作者は既存履歴と同じ`zawa356`。依存追加なし。
+- 開発専用の明示入口`python -m utteran_gui.capability_smoke`（GUI venv、core非import）: 配布/凍結・marker無し（作成しない）・GUI稼働中/別smoke中（G-09ロック）を拒否し、
+  既存`read_bridge`でprofile内の単発子`python -I -B -m utteran.capabilities.smoke run`を起動。子はoffline強制・logging無効、標準collectorで事前検査、推論前にpending記録、
+  既存`FasterWhisperBackend`（明示device）で合成WAVを推論し、CTranslate2 replicaの`device`/`device_index`/実効`compute_type`をread-back。
+- private evidence v1（`<root>/cache/capability-evidence-v1/<scope>.json`、digestと固定codeのみ、24h TTL、64件上限、atomic replace、fail-closed読取）。
+  `local_provider`（bridge refresh/resolve＝B7 admission/prestart）が読取専用で統合。DTO・schema・bridge・evaluator・resolver・B7は無変更。
+- **Cloudで生成できる証拠**: fw-cpuはruntime/hardware（metadata）・memory（smokeピーク/空き）・route（replica read-back）が揃えばready。fw-cudaはroute（index含む）をattestできても
+  driver/GPU identityとVRAMが未観測のため常に`unknown`。CPU `int8`→`int8_float32`の別名だけ許容（Cloudのscratch実runtime確認で発見）。
+- 判明した既存条件: B3/B4は`preprocessor_config.json`必須のため、catalogで対象になるのは`large-v3-turbo`/`large-v3`/`kotoba-whisper-v2.0`のみ。
+- 試験は合成のみ（新規106件、3ファイル）。**Windows実機の受入（[b4/smoke-local-acceptance](docs/architecture/b4/smoke-local-acceptance.md)）は未実施**。CUDA実機・新UIのv1投入接続・S3-B2は未着手。
+  詳細[b4/smoke](docs/architecture/b4/smoke.md)。CI結果はPR本文に記録。
+
 ## 現在地（2026-11-11、PR #46 ownerレビュー修正、0.1.49据え置き、Draft維持）
 
 - 修正前HEAD `1fff475`（PR #46、Push/PR CI 15/15成功）。同じブランチへ通常commit・push（force pushなし）。Ready化・merge・tag・releaseなし。

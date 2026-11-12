@@ -1,6 +1,7 @@
 # Backend — current state (正本)
 
 更新: 2026-11-03 JST。開発版 **0.1.39（未リリース）**。基点 `main` = `e803ecc3`（PR #33 B8+B9 merge）。
+追補: 2026-11-12 JST、開発版 **0.1.50**（B4 ready/smokeの明示実行・private evidence。下表のB4/B7行）。
 
 この文書群は**コードから逆引きした現在の実装**を記述する。Phaseごとの詳細仕様は各`bN/`へリンクする。
 読む順番は[../README.md](../README.md)。
@@ -33,7 +34,8 @@ repo_root=...)`）は**どれも有効化しない**。v1経路は`create_app(..
 | 旧GUI/CLI（`/api/*`、in-memory `OperationQueue`、旧wizard） | ✅ | 既定経路。v1 opt-in中は旧queueが閉じ、旧wizard/jobs投入は409 |
 | B5 Preset/Policy CRUD・preview（`/api/v1/presets` 等） | ✅ | 保存成功は実行readyを意味しない |
 | B7 execution resolution / Job batch投入 / Queue CAS制御 | ✅ | — |
-| B7 Job実行（B3 worker dispatch） | ◐ ⚠ | B4のready証拠が必要。**標準collectorにsmoke providerが無いため、実機では通常 409 `execution_unavailable`（fail closed）**。旧CLIへのsilent fallbackはしない |
+| B4 明示smoke・private evidence（0.1.50） | ◐ ⚠ | 開発専用`python -m utteran_gui.capability_smoke`だけが実行。G-09 markerの専用rootのみ、GUI稼働中は拒否。refresh/resolveは読取のみ。fw-cpuのみready到達可、fw-cudaはidentity/VRAM未観測で`unknown`。**Windows実機・実GPU・実モデルは未受入**（[b4/smoke](../b4/smoke.md)） |
+| B7 Job実行（B3 worker dispatch） | ◐ ⚠ | B4のready証拠が必要。**既定レイアウト・配布版では証拠が置けないため通常 409 `execution_unavailable`（fail closed）**。0.1.50で専用root＋明示smoke後のfw-cpuだけがadmissionを通り得る（prestartでも同じ規則）。旧CLIへのsilent fallbackはしない |
 | B7 force cancel / 汎用retry以外の高度な操作 | — | `cancel_mode_unsupported` |
 | B8 Setup plan（read-only）/ approval / operation | ✅ | plan作成に副作用なし |
 | B8 Setup実行（モデルverify/download、Windows新規profile作成、credential preflight、smoke） | ◐ ⚠ | fake child runnerでのみ検証。**実setup.ps1・GPU・実モデルDLは未受入**。whisper.cpp(native build)・OpenVINO・既存venv rebuild・B4登録は拒否。setup成功はB4 readyに昇格しない |

@@ -1,6 +1,6 @@
 # UI-2 → UI-3 移行計画・backend gap・rollback・owner判断
 
-更新: 2026-11-11 JST（0.1.49、G-09 開発専用`--next-ui-v1`起動・GUIプロセス排他）。初版2026-11-04（0.1.42）。
+更新: 2026-11-12 JST（0.1.50、B4 ready/smoke 明示実行）。初版2026-11-04（0.1.42）。
 
 > **現在の計画（2026-11-11 owner方針、以下の本文より優先）:** 旧UIは旧API、**新UIは`/api/v1`を正規の接続先とする**。
 > 進行順は **Issue #37修正（0.1.48で解消）→ v1起動/旧・新queue排他（G-09）の設計・実装 → B4 ready/smoke → 新UIのv1投入接続 → v1上のS3-B2**。
@@ -10,7 +10,11 @@
 > 引数なし＝旧UI＋旧API（完全互換）、`--next-ui`＝Vue新UI＋旧API（従来どおり、v1は有効にしない）、`--next-ui-v1`＝**暫定・開発専用**のVue新UI＋B5/B7/B8/B9 v1
 > （開発用markerのある専用data rootでのみ起動、同一rootのGUI二重起動は全モードで拒否）。`--next-ui-v1`では現行S3-A/B1の旧投入は**409**（fallbackなし）で、
 > 実ジョブのUI受入モードではない。暫定フラグは新UIのv1投入接続が完成し`--next-ui`（または既定切替S6）へ統合された時点で廃止する。
-> 残るゲート: **B4 ready/smoke → 新UIのv1投入接続（409の解消） → v1上のS3-B2** → 最終統合ゲート（Windows WebView2実機）。v1のactivate・既定切替・実ユーザーDBのmigrationはowner承認後のみ。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
+> 残るゲート: **B4 ready/smoke → 新UIのv1投入接続（409の解消） → v1上のS3-B2** → 最終統合ゲート（Windows WebView2実機）。
+>
+> **B4 ready/smokeの実装状況（0.1.50、未リリース）:** 開発専用の明示smoke入口とprivate evidence、refresh/resolve・B7 prestartでの読取専用統合を実装した
+> （[b4/smoke](../b4/smoke.md)）。GUI・HTTP APIにsmokeの操作は無い。Cloudでは合成試験のみで、**Windows実機でのfw-cpu受入（[手順](../b4/smoke-local-acceptance.md)、未実施）が次の前提**。
+> fw-cudaは本版ではready不可（identity/VRAM未観測）。次は Windows受入 → 新UIのv1投入接続。v1のactivate・既定切替・実ユーザーDBのmigrationはowner承認後のみ。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
 
 ## 1. 段階の現状
 

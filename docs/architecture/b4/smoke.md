@@ -26,6 +26,8 @@
   要求値・設定値・recipeの期待値をコピーしたものではないが、「componentごとに独立に計測した値」ではない。
   ownerがこの粒度を不十分と判断した場合は、記録のsourceを変えずにsmokeを`unverified`扱いへ倒す（§6）。
 - `compute_type`の実効値が要求と異なれば（CTranslate2の暗黙変換）、smokeを`failed`（`compute_mismatch`）とし証拠に採用しない。
+  例外は1つだけ: CPUで要求`int8`はCTranslate2が実効値`int8_float32`として返す（Cloud Linuxで実測、下記§7）。この別名だけを明示表で許容し、
+  CUDAを含む他の差は全て`compute_mismatch`。
 - 既存`FasterWhisperBackend.load()`は`device="auto"`のときだけCPUへfallbackする。smokeは常に明示device（`cpu`／`cuda:<index>`）で呼ぶため
   fallback経路に入らない。明示`cuda:N`が使えなければ既存実装が`BackendUnavailableError`を投げる（自動fallbackなし）。
 
@@ -136,3 +138,16 @@ identityを作り直し、そのscopeの記録が採用条件を満たすとき�
 3. required memoryは短尺fixtureのピークで、長時間音声の上限ではない。available memoryはsmoke時点の値で、refresh時に再測定しない（TTLで鮮度を制限）。
 4. settings全体がscopeに入るため、smokeはジョブと**同じeffective settings**で実行する必要がある。
 5. 証拠はmarker付き開発rootにしか置けない。配布版・既定レイアウトでは常に`ready=0`のまま（意図どおり）。
+6. **B3の既存条件によりworker対象モデルが限られる**: B3/B4は`preprocessor_config.json`を必須とする。catalogの`tiny`/`base`/`small`/`medium`
+   （Systran配布）はこのファイルを含まないため、smoke対象は実質`large-v3-turbo`/`large-v3`/`kotoba-whisper-v2.0`（HF APIのファイル一覧で確認）。本PRでは条件を変えていない。
+
+## 7. Cloudでの確認範囲（2026-11-12、Linux container、**実機受入ではない**）
+
+- 合成回帰試験（モデル・GPU・networkなし）: `tests/test_b4_smoke_evidence.py`（形式・fail-closed読取・失効・overlay）、
+  `tests/test_b4_smoke_executor.py`（子processのorchestration・fake runtime・固定code・offline/無出力・開発入口の拒否・ロック排他・
+  timeout時の子孫回収）、`tests/test_b4_smoke_b7.py`（B7 admission→bridge→`local_provider`の実経路、prestartでの失効・変更・再smoke失敗、
+  fresh processのrefreshが書込み・spawnしない）。overlayを外すとB7試験6件がRedになることを確認。
+- 実runtime経路のコード確認（開発者準備のscratch領域、製品経路ではない）: Hubから取得した`tiny`に手書きの`preprocessor_config.json`を加え、
+  開発用.venv（CTranslate2 4.8.1 / faster-whisper 1.2.1）で`run_smoke`＋実`FasterWhisperSmokeRuntime`を1回実行。初回は`compute_mismatch`
+  （`int8`→`int8_float32`）で正しく拒否され、上記の別名を追加後に`passed`、続くoverlay＋evaluatorで`ready`となった。
+  これは「read-backのコードが動く」ことの確認であり、Windows・実モデル（large-v3-turbo）・CUDAでの成立を示さない。
