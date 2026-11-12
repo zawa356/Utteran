@@ -24,7 +24,9 @@
 - **制約（そのまま記録する）**: CTranslate2のWhisperは1 replicaでencoder/decoderを同じdeviceで実行し、**componentごとの実行deviceを別々には報告しない**。
   本実装はロード・推論完了**後**にruntimeが返すreplicaの値を、encoder/decoder両方の観測値として記録する。
   要求値・設定値・recipeの期待値をコピーしたものではないが、「componentごとに独立に計測した値」ではない。
-  ownerがこの粒度を不十分と判断した場合は、記録のsourceを変えずにsmokeを`unverified`扱いへ倒す（§6）。
+  **owner決定（2026-11-12、PR #47レビュー）**: この値を、fw-cpu/fw-cudaのencoder・decoderに共通する実行deviceの根拠として使う設計を承認。
+  これは独立した2点の観測ではなく、**共通のモデル実行先から派生したattestation**である。whisper.cpp・OpenVINO等のcomponent分離配置には一般化しない。
+  また、モデル全体のdevice情報は、個々のCUDA kernelがすべてGPUで実行されたことの証明ではない。
 - `compute_type`の実効値が要求と異なれば（CTranslate2の暗黙変換）、smokeを`failed`（`compute_mismatch`）とし証拠に採用しない。
   例外は1つだけ: CPUで要求`int8`はCTranslate2が実効値`int8_float32`として返す（Cloud Linuxで実測、下記§7）。この別名だけを明示表で許容し、
   CUDAを含む他の差は全て`compute_mismatch`。
@@ -133,9 +135,9 @@ identityを作り直し、そのscopeの記録が採用条件を満たすとき�
 
 ## 6. 既知の限界・owner判断
 
-1. **encoder/decoder個別attestation**: CTranslate2はreplica単位の値しか返さない（§1.1）。これをfw-cpu/fw-cudaの両component観測として扱う判断はowner確認事項。
+1. **encoder/decoder個別attestation**: CTranslate2はreplica単位の値しか返さない（§1.1）。共通モデル実行先からの派生attestationとして両component観測に使うことはowner承認済み（PR #47）。分離配置のrecipeには一般化しない。
 2. CUDAのidentity（driver・GPU UUID・番号対応）とVRAMは未観測 → fw-cudaは本実装では常に`unknown`。
-3. required memoryは短尺fixtureのピークで、長時間音声の上限ではない。available memoryはsmoke時点の値で、refresh時に再測定しない（TTLで鮮度を制限）。
+3. required memoryは短尺fixtureのピークで、将来の任意の音声長に対するメモリ保証ではない。available memoryはsmoke時点の値で、refresh時に再測定しない（TTLで鮮度を制限）。
 4. settings全体がscopeに入るため、smokeはジョブと**同じeffective settings**で実行する必要がある。
 5. 証拠はmarker付き開発rootにしか置けない。配布版・既定レイアウトでは常に`ready=0`のまま（意図どおり）。
 6. **B3の既存条件によりworker対象モデルが限られる**: B3/B4は`preprocessor_config.json`を必須とする。catalogの`tiny`/`base`/`small`/`medium`

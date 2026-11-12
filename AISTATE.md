@@ -14,6 +14,8 @@
 - 判明した既存条件: B3/B4は`preprocessor_config.json`必須のため、catalogで対象になるのは`large-v3-turbo`/`large-v3`/`kotoba-whisper-v2.0`のみ。
 - 試験は合成のみ（新規106件、3ファイル）。**Windows実機の受入（[b4/smoke-local-acceptance](docs/architecture/b4/smoke-local-acceptance.md)）は未実施**。CUDA実機・新UIのv1投入接続・S3-B2は未着手。
   詳細[b4/smoke](docs/architecture/b4/smoke.md)。CI結果はPR本文に記録。
+- PR #47オーナーレビュー（HEAD `50e62d3`、blockingなし）: replica単位read-backを共通モデル実行先からの派生attestationとして使う設計を承認（whisper.cpp/OpenVINO等へ一般化しない）。
+  Ready/mergeはWindows fw-cpu実機smoke（ロード→推論→別processでready→変更・期限後の失効）とCUDAのunknown/fail-closed観測の記録後に判断。
 
 ## 現在地（2026-11-11、PR #46 ownerレビュー修正、0.1.49据え置き、Draft維持）
 
