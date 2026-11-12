@@ -44,6 +44,8 @@ policy = page.headers["content-security-policy"]
 nonce = re.search(r"'nonce-([A-Za-z0-9_-]+)'", policy).group(1)
 assert f'content="{nonce}"' in page.text
 assert "__UTTERAN_CSP_NONCE__" not in page.text
+assert "__UTTERAN_API_MODE__" not in page.text
+assert '<meta name="utteran-api-mode" content="legacy"' in page.text
 refs = re.findall(r'(?:src|href)="\./(assets/[^"]+)"', page.text)
 assert refs, "no hashed assets referenced"
 for ref in refs:
