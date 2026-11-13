@@ -73,6 +73,13 @@
   上限100ページ、ページ間のrevision不一致・cursorの循環・ID重複・途中の409（`cursor_expired`）/503/通信失敗はerrorとし、途中までの一覧を最新一覧として表示しない。
   自動再試行なし（「読み直す」で再取得）。新しい読込や画面破棄で古い読込は無効（世代番号＋abort）。一覧はunknown送信の確定判定に使わない（従来どおり）。
 
+### 5.2 PR #48追加P2修正（2026-11-13、版据置0.1.51）
+
+- 取消がpending/unknownの間は**新しい投入も不可**。ドメインの`canSubmit()`（唯一の投入許可判定）に`switchBlocked() === null`を加え、`submit()`は`canSubmit()`で防御的に拒否する。
+  画面の「投入」ボタンは同じ`canSubmit()`を読み（状態・期限タイマー・入力の変化で再評価）、理由は既存の`v1-block`（取消要求が未確定）で表示する。Normal/Expertは同じcontroller。
+- 修正前は`prepare()`→一覧からAを表示→Aの取消pending中に投入でき、新job Bの受理で表示がBへ切り替わって取消表示が初期化され、Aの未確定取消は再照合の導線を失った（修正前コードで再現）。
+- 解除は既存どおり、同じ対象への再照合の成功か、明示操作「未確定の取消要求を破棄」だけ。`requested`・`done`・`rejected`・`conflict`は投入を妨げない。stale・期限切れは従来どおり拒否。
+
 ## 6. 対応範囲と拒否
 
 - 実行できるのはB7/B3の`fw-cpu`・`fw-cuda`、ローカル完全モデル、話者分離なし、用語集・追加引数なし。Presetにworker非対応設定があれば事前に警告し、サーバーの422/409を理由付きで表示する。
@@ -91,6 +98,7 @@
 |---|---|
 | Python | `tests/test_ui3_s5a_v1_single_job.py`（雛形の契約・core既定との差分、cookie＋Originでの作成→選択→validation→resolution→submit→replay→GET、Origin欠如403等）、`test_ui2_next_ui.py`（mode placeholder、render許可値、v1 route有無とmode、query非依存）、`test_g09_startup_guard.py`（実`--next-ui-v1`起動の`/next/`が`v1-dev`） |
 | Vitest | `src/domain/v1/singleJob.test.ts`（起動時書込み0、二段階の呼出順・key分離、stale、effective不一致、409、5xx/network/壊れた202→unknown・自動再送0・同key/body再照合で同一job、二重クリック、期限切れ、queue CAS 412、協調取消、古いrevisionへ戻らない、dispose、行override拒否、一覧からの追跡、legacyモードでv1呼出し0・v1モードで旧start閉鎖）、`library.test.ts`（mode meta、override/effective、Preset/Policy body、revision凍結・新revision非自動採用・消失、作成unknown→同key再照合、422 issue、ETag不一致、paging上限） |
+| PR #48追加P2 | `singleJob.review.test.ts`に5件（取消pending/unknown中は`canSubmit()`がfalseで、`submit()`直呼びでも`POST /api/v1/jobs`の増分0・job数不変・表示/epoch/intent不変、unknown後の再照合はAのみ、破棄または再照合成功で解除、未確定でない取消状態は妨げない・期限切れは拒否）。E2E 1件（Normal/Expertで「投入」が無効、POST 0件、破棄で解除） |
 | PR #48修正 | `src/domain/v1/singleJob.review.test.ts`（16件: A取消pending中の切替拒否・不明後の再照合はAへ同key/If-Match/bodyのみでBへのPOST 0件・同時再照合1回、同revisionのA/Bで破棄後のB取消は新key、取消中の新規取消拒否、応答ガード、別IDの応答で表示不変、4xx/dispose後無害、0/20/100/101/201/450件で真の最新20件と全cursor取得、後続ページ409/503/通信失敗・循環cursor・revision変化・重複・ページ上限、古い読込の無効化、一覧からの追跡ID）。E2E: 105件で後続cursorのGETと最新jobの先頭表示 |
 | E2E（実FastAPI） | `e2e/transcription-s5a.v1.spec.ts`（`v1` project: 空ストア→明示作成、Origin/cookie実経路、paused→明示再開→完了、stale、409/422拒否、500で応答喪失→同key/body再照合で同一job、協調取消、Expert共通・一括無効、再読込で永続一覧、401/403）、`e2e/api-mode.spec.ts`（`legacy` project: meta=legacy、URL/storageで昇格しない、`/api/v1`呼出し0） |
 

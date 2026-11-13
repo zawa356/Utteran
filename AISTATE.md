@@ -1,5 +1,11 @@
 # AI 作業状態
 
+## 現在地（2026-11-13、PR #48追加P2修正、0.1.51据置、Draft維持）
+
+- 修正前HEAD `645ed7ee60ae6881a1d7a10868e17b6f54711d1b`（remoteと一致）。同じブランチへ通常commit・push。
+- 取消pending/unknown中の新規投入を禁止（`canSubmit()`に`switchBlocked() === null`、`submit()`は同判定、画面の「投入」ボタンもドメインの`canSubmit()`を読む）。取消対象の凍結・再照合・一覧ページングは不変。
+- 試験: Vitest 5件（修正前5件Red、旧コードでB受理と取消表示の初期化を再現）、E2E 1件。backend・DTO・schemaは無変更。
+
 ## 現在地（2026-11-13、PR #48オーナーレビュー修正、0.1.51据置、Draft維持）
 
 - 修正前HEAD `a56e94200bcf3d6b630c273e08ad3aba5bcb60d5`（remoteと一致）。同じブランチ`claude/tender-dirac-mnvg6r`へ通常commit・push。force push・Ready化・merge・tag・releaseなし。

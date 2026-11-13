@@ -274,9 +274,14 @@ export class V1SingleJobController {
     return !!r && Date.parse(r.expiresAt) <= this.now();
   }
 
+  /**
+   * The only submit permission (the view's button reads this too). An open cancel (pending or
+   * unknown) also blocks it: accepting a new job would switch the shown job and leave that cancel
+   * intent without its explicit re-check (PR #48 additional P2). Settled cancel states do not block.
+   */
   canSubmit(): boolean {
     const s = this.store.get();
-    return s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired();
+    return s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired() && this.switchBlocked() === null;
   }
 
   /** Step 1: freeze, validate (B5), resolve (B7). One click = one attempt of each, never resent. */

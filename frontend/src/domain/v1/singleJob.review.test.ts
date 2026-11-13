@@ -257,3 +257,119 @@ describe("P2: the recent list reads every cursor page and keeps the true newest 
 
 // Keep the shared fixture ids referenced (the server answers for these refs).
 void [V1_PRESET, V1_POLICY, IN];
+
+// ---------------------------------------------------------------------------------------------
+// PR #48 additional P2 (2026-11-13): an open (pending/unknown) cancel also blocks a new submit.
+
+async function resolvedThenFollowingA() {
+  const s = setup();
+  await s.core.start();
+  const lib = s.core.v1!.library;
+  await lib.select("preset", V1_PRESET);
+  await lib.select("policy", V1_POLICY);
+  const host = createFakeHost();
+  host.nextPick = IN;
+  await s.core.inputs.pick(host);
+  await s.job.prepare();
+  expect(s.job.store.get().step).toBe("resolved");
+  const [a] = s.v1.addJobs(1) as [string];
+  await s.job.loadRecent();
+  s.job.follow(a);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(s.job.store.get().job?.id).toBe(a);
+  expect(s.job.canSubmit()).toBe(true); // before any cancel: the resolution is still usable
+  return { ...s, a };
+}
+
+const jobPosts = (v1: ReturnType<typeof fakeV1Server>) => v1.writes().filter((w) => w.line === "POST /api/v1/jobs").length;
+const epochOf = (job: unknown) => (job as { targetEpoch: number }).targetEpoch;
+
+describe("additional P2: no new submission while a cancel is pending or unknown", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("1. cancel pending: canSubmit() is false and a direct submit() sends no POST /api/v1/jobs; target, epoch and intent are unchanged", async () => {
+    const { v1, job, a } = await resolvedThenFollowingA();
+    const held = deferred<Response>();
+    v1.inject.set(`POST /api/v1/jobs/${a}/cancel`, { reply: () => held.promise });
+    const pending = job.cancel();
+    await vi.advanceTimersByTimeAsync(0);
+    const ctx = job.cancelContextForTest();
+    const epoch = epochOf(job);
+    const postsBefore = jobPosts(v1);
+    const jobsBefore = v1.jobs.length;
+    expect(job.canSubmit()).toBe(false);
+    await job.submit();
+    expect(jobPosts(v1) - postsBefore).toBe(0);
+    expect(v1.jobs.length - jobsBefore).toBe(0);
+    expect(job.store.get()).toMatchObject({ step: "resolved", job: { id: a }, cancel: { phase: "pending", jobId: a } });
+    expect(job.cancelContextForTest()).toBe(ctx);
+    expect(epochOf(job)).toBe(epoch);
+    held.resolve(json(202, { ...(v1.jobs.find((j) => j.id === a) as object), status: "cancelled", revision: 2 }));
+    await pending;
+    expect(cancelPosts(v1).map((p) => p.line)).toEqual([`POST /api/v1/jobs/${a}/cancel`]);
+  });
+
+  it("2. cancel unknown: submit refused, no job added; A's key/If-Match/body kept and re-checked only against A", async () => {
+    const { v1, job, a } = await resolvedThenFollowingA();
+    v1.inject.set(`POST /api/v1/jobs/${a}/cancel`, { reply: json(503, {}) });
+    await job.cancel();
+    expect(job.store.get().cancel.phase).toBe("unknown");
+    const postsBefore = jobPosts(v1);
+    const jobsBefore = v1.jobs.length;
+    expect(job.canSubmit()).toBe(false);
+    await job.submit();
+    expect(jobPosts(v1) - postsBefore).toBe(0);
+    expect(v1.jobs.length - jobsBefore).toBe(0);
+    expect(job.store.get().job?.id).toBe(a);
+    await job.recheckCancel();
+    const posts = cancelPosts(v1);
+    expect(posts.map((p) => p.line)).toEqual([`POST /api/v1/jobs/${a}/cancel`, `POST /api/v1/jobs/${a}/cancel`]);
+    expect(posts[1]!.key).toBe(posts[0]!.key);
+    expect(posts[1]!.ifMatch).toBe(posts[0]!.ifMatch);
+    expect(posts[1]!.body).toBe(posts[0]!.body);
+  });
+
+  it("3a. released by an explicit discard: the still-valid resolution may be submitted again (one POST); the discarded intent cannot be re-checked", async () => {
+    const { v1, job, a } = await resolvedThenFollowingA();
+    v1.inject.set(`POST /api/v1/jobs/${a}/cancel`, { reply: new TypeError("network down") });
+    await job.cancel();
+    expect(job.canSubmit()).toBe(false);
+    job.discardCancel();
+    await job.recheckCancel();
+    expect(cancelPosts(v1)).toHaveLength(1);
+    expect(job.canSubmit()).toBe(true);
+    const postsBefore = jobPosts(v1);
+    await job.submit();
+    expect(jobPosts(v1) - postsBefore).toBe(1);
+    expect(job.store.get().step).toBe("accepted");
+  });
+
+  it("3b. released by a successful same-target re-check", async () => {
+    const { v1, job, a } = await resolvedThenFollowingA();
+    v1.inject.set(`POST /api/v1/jobs/${a}/cancel`, { reply: json(503, {}) });
+    await job.cancel();
+    expect(job.canSubmit()).toBe(false);
+    await job.recheckCancel();
+    expect(job.store.get().cancel.phase).toBe("done");
+    expect(job.canSubmit()).toBe(true);
+  });
+
+  it("3c. a non-open cancel state (rejected) does not block; an expired resolution stays refused after the release", async () => {
+    const { v1, job, a } = await resolvedThenFollowingA();
+    v1.inject.set(`POST /api/v1/jobs/${a}/cancel`, { reply: json(409, { schema_version: 1, error: { code: "cancel_mode_unsupported", message_key: "x", request_id: "r", retryable: false, issues: [] } }) });
+    await job.cancel();
+    expect(job.store.get().cancel.phase).toBe("rejected");
+    expect(job.canSubmit()).toBe(true);
+    v1.inject.set(`POST /api/v1/jobs/${a}/cancel`, { reply: json(503, {}) });
+    await job.cancel();
+    expect(job.canSubmit()).toBe(false);
+    job.discardCancel();
+    vi.setSystemTime(new Date("2100-01-01T00:00:00Z")); // past the resolution's expires_at
+    expect(job.isExpired()).toBe(true);
+    expect(job.canSubmit()).toBe(false);
+    const postsBefore = jobPosts(v1);
+    await job.submit();
+    expect(jobPosts(v1) - postsBefore).toBe(0);
+  });
+});

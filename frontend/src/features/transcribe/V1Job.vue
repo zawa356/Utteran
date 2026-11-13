@@ -35,7 +35,11 @@ watch(
 onUnmounted(() => timer && clearInterval(timer));
 const secondsLeft = computed(() => (resolution.value ? Math.max(0, Math.floor((Date.parse(resolution.value.expiresAt) - clock.value) / 1000)) : 0));
 const expired = computed(() => !!resolution.value && secondsLeft.value <= 0);
-const canSubmit = computed(() => s.value.step === "resolved" && !stale.value && !expired.value);
+// The domain decides (resolved, fresh, unexpired, no open cancel); `s` and the clock make it re-evaluate.
+const canSubmit = computed(() => {
+  void [s.value, clock.value, evaluation.value];
+  return v1.job.canSubmit();
+});
 
 const effective = computed(() => (prepared.value ? summarize(prepared.value.effective) : null));
 const stageTitle = computed(() => (s.value.failedAt ? t(`v1.stage.${s.value.failedAt}` as MessageKey) : ""));

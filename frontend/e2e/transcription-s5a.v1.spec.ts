@@ -299,6 +299,46 @@ test("PR #48 P2: with more than 100 durable jobs the list reads every cursor pag
   expect(new URL(listGets[1]!.url()).searchParams.get("cursor")).toMatch(/^j2\./);
 });
 
+test("PR #48 additional P2: while a cancel is pending or unknown the submit button is disabled (Normal and Expert) and no job is posted", async ({ app, request }) => {
+  const seen = recordApi(app);
+  await useSaved(app);
+  await addInput(app, input("other.wav"));
+  await setOutput(app);
+  await app.getByTestId("v1-check").click();
+  await expect(app.getByTestId("v1-resolution")).toBeVisible();
+  await expect(app.getByTestId("v1-submit")).toBeEnabled();
+  // Hold A's cancel POST, then let it fail without an answer (unknown).
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await app.route("**/api/v1/jobs/*/cancel", async (route) => {
+    await gate;
+    await route.abort("failed");
+  });
+  const before = (await serverJobsAll(request)).length;
+  await app.getByTestId("v1-recent-follow").first().click(); // a waiting job from the previous test
+  await expect(app.getByTestId("v1-status")).toHaveText(/待機中/);
+  await app.getByTestId("v1-cancel").click();
+  await expect(app.getByTestId("v1-cancel-state")).toBeVisible();
+  await expect(app.getByTestId("v1-submit")).toBeDisabled();
+  await expect(app.getByTestId("v1-block")).toBeVisible();
+  await app.getByTestId("mode-expert").click();
+  await expect(app.getByTestId("pane-queue").getByTestId("v1-submit")).toBeDisabled();
+  await app.getByTestId("mode-normal").click();
+  release();
+  await expect(app.getByTestId("v1-cancel-discard")).toBeVisible(); // unknown
+  await expect(app.getByTestId("v1-submit")).toBeDisabled();
+  await app.getByTestId("v1-submit").click({ force: true }); // a forced click on the disabled button sends nothing
+  await app.getByTestId("mode-expert").click();
+  await expect(app.getByTestId("pane-queue").getByTestId("v1-submit")).toBeDisabled();
+  await app.getByTestId("mode-normal").click();
+  expect(seen.filter((r) => line(r) === "POST /api/v1/jobs")).toHaveLength(0);
+  expect((await serverJobsAll(request)).length).toBe(before);
+  // Only the explicit discard releases it; the still-valid resolution may then be used again.
+  await app.getByTestId("v1-cancel-discard").click();
+  await expect(app.getByTestId("v1-submit")).toBeEnabled();
+  expect(seen.filter((r) => line(r) === "POST /api/v1/jobs")).toHaveLength(0);
+});
+
 /** Every page of the server list (the test's own reference count). */
 async function serverJobsAll(request: APIRequestContext): Promise<{ id: string }[]> {
   const items: { id: string }[] = [];
