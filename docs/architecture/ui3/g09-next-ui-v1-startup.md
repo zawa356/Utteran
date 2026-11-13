@@ -2,6 +2,8 @@
 
 更新: 2026-11-11 JST（開発版`0.1.49`、未リリース、Draft PR）。UI-3 [#21](https://github.com/zawa356/Utteran/issues/21) / Epic [#18](https://github.com/zawa356/Utteran/issues/18)。
 
+> **追補（2026-11-12、0.1.51）:** 下記「旧投入が409、文字起こしは開始できない」はG-09時点の記録。S5-Aで`--next-ui-v1`の新UIはv1単一ジョブ経路を使うようになった（旧投入409は維持）。[s5a](s5a-v1-single-job.md)。
+>
 > **これは製品のv1接続ではない。** `--next-ui-v1`は起動・認証・排他・同期APIの安全性を確かめるための**一時的な開発モード**。
 > 現行の新UI（S3-A/B1）はまだ旧`/api/jobs`を呼ぶため、このモードでは**旧投入が409**になり、文字起こしは開始できない（legacy fallbackは作らない）。
 > 実ジョブ実行・B4 ready/smoke・実Setup完了・S3-B2・Windows WebView2実機は**受入対象外**（後続B4/G-07、最終統合ゲート）。

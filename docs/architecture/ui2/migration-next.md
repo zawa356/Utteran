@@ -1,6 +1,6 @@
 # UI-2 → UI-3 移行計画・backend gap・rollback・owner判断
 
-更新: 2026-11-12 JST（0.1.50、B4 ready/smoke 明示実行）。初版2026-11-04（0.1.42）。
+更新: 2026-11-12 JST（0.1.51、UI-3 S5-A v1単一ジョブ）。初版2026-11-04（0.1.42）。
 
 > **現在の計画（2026-11-11 owner方針、以下の本文より優先）:** 旧UIは旧API、**新UIは`/api/v1`を正規の接続先とする**。
 > 進行順は **Issue #37修正（0.1.48で解消）→ v1起動/旧・新queue排他（G-09）の設計・実装 → B4 ready/smoke → 新UIのv1投入接続 → v1上のS3-B2**。
@@ -16,6 +16,10 @@
 > （[b4/smoke](../b4/smoke.md)）。GUI・HTTP APIにsmokeの操作は無い。Cloudでは合成試験のみで、**Windows実機でのfw-cpu受入（[手順](../b4/smoke-local-acceptance.md)、未実施）が次の前提**。
 > fw-cudaは本版ではready不可（identity/VRAM未観測）。次は Windows受入 → 新UIのv1投入接続。v1のactivate・既定切替・実ユーザーDBのmigrationはowner承認後のみ。段階の定義は[UI-1 frontend-architecture §4](../ui1/frontend-architecture.md#4-段階移行)。
 
+> **S5-Aの実装状況（0.1.51、未リリース）:** `--next-ui-v1`に限り、新UIの単一入力をB5/B7へ接続した（[ui3/s5a](../ui3/s5a-v1-single-job.md)）。
+> 保存済みPreset/Policy（revision凍結・明示作成）→ B5 validation → B7 resolution → durable job → `GET /api/v1/jobs/{id}`。v1では旧`POST /api/jobs`を呼ばず、
+> 複数ファイルの一括投入は無効表示。`--next-ui`は従来どおり旧API。残り: **S5-B（原子的batch）→ v1上のS3-B2** → 最終統合ゲート（Windows WebView2実機）。
+
 ## 1. 段階の現状
 
 | 段階 | 内容 | UI-2の状態 |
@@ -25,7 +29,7 @@
 | S2 環境 | 旧`/api/environment` | **実装（0.1.45、Windows実機未受入）**: 旧環境stripの4項目・Expert詳細（profile存在/互換性・デバイス・検出候補・導入済みモデル・native/OpenVINO・注意）・profile選択（既定に従う/手動）・再検出・待機の中止・retry・前回の結果。readyとは表示しない（G-01は後続）（[ui3/s2](../ui3/s2-environment-visibility.md)） |
 | S3 文字起こし・キュー | 旧`/api/jobs*` `/api/queue` | **S3-A実装（0.1.46、Windows実機未受入）**: 1ファイル（picker・native D&D・手入力）、現在の環境結果からASR構成、話者分離オフで`POST /api/jobs`1回（自動再送なし・結果不明の表示）、`GET /api/jobs/{id}`を正本にSSE速報（event idで重複排除）＋`SingleFlightPoller`、取消は要求→GETで確定（[ui3/s3a](../ui3/s3a-legacy-transcription.md)）。**S3-B1実装（0.1.47、Windows実機未受入）**: 入力一覧（複数D&D・picker追加・手入力の追加）、ファイル別override・出力先、旧`POST /api/jobs`を1件ずつ順に投入（全件preflight・凍結・単件と共通の送信ゲート、拒否/結果不明で停止）（[ui3/s3b1](../ui3/s3b1-multi-input-and-admission.md)）。**未着手**: S3-B2（複数ジョブの監視・取消・絞込み）、フォルダ・同一入力の再投入・出力命名（S5）・話者分離 |
 | S4 モデル・履歴・旧wizard | 旧API | 未着手 |
-| S5 v1接続 | `/api/v1`（opt-in） | 未着手（client・reducer・coordinatorはcontract＋fake testのみ） |
+| S5 v1接続 | `/api/v1`（opt-in） | **S5-A実装（0.1.51、`--next-ui-v1`のみ、Windows実機未受入）**: 単一入力のPreset/Policy選択・明示作成、validation→resolution→job、GET polling、queue明示再開、協調取消（[ui3/s5a](../ui3/s5a-v1-single-job.md)）。S5-B（原子的batch・ファイル別override）は未着手 |
 | S6 既定切替 | — | 未着手。UI-4のWindows実機受入とowner承認が前提。**DPI 200%での初期窓の画面収容**（0.1.42で既定1180×820 DIPがはみ出すことを実測）を解消すること |
 
 ## 2. UI-3で移す順序（提案）

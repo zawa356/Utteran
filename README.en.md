@@ -6,15 +6,17 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.50` (unreleased).
+> Current development version: `0.1.51` (unreleased).
 > APIs and configuration may change before 1.0.
 
 > The current backend (Phase A-B9) structure, feature status, limits and test coverage are maintained in
 > [docs/architecture/README.md](docs/architecture/README.md). The B5-B9 v1 APIs are all **merged into main,
 > unreleased and explicit opt-in**; normal GUI/CLI startup does not enable them.
 > The temporary developer flag `utteran-gui --next-ui-v1` (0.1.49) starts v1 only with a dedicated empty directory as
-> `UTTERAN_DATA_ROOT` and is **development-only**. The new UI is not yet connected to v1, so submitting a transcription
-> from it returns 409 in this mode ([G-09](docs/architecture/ui3/g09-next-ui-v1-startup.md)).
+> `UTTERAN_DATA_ROOT` and is **development-only**. From 0.1.51 (UI-3 S5-A) the new UI in this mode handles a **single file** through
+> the v1 path only: saved Preset/Policy → execution check (B5 validation, B7 resolution) → durable job → status (never the legacy API;
+> several files at once are not available). Not verified on Windows WebView2 or with real models
+> ([S5-A](docs/architecture/ui3/s5a-v1-single-job.md), [G-09](docs/architecture/ui3/g09-next-ui-v1-startup.md)). `--next-ui` and the default GUI keep the legacy API.
 > The 0.1.50 developer entry `python -m utteran_gui.capability_smoke` explicitly runs one B4 smoke in the same dedicated
 > root to record ready evidence. Normal startup and APIs never run a smoke; success on real Windows/GPU hardware is
 > not verified ([B4 smoke](docs/architecture/b4/smoke.md)).

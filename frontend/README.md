@@ -41,7 +41,14 @@ Or in a browser against the real app with synthetic services (prints the launch 
 uv run python ../tools/ui2/serve_next_ui.py --port 8791
 ```
 
-`UI2_SCREENSHOTS=1 npm run e2e` additionally writes screenshots (synthetic data) to `test-results/screenshots/`.
+The `--next-ui-v1` shape (UI-3 S5-A: real B5/B7 `/api/v1`, synthetic B4 evidence and worker runner; the folder must be empty or absent):
+
+```bash
+uv run python ../tools/ui2/serve_next_ui.py --port 8792 --v1 --data-root <empty folder>
+```
+
+`npm run e2e` runs two Playwright projects: `legacy` (`--next-ui`, every existing spec) and `v1` (`e2e/*.v1.spec.ts`,
+a fresh temporary data root per run). `UI2_SCREENSHOTS=1 npm run e2e` additionally writes screenshots (synthetic data) to `test-results/screenshots/`.
 
 ### UI-3-0 design prototype (dev server only)
 

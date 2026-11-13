@@ -6,6 +6,11 @@ UI (``/``, ``/assets``) and its CSP are untouched. The next UI is a Vite build w
 fresh random nonce that is written into the page *and* the CSP header of the same response,
 so the UI kit can inject its theme ``<style nonce=...>`` without ``'unsafe-inline'``.
 Only ``style-src`` gains the nonce: ``script-src`` stays ``'self'``.
+
+The page also carries the API mode the *server* enabled (UI-3 S5-A): a static, non-secret
+``<meta name="utteran-api-mode">`` whose placeholder :data:`API_MODE_PLACEHOLDER` is replaced by
+``legacy`` or ``v1-dev``. The frontend never chooses v1 by itself (URL, storage or input): a
+missing, unexpanded or unknown value keeps the legacy client.
 """
 
 from __future__ import annotations
@@ -16,6 +21,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 NONCE_PLACEHOLDER = "__UTTERAN_CSP_NONCE__"
+API_MODE_PLACEHOLDER = "__UTTERAN_API_MODE__"
+# ``legacy``: the Vue UI talks to the legacy ``/api/*`` only (``--next-ui``).
+# ``v1-dev``: the development-only ``--next-ui-v1`` single-job path to ``/api/v1`` (S5-A).
+API_MODES = frozenset({"legacy", "v1-dev"})
 NEXT_UI_PREFIX = "/next"
 DEFAULT_ASSET_ROOT = Path(__file__).with_name("web-next")
 # Vite emits content-hashed file names under assets/, so they may be cached long-term.
@@ -59,9 +68,14 @@ class NextUiBundle:
     def assets(self) -> Path:
         return self.root / "assets"
 
-    def render(self, nonce: str) -> str:
-        page = self.template.replace(NONCE_PLACEHOLDER, nonce)
-        if NONCE_PLACEHOLDER in page:  # defensive: never ship an unexpanded placeholder
+    def render(self, nonce: str, api_mode: str = "legacy") -> str:
+        if api_mode not in API_MODES:
+            raise NextUiAssetsError("next_ui_api_mode_invalid")
+        page = self.template.replace(NONCE_PLACEHOLDER, nonce).replace(
+            API_MODE_PLACEHOLDER, api_mode
+        )
+        # Defensive: never ship an unexpanded placeholder.
+        if NONCE_PLACEHOLDER in page or API_MODE_PLACEHOLDER in page:
             raise NextUiAssetsError("next_ui_template_invalid")
         return page
 
@@ -82,6 +96,9 @@ def load_bundle(root: Path) -> NextUiBundle:
         raise NextUiAssetsError("next_ui_template_invalid") from None
     # Exactly one placeholder: the <meta name="csp-nonce"> read by the frontend bootstrap.
     if template.count(NONCE_PLACEHOLDER) != 1:
+        raise NextUiAssetsError("next_ui_template_invalid")
+    # Exactly one API-mode placeholder: the <meta name="utteran-api-mode"> (S5-A).
+    if template.count(API_MODE_PLACEHOLDER) != 1:
         raise NextUiAssetsError("next_ui_template_invalid")
     return NextUiBundle(root=root, template=template)
 

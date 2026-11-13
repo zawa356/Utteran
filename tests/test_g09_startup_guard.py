@@ -383,6 +383,12 @@ def test_v1_dev_launch_end_to_end_over_real_loopback(
         cookie = headers["set-cookie"].split(";", 1)[0]
         assert "httponly" in headers["set-cookie"].lower()
         jar = {"Cookie": cookie}
+        # S5-A: the page tells the Vue UI it may use v1 (503 only when the build is absent).
+        status, _, text = call("GET", "/next/", headers=jar)
+        assert status in (200, 503), status
+        if status == 200:
+            assert 'name="utteran-api-mode" content="v1-dev"' in text
+            assert session not in text
         # Correct Host (the real bound authority) + session -> v1 reads succeed.
         for path in (
             "/api/v1/jobs",

@@ -19,7 +19,13 @@ from fastapi.testclient import TestClient
 
 from utteran_gui.api import SESSION_HEADER, create_app
 from utteran_gui.app import next_ui_requested
-from utteran_gui.next_ui import LEGACY_CSP, NONCE_PLACEHOLDER, load_bundle
+from utteran_gui.next_ui import (
+    API_MODE_PLACEHOLDER,
+    LEGACY_CSP,
+    NONCE_PLACEHOLDER,
+    NextUiAssetsError,
+    load_bundle,
+)
 from utteran_gui.settings import SettingsStore, TokenStore
 
 ROOT = Path(__file__).parents[1]
@@ -42,9 +48,10 @@ class _Keyring:
         return None
 
 
-def _bundle(root: Path, *, placeholders: int = 1) -> Path:
+def _bundle(root: Path, *, placeholders: int = 1, mode_placeholders: int = 1) -> Path:
     (root / "assets").mkdir(parents=True)
     meta = f'<meta name="csp-nonce" content="{NONCE_PLACEHOLDER}">' * placeholders
+    meta += f'<meta name="utteran-api-mode" content="{API_MODE_PLACEHOLDER}">' * mode_placeholders
     (root / "index.html").write_text(
         "<!doctype html><html><head>"
         + meta
@@ -106,6 +113,10 @@ def test_launch_cookie_then_next_ui_html_assets_and_api_session(tmp_path: Path) 
     nonce = match.group(1)
     assert f'content="{nonce}"' in page.text
     assert NONCE_PLACEHOLDER not in page.text and NONCE_PLACEHOLDER not in policy
+    # S5-A: --next-ui (no v1 mounted) always tells the frontend "legacy".
+    assert API_MODE_PLACEHOLDER not in page.text
+    assert '<meta name="utteran-api-mode" content="legacy">' in page.text
+    assert "v1-dev" not in page.text
     # Only style-src changes; scripts, connections and framing stay as strict as legacy.
     assert policy == LEGACY_POLICY.replace("style-src 'self'", f"style-src 'self' 'nonce-{nonce}'")
     assert "unsafe-inline" not in policy and "unsafe-eval" not in policy
@@ -150,13 +161,26 @@ def test_assets_path_traversal_is_refused(tmp_path: Path) -> None:
         assert response.status_code == 404 or "synthetic" not in response.text, path
 
 
-@pytest.mark.parametrize("variant", ["missing", "no_placeholder", "two_placeholders"])
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "missing",
+        "no_placeholder",
+        "two_placeholders",
+        "no_mode_placeholder",
+        "two_mode_placeholders",
+    ],
+)
 def test_missing_or_malformed_build_fails_closed(tmp_path: Path, variant: str) -> None:
     root = tmp_path / "next"
     if variant == "no_placeholder":
         _bundle(root, placeholders=0)
     elif variant == "two_placeholders":
         _bundle(root, placeholders=2)
+    elif variant == "no_mode_placeholder":
+        _bundle(root, mode_placeholders=0)
+    elif variant == "two_mode_placeholders":
+        _bundle(root, mode_placeholders=2)
     client = _app(tmp_path, enable_next_ui=True, next_ui_root=root)
     response = client.get("/next/")
     assert response.status_code == 503
@@ -166,6 +190,59 @@ def test_missing_or_malformed_build_fails_closed(tmp_path: Path, variant: str) -
     launched = client.get(f"/launch?session={SESSION}", follow_redirects=False)
     assert launched.headers["location"] == "/next/"
     assert client.get("/next/assets/app-1a2b3c.js").status_code == 404
+
+
+def test_render_refuses_an_unknown_api_mode(tmp_path: Path) -> None:
+    bundle = load_bundle(_bundle(tmp_path / "next"))
+    assert 'content="v1-dev"' in bundle.render("n" * 22, "v1-dev")
+    for bad in ("v1", "V1-DEV", "", "legacy ", "v1-dev\n"):
+        with pytest.raises(NextUiAssetsError, match="next_ui_api_mode_invalid"):
+            bundle.render("n" * 22, bad)
+
+
+def test_next_ui_api_mode_follows_the_mounted_v1_routes_only(tmp_path: Path) -> None:
+    """Only an app with the v1 settings *and* jobs routes says v1-dev (the --next-ui-v1 shape)."""
+    from test_b7_api import AUTHORITY, runtime_for  # synthetic B7 runtime, no real model
+    from test_b7_jobs import Env
+    from utteran_gui.operation_queue import OperationQueue
+
+    (tmp_path / "v1").mkdir()
+    env = Env(tmp_path / "v1", None)
+    queue = OperationQueue()
+    root = _bundle(tmp_path / "next")
+    settings_only = _app(
+        tmp_path,
+        enable_next_ui=True,
+        next_ui_root=root,
+        enable_v1_settings=True,
+        v1_authority=AUTHORITY,
+        v1_store_path=env.settings_path,
+    )
+    assert 'content="legacy"' in settings_only.get("/next/").text
+    app = create_app(
+        SESSION,
+        repo_root=tmp_path,
+        settings_store=SettingsStore(tmp_path / "settings.json"),
+        token_store=TokenStore(_Keyring()),
+        operation_queue=queue,
+        enable_next_ui=True,
+        next_ui_root=root,
+        enable_v1_settings=True,
+        v1_authority=AUTHORITY,
+        v1_store_path=env.settings_path,
+        enable_v1_jobs=True,
+        v1_jobs_runtime=runtime_for(env, queue),
+    )
+    with TestClient(app, base_url="http://" + AUTHORITY) as client:
+        page = client.get("/next/")
+        assert page.status_code == 200
+        assert '<meta name="utteran-api-mode" content="v1-dev">' in page.text
+        # The mode is a fixed word: no session key, path or settings in the page.
+        assert SESSION not in page.text and str(tmp_path) not in page.text
+        # A query string cannot change it.
+        assert 'content="v1-dev"' in client.get("/next/?api=legacy").text
+    plain = _app(tmp_path, enable_next_ui=True, next_ui_root=root)
+    assert 'content="legacy"' in plain.get("/next/?api=v1-dev").text
 
 
 def test_load_bundle_rejects_non_utf8(tmp_path: Path) -> None:
@@ -229,6 +306,9 @@ def test_real_build_output_is_servable(tmp_path: Path) -> None:
         assert client.get(f"/next/{reference}").status_code == 200, reference
     # No external origin anywhere in the entry page (no CDN, no remote fonts).
     assert not re.search(r"""(?:src|href)=["']?(?:https?:)?//""", page.text)
+    # S5-A: the real build carries exactly one API-mode tag, "legacy" for --next-ui.
+    assert page.text.count('name="utteran-api-mode"') == 1
+    assert 'name="utteran-api-mode" content="legacy"' in page.text
 
 
 # ------------------------------------------------- PR #36 review P2: native drop after navigation
