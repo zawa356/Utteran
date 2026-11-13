@@ -1,5 +1,13 @@
 # AI 作業状態
 
+## 現在地（2026-11-13、PR #48オーナーレビュー修正、0.1.51据置、Draft維持）
+
+- 修正前HEAD `a56e94200bcf3d6b630c273e08ad3aba5bcb60d5`（remoteと一致）。同じブランチ`claude/tender-dirac-mnvg6r`へ通常commit・push。force push・Ready化・merge・tag・releaseなし。
+- P1: 取消の対象job ID・If-Match・intent（key/body）を`CancelContext`に凍結し、再照合はその値だけで送る。取消pending/unknown中は表示jobの切替を拒否（unknownは明示破棄で解除）。
+- P2: 取消応答は対象ID・epoch・現行要求が一致するときだけ反映、`applyJob`は別IDを拒否、dispose後は無害。`GET /api/v1/jobs`は全cursorページを逐次取得して真の最新20件（上限100ページ、不整合・途中失敗はerror）。
+- 試験: Vitest `singleJob.review.test.ts` 16件（修正前に14件Red、旧コードでBが誤取消されることを再現）、E2E 1件（105件で後続cursor GETと最新jobの先頭表示）。DTO・schema・DB・backendは無変更。
+- 未受入はS5-Aと同じ（Windows WebView2実機、実モデル推論、実B4 smoke証拠でのready）。
+
 ## 現在地（2026-11-12、UI-3 S5-A 新UIからv1単一ジョブ投入・状態確認、0.1.51・未リリース、Draft PR）
 
 - 基点`main` `397ef75181b61798434c51b35323b845a613fe1d`（PR #47統合、0.1.50。作業直前に`origin/main`と一致、main CI run 43139952925は成功）。

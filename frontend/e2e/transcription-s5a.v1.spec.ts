@@ -262,3 +262,53 @@ test("auth on the real loopback authority: no cookie 401, foreign Origin 403, co
   expect([409, 422]).toContain(legacy.status());
   expect(baseURL).toContain("127.0.0.1");
 });
+
+test("PR #48 P2: with more than 100 durable jobs the list reads every cursor page and shows the newest first", async ({ app, request }) => {
+  test.setTimeout(120_000);
+  const headers = (key: string, extra: Record<string, string> = {}) => ({ ...AUTH, Origin: new URL(app.url()).origin, "Idempotency-Key": key, ...extra });
+  // Keep the synthetic jobs waiting (no dispatch while they are created).
+  const queue = await request.get("/api/v1/queue", { headers: AUTH });
+  if ((await queue.json()).dispatch === "running") {
+    const paused = await request.patch("/api/v1/queue/control", { headers: headers("e2e-s5a-pause-000001", { "If-Match": queue.headers().etag! }), data: { schema_version: 1, dispatch: "paused" } });
+    expect(paused.status()).toBe(200);
+  }
+  const preset = ((await (await request.get("/api/v1/presets", { headers: AUTH })).json()).items as { id: string; name: string; revision: number }[]).find((p) => p.name === "S5-A 合成")!;
+  const policy = ((await (await request.get("/api/v1/execution-policies", { headers: AUTH })).json()).items as { id: string; revision: number }[])[0]!;
+  const existing = (await serverJobsAll(request)).length;
+  let last = "";
+  for (let i = existing; i < 105; i += 1) {
+    const session = {
+      schema_version: 1,
+      preset_ref: { id: preset.id, revision: preset.revision },
+      policy_ref: { id: policy.id, revision: policy.revision },
+      common_overrides: [],
+      files: [{ client_file_id: `f-e2e${String(i).padStart(20, "0")}`, input_path: input("other.wav"), output_dir: OUT, overrides: [] }],
+    };
+    const resolved = await request.post("/api/v1/execution-resolutions", { headers: headers(`e2e-s5a-res-${String(i).padStart(8, "0")}`), data: session });
+    expect(resolved.status()).toBe(201);
+    const submitted = await request.post("/api/v1/jobs", { headers: headers(`e2e-s5a-job-${String(i).padStart(8, "0")}`), data: { schema_version: 1, resolution_token: (await resolved.json()).token, editing_session: session, resume_mode: "resume" } });
+    expect(submitted.status()).toBe(202);
+    last = (await submitted.json()).jobs[0].id;
+  }
+  const seen = recordApi(app);
+  await app.getByTestId("v1-recent-reload").click();
+  await expect(app.getByTestId("v1-recent-item")).toHaveCount(20);
+  await expect(app.getByTestId("v1-recent-item").first()).toContainText(last);
+  const listGets = seen.filter((r) => r.method() === "GET" && new URL(r.url()).pathname === "/api/v1/jobs");
+  expect(listGets.length).toBeGreaterThanOrEqual(2);
+  expect(new URL(listGets[1]!.url()).searchParams.get("cursor")).toMatch(/^j2\./);
+});
+
+/** Every page of the server list (the test's own reference count). */
+async function serverJobsAll(request: APIRequestContext): Promise<{ id: string }[]> {
+  const items: { id: string }[] = [];
+  let cursor: string | null = null;
+  do {
+    const response = await request.get(cursor ? `/api/v1/jobs?cursor=${encodeURIComponent(cursor)}` : "/api/v1/jobs", { headers: AUTH });
+    expect(response.status()).toBe(200);
+    const page = (await response.json()) as { items: { id: string }[]; next_cursor: string | null };
+    items.push(...page.items);
+    cursor = page.next_cursor;
+  } while (cursor !== null);
+  return items;
+}

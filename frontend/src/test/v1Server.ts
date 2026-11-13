@@ -57,7 +57,14 @@ export interface FakeV1 {
   calls(): string[];
   writes(): { line: string; key: string | null; body: string | undefined; ifMatch: string | null }[];
   setJobStatus(status: string): void;
+  /** Synthetic durable jobs created directly in the store (oldest first, like B7 rowid order). */
+  addJobs(count: number): string[];
+  /** Override one `GET /api/v1/jobs` page by its offset (0 = first page); consumed once. */
+  listPage: Map<number, Reply>;
 }
+
+/** B7 `list_jobs`: 100 per page, oldest first, one immutable snapshot per listing. */
+export const V1_LIST_PAGE = 100;
 
 export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; queuePaused?: boolean } = {}): FakeV1 {
   const state: FakeV1 = {
@@ -67,6 +74,16 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
     jobs: [],
     queue: { revision: 1, dispatch: options.queuePaused === false ? "running" : "paused" },
     inject: new Map(),
+    listPage: new Map(),
+    addJobs: (count) => {
+      const ids: string[] = [];
+      for (let i = 0; i < count; i += 1) {
+        const created = job({ preset_ref: { id: V1_PRESET, revision: 1 }, policy_ref: { id: V1_POLICY, revision: 1 }, files: [{ client_file_id: `f-${String(i).padStart(24, "0")}` }] });
+        state.jobs.push(created);
+        ids.push(created.id as string);
+      }
+      return ids;
+    },
     resolveError: null,
     applied: [],
     calls: () => state.fetch.calls.map(line),
@@ -86,6 +103,7 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
     },
   };
   const replays = new Map<string, { digest: string; status: number; body: Json }>();
+  const snapshots = new Map<string, { revision: number; items: Json[] }>();
   const tokens = new Map<string, { session: string; used: boolean }>();
   let counter = 0;
   const hex = (n: number) => (++counter).toString(16).padStart(n, "0");
@@ -134,7 +152,30 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
         return found ? json(200, found, { ETag: `"${found.revision as number}"` }) : error(404, "resource_not_found");
       }
       if (path === "/api/v1/queue") return json(200, queueView(), { ETag: `"${state.queue.revision}"` });
-      if (path === "/api/v1/jobs") return json(200, { schema_version: 1, revision: state.jobs.length || 1, items: state.jobs, next_cursor: null });
+      if (path === "/api/v1/jobs") {
+        const cursor = url.searchParams.get("cursor");
+        let snapshotId: string;
+        let offset = 0;
+        if (cursor === null) {
+          snapshotId = hex(32);
+          snapshots.set(snapshotId, { revision: Math.max(state.jobs.length, 1), items: state.jobs.map((j) => clone(j)) });
+        } else {
+          const m = /^j2\.([0-9a-f]{32})\.([0-9]+)\.100\.f{64}$/.exec(cursor);
+          if (!m) return error(400, "cursor_invalid");
+          snapshotId = m[1]!;
+          offset = Number(m[2]);
+        }
+        const injected = state.listPage.get(offset);
+        if (injected) {
+          state.listPage.delete(offset);
+          return injected;
+        }
+        if (!snapshots.has(snapshotId)) return error(409, "cursor_expired");
+        const snap = snapshots.get(snapshotId)!;
+        const end = offset + V1_LIST_PAGE;
+        const next = end < snap.items.length ? `j2.${snapshotId}.${end}.100.${"f".repeat(64)}` : null;
+        return json(200, { schema_version: 1, revision: snap.revision, items: snap.items.slice(offset, end), next_cursor: next }, { ETag: `"${snap.revision}"` });
+      }
       const j = /^\/api\/v1\/jobs\/(job_[0-9a-f]{32})$/.exec(path);
       if (j) {
         const found = state.jobs.find((x) => x.id === j[1]);

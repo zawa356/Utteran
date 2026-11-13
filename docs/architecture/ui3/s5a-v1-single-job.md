@@ -60,6 +60,19 @@
 - 取消は`POST /jobs/{id}/cancel {schema_version:1, mode:"cooperative"}`（If-Match=最新GETのjob revision）。202→「要求済み」、終端はGETで確認。412は読み直し。
 - 画面離脱（`pagehide`）はpollingだけを止め、サーバーのジョブは止めない。再読込後は「サーバー上のジョブ（v1）」に永続ジョブが表示される。不明状態はページ内のみなので消える（その旨を表示）。
 
+### 5.1 PR #48レビュー修正（2026-11-13、版据置0.1.51）
+
+- **P1 取消対象の凍結**: 取消1回ごとに`CancelContext`（job ID・`If-Match`のrevision・`MutationIntent`のkey/body・対象epoch）を作成時に固定する。
+  最初のPOSTも結果不明時の「同じ要求で再照合」も、この固定値だけで送る（表示中のjobや最新revisionから組み立て直さない）。修正前は、Aの取消pending中にBへ表示を切り替えると、
+  Aの不明応答後の再照合がAのkeyのまま`/jobs/B/cancel`へ送られ、同revisionならBが取消されていた（修正前コードで再現を確認）。
+- **追跡切替の方針**: 取消がpendingの間は表示jobの切替（一覧からの「表示する」・新しい確認・閉じる）を受け付けない。unknownの間は、同じjobへの再照合か、
+  明示操作「未確定の取消要求を破棄」の後にだけ切り替えられる（破棄した要求は再照合不可、画面に理由を表示）。新しい取消は常に新しいkey。同じ意図の同時再照合は1回だけ送る。
+- **P2 遅延応答のガード**: 取消応答は「その文脈が現在の未決着の要求であり、job IDと対象epochが一致し、破棄されていない」ときだけ反映する（成功・4xx・412・不明すべて）。
+  `applyJob`も別IDの応答と古いrevisionを受け付けない。`dispose()`後は何も書き込まない。
+- **P2 一覧の全ページ取得**: `GET /api/v1/jobs`はB7で古い順・1ページ100件・snapshot固定（最大10,000件）。`next_cursor`を逐次GETして末尾20件だけを保持し、新しい順に表示する。
+  上限100ページ、ページ間のrevision不一致・cursorの循環・ID重複・途中の409（`cursor_expired`）/503/通信失敗はerrorとし、途中までの一覧を最新一覧として表示しない。
+  自動再試行なし（「読み直す」で再取得）。新しい読込や画面破棄で古い読込は無効（世代番号＋abort）。一覧はunknown送信の確定判定に使わない（従来どおり）。
+
 ## 6. 対応範囲と拒否
 
 - 実行できるのはB7/B3の`fw-cpu`・`fw-cuda`、ローカル完全モデル、話者分離なし、用語集・追加引数なし。Presetにworker非対応設定があれば事前に警告し、サーバーの422/409を理由付きで表示する。
@@ -78,6 +91,7 @@
 |---|---|
 | Python | `tests/test_ui3_s5a_v1_single_job.py`（雛形の契約・core既定との差分、cookie＋Originでの作成→選択→validation→resolution→submit→replay→GET、Origin欠如403等）、`test_ui2_next_ui.py`（mode placeholder、render許可値、v1 route有無とmode、query非依存）、`test_g09_startup_guard.py`（実`--next-ui-v1`起動の`/next/`が`v1-dev`） |
 | Vitest | `src/domain/v1/singleJob.test.ts`（起動時書込み0、二段階の呼出順・key分離、stale、effective不一致、409、5xx/network/壊れた202→unknown・自動再送0・同key/body再照合で同一job、二重クリック、期限切れ、queue CAS 412、協調取消、古いrevisionへ戻らない、dispose、行override拒否、一覧からの追跡、legacyモードでv1呼出し0・v1モードで旧start閉鎖）、`library.test.ts`（mode meta、override/effective、Preset/Policy body、revision凍結・新revision非自動採用・消失、作成unknown→同key再照合、422 issue、ETag不一致、paging上限） |
+| PR #48修正 | `src/domain/v1/singleJob.review.test.ts`（16件: A取消pending中の切替拒否・不明後の再照合はAへ同key/If-Match/bodyのみでBへのPOST 0件・同時再照合1回、同revisionのA/Bで破棄後のB取消は新key、取消中の新規取消拒否、応答ガード、別IDの応答で表示不変、4xx/dispose後無害、0/20/100/101/201/450件で真の最新20件と全cursor取得、後続ページ409/503/通信失敗・循環cursor・revision変化・重複・ページ上限、古い読込の無効化、一覧からの追跡ID）。E2E: 105件で後続cursorのGETと最新jobの先頭表示 |
 | E2E（実FastAPI） | `e2e/transcription-s5a.v1.spec.ts`（`v1` project: 空ストア→明示作成、Origin/cookie実経路、paused→明示再開→完了、stale、409/422拒否、500で応答喪失→同key/body再照合で同一job、協調取消、Expert共通・一括無効、再読込で永続一覧、401/403）、`e2e/api-mode.spec.ts`（`legacy` project: meta=legacy、URL/storageで昇格しない、`/api/v1`呼出し0） |
 
 **非対象（明記）:** Windows WebView2実機（IME・D&D・DPI・CSP）、実GPU/実モデル推論、実B4 smoke証拠でのready、S5-B（原子的batch）、S3-B2（複数ジョブ監視・キュー管理）。CI成功を実機受入とは呼ばない。

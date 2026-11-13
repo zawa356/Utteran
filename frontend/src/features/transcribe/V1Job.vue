@@ -42,6 +42,11 @@ const stageTitle = computed(() => (s.value.failedAt ? t(`v1.stage.${s.value.fail
 const view = computed(() => s.value.job);
 const queue = computed(() => s.value.queue.view);
 const cancellable = computed(() => !!view.value && s.value.tracking !== "final" && view.value.status !== "cancelling");
+// An open (pending/unknown) cancel intent pins the shown job: no follow/dismiss until it is settled (PR #48 P1).
+const switchBlocked = computed(() => {
+  void s.value;
+  return v1.job.switchBlocked();
+});
 </script>
 
 <template>
@@ -141,15 +146,17 @@ const cancellable = computed(() => !!view.value && s.value.tracking !== "final" 
       <p v-if="s.poll.failures > 0" class="text-caption" data-testid="v1-poll-failing">{{ t("tx.job.poll.failing", { count: s.poll.failures }) }}</p>
       <v-alert v-if="s.cancel.phase !== 'idle'" :type="s.cancel.phase === 'rejected' || s.cancel.phase === 'unknown' ? 'warning' : 'info'" density="compact" role="status" data-testid="v1-cancel-state">
         {{ t(`v1.cancel.${s.cancel.phase}` as MessageKey) }}
+        <div v-if="s.cancel.jobId" class="text-caption" data-testid="v1-cancel-target">{{ t("v1.cancel.target", { id: s.cancel.jobId }) }}</div>
         <template v-if="s.cancel.phase === 'unknown'" #append>
           <v-btn variant="text" size="small" data-testid="v1-cancel-recheck" @click="v1.job.recheckCancel()">{{ t("v1.unknown.recheck") }}</v-btn>
+          <v-btn variant="text" size="small" data-testid="v1-cancel-discard" @click="v1.job.discardCancel()">{{ t("v1.cancel.discard") }}</v-btn>
         </template>
       </v-alert>
       <ErrorAlert v-if="s.cancel.phase === 'rejected' && s.cancel.error" :error="s.cancel.error" testid="v1-cancel-error" />
       <div class="u-row">
         <v-btn v-if="cancellable" variant="outlined" color="error" :loading="s.cancel.phase === 'pending'" :disabled="s.cancel.phase === 'pending' || s.cancel.phase === 'unknown'" data-testid="v1-cancel" @click="v1.job.cancel()">{{ t("v1.cancel.button") }}</v-btn>
         <v-btn variant="text" size="small" data-testid="v1-refresh" @click="v1.job.refresh()">{{ t("v1.job.refresh") }}</v-btn>
-        <v-btn v-if="s.tracking !== 'active'" variant="text" size="small" data-testid="v1-dismiss" @click="v1.job.dismiss()">{{ t("tx.job.dismiss") }}</v-btn>
+        <v-btn v-if="s.tracking !== 'active'" variant="text" size="small" :disabled="switchBlocked !== null" data-testid="v1-dismiss" @click="v1.job.dismiss()">{{ t("tx.job.dismiss") }}</v-btn>
       </div>
       <p class="text-caption">{{ t("v1.job.leaveNote") }}</p>
     </v-card>
@@ -191,13 +198,14 @@ const cancellable = computed(() => !!view.value && s.value.tracking !== "final" 
       <h3 class="u-subheading">{{ t("v1.recent.title") }}</h3>
       <p class="text-caption">{{ t("v1.recent.explain") }}</p>
       <ErrorAlert v-if="s.recent.phase === 'error' && s.recent.error" :error="s.recent.error" testid="v1-recent-error" />
+      <p v-if="switchBlocked" class="text-caption" role="status" data-testid="v1-switch-blocked">{{ t(`v1.switch.${switchBlocked}` as MessageKey) }}</p>
       <p v-if="s.recent.phase === 'done' && s.recent.items.length === 0" class="text-body-2" data-testid="v1-recent-empty">{{ t("v1.recent.empty") }}</p>
       <v-list v-if="s.recent.items.length > 0" density="compact" data-testid="v1-recent-items">
         <v-list-item v-for="item in s.recent.items" :key="item.id" data-testid="v1-recent-item" :data-status="item.status">
           <v-list-item-title class="u-break">{{ status(item.status) }} · {{ t("v1.job.id", { id: item.id, revision: item.revision }) }}</v-list-item-title>
           <v-list-item-subtitle>{{ item.createdAt }}</v-list-item-subtitle>
           <template #append>
-            <v-btn variant="text" size="small" :disabled="view?.id === item.id" data-testid="v1-recent-follow" @click="v1.job.follow(item.id)">{{ t("v1.recent.follow") }}</v-btn>
+            <v-btn variant="text" size="small" :disabled="view?.id === item.id || switchBlocked !== null" data-testid="v1-recent-follow" @click="v1.job.follow(item.id)">{{ t("v1.recent.follow") }}</v-btn>
           </template>
         </v-list-item>
       </v-list>

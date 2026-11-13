@@ -1,4 +1,4 @@
-import type { ApiError } from "../../api/errors";
+import { ApiError } from "../../api/errors";
 import { MutationIntent, type RandomSource } from "../../api/idempotency";
 import {
   FINAL_STATUSES_V1,
@@ -39,7 +39,11 @@ import { canonical, clone, commonOverrides, effectiveSettings, knownWorkerLimits
  *    (bounded single-flight polling, never regressing to an older revision). No progress ratio.
  * 5. The queue may be paused (first start, recovery): shown as such, resumed only by an explicit
  *    `resumeQueue()` (CAS on the queue revision + its own key), never as a side effect.
- * 6. Cancel is cooperative only; "requested" is not "cancelled" (GET decides).
+ * 6. Cancel is cooperative only; "requested" is not "cancelled" (GET decides). Each cancel freezes its
+ *    target job id, If-Match revision and intent (key + body) in one `CancelContext`; a re-check
+ *    resends exactly that, never to whatever job is shown now. While a cancel is pending or unknown
+ *    the shown job cannot be switched (follow/prepare/dismiss) until it is re-checked or the person
+ *    explicitly discards it; an answer is applied only to the job and target it was sent for (PR #48).
  * Leaving the page stops the polling, never the server job.
  */
 
@@ -96,16 +100,37 @@ export interface V1JobState {
   poll: { failures: number; lastError: ApiError | null };
   queue: { phase: "idle" | "pending" | "done" | "error"; view: QueueViewV1 | null; error: ApiError | null };
   control: { phase: WritePhase; error: ApiError | null; intent: MutationIntent<JsonObject> | null };
-  cancel: { phase: WritePhase | "requested"; error: ApiError | null; intent: MutationIntent<JsonObject> | null };
+  /** `jobId` = the job this cancel intent was sent for (frozen, not the job shown now). */
+  cancel: { phase: WritePhase | "requested"; error: ApiError | null; intent: MutationIntent<JsonObject> | null; jobId: string | null };
   recent: { phase: "idle" | "pending" | "done" | "error"; items: readonly JobV1[]; error: ApiError | null };
 }
 
-export type V1Block = "busy" | "unknown_unresolved" | "tracking";
+export type V1Block = "busy" | "unknown_unresolved" | "tracking" | "cancel_open";
+
+/** The shown job at one moment: its id and the target epoch (bumped on every target switch). */
+export interface CancelTarget {
+  readonly jobId: string;
+  readonly epoch: number;
+}
+
+/** One cancel intent, frozen when it is created; the only input of its POST and of a re-check. */
+export interface CancelContext {
+  readonly jobId: string;
+  /** If-Match of the first POST, reused unchanged by the explicit re-check. */
+  readonly revision: number;
+  readonly intent: MutationIntent<JsonObject>;
+  readonly target: CancelTarget;
+}
+
+/** B7 keeps at most 10,000 jobs per list snapshot at 100 per page (`job_repository.LIST_MAX_ITEMS`). */
+export const MAX_JOB_LIST_PAGES = 100;
 
 export const V1_POLL_INTERVAL_MS = 2000;
 export const V1_POLL_BACKOFF = { initialMs: 2000, maxMs: 30_000 } as const;
 export const RECENT_LIMIT = 20;
 const RESUME_MODE = "resume";
+
+const IDLE_CANCEL: V1JobState["cancel"] = { phase: "idle", error: null, intent: null, jobId: null };
 
 const initial: V1JobState = {
   step: "idle",
@@ -120,7 +145,7 @@ const initial: V1JobState = {
   poll: { failures: 0, lastError: null },
   queue: { phase: "idle", view: null, error: null },
   control: { phase: "idle", error: null, intent: null },
-  cancel: { phase: "idle", error: null, intent: null },
+  cancel: { phase: "idle", error: null, intent: null, jobId: null },
   recent: { phase: "idle", items: [], error: null },
 };
 
@@ -138,6 +163,10 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+function listError(code: "job_list_inconsistent" | "job_list_too_long"): ApiError {
+  return new ApiError({ kind: "malformed", code, retryable: true });
+}
+
 const hasRowOverrides = (row: InputRow) => Object.values(row.overrides).some((v) => v !== undefined);
 
 export interface V1JobOptions {
@@ -152,6 +181,11 @@ export class V1SingleJobController {
   private readonly fileIds = new Map<string, string>();
   private poller: SingleFlightPoller | null = null;
   private generation = 0;
+  /** Bumped whenever the shown job (the cancel target) changes; refreshes of the same job keep it. */
+  private targetEpoch = 0;
+  private cancelOp: CancelContext | null = null;
+  private recentGeneration = 0;
+  private recentAbort: AbortController | null = null;
   private disposed = false;
   private readonly scheduler: Scheduler;
   private readonly now: () => number;
@@ -222,6 +256,7 @@ export class V1SingleJobController {
     const s = this.store.get();
     if (s.step === "validating" || s.step === "resolving" || s.step === "submitting") return "busy";
     if (s.step === "unknown") return "unknown_unresolved";
+    if (this.switchBlocked() !== null) return "cancel_open";
     if (s.origin === "submitted" && s.tracking === "active") return "tracking";
     return null;
   }
@@ -344,7 +379,8 @@ export class V1SingleJobController {
         this.store.patch({ step: "unknown", failedAt: "submission", error: toApiError(new Error("batch shape")), pending: intent });
         return;
       }
-      this.store.patch({ step: "accepted", pending: null, error: null, origin: "submitted", job, tracking: "active", cancel: { phase: "idle", error: null, intent: null } });
+      this.targetEpoch += 1;
+      this.store.patch({ step: "accepted", pending: null, error: null, origin: "submitted", job, tracking: "active", cancel: IDLE_CANCEL });
       this.startTracking(job.id);
     } catch (error) {
       this.fail("submission", error, intent);
@@ -362,10 +398,10 @@ export class V1SingleJobController {
 
   /** Follow a durable job from the server list (not claimed as this page's admission). */
   follow(jobId: string): void {
-    if (this.disposed || this.blockFor() === "busy") return;
+    if (this.disposed || this.blockFor() === "busy" || this.switchBlocked() !== null) return;
     const job = this.store.get().recent.items.find((j) => j.id === jobId) ?? null;
     this.stopTracking(false);
-    this.store.patch({ origin: "followed", job, tracking: "active", cancel: { phase: "idle", error: null, intent: null } });
+    this.store.patch({ origin: "followed", job, tracking: "active", cancel: IDLE_CANCEL });
     this.startTracking(jobId);
   }
 
@@ -386,7 +422,7 @@ export class V1SingleJobController {
 
   /** Stop showing the job (the server job is untouched). */
   dismiss(): void {
-    if (this.store.get().step === "submitting") return;
+    if (this.store.get().step === "submitting" || this.switchBlocked() !== null) return;
     this.stopTracking(true);
     if (this.store.get().step === "accepted") this.store.patch({ step: "idle", prepared: null });
   }
@@ -434,18 +470,21 @@ export class V1SingleJobController {
 
   private stopTracking(clearJob: boolean): void {
     this.generation += 1;
+    this.targetEpoch += 1;
+    if (clearJob) this.cancelOp = null;
     this.poller?.stop();
     this.poller = null;
-    if (clearJob) this.store.patch({ job: null, origin: null, tracking: "none", cancel: { phase: "idle", error: null, intent: null } });
+    if (clearJob) this.store.patch({ job: null, origin: null, tracking: "none", cancel: IDLE_CANCEL });
   }
 
   /** Never go back to an older revision (late answers are dropped). */
   private applyJob(job: JobV1): void {
     const current = this.store.get().job;
-    if (current && current.id === job.id && job.revision < current.revision) return;
+    // Never another job's answer over the shown one, never an older revision of the same job.
+    if (current && (current.id !== job.id || job.revision < current.revision)) return;
     const tracking: Tracking = FINAL_STATUSES_V1.has(job.status) ? "final" : job.status === "interrupted" ? "stopped" : "active";
     const cancel = this.store.get().cancel;
-    const nextCancel = cancel.phase === "requested" && FINAL_STATUSES_V1.has(job.status) ? { phase: "done" as const, error: null, intent: null } : cancel;
+    const nextCancel = cancel.phase === "requested" && FINAL_STATUSES_V1.has(job.status) ? { ...cancel, phase: "done" as const, error: null, intent: null } : cancel;
     this.store.patch({ job, tracking, cancel: nextCancel });
   }
 
@@ -508,56 +547,134 @@ export class V1SingleJobController {
 
   // ------------------------------------------------------------------ cancel (cooperative only)
 
+  /** Why the shown job may not be switched now: an open cancel intent belongs to it. */
+  switchBlocked(): "cancel_pending" | "cancel_unknown" | null {
+    const phase = this.store.get().cancel.phase;
+    if (phase === "pending") return "cancel_pending";
+    if (phase === "unknown" && this.cancelOp !== null) return "cancel_unknown";
+    return null;
+  }
+
+  /** A new cancel intent for the shown job (new key); refused while another one is open. */
   async cancel(): Promise<void> {
     const s = this.store.get();
-    if (this.disposed || !s.job || s.tracking === "final" || s.cancel.phase === "pending") return;
-    await this.runCancel(new MutationIntent<JsonObject>({ schema_version: 1, mode: "cooperative" }, this.options.random), s.job.id, s.job.revision);
+    if (this.disposed || !s.job || s.tracking === "final" || this.switchBlocked() !== null) return;
+    const ctx: CancelContext = Object.freeze({
+      jobId: s.job.id,
+      revision: s.job.revision,
+      intent: new MutationIntent<JsonObject>(deepFreeze({ schema_version: 1, mode: "cooperative" }), this.options.random),
+      target: Object.freeze({ jobId: s.job.id, epoch: this.targetEpoch }),
+    });
+    this.cancelOp = ctx;
+    await this.runCancel(ctx);
   }
 
+  /** Explicit re-check of an unknown cancel: the frozen job id, If-Match, key and body, once. */
   async recheckCancel(): Promise<void> {
-    const s = this.store.get();
-    if (s.cancel.phase !== "unknown" || !s.cancel.intent || !s.job || this.cancelRevision === null) return;
-    await this.runCancel(s.cancel.intent, s.job.id, this.cancelRevision);
+    const ctx = this.cancelOp;
+    if (this.disposed || ctx === null || this.store.get().cancel.phase !== "unknown") return;
+    await this.runCancel(ctx);
   }
 
-  private cancelRevision: number | null = null;
+  /** The person gives up an unknown cancel (it may or may not have been applied); it can no longer be re-checked. */
+  discardCancel(): void {
+    if (this.store.get().cancel.phase !== "unknown") return;
+    this.cancelOp = null;
+    this.store.patch({ cancel: IDLE_CANCEL });
+  }
 
-  private async runCancel(intent: MutationIntent<JsonObject>, jobId: string, revision: number): Promise<void> {
-    this.cancelRevision = revision;
-    this.store.patch({ cancel: { phase: "pending", error: null, intent } });
+  /** Whether an answer for `ctx` may be written now (pure; exported for the guard's unit test). */
+  answerApplies(ctx: CancelContext, target: CancelTarget | null): boolean {
+    return !this.disposed && this.cancelOp === ctx && target !== null && target.jobId === ctx.jobId && target.epoch === ctx.target.epoch;
+  }
+
+  /** The open cancel context (tests only; never rendered: it holds the intent). */
+  cancelContextForTest(): CancelContext | null {
+    return this.cancelOp;
+  }
+
+  private currentTarget(): CancelTarget | null {
+    const job = this.store.get().job;
+    return job ? { jobId: job.id, epoch: this.targetEpoch } : null;
+  }
+
+  private async runCancel(ctx: CancelContext): Promise<void> {
+    // Set synchronously before the first await: a second click or re-check sees "pending" and stops.
+    this.store.patch({ cancel: { phase: "pending", error: null, intent: ctx.intent, jobId: ctx.jobId } });
     try {
-      const { job } = await this.api.cancel(jobId, revision, intent);
+      const { job } = await this.api.cancel(ctx.jobId, ctx.revision, ctx.intent);
+      if (!this.answerApplies(ctx, this.currentTarget())) return;
+      this.cancelOp = null;
       // 202 = requested (queued → cancelled at once; running → cancelling); 200 = already final.
-      this.store.patch({ cancel: { phase: FINAL_STATUSES_V1.has(job.status) ? "done" : "requested", error: null, intent: null } });
+      this.store.patch({ cancel: { phase: FINAL_STATUSES_V1.has(job.status) ? "done" : "requested", error: null, intent: null, jobId: ctx.jobId } });
       this.applyJob(job);
     } catch (error) {
+      if (!this.answerApplies(ctx, this.currentTarget())) return;
       const apiError = toApiError(error);
       if (apiError.kind === "precondition") {
-        this.store.patch({ cancel: { phase: "conflict", error: apiError, intent: null } });
+        this.cancelOp = null;
+        this.store.patch({ cancel: { phase: "conflict", error: apiError, intent: null, jobId: ctx.jobId } });
         this.refresh();
         return;
       }
       const outcome = classifyStartFailure(apiError);
-      this.store.patch({ cancel: { phase: outcome, error: apiError, intent: outcome === "unknown" ? intent : null } });
+      if (outcome !== "unknown") this.cancelOp = null;
+      this.store.patch({ cancel: { phase: outcome, error: apiError, intent: outcome === "unknown" ? ctx.intent : null, jobId: ctx.jobId } });
     }
   }
 
   // ------------------------------------------------------------------ server list (re-display after restart)
 
+  /**
+   * Every `GET /api/v1/jobs` page in turn (B7: one snapshot, oldest first, 100 per page), keeping
+   * only the newest `RECENT_LIMIT`. Bounded by `MAX_JOB_LIST_PAGES`; a failing page, a repeated
+   * cursor, a changed snapshot revision or a duplicate id is an error, never a finished partial
+   * list. No retry. A newer load or `dispose()` makes an older one write nothing.
+   */
   async loadRecent(): Promise<void> {
     if (this.disposed) return;
+    const generation = ++this.recentGeneration;
+    this.recentAbort?.abort();
+    const abort = new AbortController();
+    this.recentAbort = abort;
+    const current = () => generation === this.recentGeneration && !this.disposed;
     this.store.patch({ recent: { ...this.store.get().recent, phase: "pending", error: null } });
     try {
-      const list = await this.api.listJobs();
-      const items = [...list.items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, RECENT_LIMIT);
-      this.store.patch({ recent: { phase: "done", items, error: null } });
+      const newest: JobV1[] = [];
+      const ids = new Set<string>();
+      const cursors = new Set<string>();
+      let cursor: string | null = null;
+      let revision: number | null = null;
+      for (let page = 0; ; page += 1) {
+        if (page >= MAX_JOB_LIST_PAGES) throw listError("job_list_too_long");
+        const list = await this.api.listJobs(cursor, abort.signal);
+        if (!current()) return;
+        if (revision === null) revision = list.revision;
+        else if (list.revision !== revision) throw listError("job_list_inconsistent");
+        for (const item of list.items) {
+          if (ids.has(item.id)) throw listError("job_list_inconsistent");
+          ids.add(item.id);
+          newest.push(item);
+          if (newest.length > RECENT_LIMIT) newest.shift();
+        }
+        if (list.nextCursor === null) break;
+        if (cursors.has(list.nextCursor)) throw listError("job_list_inconsistent");
+        cursors.add(list.nextCursor);
+        cursor = list.nextCursor;
+      }
+      this.store.patch({ recent: { phase: "done", items: newest.reverse(), error: null } });
     } catch (error) {
-      this.store.patch({ recent: { ...this.store.get().recent, phase: "error", error: toApiError(error) } });
+      if (!current()) return;
+      // Nothing partial is shown as "the newest jobs".
+      this.store.patch({ recent: { phase: "error", items: [], error: toApiError(error) } });
+    } finally {
+      if (this.recentAbort === abort) this.recentAbort = null;
     }
   }
 
   dispose(): void {
     this.disposed = true;
+    this.recentAbort?.abort();
     this.generation += 1;
     this.poller?.stop();
     this.poller = null;

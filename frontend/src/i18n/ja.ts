@@ -693,6 +693,15 @@ export const ja = {
   "v1.reason.owner_lost": "実行主体を確認できません",
   "v1.reason.recovery_owner_unverified": "復旧時に実行主体を確認できません",
   "v1.reason.recovery_launch_unconfirmed": "復旧時に起動を確認できません",
+  "v1.block.cancel_open": "取消要求の結果が確定していません。再照合するか、破棄してから操作してください。",
+  "v1.switch.cancel_pending": "取消要求の応答を待っています。その間、表示するジョブは切り替えられません。",
+  "v1.switch.cancel_unknown": "取消要求の結果が不明です。同じジョブへ再照合するか、「未確定の取消要求を破棄」してから別のジョブを表示してください（破棄した要求は再照合できません）。",
+  "v1.cancel.discard": "未確定の取消要求を破棄",
+  "v1.cancel.target": "取消要求の対象: {id}",
+  "code.job_list_inconsistent": "ジョブ一覧のページが一貫していませんでした。最新の一覧は表示していません。読み直してください。",
+  "code.job_list_too_long": "ジョブ一覧が上限（10,000件）を超えているため、最新の一覧を表示できません。",
+  "code.cursor_expired": "一覧の読み取り中に期限が切れました。読み直してください。",
+  "code.list_snapshot_too_large": "ジョブ数がサーバーの一覧上限を超えています。",
 } as const;
 
 export type MessageKey = keyof typeof ja;

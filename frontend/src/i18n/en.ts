@@ -695,4 +695,13 @@ export const en: Record<MessageKey, string> = {
   "v1.reason.owner_lost": "the owner could not be verified",
   "v1.reason.recovery_owner_unverified": "the owner could not be verified at recovery",
   "v1.reason.recovery_launch_unconfirmed": "the launch could not be confirmed at recovery",
+  "v1.block.cancel_open": "A cancel request is not settled. Re-check or discard it first.",
+  "v1.switch.cancel_pending": "Waiting for the cancel answer; the shown job cannot be switched meanwhile.",
+  "v1.switch.cancel_unknown": "The cancel outcome is unknown. Re-check it for the same job, or discard it before showing another job (a discarded request cannot be re-checked).",
+  "v1.cancel.discard": "Discard the unsettled cancel request",
+  "v1.cancel.target": "Cancel request for: {id}",
+  "code.job_list_inconsistent": "The job list pages were inconsistent; no list is shown. Read it again.",
+  "code.job_list_too_long": "The job list exceeds the limit (10,000), so the newest jobs cannot be shown.",
+  "code.cursor_expired": "The listing expired while it was read. Read it again.",
+  "code.list_snapshot_too_large": "There are more jobs than the server can list.",
 };

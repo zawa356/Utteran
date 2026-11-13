@@ -12,7 +12,7 @@
  * - Nothing here is used by the legacy (`--next-ui`) client.
  */
 import { ApiError } from "./errors";
-import { bool, int, list, oneOf, optStr, record, ShapeError, str } from "./guards";
+import { bool, int, list, oneOf, record, ShapeError, str } from "./guards";
 import type { HttpClient } from "./http";
 import { IDEMPOTENCY_KEY_PATTERN, type MutationIntent } from "./idempotency";
 import { ifMatch } from "./v1";
@@ -353,7 +353,10 @@ export interface JobListV1 {
 export function parseJobList(raw: unknown): JobListV1 {
   const r = record(raw, "jobs");
   version(r, "jobs");
-  return { revision: int(r.revision, "jobs.revision"), items: list(r.items, "jobs.items").map(parseJob), nextCursor: optStr(r.next_cursor) };
+  const next = r.next_cursor;
+  // B7 `JobList.next_cursor`: opaque, at most 200 characters, or null on the last page.
+  if (next !== null && (typeof next !== "string" || next.length === 0 || next.length > 200)) throw new ShapeError("jobs.next_cursor");
+  return { revision: int(r.revision, "jobs.revision"), items: list(r.items, "jobs.items").map(parseJob), nextCursor: next };
 }
 
 export interface QueueViewV1 {
@@ -406,7 +409,8 @@ export interface V1ResourcesApi {
   resolve(intent: MutationIntent<JsonObject>): Promise<ResolutionV1>;
   submit(intent: MutationIntent<JsonObject>): Promise<{ status: number; batch: JobBatchV1 }>;
   getJob(jobId: string, signal?: AbortSignal): Promise<JobV1>;
-  listJobs(signal?: AbortSignal): Promise<JobListV1>;
+  /** One page of `GET /api/v1/jobs` (B7: oldest first, 100 per page, opaque `next_cursor`). */
+  listJobs(cursor?: string | null, signal?: AbortSignal): Promise<JobListV1>;
   getQueue(signal?: AbortSignal): Promise<QueueViewV1>;
   setDispatch(intent: MutationIntent<JsonObject>, expectedRevision: number): Promise<QueueViewV1>;
   cancel(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; job: JobV1 }>;
@@ -483,8 +487,8 @@ export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
       etagRevision(response.headers, response.data.revision, response.status);
       return response.data;
     },
-    async listJobs(signal) {
-      return (await http.request({ method: "GET", path: "/api/v1/jobs", signal }, parseJobList)).data;
+    async listJobs(cursor, signal) {
+      return (await http.request({ method: "GET", path: "/api/v1/jobs", query: { cursor: cursor ?? null }, signal }, parseJobList)).data;
     },
     async getQueue(signal) {
       const response = await http.request({ method: "GET", path: "/api/v1/queue", signal }, parseQueue);
