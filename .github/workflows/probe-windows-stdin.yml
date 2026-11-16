@@ -5,14 +5,35 @@ on:
 permissions:
   contents: read
 jobs:
-  probe:
+  red-worker-stdin:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           python-version: "3.12"
-      - run: uv sync --extra cpu --extra dev --extra gui --locked
-      - run: choco install ffmpeg -y --no-progress
-      - run: uv run --no-sync python probe/stdin_probe2.py
+      - run: uv sync --extra dev --extra gui --locked
+      # Diagnostic only: the pre-fix code (b6c1a28) is expected to fail here.
+      - run: uv run --no-sync pytest tests/test_worker_stdin_isolation.py -rfEs -p no:cacheprovider --durations=0
+  windows-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: frontend/.nvmrc
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      - run: npm install -g npm@11.21.1
+      - working-directory: frontend
+        run: npm ci --no-fund
+      - working-directory: frontend
+        run: npm run build
+      - run: uv sync --extra dev --extra gui --locked
+      - working-directory: frontend
+        run: npx playwright install chromium
+      - working-directory: frontend
+        run: npx playwright test --trace off
