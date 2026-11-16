@@ -20,6 +20,10 @@ STEM_MINIMUM = 8
 # Conservative budget for "<parent>/<name>/<name>.<ext>" below Windows MAX_PATH (260).
 PATH_BUDGET = 240
 _LONGEST_SUFFIX = len(".json")
+# Hex digits of the job id used in the name. The first is the normal case; the longer
+# ones are used only when a shorter name is already taken by something else (two job ids
+# sharing a prefix, or a directory the user created). The last is the full id.
+ID_LENGTHS = (8, 12, 16, 24, 32)
 _FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
 _JOB_ID = re.compile(r"^job_[0-9a-f]{32}$")
 _STAMP = re.compile(STAMP_PATTERN)
@@ -40,16 +44,19 @@ def safe_stem(stem: str, limit: int = STEM_LIMIT) -> str:
     return text or "input"
 
 
-def job_output_name(input_path: str, stamp: str, job_id: str, *, parent: str) -> str:
+def job_output_name(
+    input_path: str, stamp: str, job_id: str, *, parent: str, id_length: int = ID_LENGTHS[0]
+) -> str:
     """Directory name (= artifact stem) for one job, or ValueError with a fixed code.
 
-    The short job id makes names unique for equal stems, equal seconds and
-    case-insensitive filesystems; a reserved device name (CON, NUL, ...) cannot survive
-    because the suffix is always appended.
+    The job id part separates equal stems, equal seconds and case-insensitive
+    filesystems; a reserved device name (CON, NUL, ...) cannot survive because the
+    suffix is always appended. A shortened id is not unique by itself: the caller must
+    claim the directory and move to the next ``id_length`` when it is taken.
     """
-    if not _STAMP.fullmatch(stamp) or not _JOB_ID.fullmatch(job_id):
+    if not _STAMP.fullmatch(stamp) or not _JOB_ID.fullmatch(job_id) or id_length not in ID_LENGTHS:
         raise ValueError("output_name_invalid")
-    suffix = f"_{stamp}_{job_id[4:12]}"
+    suffix = f"_{stamp}_{job_id[4 : 4 + id_length]}"
     # Both occurrences of the name count against the path budget.
     room = (PATH_BUDGET - len(parent) - 2 - _LONGEST_SUFFIX) // 2 - len(suffix)
     if room < STEM_MINIMUM:

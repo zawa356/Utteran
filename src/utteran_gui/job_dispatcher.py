@@ -21,7 +21,7 @@ from typing import Any, Protocol
 from utteran_contracts.control import OwnerIdentity, ProcessIdentity
 from utteran_contracts.engines import get_engine, worker_refusals
 from utteran_contracts.jobs import BlockReason, JobErrorCode, JobSnapshot
-from utteran_contracts.output_naming import job_output_name
+from utteran_contracts.output_naming import ID_LENGTHS, job_output_name
 from utteran_contracts.worker import WorkerCompleted, WorkerRequest
 from utteran_control.errors import ControlError, ErrorCode
 from utteran_control.job_repository import CompletionEvidence, JobControlStore
@@ -58,12 +58,11 @@ def job_output(snapshot: JobSnapshot, job_id: str) -> tuple[str, str | None]:
     return str(Path(parent) / name), name
 
 
-def claim_output_dir(directory: Path, job_id: str) -> None:
-    """Create the job's own directory, or prove an existing one already belongs to it.
+def _try_claim(directory: Path, job_id: str) -> bool:
+    """True when ``directory`` is (now) this job's own; False when something else has it.
 
-    Never adopts a directory that has content but no matching marker, so the outputs of
-    another job (or the user's own files) are not overwritten. A retry of the same job
-    finds its marker and continues; partial artifacts stay inside this one directory.
+    Never adopts a directory that has content but no matching marker. Raises PlanError
+    only for a filesystem fault (missing parent, permission), not for "taken".
     """
     marker = directory / OUTPUT_MARKER
     try:
@@ -71,18 +70,79 @@ def claim_output_dir(directory: Path, job_id: str) -> None:
             directory.mkdir()
         except FileExistsError:
             if directory.is_symlink() or not directory.is_dir():
-                raise PlanError("output_unavailable") from None
-            if marker.is_file() and not marker.is_symlink():
-                if marker.read_text(encoding="utf-8").strip() != job_id:
-                    raise PlanError("output_unavailable") from None
-                return
+                return False
+            if marker.is_symlink():
+                return False
+            if marker.is_file():
+                return marker.read_text(encoding="utf-8").strip() == job_id
             if any(directory.iterdir()):
-                raise PlanError("output_unavailable") from None
+                return False
         # New (or empty, e.g. interrupted between mkdir and marker) directory.
-        with marker.open("x", encoding="utf-8", newline="\n") as handle:
-            handle.write(job_id + "\n")
-    except OSError:
+        try:
+            with marker.open("x", encoding="utf-8", newline="\n") as handle:
+                handle.write(job_id + "\n")
+        except FileExistsError:
+            return False  # another process marked it in between: not ours
+        return True
+    except (OSError, UnicodeDecodeError):
         raise PlanError("output_unavailable") from None
+
+
+def claim_output_dir(directory: Path, job_id: str) -> None:
+    """Create the job's own directory, or prove an existing one already belongs to it.
+
+    A retry of the same job finds its marker and continues; a directory with another
+    job's marker, foreign content, a symlink or a file is refused, so the outputs of
+    another job (or the user's own files) are never overwritten.
+    """
+    if not _try_claim(directory, job_id):
+        raise PlanError("output_unavailable")
+
+
+def _owner(directory: Path) -> str | None:
+    marker = directory / OUTPUT_MARKER
+    try:
+        if directory.is_symlink() or marker.is_symlink() or not marker.is_file():
+            return None
+        return marker.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def resolve_output(snapshot: JobSnapshot, job_id: str) -> tuple[str, str | None]:
+    """Claim and return (output directory, artifact stem) for this job.
+
+    The normal name uses the first 8 hex digits of the job id. That short form is not
+    unique: when the directory is already taken (another job whose id shares the prefix
+    with the same stem and second, or a directory someone created), the next longer id
+    form is tried, up to the full id. Nothing in a taken directory is read, changed or
+    removed. A directory this job already owns (from an earlier attempt, at any length)
+    is always preferred, so every attempt of a job writes to one place.
+    """
+    parent = snapshot.file.output_dir
+    if snapshot.output_stamp is None:
+        return parent, None
+    names: list[str] = []
+    for length in ID_LENGTHS:
+        try:
+            names.append(
+                job_output_name(
+                    snapshot.input_identity.path,
+                    snapshot.output_stamp,
+                    job_id,
+                    parent=parent,
+                    id_length=length,
+                )
+            )
+        except ValueError:
+            break  # longer forms no longer fit the path budget
+    for name in names:
+        if _owner(Path(parent) / name) == job_id:
+            return str(Path(parent) / name), name
+    for name in names:
+        if _try_claim(Path(parent) / name, job_id):
+            return str(Path(parent) / name), name
+    raise PlanError("output_unavailable")
 
 
 class WorkerRunner(Protocol):
@@ -97,9 +157,17 @@ class WorkerRunner(Protocol):
 
 
 def plan_request(
-    snapshot: JobSnapshot, *, job_id: str, attempt_id: str, job_dir: Path
+    snapshot: JobSnapshot,
+    *,
+    job_id: str,
+    attempt_id: str,
+    job_dir: Path,
+    output: tuple[str, str | None] | None = None,
 ) -> WorkerRequest:
     """Map a frozen snapshot to the B3 worker request, or refuse.
+
+    ``output`` is the directory the dispatcher claimed (``resolve_output``). Without it
+    the normal name is planned and nothing is created (dry run, tests).
 
     Engine-neutral: what may run is read from the engine declaration of the frozen
     ``spec.backend``; every value of the request comes from the snapshot. Nothing is
@@ -107,7 +175,7 @@ def plan_request(
     """
     spec = snapshot.resolved
     settings = spec.settings
-    output_dir, output_stem = job_output(snapshot, job_id)
+    output_dir, output_stem = output or job_output(snapshot, job_id)
     try:
         engine = get_engine(spec.backend)
     except ValueError:
@@ -288,14 +356,13 @@ class JobDispatcher:
             return bool(self.setup.dispatch(job_id, revision, self.owner))
         snapshot = self.store.get_snapshot(job_id)
         reason = self.prestart(snapshot)
+        output: tuple[str, str | None] | None = None
         if reason is None:
             try:
                 plan_request(
                     snapshot, job_id=job_id, attempt_id="att_" + "0" * 32, job_dir=self.job_dir
                 )
-                directory, stem = job_output(snapshot, job_id)
-                if stem is not None:
-                    claim_output_dir(Path(directory), job_id)
+                output = resolve_output(snapshot, job_id)
             except PlanError as exc:
                 reason = (
                     "output_unavailable"
@@ -326,7 +393,7 @@ class JobDispatcher:
         with self._lock:
             self._active = active
         try:
-            self._run(active, snapshot, grant.attempt_id)
+            self._run(active, snapshot, grant.attempt_id, output)
         finally:
             with self._lock:
                 self._active = None
@@ -347,7 +414,13 @@ class JobDispatcher:
                     active.cancel.set()
                     return
 
-    def _run(self, active: _Active, snapshot: JobSnapshot, attempt_id: str) -> None:
+    def _run(
+        self,
+        active: _Active,
+        snapshot: JobSnapshot,
+        attempt_id: str,
+        output: tuple[str, str | None] | None = None,
+    ) -> None:
         job_id, fence = active.job_id, active.fencing_token
         spawned: list[Any] = []
 
@@ -363,7 +436,11 @@ class JobDispatcher:
         error: JobErrorCode | None = None
         try:
             request = plan_request(
-                snapshot, job_id=job_id, attempt_id=attempt_id, job_dir=self.job_dir
+                snapshot,
+                job_id=job_id,
+                attempt_id=attempt_id,
+                job_dir=self.job_dir,
+                output=output,
             )
             completed = self.runner.execute(request, cancel=active.cancel, on_spawn=on_spawn)
         except PlanError:

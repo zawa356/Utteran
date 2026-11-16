@@ -23,6 +23,7 @@ from utteran.exporters import export_all
 from utteran.worker_runtime import explicit_config
 from utteran_contracts.jobs import JobSnapshot
 from utteran_contracts.output_naming import (
+    ID_LENGTHS,
     PATH_BUDGET,
     STEM_LIMIT,
     input_stem,
@@ -38,6 +39,7 @@ from utteran_gui.job_dispatcher import (
     claim_output_dir,
     job_output,
     plan_request,
+    resolve_output,
 )
 from utteran_gui.worker_client import WorkerClientError, verify_result
 
@@ -216,19 +218,143 @@ def test_claim_refuses_a_symlinked_directory(tmp_path: Path) -> None:
     assert list(real.iterdir()) == []
 
 
-def test_dispatcher_blocks_instead_of_writing_into_a_foreign_directory(tmp_path: Path) -> None:
+def test_dispatcher_never_writes_into_a_foreign_directory_and_uses_a_longer_id(
+    tmp_path: Path,
+) -> None:
+    """A directory with the normal name but foreign content is left alone; the job
+    runs in the next longer-id form instead of being stuck (PR #51 review)."""
     env = Env(tmp_path, None)
     job = env.submit(env.file("a.wav")).batch.jobs[0]
-    directory, _ = job_output(env.store.get_snapshot(job.id), job.id)
+    snapshot = env.store.get_snapshot(job.id)
+    directory, stem = job_output(snapshot, job.id)
     Path(directory).mkdir()
     (Path(directory) / "someone-else.srt").write_text("keep me", encoding="utf-8")
+    runner = FakeRunner(env)
+    assert dispatcher(env, runner).run_once()
+    assert env.store.get_job(job.id).status == "succeeded"
+    used = Path(runner.requests[0].context.base_config["general"]["output_dir"])  # type: ignore[arg-type]
+    assert used.parent == env.output and used.name == f"{stem}{job.id[12:16]}"
+    assert runner.requests[0].context.output_stem == used.name
+    assert (used / OUTPUT_MARKER).read_text(encoding="utf-8").strip() == job.id
+    assert [p.name for p in Path(directory).iterdir()] == ["someone-else.srt"]
+    assert (Path(directory) / "someone-else.srt").read_text(encoding="utf-8") == "keep me"
+
+
+def test_job_is_blocked_only_when_every_id_form_is_taken(tmp_path: Path) -> None:
+    env = Env(tmp_path, None)
+    job = env.submit(env.file("a.wav")).batch.jobs[0]
+    snapshot = env.store.get_snapshot(job.id)
+    for length in ID_LENGTHS:
+        taken = env.output / job_output_name(
+            snapshot.input_identity.path,
+            snapshot.output_stamp or "",
+            job.id,
+            parent=str(env.output),
+            id_length=length,
+        )
+        taken.mkdir()
+        (taken / "foreign.txt").write_text("keep", encoding="utf-8")
     runner = FakeRunner(env)
     assert dispatcher(env, runner).run_once()
     blocked = env.store.get_job(job.id)
     assert blocked.status == "blocked" and blocked.block_reason == "output_unavailable"
     assert runner.requests == []
-    assert [p.name for p in Path(directory).iterdir()] == ["someone-else.srt"]
-    assert (Path(directory) / "someone-else.srt").read_text(encoding="utf-8") == "keep me"
+    for directory in env.output.iterdir():
+        assert [p.name for p in directory.iterdir()] == ["foreign.txt"]
+
+
+# ------------------------------------------------------- short job id collision (#51)
+
+SAME_PREFIX = ("job_" + "ab12cd34" + "0" * 24, "job_" + "ab12cd34" + "f" * 24)
+
+
+def _same_prefix_jobs(env: Env, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    """Two accepted jobs for the same input and second whose ids share 8 hex digits."""
+    from utteran_control import job_repository
+
+    ids = iter(SAME_PREFIX)
+    real = job_repository._new_id
+    monkeypatch.setattr(
+        job_repository, "_new_id", lambda prefix: next(ids) if prefix == "job_" else real(prefix)
+    )
+    source = env.file("a.wav")  # written once: both jobs freeze the same input identity
+    first = env.submit(source).batch.jobs[0]
+    second = env.submit(source).batch.jobs[0]
+    assert (first.id, second.id) == SAME_PREFIX
+    snapshots = [env.store.get_snapshot(i) for i in SAME_PREFIX]
+    assert snapshots[0].output_stamp == snapshots[1].output_stamp  # frozen clock
+    # The reproduction: before the fix both jobs planned this one directory.
+    assert job_output(snapshots[0], first.id) == job_output(snapshots[1], second.id)
+    return first.id, second.id
+
+
+def test_two_jobs_sharing_the_short_id_get_separate_directories(
+    tmp_path: Path, offline: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = Env(tmp_path, None)
+    model_files(env.model)
+    first, second = _same_prefix_jobs(env, monkeypatch)
+    backend = SyntheticASR()
+    _synthetic_core(monkeypatch, backend)
+    runner = B3Runner(env, backend)
+    worker = dispatcher(env, runner)
+    assert worker.run_once()
+    assert env.store.get_job(first).status == "succeeded", (
+        runner.codes,
+        env.store.get_job(first).block_reason,
+    )
+    short = Path(job_output(env.store.get_snapshot(first), first)[0])
+    before = {p.name: p.read_bytes() for p in short.iterdir()}
+    assert worker.run_once()
+    assert env.store.get_job(second).status == "succeeded", runner.codes
+    # The first job's directory and files are byte-identical; the second job wrote into
+    # its own directory, named with a longer part of its id, with matching artifact names.
+    assert {p.name: p.read_bytes() for p in short.iterdir()} == before
+    assert (short / OUTPUT_MARKER).read_text(encoding="utf-8").strip() == first
+    longer = short.with_name(short.name + second[12:16])
+    assert sorted(p.name for p in env.output.iterdir()) == sorted([short.name, longer.name])
+    assert (longer / OUTPUT_MARKER).read_text(encoding="utf-8").strip() == second
+    produced = [p for p in longer.iterdir() if p.name != OUTPUT_MARKER]
+    assert produced and {p.stem for p in produced} == {longer.name}
+    assert runner.requests[1].context.output_stem == longer.name
+
+
+def test_resolution_is_stable_across_attempts_and_prefers_the_owned_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = Env(tmp_path, None)
+    first, second = _same_prefix_jobs(env, monkeypatch)
+    one, two = (env.store.get_snapshot(i) for i in (first, second))
+    a = resolve_output(one, first)
+    b = resolve_output(two, second)
+    assert a != b and Path(b[0]).name == Path(a[0]).name + second[12:16]
+    assert resolve_output(one, first) == a and resolve_output(two, second) == b
+    # Even when the shorter directory disappears later, the second job keeps the
+    # directory it already owns instead of starting a new one.
+    (Path(a[0]) / OUTPUT_MARKER).unlink()
+    Path(a[0]).rmdir()
+    assert resolve_output(two, second) == b
+    assert not Path(a[0]).exists()
+
+
+def test_longer_id_forms_respect_the_path_budget(tmp_path: Path) -> None:
+    parent = "/out/" + "p" * 150
+    names = []
+    for length in ID_LENGTHS:
+        try:
+            names.append(
+                job_output_name(
+                    "/in/" + "x" * 90 + ".wav", STAMP, JOB, parent=parent, id_length=length
+                )
+            )
+        except ValueError as error:
+            assert str(error) == "output_path_too_long"
+            break
+    assert names and len(set(names)) == len(names)
+    for name in names:
+        assert len(parent) + 1 + len(name) + 1 + len(name) + len(".json") <= PATH_BUDGET
+    with pytest.raises(ValueError, match="output_name_invalid"):
+        job_output_name("/in/a.wav", STAMP, JOB, parent="/out", id_length=10)
 
 
 # --------------------------------------------------------------- real B3 + core export

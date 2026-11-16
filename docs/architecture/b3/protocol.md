@@ -90,6 +90,12 @@ schemaで拒否され、fail closed）。
 用語集から実行用`Config.asr.initial_prompt`を作る。`b2-verbatim`で用語集があれば`unsupported_setting`、未知の版はschemaで拒否。
 このfieldを知らない旧workerは`extra="forbid"`で要求全体を拒否する。詳細は[../backend/engine-adapters.md](../backend/engine-adapters.md) §7。
 
+## `output_stem`（0.1.54）
+
+`WorkerExecutionContext.output_stem`（省略可）は、B7 dispatcherが確保したジョブ専用ディレクトリの名前。あるときB3は
+`base_config.general.output_dir`の**名前がこのstemと完全一致**することを要求し（違えば`invalid_context`）、coreの`export_all`へ
+明示stemとして渡す。無いときは従来どおりcoreの命名（入力stem＋連番、上書きなし）。詳細は[../b7/output-directory.md](../b7/output-directory.md)。
+
 ## handshake・順序
 
 最初はsequence=0のhello、能力single/cancelとprofileを返す。要求前なのでhelloの3 IDはnull。
