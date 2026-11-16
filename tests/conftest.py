@@ -32,6 +32,7 @@ def worker_request(tmp_path: Path) -> WorkerRequest:
             },
             asr_backend="faster-whisper",
             asr_model="large-v3-turbo",
+            asr_model_dir=str(tmp_path / "models" / "large-v3-turbo"),
             asr_device="cpu",
             diarization_device="cpu",
             compute_type="int8",

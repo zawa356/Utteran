@@ -1004,7 +1004,12 @@ def test_supported_path_succeeds_with_launch_journal(env: Env) -> None:
     assert done.result.legacy_core_job_id == "0123456789abcdef" and done.result.artifact_count == 1
     assert done.attempts[0].launch == "confirmed" and done.attempts[0].state == "released"
     request = runner.requests[0]
-    assert request.context.asr_model == str(env.model) and request.job_id == job.id
+    # The ID (checked against the preset by B3) and the frozen local directory (loaded by
+    # B3) are separate fields from the same snapshot (PR #48 P1).
+    spec = env.store.get_snapshot(job.id).resolved
+    assert request.context.asr_model == spec.model_id == "large-v3-turbo"
+    assert request.context.asr_model_dir == spec.worker_model_dir == str(env.model)
+    assert request.job_id == job.id
     assert request.attempt_id == done.attempts[0].id and request.resume and not request.force
     with sqlite3.connect(env.store.path) as db:
         child_pid, child_start = db.execute(

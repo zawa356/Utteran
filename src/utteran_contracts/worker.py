@@ -85,7 +85,13 @@ class WorkerExecutionContext(IPCModel):
     # Core validates every nested key against its own Config model before conversion.
     base_config: dict[str, JsonValue]
     asr_backend: str
+    # Resolved catalogue model ID (B7 ResolvedSpec.model_id). Core compares it with the
+    # preset's settings.asr.model; it is never a path and never loaded directly.
     asr_model: str
+    # Absolute local model directory frozen by B7 (ResolvedSpec.worker_model_dir) for
+    # that same ID. Required: a request without it is refused, never auto-selected.
+    # Private IPC only; not part of any public view, log or diagnostic projection.
+    asr_model_dir: Annotated[str, Field(strict=True, min_length=1, max_length=32768)]
     asr_device: str
     diarization_device: str
     compute_type: str

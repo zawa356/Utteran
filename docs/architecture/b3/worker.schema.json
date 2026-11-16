@@ -1001,6 +1001,12 @@
           "title": "Asr Model",
           "type": "string"
         },
+        "asr_model_dir": {
+          "maxLength": 32768,
+          "minLength": 1,
+          "title": "Asr Model Dir",
+          "type": "string"
+        },
         "base_config": {
           "additionalProperties": {
             "$ref": "#/$defs/JsonValue"
@@ -1039,6 +1045,7 @@
         "base_config",
         "asr_backend",
         "asr_model",
+        "asr_model_dir",
         "asr_device",
         "diarization_device",
         "compute_type"

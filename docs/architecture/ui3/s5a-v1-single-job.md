@@ -80,6 +80,16 @@
 - 修正前は`prepare()`→一覧からAを表示→Aの取消pending中に投入でき、新job Bの受理で表示がBへ切り替わって取消表示が初期化され、Aの未確定取消は再照合の導線を失った（修正前コードで再現）。
 - 解除は既存どおり、同じ対象への再照合の成功か、明示操作「未確定の取消要求を破棄」だけ。`requested`・`done`・`rejected`・`conflict`は投入を妨げない。stale・期限切れは従来どおり拒否。
 
+### 5.3 PR #48 Windows実機受入P1修正（2026-11-16、版据置0.1.51）
+
+- 症状: Windows 11ネイティブWebView2・`--next-ui-v1`・`faster-whisper / large-v3-turbo / fw-cpu / int8`で、B4 smoke `passed`→readiness `ready`→B5 200→B7 201→submit 202までは成立したが、
+  キュー再開後に`queued → running → failed (unsupported_setting)`となり、推論前に失敗して成果物0件（`fc71099`）。
+- 原因: B7 `plan_request`がB3の`context.asr_model`（モデルID用）へ`worker_model_dir`（絶対パス）を渡し、B3 `adapt_settings`がそれをPresetのカタログIDと比較して`context_conflict`。
+  合成CIでは`plan_request`の返り値と`adapt_settings`単体を別々に試験しており、B7のsnapshotをB3へ実際に通す試験がなかった。
+- 修正: private IPCに必須の`asr_model_dir`を追加し、ID（Preset比較用）とローカルディレクトリ（ロード用）を同じ凍結snapshotから別々に渡す。B3はIDを比較したあと、runtimeの明示境界で実行用`Config.asr.model`をディレクトリにする。
+  不変条件・拒否codeは[B3 protocol](../b3/protocol.md)「モデルID/ディレクトリ」。UI・公開API・B5/B7 DTO・DB・Preset/Policyは無変更。
+- **Cloudで証明した範囲**: B7 snapshot→B3実行用Configまでの縦断（合成モデルファイル・SyntheticASR）。**Windows実機の`succeeded`と3形式の成果物は未確認**（後続のWindows再受入で確認）。
+
 ## 6. 対応範囲と拒否
 
 - 実行できるのはB7/B3の`fw-cpu`・`fw-cuda`、ローカル完全モデル、話者分離なし、用語集・追加引数なし。Presetにworker非対応設定があれば事前に警告し、サーバーの422/409を理由付きで表示する。
@@ -89,7 +99,7 @@
 ## 7. 互換性
 
 - 既定GUI・`--next-ui`: API・画面・S3-A/B1のテストは不変（Playwright `legacy` projectで既存52件＋mode試験）。`--next-ui`は`legacy`のmetaだけを受け取り、`/api/v1`呼出し0件（E2E）。
-- API DTO・JSON Schema・DB layout・worker protocol・CLIは**無変更**。backendの変更は`next_ui.py`のmode placeholderと`create_app`のmode決定だけ。依存追加なし。
+- 公開API DTO・公開JSON Schema・DB layout・CLIは**無変更**。private B3 worker IPCは§5.3のP1修正で`WorkerExecutionContext.asr_model_dir`（必須）を追加した（protocol v1、schema再生成）。backendの変更は`next_ui.py`のmode placeholderと`create_app`のmode決定だけ。依存追加なし。
 - G-09の暫定marker・OSロック・旧投入409・CSP・セッション境界は不変。
 
 ## 8. 試験
@@ -100,6 +110,7 @@
 | Vitest | `src/domain/v1/singleJob.test.ts`（起動時書込み0、二段階の呼出順・key分離、stale、effective不一致、409、5xx/network/壊れた202→unknown・自動再送0・同key/body再照合で同一job、二重クリック、期限切れ、queue CAS 412、協調取消、古いrevisionへ戻らない、dispose、行override拒否、一覧からの追跡、legacyモードでv1呼出し0・v1モードで旧start閉鎖）、`library.test.ts`（mode meta、override/effective、Preset/Policy body、revision凍結・新revision非自動採用・消失、作成unknown→同key再照合、422 issue、ETag不一致、paging上限） |
 | PR #48追加P2 | `singleJob.review.test.ts`に5件（取消pending/unknown中は`canSubmit()`がfalseで、`submit()`直呼びでも`POST /api/v1/jobs`の増分0・job数不変・表示/epoch/intent不変、unknown後の再照合はAのみ、破棄または再照合成功で解除、未確定でない取消状態は妨げない・期限切れは拒否）。E2E 1件（Normal/Expertで「投入」が無効、POST 0件、破棄で解除） |
 | PR #48修正 | `src/domain/v1/singleJob.review.test.ts`（16件: A取消pending中の切替拒否・不明後の再照合はAへ同key/If-Match/bodyのみでBへのPOST 0件・同時再照合1回、同revisionのA/Bで破棄後のB取消は新key、取消中の新規取消拒否、応答ガード、別IDの応答で表示不変、4xx/dispose後無害、0/20/100/101/201/450件で真の最新20件と全cursor取得、後続ページ409/503/通信失敗・循環cursor・revision変化・重複・ページ上限、古い読込の無効化、一覧からの追跡ID）。E2E: 105件で後続cursorのGETと最新jobの先頭表示 |
+| PR #48 Windows P1 | `tests/test_b7_b3_model_route.py`（23件: B7 admission→`plan_request`→IPC framing→`explicit_config`→`offline_preflight`、実FastAPIでPreset→validation→resolution→202→queue再開→B3 `execute`→`succeeded`・srt/json/md、拒否系、同一snapshotの再試行で同じstage hash。修正前19件Red）、`test_b7_jobs.py`の契約試験をID・dirの両方へ修正 |
 | E2E（実FastAPI） | `e2e/transcription-s5a.v1.spec.ts`（`v1` project: 空ストア→明示作成、Origin/cookie実経路、paused→明示再開→完了、stale、409/422拒否、500で応答喪失→同key/body再照合で同一job、協調取消、Expert共通・一括無効、再読込で永続一覧、401/403）、`e2e/api-mode.spec.ts`（`legacy` project: meta=legacy、URL/storageで昇格しない、`/api/v1`呼出し0） |
 
 **非対象（明記）:** Windows WebView2実機（IME・D&D・DPI・CSP）、実GPU/実モデル推論、実B4 smoke証拠でのready、S5-B（原子的batch）、S3-B2（複数ジョブ監視・キュー管理）。CI成功を実機受入とは呼ばない。

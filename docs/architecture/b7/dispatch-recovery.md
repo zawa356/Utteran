@@ -7,7 +7,10 @@
    ready・fingerprint・モデルdir。失敗→`blocked`（`block_reason`: input_changed / input_unavailable /
    output_unavailable / candidate_changed / candidate_unavailable / resolver_unavailable /
    worker_plan_unsupported）。新候補へ切り替えない。
-3. `plan_request`の事前検証（B3限定構成以外は`worker_plan_unsupported`でblocked）。
+3. `plan_request`の事前検証（B3限定構成以外は`worker_plan_unsupported`でblocked）。凍結snapshotから
+   `context.asr_model = ResolvedSpec.model_id`（presetと比較するカタログID）と
+   `context.asr_model_dir = ResolvedSpec.worker_model_dir`（ロードする絶対ローカルディレクトリ）を
+   **別fieldで**渡す。経路・設定を決め直さない（PR #48 P1。詳細はB3 [protocol.md](../b3/protocol.md)）。
 4. `begin_attempt`: lease・fencing token・attempt(`launch=intended`)を**commit**。
 5. `WorkerClient.execute(..., on_spawn=...)`: Popen直後に`on_spawn`で子PIDと**OS start identity**を
    `record_launch(confirmed)`。commit→spawnの間にcrashすれば`intended`が残る。spawn失敗は
