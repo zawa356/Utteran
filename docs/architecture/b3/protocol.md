@@ -16,6 +16,18 @@ stdin/stdoutはUTF-8 JSONL。LFを含めてrequest/controlは16MiB、eventは1Mi
 受信bufferは最大32 eventのqueueと各record上限で拘束する。stderrは8192byte単位で同時に
 読み捨て、保持するmodule欠落検知windowも512byte以下。raw内容を診断へ転送しない。
 
+worker側のstdio（`utteran.worker.main`）: protocol出力はstdoutの私有dup fdだけが持ち、fd 1/2はNULへ。
+protocol入力も同様に**stdinの私有dup fd**（非継承）だけが読み、プロセスの標準入力（fd 0、Windowsでは
+`STD_INPUT_HANDLE`）はcore/backendのimport前にNULへ差し替える。PR #48のWindows再受入で、
+control threadがstdinパイプを同期read中だと、main threadのnumpy拡張moduleのネイティブ初期化
+（`numpy/_core/multiarray.py`の`_multiarray_umath`生成）が戻らず、readが完了するまで停止した
+（windows-latestで再現。実worker `-I -m utteran.worker`でも`progress asr`後に停止）。
+標準入力をNULにした構成と「thread開始前のnumpy事前import」の両方で解消を確認し、前者を採用した
+（numpyに限らずctranslate2/torch等の後続ネイティブ初期化にも効き、hello・cancel応答を遅らせない）。
+OS内部のどの層が待つのか（CRT/ローダー/パイプI/O）は特定していない。私有入力は`close()`しない
+（daemonのcontrol threadがreadline中にbuffer lockを保持するため。終了は従来どおり`os._exit`）。
+wire形式・event順序・timeoutは変更なし。
+
 全wire envelopeで`schema_version:1`と`protocol_version:1`を必須とする。
 Python構築時は既定1を提供するが、framingは欠落・bool・文字列も拒否する。
 JSON Schemaでもwire版をrequiredにしている。B1 ProcessingSettingsのschema版も検証する。

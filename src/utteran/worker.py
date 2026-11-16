@@ -102,6 +102,28 @@ def serve(source: BinaryIO, output: BinaryIO, profile: str) -> int:
         return 1
 
 
+def _point_std_input_at_null() -> None:
+    """Make fd 0 (and on Windows STD_INPUT_HANDLE) the null device.
+
+    Only the worker's private protocol input reads the request/cancel pipe. On Windows a
+    synchronous read pending on the process's standard-input pipe (the control thread)
+    blocked the native initialisation of numpy's extension module in the main thread
+    until the read completed (PR #48 re-acceptance; reproduced on windows-latest).
+    Native libraries that look at the inherited standard input now see NUL instead.
+    """
+    with open(os.devnull, "rb") as null:
+        os.dup2(null.fileno(), 0)
+    if sys.platform == "win32":
+        import ctypes
+        import msvcrt
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.SetStdHandle.argtypes = (ctypes.c_uint32, ctypes.c_void_p)
+        kernel32.SetStdHandle.restype = ctypes.c_int
+        if not kernel32.SetStdHandle(ctypes.c_uint32(-10 & 0xFFFFFFFF), msvcrt.get_osfhandle(0)):
+            raise OSError(ctypes.get_last_error(), "SetStdHandle failed")
+
+
 def main() -> int:
     # A separate fd owns protocol output. Discard ALL backend/native stdout/stderr;
     # raw third-party diagnostics are not safe to redact by regex after the fact.
@@ -109,6 +131,14 @@ def main() -> int:
     with open(os.devnull, "wb") as sink:
         os.dup2(sink.fileno(), 1)
         os.dup2(sink.fileno(), 2)
+    # Likewise a separate (non-inheritable) fd owns protocol input; the process standard
+    # input becomes NUL before any core/backend import, so children and native code can
+    # neither inherit nor query the request/cancel pipe.
+    protocol_in = os.dup(sys.stdin.fileno())
+    try:
+        _point_std_input_at_null()
+    except OSError:
+        return 1
     logging.disable(sys.maxsize)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--protocol", type=int, required=True)
@@ -130,9 +160,13 @@ def main() -> int:
             del os.environ[key]
     # Defense in depth for the audited local-only runtime, before SDK imports.
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
+    # Never closed here: the daemon control thread may still hold the reader's lock while
+    # blocked in readline, so close() would deadlock. os._exit ends the process instead
+    # (as it did for sys.stdin.buffer).
+    source = os.fdopen(protocol_in, "rb")
     with os.fdopen(protocol_fd, "wb", buffering=0) as output:
         try:
-            return serve(sys.stdin.buffer, output, profile)
+            return serve(source, output, profile)
         except (BrokenPipeError, OSError, ValidationError):
             return 1
 
