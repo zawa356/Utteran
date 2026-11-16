@@ -7,11 +7,12 @@ permissions:
 jobs:
   probe:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           python-version: "3.12"
-      - run: uv sync --extra dev --extra gui --locked
-      - run: uv run --no-sync python probe/stdin_probe.py
+      - run: uv sync --extra cpu --extra dev --extra gui --locked
+      - run: choco install ffmpeg -y --no-progress
+      - run: uv run --no-sync python probe/stdin_probe2.py
