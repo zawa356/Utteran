@@ -14,8 +14,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --extra dev --extra gui --locked
-      # Diagnostic only: the pre-fix code (b6c1a28) is expected to fail here.
-      - run: uv run --no-sync pytest tests/test_worker_stdin_isolation.py -rfEs -p no:cacheprovider --durations=0
+      # Diagnostic only: now with the fix (a5e39dd) applied.
+      - run: uv run --no-sync pytest tests/test_worker_stdin_isolation.py tests/test_ambient_env_isolation.py -rfEs -p no:cacheprovider --durations=0
   windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 40
