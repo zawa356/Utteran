@@ -278,7 +278,11 @@ def test_atomic_leaves_false_auto_and_empty(examples):
     assert a.effective_settings.asr.backend == "auto" and a.effective_settings.asr.model == "auto"
     assert a.effective_settings.asr.vad.enabled is False
     assert a.effective_settings.output.formats == ("txt",)
-    assert a.worker_support == "unverified" and b.worker_support == "unsupported"
+    # 0.1.53: a glossary is compiled into the prompt for worker-executed engines, so it
+    # no longer makes a file worker-unsupported; it keeps the quality warning.
+    assert a.worker_support == "unverified" and b.worker_support == "unverified"
+    assert "/asr/glossary" not in {w.path for w in b.warnings if w.code == "worker_unsupported"}
+    assert "prompt_quality_unverified" in {w.code for w in b.warnings}
 
 
 @pytest.mark.parametrize(

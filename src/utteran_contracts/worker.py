@@ -96,6 +96,9 @@ class WorkerExecutionContext(IPCModel):
     diarization_device: str
     compute_type: str
     native_variant: Literal["cpu", "openvino", "vulkan", "openvino_vulkan"] | None = None
+    # Prompt compiler frozen in the job snapshot (utteran_contracts.prompting). A worker
+    # that does not know the field or the value refuses the request; it never guesses.
+    prompt_compiler: PromptCompiler = "b2-verbatim"
 
 
 class Identified(Envelope):
@@ -178,8 +181,10 @@ class WorkerCancelAcknowledged(Event):
     type: Literal["cancel_acknowledged"] = "cancel_acknowledged"
 
 
+from utteran_contracts.prompting import PromptCompiler  # noqa: E402
 from utteran_contracts.settings import ProcessingSettings  # noqa: E402
 
+WorkerExecutionContext.model_rebuild()
 WorkerRequest.model_rebuild()
 WorkerEvent = Annotated[
     WorkerHello

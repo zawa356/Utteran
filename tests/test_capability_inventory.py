@@ -443,7 +443,15 @@ def test_allowed_profiles_memory_limits_and_deadlines(settings) -> None:
         ("asr", dict(faster_whisper=dict(compute_type="float32")), "compute_conflict"),
         ("asr", dict(whisper_cpp=dict(threads=4)), "inactive_backend_settings"),
         ("asr", dict(word_timestamps="never"), "unsupported_setting"),
-        ("asr", dict(glossary=["test"]), "unsupported_setting"),
+        (
+            "asr",
+            dict(
+                extra_arguments=dict(
+                    backend="whisper-cpp", tokens=["--flag"], allow_unverified=True
+                )
+            ),
+            "unsupported_setting",
+        ),
     ],
 )
 def test_hard_setting_filters(settings, section, updates, code) -> None:

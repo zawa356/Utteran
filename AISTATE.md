@@ -1,5 +1,14 @@
 # AI 作業状態
 
+## 現在地（2026-11-16、束A2 用語集/Promptコンパイラ・エンジン能力API、0.1.53・未リリース、A1に積んだDraft PR）
+
+- ブランチ`claude/a2-glossary-prompt-compiler`（基点＝束A1 `claude/eloquent-ramanujan-hy71xu`のHEAD `b4f9214`。A1のPR #49が未mergeのためstack。指示書§9の裁量で作成）。通常commit・push、作者`zawa356`。
+- 内容: `utteran_contracts.prompting`（版付きコンパイラ`glossary-bias-1`）、fwの宣言`glossary=prompt_bias`、snapshotの`prompt_compiler_version`をprivate IPC `prompt_compiler`でB3へ、
+  B5警告`glossary_may_be_truncated`、公開read-only `GET /api/v1/engines`。core `Config`のfield追加なし（用語集なしならstage hash不変）。詳細[engine-adapters §7](docs/architecture/backend/engine-adapters.md)。
+- 試験: 新規`tests/test_prompt_compiler.py` 18件、既存4件を改訂（用語集→`extra_arguments`で拒否検証を維持、変更履歴に明記）。数値とCIはPR本文。
+- **未検証**: Windows実機（W-A1 手順6b）、実モデルでの用語集の効果。UIの用語集欄は未実装（束E）。
+- **次の一手**: C1（ジョブ固有出力dir・同一stem命名）→ C2（成果物/履歴API、S5-B UI）→ B1（pyannote worker）。ロードマップ§3。
+
 ## 現在地（2026-11-16、大規模開発プログラム開始・束A1 エンジン宣言表、0.1.52・未リリース、Draft PR）
 
 - 指示書「Fable向け大規模開発・実行指示書（2026-11-16）」を適用。計画・棚卸し・証拠マトリクスは[program/roadmap](docs/architecture/program/roadmap-2026-11-16.md)（束A〜F、依存、PR構成、Windowsゲート）。

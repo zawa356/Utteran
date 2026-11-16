@@ -1,6 +1,6 @@
 # W-A1 — Windows実機受入指示書（束A1: エンジン宣言表と実行契約の一本化）
 
-更新: 2026-11-16 JST（開発版`0.1.52`）。実施者: Codex／専用Windows 11 VM。設計: [../backend/engine-adapters.md](../backend/engine-adapters.md)。
+更新: 2026-11-16 JST（開発版`0.1.52`＝束A1、`0.1.53`＝束A2）。実施者: Codex／専用Windows 11 VM。設計: [../backend/engine-adapters.md](../backend/engine-adapters.md)。
 
 > **本書は手順書であり、結果ではない。** Cloud工程ではWindows実機・WebView2・実モデルを一切実行していない。
 > 実ユーザーのdata root・既定のユーザー領域・既存データのあるディレクトリでは**実行しない**。
@@ -38,9 +38,16 @@ GPUは対象外（VMにGPUが無ければCUDAは**未受入**のまま記録す�
    - 期待: `cancelling → cancelled`、成果物0件、次のジョブを投入できる。
 6. **拒否系**（どれも推論を開始しないこと）:
    - Presetで話者分離を有効にして投入 → validationに`worker_unsupported`（`/diarization/enabled`）、resolutionは4xxで拒否（codeを記録）。
-   - Presetに用語集を1語入れて投入 → `worker_unsupported`（`/asr/glossary`）、resolutionは4xxで拒否（codeを記録）。
+   - **束A1のHEAD（0.1.52）だけ**: Presetに用語集を1語入れて投入 → `worker_unsupported`（`/asr/glossary`）、resolutionは4xxで拒否（codeを記録）。
    - Presetのbackendを`whisper-cpp`にして投入 → `worker_unsupported`（`/asr/backend`）、resolutionは4xxで拒否（codeを記録）。
    - どの場合も旧`POST /api/jobs`が呼ばれない（Network欄で確認）、profileの`faster_whisper`以外が起動しない。
+6b. **束A2のHEAD（0.1.53）だけ — 用語集**（UIに用語集欄はまだ無いので、`PUT /api/v1/presets/{id}`でPresetの`settings.asr.glossary`に
+   合成の用語を3語入れた新revisionを作る。DevToolsの`fetch`か付属の開発ハーネスを使い、tokenや実データは使わない）:
+   - validationに`worker_unsupported`（`/asr/glossary`）が**出ない**こと、`prompt_quality_unverified`が出ること。
+   - 投入して`succeeded`、SRT/JSON/MD各1件。失敗時は固定codeを記録（`unsupported_setting`ならB3が旧版の可能性: profile venvを同じcheckoutから作り直す）。
+   - 用語を約500文字分に増やしたrevisionでvalidationに`glossary_may_be_truncated`が出ること（投入は任意）。
+   - `GET /api/v1/engines`が200で、faster-whisperの`glossary`が`prompt_bias`、他が`unsupported`であること。
+   - **認識結果への効果は合否に含めない**（biasであり保証しない）。観測した場合は所見として書く。
 7. GUIを閉じ、既定起動（引数なし）で旧GUIが従来どおり開き、専用root以外にcontrol DBが作られていないことを確認。
 
 ## 3. 報告フォーマット
@@ -51,7 +58,8 @@ HEAD: <sha>            OS/ビルド: <Windows 11 ...>     GPU: なし/あり(<�
 手順2 smoke: passed / failed(<code>)     ready: yes / no(<reason_code>)
 手順4 正常系: succeeded / <status>(<error code>)   成果物: srt=<n> json=<n> md=<n>   履歴永続: yes/no
 手順5 取消: cancelled / <status>
-手順6 拒否: 話者分離=<code>  用語集=<code>  whisper-cpp=<code>   旧API呼出: なし/あり
+手順6 拒否: 話者分離=<code>  用語集(0.1.52のみ)=<code>  whisper-cpp=<code>   旧API呼出: なし/あり
+手順6b 用語集(0.1.53): validation警告=<codes>  job=<status>(<error code>)  truncated警告: 出た/出ない  /engines: 200/<status>
 手順7 既定起動: 正常 / 異常(<概要>)
 未実施・未観測: <CUDA 等>
 ```

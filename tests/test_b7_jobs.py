@@ -676,7 +676,16 @@ def test_resolution_replay_is_keyed(env: Env) -> None:
     "updates, status",
     [
         (lambda s: s["diarization"].update(enabled=True), 422),
-        (lambda s: s["asr"].update(glossary=["term"]), 422),
+        (
+            lambda s: s["asr"].update(
+                extra_arguments={
+                    "backend": "whisper-cpp",
+                    "tokens": ["--flag"],
+                    "allow_unverified": True,
+                }
+            ),
+            422,
+        ),
         (
             lambda s: (
                 s["asr"].update(backend="whisper-cpp", faster_whisper=None)

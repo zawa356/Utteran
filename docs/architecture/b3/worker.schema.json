@@ -1039,6 +1039,15 @@
           ],
           "default": null,
           "title": "Native Variant"
+        },
+        "prompt_compiler": {
+          "default": "b2-verbatim",
+          "enum": [
+            "b2-verbatim",
+            "glossary-bias-1"
+          ],
+          "title": "Prompt Compiler",
+          "type": "string"
         }
       },
       "required": [

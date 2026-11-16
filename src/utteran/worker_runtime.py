@@ -97,6 +97,7 @@ def explicit_config(request: WorkerRequest) -> Config:
                 ctx.diarization_device,
                 ctx.compute_type,
                 ctx.native_variant,
+                ctx.prompt_compiler,
             ),
         ).config
     except (ValidationError, ConfigAdaptationError, ValueError):

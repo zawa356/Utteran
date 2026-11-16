@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from utteran_contracts.editing import EditingSession, SettingOverride, leaf_adapters
 from utteran_contracts.engines import worker_engines
 from utteran_contracts.preview import Provenance, ValidatedFile, ValidationResult
+from utteran_contracts.prompting import bias_may_be_truncated
 from utteran_contracts.settings import Issue, Policy, Preset, ProcessingSettings
 from utteran_settings.errors import SettingsError
 
@@ -257,6 +258,8 @@ def preview(session: EditingSession, preset: Preset, policy: Policy) -> Validati
                     warnings.append(issue(path, "worker_unsupported"))
             if asr.glossary or asr.initial_prompt:
                 warnings.append(issue("/asr/initial_prompt", "prompt_quality_unverified"))
+            if bias_may_be_truncated(asr.initial_prompt, asr.glossary):
+                warnings.append(issue("/asr/glossary", "glossary_may_be_truncated"))
         files.append(
             ValidatedFile(
                 client_file_id=file.client_file_id,

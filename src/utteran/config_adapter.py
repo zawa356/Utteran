@@ -12,6 +12,7 @@ from utteran.config import ASRConfig, Config
 from utteran.errors import ConfigurationError
 from utteran_contracts import ProcessingSettings
 from utteran_contracts.engines import get_engine, setting_refusals
+from utteran_contracts.prompting import compile_prompt
 
 
 class ConfigAdaptationError(ConfigurationError):
@@ -38,6 +39,8 @@ class ExecutionContext:
     diarization_device: str
     compute_type: str
     native_variant: Literal["cpu", "openvino", "vulkan", "openvino_vulkan"] | None = None
+    # Frozen prompt compiler version; the default is the pre-glossary behaviour.
+    prompt_compiler: str = "b2-verbatim"
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,17 @@ def adapt_settings(settings: ProcessingSettings, context: ExecutionContext) -> A
     for path, code in refusals:
         _reject(path, code)
 
+    # Glossary and prompt stay separate settings; the engine receives one compiled text.
+    # A compiler version without glossary support refuses the terms (never ignores them).
+    try:
+        prompt = compile_prompt(
+            asr.initial_prompt, asr.glossary, asr.language, compiler=context.prompt_compiler
+        )
+    except ValueError as error:
+        if str(error) == "unsupported_prompt_compiler":
+            _reject("/context/prompt_compiler", "invalid_execution_context")
+        _reject("/asr/glossary")
+
     payload = context.base_config.model_dump(mode="json")
 
     def paths(value: Any, prefix: str = "") -> list[str]:
@@ -121,7 +135,7 @@ def adapt_settings(settings: ProcessingSettings, context: ExecutionContext) -> A
         "device": context.asr_device,
         "compute_type": context.compute_type,
         "language": None if asr.language.strip().casefold() == "auto" else asr.language.strip(),
-        "initial_prompt": asr.initial_prompt,
+        "initial_prompt": prompt,
         "vad_filter": asr.vad.enabled,
         "beam_size": asr.beam_size,
         "word_timestamps": asr.word_timestamps,

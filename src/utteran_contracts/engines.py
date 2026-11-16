@@ -54,7 +54,7 @@ class EngineDeclaration(Contract):
     non_space_word_timestamps: StrictBool
     segment_timestamps: StrictBool
     initial_prompt: Literal["native", "unsupported"]
-    # No engine compiles a glossary yet; "unsupported" must be refused, never ignored.
+    # "prompt_bias": compiled into the prompt text. "unsupported" is refused, never ignored.
     glossary: Literal["unsupported", "prompt_bias"]
     vad_threshold: StrictBool
     condition_on_previous_text: StrictBool
@@ -111,7 +111,9 @@ ENGINE_DECLARATIONS: tuple[EngineDeclaration, ...] = (
         non_space_word_timestamps=True,
         segment_timestamps=True,
         initial_prompt="native",
-        glossary="unsupported",
+        # Compiled into leading prompt text (utteran_contracts.prompting); a bias, not
+        # a guarantee.
+        glossary="prompt_bias",
         vad_threshold=False,
         condition_on_previous_text=True,
         extra_arguments=False,
