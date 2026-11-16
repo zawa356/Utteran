@@ -94,6 +94,15 @@ ENGINE_DECLARATIONS ──► core recipes（導出）・asr registry（非ス�
 `offline_preflight`までエンジン名・native variant・モデルID・凍結ディレクトリが運ばれることを確認する
 （dispatcher・workerの編集なし）。出荷される表ではwhisper.cppは閉じたままである。
 
+## 5.1 レビュー追補（2026-11-16、版0.1.52据置）と未解決
+
+- **修正**: openvino-genaiの`vad_threshold`宣言を`True`→`False`にした。coreのGenAI adapterはVAD設定を一切読まないため、
+  宣言が「受け付ける」と言うと値が黙って捨てられる。0.1.51のB4 evaluatorもこの組合せを通していたので、束A1で**唯一の意図した挙動変更**
+  （GenAI候補＋`vad.threshold`指定が`unsupported_setting`になる）。GenAIはworker・構造化adapterとも閉じているため、v1の実行結果は変わらない。
+- **未解決（GenAI経路を開く束B4で決める）**: `vad.enabled`は必須のboolで、GenAIでは`true`でも効果が無い。拒否にすると既定Presetが
+  GenAIで使えなくなるため、今は拒否していない。経路を開くときに「GenAI選択時はVAD無効を明示させる」か「宣言にVAD非対応を追加して画面に表示する」かを決める。
+- **downgrade**: 束A1はsnapshot・DB・IPCのwireを変えていないので、0.1.51へ戻しても読める。
+
 ## 6. 変えていない境界
 
 - GUIプロセスはcore `utteran`をimportしない。`utteran_contracts`は`utteran`・`utteran_gui`・推論ライブラリをimportしない。
