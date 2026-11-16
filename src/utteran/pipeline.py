@@ -152,8 +152,13 @@ def run_pipeline(
     resume: bool = True,
     force: bool = False,
     force_unlock: bool = False,
+    output_stem: str | None = None,
 ) -> PipelineOutcome:
-    """Run or resume all stages for one audio/video input."""
+    """Run or resume all stages for one audio/video input.
+
+    ``output_stem`` is not a setting (it is deliberately outside Config and the stage
+    hashes): the v1 worker passes the exact artifact stem of a per-job output directory.
+    """
     validate_asr_configuration(config)
     _validate_input(input_path)
     if backend_pool is not None and (asr_backend is not None or diarization_backend is not None):
@@ -208,6 +213,7 @@ def run_pipeline(
                 selected_calibration_store,
                 progress,
                 cancel,
+                output_stem,
             )
             output_paths = [Path(path) for path in job.manifest.stages["export"].artifacts]
             logging.getLogger(__name__).info("ジョブ完了: %s", job.manifest.job_id)
@@ -236,6 +242,7 @@ def _run_stages(
     calibration_store: CalibrationStore,
     progress: ProgressCallback | None,
     cancel: CancelToken | None,
+    output_stem: str | None = None,
 ) -> PipelineResult:
     """Execute pending stages, persisting every transition and artifact."""
     transcription: TranscriptionResult | None = None
@@ -371,7 +378,7 @@ def _run_stages(
                 stage_durations,
                 cancel,
                 progress,
-                lambda: _export_result(result, config, progress),
+                lambda: _export_result(result, config, progress, output_stem),
                 lambda value: cast(list[Path], value),
             ),
         )
@@ -555,6 +562,7 @@ def _export_result(
     result: PipelineResult,
     config: Config,
     progress: ProgressCallback | None,
+    output_stem: str | None = None,
 ) -> list[Path]:
     """Export a merged result using only backend-neutral common models."""
     if progress is not None:
@@ -569,6 +577,7 @@ def _export_result(
             srt_bom=config.output.srt_bom,
             newline=config.output.newline,
         ),
+        stem=output_stem,
     )
     if progress is not None:
         progress(ProgressEvent("export", 1.0, 1.0, "出力が完了しました"))

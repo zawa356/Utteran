@@ -154,10 +154,8 @@ def test_editing_the_preset_later_does_not_change_a_submitted_job(tmp_path: Path
     assert env.store.get_snapshot(job.id).to_wire() == before
 
 
-def _plan(snapshot: JobSnapshot, tmp: Path) -> WorkerRequest:
-    return plan_request(
-        snapshot, job_id="job_" + "0" * 32, attempt_id="att_" + "1" * 32, job_dir=tmp / "jobs"
-    )
+def _plan(snapshot: JobSnapshot, tmp: Path, job_id: str = "job_" + "0" * 32) -> WorkerRequest:
+    return plan_request(snapshot, job_id=job_id, attempt_id="att_" + "1" * 32, job_dir=tmp / "jobs")
 
 
 def test_a_snapshot_frozen_before_glossary_support_keeps_its_meaning(
@@ -170,7 +168,7 @@ def test_a_snapshot_frozen_before_glossary_support_keeps_its_meaning(
     data = snapshot.to_wire()
     data["resolved"]["prompt_compiler_version"] = "b2-verbatim"
     old = JobSnapshot.model_validate(data)
-    request = over_ipc(_plan(old, tmp_path))
+    request = over_ipc(_plan(old, tmp_path, current.job_id))
     assert request.context.prompt_compiler == "b2-verbatim"
     assert explicit_config(request) == explicit_config(current)
     assert explicit_config(request).asr.initial_prompt == SENTINEL

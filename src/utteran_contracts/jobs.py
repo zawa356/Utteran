@@ -9,7 +9,7 @@ built field by field from an explicit allowlist.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import AwareDatetime, Field, StrictBool, StrictInt, StrictStr
 
@@ -24,6 +24,7 @@ from utteran_contracts.control import (
     Status,
 )
 from utteran_contracts.editing import EditingSession, FileInput, SettingOverride
+from utteran_contracts.output_naming import STAMP_PATTERN
 from utteran_contracts.preview import Provenance
 from utteran_contracts.prompting import CURRENT_PROMPT_COMPILER, PromptCompiler
 from utteran_contracts.settings import Issue, Policy, ProcessingSettings, Ref
@@ -158,6 +159,7 @@ class ResolvedSpec(VersionedContract):
 class JobSnapshot(VersionedContract):
     """Phase A JobSnapshot plus provenance. Immutable once committed (DB trigger)."""
 
+    nonnullable_optional: ClassVar[frozenset[str]] = frozenset(["output_stamp"])
     created_at: AwareDatetime
     preset_ref: Ref
     policy_ref: Ref
@@ -171,6 +173,10 @@ class JobSnapshot(VersionedContract):
     provenance: tuple[Provenance, ...]
     resolved: ResolvedSpec
     resume_mode: ResumeMode
+    # Local submission time frozen for the per-job output directory name
+    # (utteran_contracts.output_naming). Absent on snapshots written before 0.1.54:
+    # those keep writing straight into file.output_dir, as they were accepted.
+    output_stamp: Annotated[StrictStr, Field(pattern=STAMP_PATTERN)] | None = None
 
 
 # --------------------------------------------------------------------------- requests

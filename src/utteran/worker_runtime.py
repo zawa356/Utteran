@@ -115,6 +115,11 @@ def explicit_config(request: WorkerRequest) -> Config:
     for path in (Path(request.input_path), cfg.general.output_dir, cfg.general.job_dir):
         if path is None or not path.is_absolute():
             raise ProtocolError(WorkerErrorCode.INVALID_CONTEXT)
+    # A named output is only ever the job's own directory of that exact name, so an
+    # explicit stem can never be used to overwrite files in a shared directory.
+    stem = ctx.output_stem
+    if stem is not None and (stem != stem.strip(" .") or cfg.general.output_dir.name != stem):
+        raise ProtocolError(WorkerErrorCode.INVALID_CONTEXT)
     # adapt_settings normalized cfg.asr.model to the checked ID; execution loads only the
     # frozen local directory (offline_preflight then verifies it on disk).
     return bind_local_model(cfg, model_dir)
@@ -199,6 +204,7 @@ def execute(
         token_provider=EnvironmentTokenProvider(),
         resume=request.resume,
         force=request.force,
+        output_stem=request.context.output_stem,
     )
     # Execution finished and core's finally blocks released locks before completion.
     if not outcome.job_id or not outcome.output_paths:

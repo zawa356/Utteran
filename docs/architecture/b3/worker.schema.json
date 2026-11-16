@@ -1040,6 +1040,19 @@
           "default": null,
           "title": "Native Variant"
         },
+        "output_stem": {
+          "anyOf": [
+            {
+              "pattern": "^[^<>:\"/\\\\|?*\\x00-\\x1f\\x7f]{1,200}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Stem"
+        },
         "prompt_compiler": {
           "default": "b2-verbatim",
           "enum": [

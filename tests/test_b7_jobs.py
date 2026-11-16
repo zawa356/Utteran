@@ -1313,7 +1313,11 @@ def test_plan_request_refuses_unsupported_snapshots(env: Env) -> None:
     request = plan_request(
         snapshot, job_id=job.id, attempt_id="att_" + "1" * 32, job_dir=env.tmp / "jobs"
     )
-    assert request.context.base_config["general"]["output_dir"] == str(env.output)
+    # 0.1.54: the job's own directory below the user's output directory.
+    planned_dir = Path(request.context.base_config["general"]["output_dir"])
+    assert planned_dir.parent == env.output
+    assert planned_dir.name == f"a_{snapshot.output_stamp}_{job.id[4:12]}"
+    assert request.context.output_stem == planned_dir.name
     data = snapshot.to_wire()
     data["resolved"]["recipe_id"] = "wc-cpu"
     with pytest.raises(Exception, match="worker_plan_unsupported"):

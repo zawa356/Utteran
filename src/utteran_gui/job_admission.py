@@ -45,6 +45,7 @@ from utteran_contracts.jobs import (
     ResolvedSpec,
     spec_view,
 )
+from utteran_contracts.output_naming import job_output_name
 from utteran_contracts.preview import Provenance, ValidatedFile
 from utteran_contracts.settings import Issue, Policy, Preset, ProcessingSettings
 from utteran_control.errors import ControlError, ErrorCode
@@ -713,6 +714,18 @@ class JobAdmission:
             if stale:
                 raise AdmissionError("resolution_stale", 409, stale)
             created = self.clock()
+            # Submission time in local wall-clock form, frozen once for the whole batch:
+            # every attempt of a job derives the same output directory name from it.
+            stamp = created.astimezone().strftime("%Y%m%d-%H%M%S")
+            for index, file in enumerate(editing.files):
+                try:
+                    job_output_name(
+                        file.input_path, stamp, "job_" + "0" * 32, parent=file.output_dir
+                    )
+                except ValueError:
+                    stale.append(_issue(f"/files/{index}/output_dir", "output_path_too_long"))
+            if stale:
+                raise AdmissionError("admission_invalid", 422, stale)
             snapshots = [
                 JobSnapshot(
                     schema_version=1,
@@ -728,6 +741,7 @@ class JobAdmission:
                     provenance=frozen.provenance,
                     resolved=frozen.spec,
                     resume_mode=submit.resume_mode,
+                    output_stamp=stamp,
                 )
                 for file, frozen in zip(editing.files, record.files, strict=True)
             ]

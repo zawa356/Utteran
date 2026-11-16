@@ -21,6 +21,7 @@ from typing import Any, Protocol
 from utteran_contracts.control import OwnerIdentity, ProcessIdentity
 from utteran_contracts.engines import get_engine, worker_refusals
 from utteran_contracts.jobs import BlockReason, JobErrorCode, JobSnapshot
+from utteran_contracts.output_naming import job_output_name
 from utteran_contracts.worker import WorkerCompleted, WorkerRequest
 from utteran_control.errors import ControlError, ErrorCode
 from utteran_control.job_repository import CompletionEvidence, JobControlStore
@@ -33,6 +34,55 @@ _WORKER_CODES = frozenset(JobErrorCode.__args__)  # type: ignore[attr-defined]
 
 class PlanError(Exception):
     pass
+
+
+# Ownership marker of a per-job output directory: one line, the owning job id.
+OUTPUT_MARKER = ".utteran-job"
+
+
+def job_output(snapshot: JobSnapshot, job_id: str) -> tuple[str, str | None]:
+    """(output directory, artifact stem) for a job, from frozen values only.
+
+    Snapshots without ``output_stamp`` (before 0.1.54) keep their accepted meaning:
+    the user's directory itself and core's own file naming (stem ``None``).
+    """
+    parent = snapshot.file.output_dir
+    if snapshot.output_stamp is None:
+        return parent, None
+    try:
+        name = job_output_name(
+            snapshot.input_identity.path, snapshot.output_stamp, job_id, parent=parent
+        )
+    except ValueError:
+        raise PlanError("output_unavailable") from None
+    return str(Path(parent) / name), name
+
+
+def claim_output_dir(directory: Path, job_id: str) -> None:
+    """Create the job's own directory, or prove an existing one already belongs to it.
+
+    Never adopts a directory that has content but no matching marker, so the outputs of
+    another job (or the user's own files) are not overwritten. A retry of the same job
+    finds its marker and continues; partial artifacts stay inside this one directory.
+    """
+    marker = directory / OUTPUT_MARKER
+    try:
+        try:
+            directory.mkdir()
+        except FileExistsError:
+            if directory.is_symlink() or not directory.is_dir():
+                raise PlanError("output_unavailable") from None
+            if marker.is_file() and not marker.is_symlink():
+                if marker.read_text(encoding="utf-8").strip() != job_id:
+                    raise PlanError("output_unavailable") from None
+                return
+            if any(directory.iterdir()):
+                raise PlanError("output_unavailable") from None
+        # New (or empty, e.g. interrupted between mkdir and marker) directory.
+        with marker.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(job_id + "\n")
+    except OSError:
+        raise PlanError("output_unavailable") from None
 
 
 class WorkerRunner(Protocol):
@@ -57,6 +107,7 @@ def plan_request(
     """
     spec = snapshot.resolved
     settings = spec.settings
+    output_dir, output_stem = job_output(snapshot, job_id)
     try:
         engine = get_engine(spec.backend)
     except ValueError:
@@ -84,7 +135,7 @@ def plan_request(
             "context": {
                 "base_config": {
                     "general": {
-                        "output_dir": snapshot.file.output_dir,
+                        "output_dir": output_dir,
                         "job_dir": str(job_dir),
                     }
                 },
@@ -100,6 +151,8 @@ def plan_request(
                 "compute_type": spec.compute_type,
                 # The version frozen with the snapshot, not the current one.
                 "prompt_compiler": spec.prompt_compiler_version,
+                # Artifacts share the job directory's stem; absent for old snapshots.
+                **({} if output_stem is None else {"output_stem": output_stem}),
                 **({} if variant is None else {"native_variant": variant}),
             },
             "resume": snapshot.resume_mode != "fresh",
@@ -240,7 +293,16 @@ class JobDispatcher:
                 plan_request(
                     snapshot, job_id=job_id, attempt_id="att_" + "0" * 32, job_dir=self.job_dir
                 )
-            except (PlanError, ValueError):
+                directory, stem = job_output(snapshot, job_id)
+                if stem is not None:
+                    claim_output_dir(Path(directory), job_id)
+            except PlanError as exc:
+                reason = (
+                    "output_unavailable"
+                    if str(exc) == "output_unavailable"
+                    else "worker_plan_unsupported"
+                )
+            except ValueError:
                 reason = "worker_plan_unsupported"
         if reason is not None:
             with suppress(ControlError):  # changed concurrently: re-evaluated next round

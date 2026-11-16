@@ -87,6 +87,7 @@ def execute_single(
     job_store: JobStore | None = None,
     calibration_store: CalibrationStore | None = None,
     runner: Callable[..., PipelineOutcome] | None = None,
+    output_stem: str | None = None,
 ) -> PipelineOutcome:
     """Return the existing outcome and propagate exceptions unchanged.
 
@@ -110,6 +111,8 @@ def execute_single(
         backend_pool=backend_pool,
         job_store=job_store,
         calibration_store=calibration_store,
+        # Only the v1 worker names artifacts explicitly; legacy callers are unchanged.
+        **({} if output_stem is None else {"output_stem": output_stem}),
     )
 
 
