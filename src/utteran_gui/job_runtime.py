@@ -125,9 +125,11 @@ class JobRuntime:
                 if self.setup is not None:
                     # B8/B9: ManagedControlStore = layout v6 (v4 setup tables, v5 guarded
                     # outbox compaction, v6 diagnostics attempt sidecar). One-way migration.
-                    from utteran_control.events_repository import ManagedControlStore
+                    # 0.1.55: HistoryControlStore = layout v7 (v6 + job_visibility). The
+                    # pre-open backup above keeps the v6 file for a rollback of the build.
+                    from utteran_control.history_repository import HistoryControlStore
 
-                    store_type = ManagedControlStore
+                    store_type = HistoryControlStore
                 store = store_type(self.store_path, clock=self.clock)
                 report = store.recover(self.verifier)
                 compact = getattr(store, "compact_events", None)

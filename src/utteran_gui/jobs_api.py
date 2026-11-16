@@ -18,10 +18,17 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 
 from utteran_contracts.engines import engine_catalog
-from utteran_contracts.jobs import CancelRequest, QueueControl, QueueItemPatch, QueueOrder
+from utteran_contracts.jobs import (
+    CancelRequest,
+    JobVisibilityWrite,
+    QueueControl,
+    QueueItemPatch,
+    QueueOrder,
+)
 from utteran_control.errors import ControlError
 from utteran_control.store import IdempotencyScope
 from utteran_gui.job_admission import AdmissionError, ResolutionTokens
+from utteran_gui.job_artifacts import job_artifacts
 from utteran_gui.job_runtime import JobRuntime, RuntimeStateError
 from utteran_gui.settings_api import _body, _key, _match
 from utteran_settings.errors import SettingsError
@@ -122,8 +129,13 @@ def register_job_routes(app: FastAPI, runtime: JobRuntime) -> None:
     @app.get("/jobs")
     async def list_jobs(request: Request) -> Response:
         cursor = request.query_params.get("cursor")
+        # visible (default on layout v7) | hidden | all. Stores without history
+        # visibility accept only the absent value or "all".
+        visibility = request.query_params.get("visibility")
         viewer = ResolutionTokens.binding(_session(request))  # cursor bound to session
-        result = await call(lambda: parts()[0].list_jobs(cursor, scope=viewer))
+        result = await call(
+            lambda: parts()[0].list_jobs(cursor, scope=viewer, visibility=visibility)
+        )
         return json(200, result.to_wire(), {"ETag": f'"{result.revision}"'})
 
     @app.post("/jobs")
@@ -143,6 +155,49 @@ def register_job_routes(app: FastAPI, runtime: JobRuntime) -> None:
         identifier = job_id_of(job_id)
         job = await call(lambda: parts()[0].get_job(identifier))
         return json(200, job.to_wire(), {"ETag": f'"{job.revision}"'})
+
+    def history(store: Any) -> Any:
+        # Layout v7 only (HistoryControlStore). Older layouts refuse, never pretend.
+        if not hasattr(store, "set_visibility"):
+            raise JobApiError("history_visibility_unavailable", 409)
+        return store
+
+    @app.get("/jobs/{job_id}/visibility")
+    async def get_visibility(job_id: str) -> Response:
+        identifier = job_id_of(job_id)
+        view = await call(lambda: history(parts()[0]).visibility(identifier))
+        return json(200, view.to_wire(), {"ETag": f'"{view.revision}"'})
+
+    @app.put("/jobs/{job_id}/visibility")
+    async def put_visibility(job_id: str, request: Request) -> Response:
+        identifier = job_id_of(job_id)
+
+        async def handler() -> Response:
+            expected = _match(request)  # the visibility revision, not the job revision
+            hidden = JobVisibilityWrite.model_validate(await _body(request)).hidden
+            view = await call(
+                lambda: history(parts()[0]).set_visibility(identifier, expected, hidden)
+            )
+            return json(200, view.to_wire(), {"ETag": f'"{view.revision}"'})
+
+        return await guarded(request, handler)
+
+    @app.get("/jobs/{job_id}/artifacts")
+    async def get_artifacts(job_id: str) -> Response:
+        identifier = job_id_of(job_id)
+
+        def read() -> Any:
+            store = parts()[0]
+            job = store.get_job(identifier)
+            return job_artifacts(
+                store.get_snapshot(identifier),
+                identifier,
+                store.artifact_digests(identifier),
+                attempted=bool(job.attempts),
+            )
+
+        view = await call(read)
+        return json(200, view.to_wire(), {"Cache-Control": "no-store"})
 
     @app.post("/jobs/{job_id}/{action}")
     async def job_action(job_id: str, action: str, request: Request) -> Response:

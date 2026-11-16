@@ -283,6 +283,91 @@
       "title": "Job",
       "type": "object"
     },
+    "JobArtifact": {
+      "additionalProperties": false,
+      "description": "One generated file: format, size and integrity only. No name, no path.",
+      "properties": {
+        "format": {
+          "enum": [
+            "srt",
+            "vtt",
+            "json",
+            "txt",
+            "md"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "integrity": {
+          "enum": [
+            "verified",
+            "changed",
+            "unverified"
+          ],
+          "title": "Integrity",
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "format",
+        "size",
+        "integrity"
+      ],
+      "title": "JobArtifact",
+      "type": "object"
+    },
+    "JobArtifacts": {
+      "additionalProperties": false,
+      "description": "Read-only view of a job's own output directory (0.1.54 layout). Value-free.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/JobArtifact"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "job_id": {
+          "pattern": "^job_[0-9a-f]{32}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "available",
+            "missing",
+            "legacy",
+            "none"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "unexpected_count": {
+          "minimum": 0,
+          "title": "Unexpected Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "state",
+        "items",
+        "unexpected_count"
+      ],
+      "title": "JobArtifacts",
+      "type": "object"
+    },
     "JobAttempt": {
       "additionalProperties": false,
       "properties": {
@@ -571,6 +656,72 @@
         "resume_mode"
       ],
       "title": "JobSubmit",
+      "type": "object"
+    },
+    "JobVisibility": {
+      "additionalProperties": false,
+      "description": "History-list visibility of one job. Separate from the job's own state/revision.",
+      "properties": {
+        "hidden": {
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "job_id": {
+          "pattern": "^job_[0-9a-f]{32}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "updated_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Updated At"
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "hidden",
+        "revision",
+        "updated_at"
+      ],
+      "title": "JobVisibility",
+      "type": "object"
+    },
+    "JobVisibilityWrite": {
+      "additionalProperties": false,
+      "properties": {
+        "hidden": {
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "hidden"
+      ],
+      "title": "JobVisibilityWrite",
       "type": "object"
     },
     "JsonValue": {},
@@ -1201,6 +1352,18 @@
     },
     {
       "$ref": "#/$defs/QueueView"
+    },
+    {
+      "$ref": "#/$defs/JobVisibility"
+    },
+    {
+      "$ref": "#/$defs/JobVisibilityWrite"
+    },
+    {
+      "$ref": "#/$defs/JobArtifact"
+    },
+    {
+      "$ref": "#/$defs/JobArtifacts"
     }
   ],
   "title": "Utteran B7 v1 job and queue wire contracts (opt-in, experimental)"

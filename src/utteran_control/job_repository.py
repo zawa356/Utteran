@@ -336,16 +336,44 @@ class JobControlStore(ControlStore):
             self._row(db, job_id)
             return self._snapshot(db, job_id)
 
-    def _list_mac(self, snapshot_id: str, offset: int, limit: int, scope: str) -> str:
-        # Bound to the snapshot, position, page size, viewer scope and the (only) filter.
-        message = f"jobs:v2:{snapshot_id}:{offset}:{limit}:filter=all:{scope}".encode()
+    def artifact_digests(self, job_id: str) -> frozenset[str] | None:
+        """Private read: sha256 of the artifacts verified at completion; None if none."""
+        with self._transaction(write=False) as db:
+            self._snapshot_row(db, job_id)
+            row = db.execute(
+                "SELECT evidence FROM job_results WHERE operation_id = ?", (job_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            values = json.loads(row[0])["artifacts"]
+            if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+                raise ValueError
+        except (ValueError, KeyError, TypeError):
+            raise ControlError(E.STORE_CORRUPT) from None
+        return frozenset(values)
+
+    def _list_mac(
+        self, snapshot_id: str, offset: int, limit: int, scope: str, selected: str = "all"
+    ) -> str:
+        # Bound to the snapshot, position, page size, viewer scope and the filter.
+        message = f"jobs:v2:{snapshot_id}:{offset}:{limit}:filter={selected}:{scope}".encode()
         return hmac.new(self._secret, message, hashlib.sha256).hexdigest()
 
-    def _list_page(self, snapshot: _ListSnapshot, offset: int, limit: int, scope: str) -> JobList:
+    def _listed_jobs(self, db: sqlite3.Connection, visibility: str | None) -> tuple[str, list[str]]:
+        """(filter name, job ids in list order). Layouts before v7 have no visibility."""
+        if visibility not in (None, "all"):
+            raise ControlError(E.REQUEST_INVALID)
+        rows = db.execute("SELECT operation_id FROM job_snapshots ORDER BY rowid").fetchall()
+        return "all", [row[0] for row in rows]
+
+    def _list_page(
+        self, snapshot: _ListSnapshot, offset: int, limit: int, scope: str, selected: str = "all"
+    ) -> JobList:
         end = offset + limit
         next_cursor = None
         if end < len(snapshot.items):
-            mac = self._list_mac(snapshot.id, end, limit, scope)
+            mac = self._list_mac(snapshot.id, end, limit, scope, selected)
             next_cursor = f"j2.{snapshot.id}.{end}.{limit}.{mac}"
         return JobList(
             schema_version=1,
@@ -355,7 +383,12 @@ class JobControlStore(ControlStore):
         )
 
     def list_jobs(
-        self, cursor: str | None = None, *, limit: int = MAX_LIST, scope: str = ""
+        self,
+        cursor: str | None = None,
+        *,
+        limit: int = MAX_LIST,
+        scope: str = "",
+        visibility: str | None = None,
     ) -> JobList:
         """Point-in-time paging over allowlisted public Job views.
 
@@ -368,20 +401,23 @@ class JobControlStore(ControlStore):
         if type(limit) is not int or not 1 <= limit <= MAX_LIST or not isinstance(scope, str):
             raise ControlError(E.REQUEST_INVALID)
         if cursor is not None:
+            # The filter is part of the cursor's MAC: a cursor is valid only with the
+            # filter it was issued for (None = this layout's default).
+            with self._transaction(write=False) as db:
+                selected = self._listed_jobs(db, visibility)[0]
             match = _CURSOR.fullmatch(cursor) if isinstance(cursor, str) else None
             if match is None:
                 raise ControlError(E.CURSOR_INVALID)
             snapshot_id, offset, page = match.group(1), int(match.group(2)), int(match.group(3))
-            expected = self._list_mac(snapshot_id, offset, page, scope)
+            expected = self._list_mac(snapshot_id, offset, page, scope, selected)
             if page != limit or not hmac.compare_digest(match.group(4), expected):
                 raise ControlError(E.CURSOR_INVALID)
             snapshot = self._lists.get(snapshot_id, scope)
-            return self._list_page(snapshot, offset, limit, scope)
+            return self._list_page(snapshot, offset, limit, scope, selected)
         with self._transaction(write=False) as db:
-            total = db.execute("SELECT count(*) FROM job_snapshots").fetchone()[0]
-            if total > self._lists.max_items:
+            selected, ids = self._listed_jobs(db, visibility)
+            if len(ids) > self._lists.max_items:
                 raise ControlError(E.LIST_SNAPSHOT_TOO_LARGE)  # never truncate silently
-            rows = db.execute("SELECT operation_id FROM job_snapshots ORDER BY rowid").fetchall()
             revision = db.execute(
                 "SELECT value FROM counters WHERE name = 'operations_revision'"
             ).fetchone()[0]
@@ -389,11 +425,11 @@ class JobControlStore(ControlStore):
                 id=secrets.token_hex(16),
                 scope=scope,
                 revision=max(revision, 1),
-                items=tuple(self._job_view(db, row[0]) for row in rows),
+                items=tuple(self._job_view(db, job_id) for job_id in ids),
             )
         if len(snapshot.items) > limit:
             self._lists.put(snapshot)  # only multi-page listings need to be retained
-        return self._list_page(snapshot, 0, limit, scope)
+        return self._list_page(snapshot, 0, limit, scope, selected)
 
     # ------------------------------------------------------------------ replays
 

@@ -1,5 +1,7 @@
 # Phase B7 — Immutable Job Submission / Durable Queue Controls / Safe Dispatch
 
+> 追補（2026-11-16、0.1.55）: 履歴の非表示（layout v7）と成果物の読み取りビューは[history-visibility.md](history-visibility.md)。
+>
 > 追補（2026-11-16、0.1.54）: ジョブ固有の出力ディレクトリと同一stem命名は[output-directory.md](output-directory.md)。
 
 2026-11-02 JST、開発版 **0.1.36（未リリース）**、**Draft・未マージ**。

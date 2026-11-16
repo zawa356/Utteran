@@ -1,6 +1,22 @@
 # 束C2 設計案 — 履歴の非表示・履歴レコードの削除・生成成果物の削除
 
-更新: 2026-11-16 JST。状態: **設計案のみ（未実装）**。DB layoutの変更・削除APIの実装は**owner承認後**。
+更新: 2026-11-16 JST。状態: **owner確定（§0）**。束C2a（読み取り・非表示）は実装済み（`0.1.55`、[b7/history-visibility](../b7/history-visibility.md)）。
+履歴レコードの削除・成果物削除（束C2c）は**未実装**。
+
+## 0. owner確定（2026-11-16）と必須条件
+
+- ②非表示の先行実装とv7 migrationを承認。③は**③-a 墓標化**（行全体の物理削除は必須としない）。
+  ④は未知のファイル・編集済み成果物があれば**既定で拒否**。「完全消去」とは表示せず、backup・WAL等への残存可能性を明記する。
+- 分割: **C2a** 読み取り＋非表示（backend）→ **C2b** 複数ジョブUI（論理ジョブ、キュー全件、履歴、非表示）→ **C2c** 破壊的削除（別PR、十分な試験）。
+- 合成データでのみ実装・試験する。既存の実ユーザーデータは削除・改変しない。
+
+| # | 必須条件 | 対応 |
+|---|---|---|
+| 1 | 非表示テーブルの更新方式とCAS・Outboxの整合性を明確にする | **C2aで実装・文書化**: [b7/history-visibility §2](../b7/history-visibility.md)（付帯表の上書き＋独自revision、冪等PUT、イベントなし） |
+| 2 | 墓標化が既存snapshot schema・retry/rerun・replay・B9同期・履歴参照を壊さない | C2cの設計条件（§3 ③-a）。C2aの試験`dump`比較（既存16表の全行）をC2cでも基準に使い、墓標化後に各読み取り経路が通ることを試験する |
+| 3 | 削除後にprivate DB・WAL・replay等へ残る情報を確認する | C2cで、sentinelを入れたJobを墓標化し、DB本体・WAL・各replay表・backupを走査する試験を必須にする。残るものは文書と画面文言に列挙する |
+| 4 | 成果物削除は所有権と内容を**実行直前にも**検証し、想定外はfail closed | C2cの設計条件（§3 ④）。preflight時と実行時の2回、同じ検証関数を通す。C2aの読み取りビュー（`integrity`・`unexpected_count`）が検証の部品 |
+| 5 | 一方向migrationに備え、backupと旧buildへのdowngrade不可を文書化 | **C2aで文書化・試験**: [b7/history-visibility §3](../b7/history-visibility.md)、[backend/persistence-recovery](../backend/persistence-recovery.md) |
 前提: 束C1（[b7/output-directory](../b7/output-directory.md)）、retryの整理（[retry-semantics](retry-semantics.md)）。
 
 ## 1. 区別する4つの操作
@@ -103,7 +119,7 @@ B8のsetupと同じ「plan → 明示承認 → 実行」の二段階にし、pr
 - 墓標化: 削除後のDBファイルとWALに入力path・Prompt・用語集のsentinelが残らない（backupには残ることを文書と一致させる）。
 - Windows: 開いているファイル（Explorerのプレビュー、エディタ）の削除失敗、長いpath、OneDrive配下 → Codex受入。
 
-## 7. owner判断をお願いしたい点
+## 7. owner判断をお願いした点（2026-11-16に確定済み。§0）
 
 1. ②を先行実装してよいか（追記専用の表を足す**v7 migration**を伴う。既存行は無変更）。
 2. ③は**墓標化（③-a）**でよいか、行の物理削除（③-b）を必須とするか。

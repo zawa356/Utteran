@@ -81,3 +81,21 @@
 `frontend/` で `npm ci`、`npm run prototype`。ブラウザで `http://127.0.0.1:5180/preview.html` を開く。下端のレビュー操作帯から初回起動、モデル変更、同一ファイル2ジョブ、キュー片付け後、出力先混在、用語集120語を再現できる。データはすべてin-memoryで、ページを再読込すると戻る。
 
 画像 `i5-01`〜`i5-16` は `frontend/test-results/ui3-screenshots/` に再生成する未コミットのローカル成果物。詳細は[iteration-5 §17](iteration-5.md#17-動作確認の手順windowsでの目視レビュー用)および[review-and-acceptance](review-and-acceptance.md)を参照。
+
+## 7. 追補（2026-11-16 owner確定）: 内部Job IDと論理ジョブ
+
+§1「Expertの再投入」と[iteration-5 §4.3](iteration-5.md)は「`retry`＝既存snapshotの同一Job（Job IDは同じ）」と書いているが、
+B7の実装（PR #32でmain統合）は「同じsnapshotを持つ**新しいJob**を作り、`retry_of`で元を指す」。ownerは**B7の契約を維持**すると確定した
+（[program/retry-semantics](../program/retry-semantics.md)）。画面設計は次のように読み替える。
+
+| 用語 | 意味 |
+|---|---|
+| **内部Job ID** | B7の`job_…`。試行の単位。retryのたびに新しいIDになる。出力ディレクトリ名・所有marker・API・CASはこのIDで扱う |
+| **論理ジョブ** | 画面の1行。`retry_of`でつながった内部Jobの連鎖（根＋そのretry）。表に出す状態・成果物は**連鎖の最新の内部Job**のもの |
+
+- 「再試行」は論理ジョブを増やさない（行は1つのまま、試行回数が増える）。snapshotは連鎖の全Jobで同一。
+- 「現在の設定で再実行」（`rerun`）は**別の論理ジョブ**（新しいsnapshot、`rerun_of`は由来の表示にだけ使う）。
+- 出力先は**内部Jobごとに別ディレクトリ**。失敗した試行のディレクトリ（多くは所有markerだけ）は自動では片付けない。
+  画面は論理ジョブの成果物として最新の内部Jobのディレクトリを示す。
+- 履歴の非表示・削除は論理ジョブ単位で操作し、内部では連鎖の各Jobへ適用する（束C2b・C2c）。
+- 本追補は文言の読み替えであり、承認済みの画面構成・操作感（再試行＝同じ行のジョブがもう一度動く）は変えない。
