@@ -1,3 +1,4 @@
+import { normalize } from "node:path";
 import { type APIRequestContext, type Page, request as playwrightRequest, type Request } from "@playwright/test";
 import { choose, expect, SESSION_HEADER, shot, test } from "./fixtures";
 
@@ -120,7 +121,9 @@ test("several files: common settings + one model and one folder per file → thr
   for (const id of jobIds) expect(queue.find((q) => q.id === id)?.kind).toBe("transcription");
   // The legacy side effect: the last accepted file's folder is now the server default (not hidden, not undone).
   const settings = (await (await request.get("/api/settings", { headers: SESSION_HEADER })).json()) as { default_output_dir: string };
-  expect(settings.default_output_dir).toBe(`${OUT}/c`);
+  // The legacy server stores the folder as the OS path (`str(Path(dir))`): `\synthetic\out\c` on
+  // Windows. Node's platform `normalize` gives the same form; the sent body above stays as typed.
+  expect(settings.default_output_dir).toBe(normalize(`${OUT}/c`));
   await expect(app.getByTestId("tx-batch-remember")).toBeVisible();
   await expect.poll(() => rec.seen.filter((r) => line(r) === "GET /api/settings").length).toBeGreaterThanOrEqual(1); // re-read after the batch
   expect(rec.seen.filter((r) => r.method() === "PATCH")).toEqual([]);

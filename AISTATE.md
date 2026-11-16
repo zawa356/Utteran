@@ -1,5 +1,15 @@
 # AI 作業状態
 
+## 現在地（2026-11-16、PR #48 Windows再受入P1（numpy初回import停止）修正、0.1.51据置、Draft維持）
+
+- 修正前HEAD `b6c1a28e1079ef1d1ed1bb761fcf172ce8a08fa2`（remoteと一致）。同じブランチへ通常commit・push。Ready化・merge・tag・release・force pushなし。
+- Codex再受入: `unsupported_setting`は解消。B3 workerが音声正規化後、numpy初回importで約9分停止→協調取消で`cancelled`、成果物0件。
+- 再現: windows-latestで、stdinパイプを同期read中のcontrol threadがある状態でnumpy拡張moduleのネイティブ初期化が戻らない（実spawn条件のworker類似子・実workerの両方）。
+  事前importまたは標準入力のNUL化で解消。診断はセッションブランチ`claude/magical-gauss-u1i47m`の一時workflow（PR外、merge対象外）。
+- 修正: `utteran.worker.main`がprotocol入力をstdinの私有dup fdへ移し、fd 0／`STD_INPUT_HANDLE`をNULにする。試験`tests/test_worker_stdin_isolation.py`（実子プロセス、有限timeout）。
+- 補助: 試験が`UTTERAN_DATA_ROOT`等を継承しないautouse fixture（`tests/conftest.py`、`tests/test_ambient_env_isolation.py`）。旧UI E2Eの区切り比較を`normalize`で修正。
+  Codexの実機data root（Windows側）には触れていない。**Windows実機の`succeeded`・srt/json/md・長時間停止の非再発は未確認**。
+
 ## 現在地（2026-11-16、PR #48 Windows実機受入P1修正、0.1.51据置、Draft維持）
 
 - 修正前HEAD `fc7109913e3f11461bb1e80943fcf5f89948aca0`（remoteと一致）。同じブランチ`claude/tender-dirac-mnvg6r`へ通常commit・push。force push・Ready化・merge・tag・releaseなし。

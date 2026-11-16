@@ -90,6 +90,20 @@
   不変条件・拒否codeは[B3 protocol](../b3/protocol.md)「モデルID/ディレクトリ」。UI・公開API・B5/B7 DTO・DB・Preset/Policyは無変更。
 - **Cloudで証明した範囲**: B7 snapshot→B3実行用Configまでの縦断（合成モデルファイル・SyntheticASR）。**Windows実機の`succeeded`と3形式の成果物は未確認**（後続のWindows再受入で確認）。
 
+### 5.4 PR #48 Windows再受入P1修正（2026-11-16、版据置0.1.51）
+
+- 症状（Codexの再受入、`b6c1a28`）: 前回の`unsupported_setting`は再発せず、B4実モデルsmoke `passed`→`ready`→B5 200→B7 201→202→キュー再開まで成立。
+  B3 workerは音声正規化を完了したが、その後のnumpy初回importで約9分停止し、協調取消で`cancelled`、srt/json/mdは0件。
+- 原因の確定範囲: Windowsで、workerのcontrol threadがstdinパイプを同期read中だと、main threadのnumpy拡張moduleのネイティブ初期化が戻らない
+  （readが完了すると進む）。windows-latestで、実spawn条件（`CREATE_NO_WINDOW`＋新process group＋Job Object、fd 1/2→NUL）のworker類似子と実worker
+  `python -I -m utteran.worker`の両方で再現。OS内部のどの層が待つかは未特定。
+- 修正: workerのprotocol入力をstdinの私有dup fdへ移し、プロセスの標準入力（fd 0、Windowsは`STD_INPUT_HANDLE`）をcore/backendのimport前にNULへ差し替える
+  （stdout側の既存処理と対称）。wire形式・event順序・timeout・取消は不変。詳細は[B3 protocol](../b3/protocol.md)。
+- 補助試験: Codexの全体pytest 14件失敗は、実機受入用`UTTERAN_DATA_ROOT`を試験が継承したことが原因と判断（Cloudで外部rootを渡すと20件失敗し、rootへ`config/*.json`が書かれることを再現）。
+  `tests/conftest.py`のautouse fixtureで保存先・配布モード・core設定の環境変数を各試験から外した。旧UIのPlaywright 1件（`transcription-s3b1.spec.ts:123`）は、
+  サーバーがOSのpath表現で保存する既定出力先を`/`区切りで比較していた試験側の問題（Windows runnerで62/1を再現）。製品コードは変更していない。
+- **Windows実機の`succeeded`・3形式の成果物は未確認**（Codexの再受入待ち）。
+
 ## 6. 対応範囲と拒否
 
 - 実行できるのはB7/B3の`fw-cpu`・`fw-cuda`、ローカル完全モデル、話者分離なし、用語集・追加引数なし。Presetにworker非対応設定があれば事前に警告し、サーバーの422/409を理由付きで表示する。
