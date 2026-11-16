@@ -1,5 +1,14 @@
 # AI 作業状態
 
+## 現在地（2026-11-16、束C2b 複数ジョブUI — 作業中、0.1.56・未リリース、PR未作成）
+
+- ブランチ`claude/c2b-multi-job-ui`（基点＝束C2a `claude/c2a-history-visibility`のHEAD `4421a78`、PR #52）。通常commit・push、作者`zawa356`。**PRはまだ作っていない**（画面接続後にDraft化）。
+- 済み（第1段）: frontendのAPIクライアント拡張（`retryOf`/`rerunOf`、一覧filter、visibility GET/PUT、artifacts GET）と`domain/v1/logicalJobs.ts`（`retry_of`連鎖→論理ジョブ）。Vitest 497 passed。
+- **未着手（この順で進める）**: (1) 複数ファイルの原子的batch投入controller（`singleJob.ts`の検証→解決→投入をN件へ一般化、ファイル別override、結果不明は同key再照合）、
+  (2) Expertのキュー全件・履歴（論理ジョブ行、非表示/再表示、成果物ビュー、retry/rerun/取消）、(3) Normalの結果表示、(4) Playwright `v1` projectのE2Eと開発ハーネス（`tools/ui2/serve_next_ui.py --v1`はlayout v7が必要）、
+  (5) Design Freezeとのスクリーンショット比較、(6) Windows受入指示書W-C2。
+- 削除（墓標化・成果物削除）は束C2c（別PR）。条件は[program/c2-history-and-artifacts-design §0](docs/architecture/program/c2-history-and-artifacts-design.md)。
+
 ## 現在地（2026-11-16、束C2a 履歴の非表示（layout v7）・成果物の読み取りビュー、0.1.55・未リリース、C1に積んだDraft PR）
 
 - owner確定（同日）: retry＝B7維持＋UIで論理ジョブ化＋retryごとに別dir＋markerのみのdirは自動削除しない。C2＝非表示先行（v7可）、墓標化、既定拒否、「完全消去」と表示しない、必須条件5つ。
