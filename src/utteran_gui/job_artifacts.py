@@ -8,6 +8,7 @@ format, the size and whether the bytes still equal the digest recorded at comple
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from pathlib import Path
 
 from utteran_contracts.jobs import JobArtifacts, JobSnapshot
@@ -55,9 +56,21 @@ def _digest(path: Path) -> str | None:
 
 
 def job_artifacts(
-    snapshot: JobSnapshot, job_id: str, digests: frozenset[str] | None, *, attempted: bool
+    snapshot: JobSnapshot,
+    job_id: str,
+    evidence: Mapping[str, tuple[str, int]] | None,
+    *,
+    attempted: bool,
 ) -> JobArtifacts:
-    """``digests``: completion evidence of a succeeded job, else None."""
+    """``evidence``: format -> (sha256, size) recorded at completion (store read).
+
+    A file is ``verified`` only when the record for *its own format* has the same size
+    and digest. Bytes that equal another artifact of the same job (e.g. the .md content
+    saved as .srt) are ``changed``. Without a record for the format the file is
+    ``unverified`` (no completion evidence, or evidence written before per-file records)
+    -- never treated as verified. A known-format file the completed job did not produce
+    counts as unexpected.
+    """
 
     def view(state: str, items: list[dict[str, object]], unexpected: int = 0) -> JobArtifacts:
         return JobArtifacts.model_validate(
@@ -93,19 +106,24 @@ def job_artifacts(
         ):
             unexpected += 1
             continue
-        found = _digest(entry)
         try:
             size = entry.stat().st_size
         except OSError:
             unexpected += 1
             continue
-        integrity = (
-            "unverified"
-            if digests is None or found is None
-            else "verified"
-            if found in digests
-            else "changed"
-        )
+        expected = None if not evidence else evidence.get(suffix)
+        if evidence and expected is None:
+            unexpected += 1  # the completed job recorded its files; this is not one of them
+            continue
+        if expected is None:
+            integrity = "unverified"
+        elif size != expected[1]:
+            integrity = "changed"
+        else:
+            found = _digest(entry)
+            integrity = (
+                "unverified" if found is None else "verified" if found == expected[0] else "changed"
+            )
         items.append({"format": suffix, "size": size, "integrity": integrity})
     items.sort(key=lambda item: FORMATS.index(str(item["format"])))
     return view("available", items, unexpected)

@@ -136,7 +136,13 @@ def register_job_routes(app: FastAPI, runtime: JobRuntime) -> None:
         result = await call(
             lambda: parts()[0].list_jobs(cursor, scope=viewer, visibility=visibility)
         )
-        return json(200, result.to_wire(), {"ETag": f'"{result.revision}"'})
+        # The list revision counts job state changes only. With history visibility the
+        # same revision can describe different lists (hide/show writes no state change),
+        # so it is not offered as a validator there; the list is never cacheable.
+        headers = {"Cache-Control": "no-store"}
+        if not hasattr(parts()[0], "set_visibility"):
+            headers["ETag"] = f'"{result.revision}"'
+        return json(200, result.to_wire(), headers)
 
     @app.post("/jobs")
     async def submit(request: Request) -> Response:
@@ -192,7 +198,7 @@ def register_job_routes(app: FastAPI, runtime: JobRuntime) -> None:
             return job_artifacts(
                 store.get_snapshot(identifier),
                 identifier,
-                store.artifact_digests(identifier),
+                store.artifact_evidence(identifier),
                 attempted=bool(job.attempts),
             )
 

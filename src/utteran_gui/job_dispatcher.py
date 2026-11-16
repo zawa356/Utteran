@@ -475,6 +475,11 @@ class JobDispatcher:
                 core_job_id=completed.core_job_id,
                 artifact_digests=tuple(item.sha256 for item in completed.artifacts),
                 manifest_digest=completed.manifest.sha256,
+                # Which digest belongs to which format, for later per-file verification.
+                artifact_files=tuple(
+                    (Path(item.path).suffix[1:].lower(), item.sha256, item.size)
+                    for item in completed.artifacts
+                ),
             )
             self._commit(
                 lambda: self.store.finish_attempt(job_id, fence, "succeeded", evidence=evidence)
