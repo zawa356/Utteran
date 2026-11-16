@@ -93,6 +93,15 @@ ENGINE_DECLARATIONS ──► core recipes（導出）・asr registry（非ス�
 `offline_preflight`までエンジン名・native variant・モデルID・凍結ディレクトリが運ばれることを確認する
 （dispatcher・workerの編集なし）。出荷される表ではwhisper.cppは閉じたままである。
 
+## 5.1 レビュー追補（2026-11-16、版0.1.52据置）と未解決
+
+- **修正**: openvino-genaiの`vad_threshold`宣言を`True`→`False`にした。coreのGenAI adapterはVAD設定を一切読まないため、
+  宣言が「受け付ける」と言うと値が黙って捨てられる。0.1.51のB4 evaluatorもこの組合せを通していたので、束A1で**唯一の意図した挙動変更**
+  （GenAI候補＋`vad.threshold`指定が`unsupported_setting`になる）。GenAIはworker・構造化adapterとも閉じているため、v1の実行結果は変わらない。
+- **未解決（GenAI経路を開く束B4で決める）**: `vad.enabled`は必須のboolで、GenAIでは`true`でも効果が無い。拒否にすると既定Presetが
+  GenAIで使えなくなるため、今は拒否していない。経路を開くときに「GenAI選択時はVAD無効を明示させる」か「宣言にVAD非対応を追加して画面に表示する」かを決める。
+- **downgrade**: 束A1はsnapshot・DB・IPCのwireを変えていないので、0.1.51へ戻しても読める。
+
 ## 6. 変えていない境界
 
 - GUIプロセスはcore `utteran`をimportしない。`utteran_contracts`は`utteran`・`utteran_gui`・推論ライブラリをimportしない。
@@ -120,6 +129,9 @@ ENGINE_DECLARATIONS ──► core recipes（導出）・asr registry（非ス�
   0.1.53より前のsnapshot（`b2-verbatim`）は、retryでも従来どおり逐語で解釈される（用語集を持ち得ない）。
 - **混在時のfail closed**: 新GUI→旧workerは未知field（`extra="forbid"`）で拒否、旧GUI→新workerは既定`b2-verbatim`で従来動作、
   未知の版はprivate schemaとadapterの両方で拒否。
+- 用語の中の空白の連続（改行・tabを含む）は1個の空白にする（PR #50最終確認で追加。貼り付けた用語が「用語行＋改行＋prompt」の形を壊さない）。
+- **downgrade不可**: 0.1.53以降に作ったsnapshotは`prompt_compiler_version="glossary-bias-1"`を持ち、0.1.52以前のbuildはこの値を
+  読めない（未知の値として拒否）。v1は開発専用・未リリースだが、同じdata rootを古いbuildへ戻す運用はしない（B6 migrationと同じ一方向）。
 - **resume互換**: core `Config`にfieldを追加していない（コンパイル結果は既存の`asr.initial_prompt`に入る）。用語集が無ければ
   `Config`とstage hashは0.1.52と同一で、既存jobのresume cacheは無効化されない（試験で固定）。旧CLIは無変更。
 - 公開read-only `GET /api/v1/engines`（v1 opt-in時のみ）が`EngineCatalog`を返す。UIはこの宣言とB4/B5の結果から

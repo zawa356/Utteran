@@ -25,8 +25,12 @@ _IDEOGRAPHIC = frozenset({"ja", "zh", "yue"})
 
 
 def glossary_terms(glossary: Sequence[str]) -> tuple[str, ...]:
-    """Trimmed, non-empty terms in first-seen order (exact duplicates removed)."""
-    return tuple(dict.fromkeys(term.strip() for term in glossary if term.strip()))
+    """Single-line, non-empty terms in first-seen order (exact duplicates removed).
+
+    Whitespace runs inside a term (including line breaks and tabs from a pasted list)
+    become one space, so a term can never break the "bias, newline, prompt" layout.
+    """
+    return tuple(dict.fromkeys(" ".join(term.split()) for term in glossary if term.split()))
 
 
 def compile_prompt(

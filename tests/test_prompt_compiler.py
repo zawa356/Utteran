@@ -40,6 +40,15 @@ def test_terms_are_trimmed_deduplicated_and_ordered() -> None:
     assert glossary_terms([" b ", "a", "b", "", "  ", "A"]) == ("b", "a", "A")
 
 
+def test_a_term_with_line_breaks_cannot_break_the_prompt_layout() -> None:
+    """PR #50 review: a pasted term containing a newline or tab stays one line."""
+    terms = ["two\nlines", "tab\there", "a  b", "\n", "two lines"]
+    assert glossary_terms(terms) == ("two lines", "tab here", "a b")
+    compiled = compile_prompt("prompt", terms, "en", compiler="glossary-bias-1")
+    assert compiled == "two lines, tab here, a b\nprompt"
+    assert compiled.count("\n") == 1
+
+
 @pytest.mark.parametrize("compiler", ["b2-verbatim", "glossary-bias-1"])
 @pytest.mark.parametrize("prompt", [None, "", "synthetic prompt"])
 def test_without_glossary_every_version_is_verbatim(compiler: str, prompt: str | None) -> None:
