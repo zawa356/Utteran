@@ -233,10 +233,14 @@ test("cooperative cancel: requested first, cancelled only when GET says so; no f
   expect((await cancel.allHeaders())["if-match"]).toMatch(/^"\d+"$/);
 });
 
-test("Expert uses the same v1 controller; multi-file start is shown disabled; a reload re-reads the durable jobs only", async ({ app }) => {
+test("Expert uses the same v1 controller; the batch panel cannot submit before its own check; a reload re-reads the durable jobs only", async ({ app }) => {
   const seen = recordApi(app);
   await app.getByTestId("mode-expert").click();
-  await expect(app.getByTestId("v1-batch-start")).toBeDisabled();
+  // Bundle C2b: the disabled placeholder became the real batch panel (transcription-s5b.v1.spec.ts).
+  // Nothing is selected and nothing was checked, so neither step can be pressed.
+  await expect(app.getByTestId("v1-batch")).toBeVisible();
+  await expect(app.getByTestId("v1-batch-check")).toBeDisabled();
+  await expect(app.getByTestId("v1-batch-submit")).toBeDisabled();
   await expect(app.getByTestId("tx-batch-start")).toHaveCount(0);
   await expect(app.getByTestId("tx-start")).toHaveCount(0);
   // One v1 job panel (the shared controller), in the third pane.

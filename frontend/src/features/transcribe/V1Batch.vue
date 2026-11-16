@@ -75,7 +75,11 @@ function issueText(i: BatchIssue): string {
 watch(
   () => s.value.step,
   (step) => {
-    if (step === "accepted") void board.refresh();
+    if (step !== "accepted") return;
+    void board.refresh();
+    // The submission moved the queue revision: the queue panel must not keep a stale one
+    // (its explicit "resume" is a CAS on that revision).
+    void core.v1!.job.loadQueue();
   },
 );
 </script>
