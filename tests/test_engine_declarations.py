@@ -162,7 +162,7 @@ CASES: dict[str, tuple[dict[str, Any], str]] = {
 REFUSED = {
     "faster-whisper": {"extra_arguments", "vad_threshold", "never"},
     "whisper-cpp": {"glossary", "extra_arguments", "previous_text"},
-    "openvino-genai": {"glossary", "extra_arguments", "previous_text"},
+    "openvino-genai": {"glossary", "extra_arguments", "previous_text", "vad_threshold"},
 }
 
 
@@ -412,3 +412,21 @@ def test_no_engine_name_is_hard_coded_in_the_execution_route(module: str) -> Non
 
 def test_required_model_files_match_the_b3_precheck() -> None:
     assert get_engine("faster-whisper").worker.required_model_files == MODEL_FILES
+
+
+def test_declared_vad_threshold_matches_what_each_core_adapter_reads() -> None:
+    """A declaration must not promise a setting the core adapter never reads.
+
+    Review of 0.1.52: the GenAI adapter has no VAD handling at all, so a threshold would
+    have been dropped silently; it is declared unsupported and therefore refused.
+    """
+    sources = {
+        "faster-whisper": "src/utteran/asr/faster_whisper.py",
+        "whisper-cpp": "src/utteran/asr/whisper_cpp.py",
+        "openvino-genai": "src/utteran/asr/openvino_genai.py",
+    }
+    for engine in ENGINE_DECLARATIONS:
+        source = (ROOT / sources[engine.engine]).read_text(encoding="utf-8")
+        if engine.vad_threshold:
+            assert "vad_threshold" in source, engine.engine
+    assert [e.engine for e in ENGINE_DECLARATIONS if e.vad_threshold] == ["whisper-cpp"]

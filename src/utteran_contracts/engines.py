@@ -163,7 +163,9 @@ ENGINE_DECLARATIONS: tuple[EngineDeclaration, ...] = (
         segment_timestamps=True,
         initial_prompt="native",
         glossary="unsupported",
-        vad_threshold=True,
+        # The GenAI adapter in core never reads a VAD setting. A threshold the engine would
+        # ignore is refused (review of 0.1.52); see engine-adapters.md "未解決".
+        vad_threshold=False,
         condition_on_previous_text=False,
         extra_arguments=False,
         unsupported_namespace_fields=("max_new_tokens",),

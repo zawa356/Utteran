@@ -18,6 +18,7 @@
   **fw経路の挙動・公開DTO・IPC wire・DB・既定起動は不変**。workerが実行する範囲も不変（fw-cpu/fw-cuda、話者分離・用語集なし）。詳細[backend/engine-adapters](docs/architecture/backend/engine-adapters.md)。
 - 試験: 新規`tests/test_engine_declarations.py` 43件。既存は削除・skip・緩和なし。数値とCIはPR本文に記録。
 - **未検証**: Windows実機（W-A1: PR #48縦断の非退行、[指示書](docs/architecture/program/windows-acceptance-w-a1.md)）、GPU全般。whisper.cpp・OpenVINO GenAI・pyannoteのworker実行は**未実装**（宣言で閉じている）。
+- 最終確認（同日、版据置）: GenAIの`vad_threshold`宣言をFalseへ（黙って捨てられる値を拒否）。詳細[engine-adapters §5.1](docs/architecture/backend/engine-adapters.md)。
 - **次の一手**: 束A2（用語集/Promptコンパイルとエンジン能力の公開read-only API）→ C1（ジョブ固有出力dir）→ B1（pyannote worker）。順序と理由はロードマップ§3。
 
 ## 現在地（2026-11-16、PR #48 Windows再受入P1（numpy初回import停止）修正、0.1.51据置、Draft維持）
