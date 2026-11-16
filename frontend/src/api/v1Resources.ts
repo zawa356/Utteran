@@ -485,6 +485,8 @@ export interface V1ResourcesApi {
   getQueue(signal?: AbortSignal): Promise<QueueViewV1>;
   setDispatch(intent: MutationIntent<JsonObject>, expectedRevision: number): Promise<QueueViewV1>;
   cancel(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; job: JobV1 }>;
+  /** B7 retry: a *new* job with the same snapshot, `retry_of` = the job retried (Design Freeze §7). */
+  retry(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; job: JobV1 }>;
 }
 
 export const V1_WRITE_TIMEOUT_MS = 30_000;
@@ -593,6 +595,12 @@ export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
     },
     async cancel(id, expectedRevision, intent) {
       const response = await write(`/api/v1/jobs/${jobId(id)}/cancel`, "POST", intent, parseJob, { "If-Match": ifMatch(expectedRevision) });
+      return { status: response.status, job: response.data };
+    },
+    async retry(id, expectedRevision, intent) {
+      const response = await write(`/api/v1/jobs/${jobId(id)}/retry`, "POST", intent, parseJob, { "If-Match": ifMatch(expectedRevision) });
+      // The answer must be the new job that retries exactly this one.
+      if (response.data.retryOf !== id || response.data.id === id) throw malformed(response.status);
       return { status: response.status, job: response.data };
     },
   };

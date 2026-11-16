@@ -61,6 +61,12 @@ export interface FakeV1 {
   addJobs(count: number): string[];
   /** Override one `GET /api/v1/jobs` page by its offset (0 = first page); consumed once. */
   listPage: Map<number, Reply>;
+  /** Layout v7 history visibility per job (`false` = the store has none: filters answer 422). */
+  visibility: Map<string, { hidden: boolean; revision: number }> | false;
+  /** `GET /jobs/{id}/artifacts` bodies; absent = state "none". */
+  artifacts: Map<string, Json>;
+  /** Set a job's status by id (bumps its revision). */
+  setStatus(jobId: string, status: string): void;
 }
 
 /** B7 `list_jobs`: 100 per page, oldest first, one immutable snapshot per listing. */
@@ -85,6 +91,15 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
       return ids;
     },
     resolveError: null,
+    visibility: new Map(),
+    artifacts: new Map(),
+    setStatus(jobId, status) {
+      const found = state.jobs.find((j) => j.id === jobId);
+      if (found) {
+        found.status = status;
+        found.revision = (found.revision as number) + 1;
+      }
+    },
     applied: [],
     calls: () => state.fetch.calls.map(line),
     writes: () =>
@@ -154,11 +169,15 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
       if (path === "/api/v1/queue") return json(200, queueView(), { ETag: `"${state.queue.revision}"` });
       if (path === "/api/v1/jobs") {
         const cursor = url.searchParams.get("cursor");
+        const filter = url.searchParams.get("visibility");
+        if (state.visibility === false ? filter !== null && filter !== "all" : filter !== null && !["visible", "hidden", "all"].includes(filter)) return error(422, "request_invalid");
+        const hiddenIds = state.visibility === false ? new Set<string>() : new Set([...state.visibility].filter(([, v]) => v.hidden).map(([id]) => id));
+        const selected = state.visibility === false || filter === "all" ? state.jobs : state.jobs.filter((j) => hiddenIds.has(j.id as string) === (filter === "hidden"));
         let snapshotId: string;
         let offset = 0;
         if (cursor === null) {
           snapshotId = hex(32);
-          snapshots.set(snapshotId, { revision: Math.max(state.jobs.length, 1), items: state.jobs.map((j) => clone(j)) });
+          snapshots.set(snapshotId, { revision: Math.max(state.jobs.length, 1), items: selected.map((j) => clone(j)) });
         } else {
           const m = /^j2\.([0-9a-f]{32})\.([0-9]+)\.100\.f{64}$/.exec(cursor);
           if (!m) return error(400, "cursor_invalid");
@@ -176,6 +195,18 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
         const next = end < snap.items.length ? `j2.${snapshotId}.${end}.100.${"f".repeat(64)}` : null;
         return json(200, { schema_version: 1, revision: snap.revision, items: snap.items.slice(offset, end), next_cursor: next }, { ETag: `"${snap.revision}"` });
       }
+      const vis = /^\/api\/v1\/jobs\/(job_[0-9a-f]{32})\/visibility$/.exec(path);
+      if (vis) {
+        if (state.visibility === false) return error(409, "history_visibility_unavailable");
+        if (!state.jobs.some((x) => x.id === vis[1])) return error(404, "resource_not_found");
+        const v = state.visibility.get(vis[1]!) ?? { hidden: false, revision: 0 };
+        return json(200, { schema_version: 1, job_id: vis[1], hidden: v.hidden, revision: v.revision, updated_at: v.revision === 0 ? null : NOW }, { ETag: `"${v.revision}"` });
+      }
+      const art = /^\/api\/v1\/jobs\/(job_[0-9a-f]{32})\/artifacts$/.exec(path);
+      if (art) {
+        if (!state.jobs.some((x) => x.id === art[1])) return error(404, "resource_not_found");
+        return json(200, state.artifacts.get(art[1]!) ?? { schema_version: 1, job_id: art[1], state: "none", items: [], unexpected_count: 0 });
+      }
       const j = /^\/api\/v1\/jobs\/(job_[0-9a-f]{32})$/.exec(path);
       if (j) {
         const found = state.jobs.find((x) => x.id === j[1]);
@@ -184,6 +215,23 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
       throw new Error(`unexpected GET ${path}`);
     }
     if (!path.startsWith("/api/v1/")) throw new Error(`unexpected ${method} ${path}`);
+    const put = /^\/api\/v1\/jobs\/(job_[0-9a-f]{32})\/visibility$/.exec(path);
+    if (put && method === "PUT") {
+      // Layout v7: own revision, idempotent for the stored state, finished jobs only, no event.
+      if (state.visibility === false) return error(409, "history_visibility_unavailable");
+      const target = state.jobs.find((x) => x.id === put[1]);
+      if (!target) return error(404, "resource_not_found");
+      const v = state.visibility.get(put[1]!) ?? { hidden: false, revision: 0 };
+      const hidden = (body as Json).hidden as boolean;
+      const view = (x: { hidden: boolean; revision: number }) => json(200, { schema_version: 1, job_id: put[1], hidden: x.hidden, revision: x.revision, updated_at: x.revision === 0 ? null : NOW }, { ETag: `"${x.revision}"` });
+      if (v.hidden === hidden) return view(v);
+      if (headers["If-Match"] !== `"${v.revision}"`) return error(412, "revision_conflict");
+      if (hidden && !["succeeded", "failed", "cancelled", "interrupted"].includes(target.status as string)) return error(409, "invalid_transition");
+      const next = { hidden, revision: v.revision + 1 };
+      state.visibility.set(put[1]!, next);
+      state.applied.push(`PUT ${path}`);
+      return view(next);
+    }
     const key = headers["Idempotency-Key"];
     if (!key || !/^[A-Za-z0-9_.-]{16,128}$/.test(key)) return error(400, "idempotency_key_invalid");
     const scope = `${method} ${path} ${key}`;
@@ -266,6 +314,18 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
       found.status = found.status === "running" ? "cancelling" : "cancelled";
       found.revision = (found.revision as number) + 1;
       return remember(202, found);
+    }
+    const retry = /^\/api\/v1\/jobs\/(job_[0-9a-f]{32})\/retry$/.exec(path);
+    if (retry) {
+      // B7: a new job with the same snapshot, linked by retry_of; the source is untouched.
+      const source = state.jobs.find((x) => x.id === retry[1]);
+      if (!source) return error(404, "resource_not_found");
+      if (headers["If-Match"] !== `"${source.revision as number}"`) return error(412, "revision_conflict");
+      if (!["failed", "cancelled", "interrupted"].includes(source.status as string)) return error(409, "invalid_transition");
+      const created = { ...(clone(source) as Json), id: `job_${hex(32)}`, revision: 1, status: "queued", reason_code: "submitted", retry_of: source.id, rerun_of: null, result: null, error: null, attempts: [] };
+      state.jobs.push(created);
+      state.queue.revision += 1;
+      return remember(202, created);
     }
     throw new Error(`unexpected ${method} ${path}`);
   }
