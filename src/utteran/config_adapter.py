@@ -11,6 +11,7 @@ from utteran.asr.registry import validate_asr_configuration
 from utteran.config import ASRConfig, Config
 from utteran.errors import ConfigurationError
 from utteran_contracts import ProcessingSettings
+from utteran_contracts.engines import get_engine, setting_refusals
 
 
 class ConfigAdaptationError(ConfigurationError):
@@ -81,16 +82,27 @@ def adapt_settings(settings: ProcessingSettings, context: ExecutionContext) -> A
     requested = ASRConfig(backend=context.asr_backend, model=asr.model).model
     if asr.model != "auto" and requested != expected:
         _reject("/asr/model", "context_conflict")
-    if context.asr_backend not in {"faster-whisper", "whisper-cpp"}:
+    try:
+        engine = get_engine(context.asr_backend)
+    except ValueError:
+        engine = None
+    if engine is None or not engine.structured_adapter:
         _reject("/asr/backend", "unsupported_structured_backend")
-    if asr.glossary:
-        _reject("/asr/glossary")
-    if asr.extra_arguments is not None:
-        _reject("/asr/extra_arguments")
-    for namespace in ("faster_whisper", "whisper_cpp", "openvino_genai"):
-        active = "faster_whisper" if context.asr_backend == "faster-whisper" else "whisper_cpp"
-        if namespace != active and getattr(asr, namespace) is not None:
-            _reject(f"/asr/{namespace}", "inactive_backend_settings")
+    assert engine is not None
+    # One declaration decides what this engine accepts (shared with the B4 evaluator):
+    # a setting is converted below or refused here, never dropped.
+    refusals = setting_refusals(engine, settings)
+    early = {"/asr/glossary", "/asr/extra_arguments"}
+    for path, code in refusals:
+        if path in early or code == "inactive_backend_settings":
+            _reject(path, code)
+    if engine.native_variants:
+        if context.native_variant is None or context.native_variant != context.asr_device:
+            _reject("/context/native_variant", "context_conflict")
+    elif context.native_variant is not None:
+        _reject("/context/native_variant", "context_conflict")
+    for path, code in refusals:
+        _reject(path, code)
 
     payload = context.base_config.model_dump(mode="json")
 
@@ -115,21 +127,11 @@ def adapt_settings(settings: ProcessingSettings, context: ExecutionContext) -> A
         "word_timestamps": asr.word_timestamps,
         "condition_on_previous_text": asr.condition_on_previous_text,
     }
-    if context.asr_backend == "faster-whisper":
-        if context.native_variant is not None:
-            _reject("/context/native_variant", "context_conflict")
-        if asr.vad.threshold is not None:
-            _reject("/asr/vad/threshold")
-        if asr.word_timestamps == "never":
-            _reject("/asr/word_timestamps", "unsupported_setting")
+    if engine.engine == "faster-whisper":
         compute = asr.faster_whisper.compute_type if asr.faster_whisper is not None else None
         if compute not in {None, "auto", context.compute_type}:
             _reject("/asr/faster_whisper/compute_type", "context_conflict")
     else:
-        if context.native_variant is None or context.native_variant != context.asr_device:
-            _reject("/context/native_variant", "context_conflict")
-        if asr.condition_on_previous_text:
-            _reject("/asr/condition_on_previous_text")
         native = asr.whisper_cpp.to_wire() if asr.whisper_cpp is not None else {}
         if "vad" in native and native["vad"] != asr.vad.enabled:
             _reject("/asr/whisper_cpp/vad", "context_conflict")

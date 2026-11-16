@@ -19,11 +19,12 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from utteran_contracts.control import OwnerIdentity, ProcessIdentity
+from utteran_contracts.engines import get_engine, worker_refusals
 from utteran_contracts.jobs import BlockReason, JobErrorCode, JobSnapshot
 from utteran_contracts.worker import WorkerCompleted, WorkerRequest
 from utteran_control.errors import ControlError, ErrorCode
 from utteran_control.job_repository import CompletionEvidence, JobControlStore
-from utteran_gui.job_admission import WORKER_RECIPES, AdmissionError, capture_input
+from utteran_gui.job_admission import AdmissionError, capture_input
 from utteran_gui.process_verifier import start_identity
 
 LOGGER = logging.getLogger(__name__)
@@ -48,16 +49,26 @@ class WorkerRunner(Protocol):
 def plan_request(
     snapshot: JobSnapshot, *, job_id: str, attempt_id: str, job_dir: Path
 ) -> WorkerRequest:
-    """Map a frozen snapshot to the limited B3 worker request, or refuse."""
+    """Map a frozen snapshot to the B3 worker request, or refuse.
+
+    Engine-neutral: what may run is read from the engine declaration of the frozen
+    ``spec.backend``; every value of the request comes from the snapshot. Nothing is
+    re-selected here and no other engine is substituted.
+    """
     spec = snapshot.resolved
     settings = spec.settings
+    try:
+        engine = get_engine(spec.backend)
+    except ValueError:
+        raise PlanError("worker_plan_unsupported") from None
+    variant = spec.requested_route.native_variant
     if (
-        spec.backend != "faster-whisper"
-        or spec.recipe_id not in WORKER_RECIPES
+        worker_refusals(engine, settings, recipe_id=spec.recipe_id)
         or spec.worker_support != "supported"
-        or settings.diarization.enabled
-        or settings.asr.glossary
-        or settings.asr.extra_arguments is not None
+        or spec.device not in engine.devices
+        or (variant is not None) != bool(engine.native_variants)
+        or (variant is not None and variant not in engine.native_variants)
+        or (settings.diarization.enabled and spec.diarization_device is None)
         or not Path(spec.worker_model_dir).is_absolute()
         or not job_dir.is_absolute()
     ):
@@ -77,15 +88,17 @@ def plan_request(
                         "job_dir": str(job_dir),
                     }
                 },
-                "asr_backend": "faster-whisper",
+                "asr_backend": engine.engine,
                 # Two meanings from the same frozen snapshot, never one field for both:
                 # the catalogue ID B3 checks against the preset, and the local directory
                 # B7 approved for that ID, which B3 alone loads (offline, no lookup).
                 "asr_model": spec.model_id,
                 "asr_model_dir": spec.worker_model_dir,
-                "asr_device": spec.device,
-                "diarization_device": "cpu",
+                "asr_device": variant if variant is not None else spec.device,
+                # Unused while diarization is off; the frozen device otherwise.
+                "diarization_device": spec.diarization_device or "cpu",
                 "compute_type": spec.compute_type,
+                **({} if variant is None else {"native_variant": variant}),
             },
             "resume": snapshot.resume_mode != "fresh",
             "force": snapshot.resume_mode == "force",

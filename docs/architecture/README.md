@@ -14,6 +14,8 @@ UI刷新（U0〜U3）やバックエンド変更を始める前に、まず次�
 | 3 | [backend/interfaces.md](backend/interfaces.md) | `create_app()`の有効化条件、現行route一覧、DTO正本、状態遷移、Phase A OpenAPIとの差異 |
 | 4 | [backend/persistence-recovery.md](backend/persistence-recovery.md) | SQLite layout v1〜v6、migration、backup/restore、排他・fencing・復旧、privacy |
 | 5 | [backend/testing-and-operations.md](backend/testing-and-operations.md) | CIジョブの守備範囲、E2E、実機受入ゲート、障害時の確認手順 |
+| — | [backend/engine-adapters.md](backend/engine-adapters.md) | エンジン宣言表と共通の実行契約（0.1.52）。エンジン／経路を開く手順 |
+| — | [program/roadmap-2026-11-16.md](program/roadmap-2026-11-16.md) | 大規模開発プログラムのロードマップ・棚卸し・機能/証拠マトリクス、Windows受入指示書 |
 | — | [backend/validation.md](backend/validation.md) | 作業開始時と完了時の実測証拠（CI run・commit・件数） |
 | — | [backend/docs-audit.md](backend/docs-audit.md) | 既存文書の監査結果（updated / reviewed-no-change と理由） |
 

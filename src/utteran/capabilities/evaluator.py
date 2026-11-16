@@ -7,7 +7,6 @@ import json
 from datetime import datetime
 from typing import Any, Literal
 
-from utteran.asr.registry import NON_SPACE_LANGUAGES
 from utteran.capabilities.recipes import get_recipe
 from utteran_contracts import ProcessingSettings
 from utteran_contracts.capabilities import (
@@ -21,6 +20,12 @@ from utteran_contracts.capabilities import (
     ObservationKind,
     ReasonCode,
     SelectionIssue,
+)
+from utteran_contracts.engines import (
+    NON_SPACE_LANGUAGES,
+    get_diarization_engine,
+    get_engine,
+    setting_refusals,
 )
 
 _NON_SPACE = NON_SPACE_LANGUAGES | {"auto", ""}
@@ -95,20 +100,9 @@ def _settings_issues(
         codes.append("backend_conflict")
     if asr.model not in {"auto", identity.model_id}:
         codes.append("model_conflict")
-    active = {
-        "faster-whisper": "faster_whisper",
-        "whisper-cpp": "whisper_cpp",
-        "openvino-genai": "openvino_genai",
-    }[recipe.backend]
-    if any(
-        getattr(asr, name) is not None
-        for name in (
-            "faster_whisper",
-            "whisper_cpp",
-            "openvino_genai",
-        )
-        if name != active
-    ):
+    engine = get_engine(recipe.backend)
+    refusals = [code for _, code in setting_refusals(engine, settings)]
+    if "inactive_backend_settings" in refusals:
         codes.append("inactive_backend_settings")
     if asr.faster_whisper is not None and asr.faster_whisper.compute_type not in {
         None,
@@ -116,39 +110,30 @@ def _settings_issues(
         identity.compute_type,
     }:
         codes.append("compute_conflict")
-    if asr.glossary or asr.extra_arguments is not None:
-        codes.append("unsupported_setting")
-    if recipe.backend == "faster-whisper" and (
-        asr.word_timestamps == "never" or asr.vad.threshold is not None
-    ):
+    if "unsupported_setting" in refusals:
         codes.append("unsupported_setting")
     if recipe.backend == "whisper-cpp":
+        # Cross-field consistency of the engine's own namespace, not a capability.
         native = asr.whisper_cpp
-        if asr.condition_on_previous_text or (
-            native is not None
-            and (
-                (native.vad is not None and native.vad != asr.vad.enabled)
-                or (
-                    asr.vad.threshold is not None
-                    and native.vad_threshold is not None
-                    and native.vad_threshold != asr.vad.threshold
-                )
+        if native is not None and (
+            (native.vad is not None and native.vad != asr.vad.enabled)
+            or (
+                asr.vad.threshold is not None
+                and native.vad_threshold is not None
+                and native.vad_threshold != asr.vad.threshold
             )
         ):
             codes.append("unsupported_setting")
-    if recipe.backend == "openvino-genai" and (
-        (asr.word_timestamps == "always" and asr.language.strip().casefold() in _NON_SPACE)
-        or asr.condition_on_previous_text
-        or (asr.openvino_genai is not None and asr.openvino_genai.max_new_tokens is not None)
-    ):
-        codes.append("unsupported_setting")
     if settings.diarization.enabled:
         diar = settings.diarization
         if identity.diarization_device == "xpu" and identity.platform == "Linux":
             codes.append("diarization_platform_unsupported")
-        if asr.word_timestamps == "never":
+        if (
+            get_diarization_engine(diar.backend).requires_word_timestamps
+            and asr.word_timestamps == "never"
+        ):
             codes.append("unsupported_setting")
-        if recipe.backend == "openvino-genai" and asr.language.strip().casefold() in _NON_SPACE:
+        if not engine.non_space_word_timestamps and asr.language.strip().casefold() in _NON_SPACE:
             codes.append("genai_diarization_language")
         if diar.device_preference not in {"auto", identity.diarization_device}:
             codes.append("diarization_device_conflict")

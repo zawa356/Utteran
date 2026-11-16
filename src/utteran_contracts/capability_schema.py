@@ -17,10 +17,12 @@ from utteran_contracts.capabilities import (
     RecipeCatalog,
     ResolvedSelection,
 )
+from utteran_contracts.engines import EngineCatalog
 from utteran_contracts.schema import normalize_literals
 
 MODELS = (
     RecipeCatalog,
+    EngineCatalog,
     InventorySnapshot,
     ResolvedSelection,
     InventoryRefreshRequest,

@@ -3,6 +3,7 @@
 更新: 2026-11-03 JST。開発版 **0.1.39（未リリース）**。基点 `main` = `e803ecc3`（PR #33 B8+B9 merge）。
 追補: 2026-11-12 JST、開発版 **0.1.50**（B4 ready/smokeの明示実行・private evidence。下表のB4/B7行）。
 追補: 2026-11-12 JST、開発版 **0.1.51**（UI-3 S5-A: `--next-ui-v1`の新UIがB5/B7の単一ジョブ経路を使う。B5 store初回並行openの競合修正。下表のB5行と[ui3/s5a](../ui3/s5a-v1-single-job.md)）。
+追補: 2026-11-16 JST、開発版 **0.1.52**（束A1: backend固有分岐をエンジン宣言表へ一本化。workerの実行範囲と下表の状態は不変。[engine-adapters](engine-adapters.md)）。
 
 この文書群は**コードから逆引きした現在の実装**を記述する。Phaseごとの詳細仕様は各`bN/`へリンクする。
 読む順番は[../README.md](../README.md)。

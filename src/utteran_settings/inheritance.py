@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from utteran_contracts.editing import EditingSession, SettingOverride, leaf_adapters
+from utteran_contracts.engines import worker_engines
 from utteran_contracts.preview import Provenance, ValidatedFile, ValidationResult
 from utteran_contracts.settings import Issue, Policy, Preset, ProcessingSettings
 from utteran_settings.errors import SettingsError
@@ -212,13 +213,36 @@ def preview(session: EditingSession, preset: Preset, policy: Policy) -> Validati
         unsupported = False
         if effective is not None:
             asr = effective.asr
+            # Static worker capability from the engine declarations. With a backend the
+            # worker does not run (or "auto"), a setting is flagged when no
+            # worker-executed engine accepts it.
+            engines = worker_engines()
+            chosen = [e for e in engines if e.engine == asr.backend] or list(engines)
             for path, condition in (
-                ("/asr/backend", asr.backend not in {"auto", "faster-whisper"}),
-                ("/diarization/enabled", effective.diarization.enabled),
-                ("/asr/glossary", bool(asr.glossary)),
-                ("/asr/extra_arguments", asr.extra_arguments is not None),
-                ("/asr/word_timestamps", asr.word_timestamps == "never"),
-                ("/asr/vad/threshold", asr.vad.threshold is not None),
+                (
+                    "/asr/backend",
+                    asr.backend != "auto" and all(e.engine != asr.backend for e in engines),
+                ),
+                (
+                    "/diarization/enabled",
+                    effective.diarization.enabled and not any(e.worker.diarization for e in chosen),
+                ),
+                (
+                    "/asr/glossary",
+                    bool(asr.glossary) and all(e.glossary == "unsupported" for e in chosen),
+                ),
+                (
+                    "/asr/extra_arguments",
+                    asr.extra_arguments is not None and not any(e.extra_arguments for e in chosen),
+                ),
+                (
+                    "/asr/word_timestamps",
+                    all(asr.word_timestamps not in e.word_timestamp_modes for e in chosen),
+                ),
+                (
+                    "/asr/vad/threshold",
+                    asr.vad.threshold is not None and not any(e.vad_threshold for e in chosen),
+                ),
                 (
                     "/postprocessing/fallback_characters_per_second",
                     effective.postprocessing.fallback_characters_per_second == 0,

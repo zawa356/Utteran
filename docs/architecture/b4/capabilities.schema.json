@@ -653,6 +653,69 @@
       "title": "DeploymentInventory",
       "type": "object"
     },
+    "DiarizationEngineDeclaration": {
+      "additionalProperties": false,
+      "properties": {
+        "cancel_granularity": {
+          "const": "stage",
+          "title": "Cancel Granularity",
+          "type": "string"
+        },
+        "devices": {
+          "items": {
+            "enum": [
+              "cpu",
+              "cuda",
+              "xpu"
+            ],
+            "type": "string"
+          },
+          "title": "Devices",
+          "type": "array"
+        },
+        "engine": {
+          "const": "pyannote",
+          "title": "Engine",
+          "type": "string"
+        },
+        "progress_granularity": {
+          "const": "stage",
+          "title": "Progress Granularity",
+          "type": "string"
+        },
+        "requires_word_timestamps": {
+          "title": "Requires Word Timestamps",
+          "type": "boolean"
+        },
+        "worker": {
+          "enum": [
+            "implemented",
+            "not_implemented"
+          ],
+          "title": "Worker",
+          "type": "string"
+        },
+        "worker_blocker": {
+          "enum": [
+            "none",
+            "offline_load_unverified"
+          ],
+          "title": "Worker Blocker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "devices",
+        "requires_word_timestamps",
+        "cancel_granularity",
+        "progress_granularity",
+        "worker",
+        "worker_blocker"
+      ],
+      "title": "DiarizationEngineDeclaration",
+      "type": "object"
+    },
     "DiarizationSettings": {
       "additionalProperties": false,
       "properties": {
@@ -747,6 +810,212 @@
         "memory_guard"
       ],
       "title": "DiarizationSettings",
+      "type": "object"
+    },
+    "EngineCatalog": {
+      "additionalProperties": false,
+      "properties": {
+        "diarization_engines": {
+          "items": {
+            "$ref": "#/$defs/DiarizationEngineDeclaration"
+          },
+          "title": "Diarization Engines",
+          "type": "array"
+        },
+        "engines": {
+          "items": {
+            "$ref": "#/$defs/EngineDeclaration"
+          },
+          "title": "Engines",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "engines",
+        "diarization_engines"
+      ],
+      "title": "EngineCatalog",
+      "type": "object"
+    },
+    "EngineDeclaration": {
+      "additionalProperties": false,
+      "properties": {
+        "cancel_granularity": {
+          "enum": [
+            "process",
+            "segment",
+            "stage"
+          ],
+          "title": "Cancel Granularity",
+          "type": "string"
+        },
+        "condition_on_previous_text": {
+          "title": "Condition On Previous Text",
+          "type": "boolean"
+        },
+        "devices": {
+          "items": {
+            "enum": [
+              "cpu",
+              "cuda",
+              "gpu",
+              "npu"
+            ],
+            "type": "string"
+          },
+          "title": "Devices",
+          "type": "array"
+        },
+        "engine": {
+          "enum": [
+            "faster-whisper",
+            "openvino-genai",
+            "whisper-cpp"
+          ],
+          "title": "Engine",
+          "type": "string"
+        },
+        "extra_arguments": {
+          "title": "Extra Arguments",
+          "type": "boolean"
+        },
+        "glossary": {
+          "enum": [
+            "prompt_bias",
+            "unsupported"
+          ],
+          "title": "Glossary",
+          "type": "string"
+        },
+        "initial_prompt": {
+          "enum": [
+            "native",
+            "unsupported"
+          ],
+          "title": "Initial Prompt",
+          "type": "string"
+        },
+        "model_family": {
+          "enum": [
+            "ctranslate2",
+            "ggml",
+            "openvino-genai"
+          ],
+          "title": "Model Family",
+          "type": "string"
+        },
+        "native_variants": {
+          "items": {
+            "enum": [
+              "cpu",
+              "openvino",
+              "openvino_vulkan",
+              "vulkan"
+            ],
+            "type": "string"
+          },
+          "title": "Native Variants",
+          "type": "array"
+        },
+        "non_space_word_timestamps": {
+          "title": "Non Space Word Timestamps",
+          "type": "boolean"
+        },
+        "progress_granularity": {
+          "enum": [
+            "percent",
+            "segment",
+            "stage"
+          ],
+          "title": "Progress Granularity",
+          "type": "string"
+        },
+        "runtime_module": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Runtime Module"
+        },
+        "segment_timestamps": {
+          "title": "Segment Timestamps",
+          "type": "boolean"
+        },
+        "settings_namespace": {
+          "enum": [
+            "faster_whisper",
+            "openvino_genai",
+            "whisper_cpp"
+          ],
+          "title": "Settings Namespace",
+          "type": "string"
+        },
+        "structured_adapter": {
+          "title": "Structured Adapter",
+          "type": "boolean"
+        },
+        "unsupported_namespace_fields": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+            "type": "string"
+          },
+          "title": "Unsupported Namespace Fields",
+          "type": "array"
+        },
+        "vad_threshold": {
+          "title": "Vad Threshold",
+          "type": "boolean"
+        },
+        "word_timestamp_modes": {
+          "items": {
+            "enum": [
+              "always",
+              "auto",
+              "never"
+            ],
+            "type": "string"
+          },
+          "title": "Word Timestamp Modes",
+          "type": "array"
+        },
+        "worker": {
+          "$ref": "#/$defs/WorkerExecution"
+        }
+      },
+      "required": [
+        "engine",
+        "model_family",
+        "settings_namespace",
+        "runtime_module",
+        "devices",
+        "native_variants",
+        "word_timestamp_modes",
+        "non_space_word_timestamps",
+        "segment_timestamps",
+        "initial_prompt",
+        "glossary",
+        "vad_threshold",
+        "condition_on_previous_text",
+        "extra_arguments",
+        "unsupported_namespace_fields",
+        "structured_adapter",
+        "cancel_granularity",
+        "progress_granularity",
+        "worker"
+      ],
+      "title": "EngineDeclaration",
       "type": "object"
     },
     "ExecutionIdentity": {
@@ -2285,12 +2554,68 @@
       },
       "title": "WhisperCppSettings",
       "type": "object"
+    },
+    "WorkerExecution": {
+      "additionalProperties": false,
+      "description": "What the B3 worker executes for an engine today (not what core/CLI can do).",
+      "properties": {
+        "blocker": {
+          "enum": [
+            "native_argv_privacy",
+            "none",
+            "offline_load_unverified"
+          ],
+          "title": "Blocker",
+          "type": "string"
+        },
+        "diarization": {
+          "title": "Diarization",
+          "type": "boolean"
+        },
+        "recipes": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+            "type": "string"
+          },
+          "title": "Recipes",
+          "type": "array"
+        },
+        "required_model_files": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Required Model Files",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "implemented",
+            "not_implemented"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "blocker",
+        "recipes",
+        "diarization",
+        "required_model_files"
+      ],
+      "title": "WorkerExecution",
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "oneOf": [
     {
       "$ref": "#/$defs/RecipeCatalog"
+    },
+    {
+      "$ref": "#/$defs/EngineCatalog"
     },
     {
       "$ref": "#/$defs/InventorySnapshot"
