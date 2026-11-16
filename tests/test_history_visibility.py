@@ -414,7 +414,7 @@ def _artifacts(env: V7, job_id: str) -> JobArtifacts:
     return job_artifacts(
         env.store.get_snapshot(job_id),
         job_id,
-        env.store.artifact_digests(job_id),
+        env.store.artifact_evidence(job_id),
         attempted=bool(job.attempts),
     )
 
@@ -486,3 +486,134 @@ def test_http_artifacts_route_is_read_only_and_guarded(
             assert getattr(c, method)(url, headers=origin).status_code in (404, 405)
         assert c.get(url, headers={SESSION_HEADER: "wrong"}).status_code == 401
         assert c.get("/api/v1/jobs/job_" + "0" * 32 + "/artifacts").status_code == 404
+
+
+# ------------------------------------------------- PR #52 review (P2-1, P2-2), 0.1.55
+
+
+def test_list_offers_no_validator_that_survives_a_visibility_change(env: V7) -> None:
+    """P2-1: hide/show changes the list but not the job-state revision, so the list
+    must not be served with an ETag made of that revision (and is never cacheable)."""
+    first, second = env.finished("a.wav"), env.finished("b.wav")
+    app, _ = _client(env)
+    origin = {"Origin": "http://" + AUTHORITY}
+    with TestClient(app, base_url="http://" + AUTHORITY, headers={SESSION_HEADER: SESSION}) as c:
+
+        def listing(query: str = "") -> Any:
+            response = c.get("/api/v1/jobs" + query)
+            assert response.status_code == 200
+            assert "etag" not in response.headers
+            assert response.headers["cache-control"] == "no-store"
+            return response.json()
+
+        before = listing()
+        job_revisions = {j["id"]: j["revision"] for j in before["items"]}
+        assert [j["id"] for j in before["items"]] == [first, second]
+        url = f"/api/v1/jobs/{first}/visibility"
+        body = {"schema_version": 1, "hidden": True}
+        assert c.put(url, json=body, headers=origin | {"If-Match": '"0"'}).status_code == 200
+        hidden = listing()
+        assert [j["id"] for j in hidden["items"]] == [second]  # the content changed ...
+        assert hidden["revision"] == before["revision"]  # ... the state revision did not
+        assert [j["id"] for j in listing("?visibility=hidden")["items"]] == [first]
+        shown = {"schema_version": 1, "hidden": False}
+        assert c.put(url, json=shown, headers=origin | {"If-Match": '"1"'}).status_code == 200
+        after = listing()
+        assert [j["id"] for j in after["items"]] == [first, second]
+        assert after["revision"] == before["revision"]
+        # Job state revisions and their own ETags are untouched by hide and show.
+        assert {j["id"]: j["revision"] for j in after["items"]} == job_revisions
+        one = c.get(f"/api/v1/jobs/{first}")
+        assert one.headers["etag"] == f'"{job_revisions[first]}"'
+
+
+def test_layout_without_visibility_keeps_its_list_etag(tmp_path: Path) -> None:
+    from test_b7_api import runtime_for
+
+    env = Env(tmp_path, None)
+    env.submit(env.file("a.wav"))
+    queue = OperationQueue()
+    app = create_app(
+        SESSION,
+        repo_root=ROOT,
+        operation_queue=queue,
+        enable_v1_settings=True,
+        v1_authority=AUTHORITY,
+        v1_store_path=env.settings_path,
+        enable_v1_jobs=True,
+        v1_jobs_runtime=runtime_for(env, queue),
+    )
+    with TestClient(app, base_url="http://" + AUTHORITY, headers={SESSION_HEADER: SESSION}) as c:
+        response = c.get("/api/v1/jobs")
+        assert response.headers["etag"] == f'"{response.json()["revision"]}"'
+        assert response.headers["cache-control"] == "no-store"
+
+
+def test_artifact_is_verified_against_the_record_of_its_own_format(
+    env: V7, offline: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P2-2: the .md bytes saved as .srt are a changed .srt, not a verified one."""
+    job_id = _real_job(env, monkeypatch)
+    directory = owned_directory(env.store.get_snapshot(job_id), job_id)
+    assert directory is not None
+    evidence = env.store.artifact_evidence(job_id)
+    assert evidence is not None and set(evidence) == {"srt", "json", "md"}
+    files = {p.suffix[1:]: p for p in directory.iterdir() if p.name != OUTPUT_MARKER}
+    for fmt, (digest, size) in evidence.items():
+        assert files[fmt].stat().st_size == size and len(digest) == 64
+    assert {i.format: i.integrity for i in _artifacts(env, job_id).items} == {
+        "srt": "verified",
+        "json": "verified",
+        "md": "verified",
+    }
+    # Replace the SRT with the (genuine, recorded) bytes of the MD artifact of this job.
+    md_bytes = files["md"].read_bytes()
+    assert md_bytes != files["srt"].read_bytes()
+    files["srt"].write_bytes(md_bytes)
+    swapped = {i.format: i.integrity for i in _artifacts(env, job_id).items}
+    assert swapped == {"srt": "changed", "json": "verified", "md": "verified"}
+    # Same size, different bytes is also a change (the digest decides, not the size).
+    original_json = files["json"].read_bytes()
+    files["json"].write_bytes(bytes(b ^ 1 for b in original_json))
+    assert {i.format: i.integrity for i in _artifacts(env, job_id).items}["json"] == "changed"
+    # A known-format file the completed job did not produce is not one of its artifacts.
+    (directory / f"{directory.name}.vtt").write_text("WEBVTT", encoding="utf-8")
+    view = _artifacts(env, job_id)
+    assert "vtt" not in {i.format for i in view.items} and view.unexpected_count == 1
+
+
+def test_evidence_without_a_per_file_record_never_verifies(
+    env: V7, offline: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rows written before per-file records (or by a caller that has none) give no basis:
+    every file is unverified, even though its digest is in the job-wide list."""
+    job_id = _real_job(env, monkeypatch)
+    snapshot = env.store.get_snapshot(job_id)
+    directory = owned_directory(snapshot, job_id)
+    assert directory is not None
+    for no_basis in ({}, None):
+        view = job_artifacts(snapshot, job_id, no_basis, attempted=True)
+        assert view.state == "available" and view.unexpected_count == 0
+        assert {i.integrity for i in view.items} == {"unverified"}
+    assert env.store.artifact_evidence(env.submit(env.file("q.wav")).batch.jobs[0].id) is None
+    with sqlite3.connect(env.store.path) as db:
+        db.execute("DROP TRIGGER job_results_immutable_UPDATE")
+        # A row as written before per-file records existed: job-wide digests only.
+        old = '{"artifacts":["' + "a" * 64 + '"],"manifest":"' + "c" * 64 + '"}'
+        db.execute("UPDATE job_results SET evidence = ? WHERE operation_id = ?", (old, job_id))
+    assert env.store.artifact_evidence(job_id) == {}
+    legacy = _artifacts(env, job_id)
+    assert legacy.items and {i.integrity for i in legacy.items} == {"unverified"}
+    # A record naming one format twice is refused as corrupt, not guessed.
+    twice = (
+        '{"artifacts":[],"manifest":"x","files":[{"format":"srt","sha256":"'
+        + "a" * 64
+        + '","size":1},{"format":"srt","sha256":"'
+        + "b" * 64
+        + '","size":1}]}'
+    )
+    with sqlite3.connect(env.store.path) as db:
+        db.execute("UPDATE job_results SET evidence = ? WHERE operation_id = ?", (twice, job_id))
+    with pytest.raises(ControlError) as error:
+        env.store.artifact_evidence(job_id)
+    assert error.value.code is E.STORE_CORRUPT

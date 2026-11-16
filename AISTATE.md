@@ -18,6 +18,7 @@
 - 内容: `HistoryControlStore`（layout v7＝v6＋`job_visibility`、追加のみ・一方向）、`GET /jobs?visibility=`、`GET/PUT /jobs/{id}/visibility`（独自revisionのCAS、冪等PUT、Outboxなし）、
   `GET /jobs/{id}/artifacts`（形式・サイズ・照合、名前/pathなし）。**削除は一切実装していない。** 詳細[b7/history-visibility](docs/architecture/b7/history-visibility.md)。
 - 試験: 新規`tests/test_history_visibility.py` 14件、既存2件のlayout期待値を6→7。数値とCIはPR本文。
+- レビュー修正（同日、版据置、PR #52 P2-1/P2-2）: v7の一覧はETagを返さず`no-store`。成果物は形式別の記録（`evidence.files`）とだけ照合し、記録なしは`unverified`。C2cの削除判断はこの形式別照合だけを使う。
 - **未検証**: Windows実機（v6→v7移行、backupからの復元）。UIは未接続。
 - **次の一手**: C2b（複数ジョブUI: 原子的batch投入、論理ジョブ表示、キュー全件、履歴・非表示・成果物ビュー）→ C2c（墓標化・成果物削除、別PR）。条件は[program/c2-history-and-artifacts-design §0](docs/architecture/program/c2-history-and-artifacts-design.md)。
 

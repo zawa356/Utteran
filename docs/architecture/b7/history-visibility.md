@@ -56,6 +56,14 @@ CREATE TABLE job_visibility (
 - 一覧のcursorは発行時点のスナップショット（既存の性質）。途中で非表示にしても発行済みcursorの中身は変わらない。cursorのMACにfilterを含めたので、
   別のfilterでは`cursor_invalid`。
 
+### 2.4 一覧のETag（PR #52レビュー P2-1）
+
+`GET /api/v1/jobs`の`revision`はJobの状態変化だけを数える（`operations_revision`）。非表示/再表示は状態変化ではないので、
+**同じ`revision`のまま一覧の内容が変わる**。そのためlayout v7では、この`revision`を一覧のETagとして**返さない**
+（内容を保証できないvalidatorを出さない）。一覧は常に`Cache-Control: no-store`。bodyの`revision`は従来どおり「状態のrevision」として残す。
+visibilityを持たないlayout（v3等）の一覧は従来どおりETagを返す（内容がrevisionで決まるため）。
+個々のJobの`GET /jobs/{id}`のETag（Jobのrevision）と`/visibility`のETag（visibility revision）は変更なし。
+
 ## 3. layout v7への移行・backup・downgrade
 
 - v7 = v6 ＋ `job_visibility`（表とトリガーの**追加だけ**。既存の表・行・トリガーは無変更。試験で移行前後の全行が同一であることを確認）。
@@ -80,7 +88,12 @@ CREATE TABLE job_visibility (
 | `legacy` | 0.1.54より前に受理されたJob（出力先へ直接書いたため、どれが成果物か証明できない） |
 | `none` | まだ試行していない |
 
-- `integrity`: `verified`＝完了時に記録したsha256と一致、`changed`＝一致しない（編集・差替え）、`unverified`＝照合する記録が無い（成功していないJob等）。
+- `integrity`は**その形式の記録**とだけ照合する（PR #52レビュー P2-2）。完了時にB3の検証済み完了通知から「形式 → sha256・サイズ」を
+  `job_results.evidence`の`files`へ記録し（JSON内の追加key。layout変更なし）、ファイルは自分の形式の記録とサイズ・sha256が一致したときだけ`verified`。
+  同じJobの別形式の成果物と同じbyte列に差し替えたファイル（例: `.md`の中身を`.srt`として保存）は`changed`。
+  記録が無い形式は`unverified`: 成功していないJob、**形式別の記録が導入される前に完了したJob**（Job全体のdigest一覧しか無い）を含む。
+  「Jobのどれかのdigestと一致すれば可」という照合は行わない。完了したJobが記録していない既知形式のファイルは成果物として数えず`unexpected_count`へ入れる。
+  **束C2cの削除可否は、この形式別照合だけを根拠にする**（記録が無ければ`unverified`＝既定で拒否）。
 - `unexpected_count`: ディレクトリ内の、Utteranが書いていないファイル・サブディレクトリの数。束C2cの成果物削除で「既定は拒否」とする判定の元になる。
 - **ファイル名・ディレクトリ名・pathは返さない**（名前には入力ファイル名が含まれるため。公開DTOは値を持たない方針のまま）。
   「フォルダを開く」と本文の表示（Viewer）は束C2bで、pathをserver内で解決する形にする。

@@ -129,6 +129,10 @@ class CompletionEvidence:
     core_job_id: str
     artifact_digests: tuple[str, ...]
     manifest_digest: str
+    # (format, sha256, size) per artifact, from the verified worker completion. This is
+    # the only basis for checking one file later: a digest is expected for *its* format,
+    # never "any digest of the job". Empty for callers that do not know the files.
+    artifact_files: tuple[tuple[str, str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -336,8 +340,14 @@ class JobControlStore(ControlStore):
             self._row(db, job_id)
             return self._snapshot(db, job_id)
 
-    def artifact_digests(self, job_id: str) -> frozenset[str] | None:
-        """Private read: sha256 of the artifacts verified at completion; None if none."""
+    def artifact_evidence(self, job_id: str) -> dict[str, tuple[str, int]] | None:
+        """Private read: format -> (sha256, size) recorded at the verified completion.
+
+        ``None`` when the job has no completion evidence. An empty mapping when it has
+        evidence without a per-file record (rows written before the mapping existed, or
+        an ambiguous record): callers must then treat every file as unverified. A file
+        is never matched against "any digest of the job".
+        """
         with self._transaction(write=False) as db:
             self._snapshot_row(db, job_id)
             row = db.execute(
@@ -346,12 +356,28 @@ class JobControlStore(ControlStore):
         if row is None:
             return None
         try:
-            values = json.loads(row[0])["artifacts"]
-            if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+            data = json.loads(row[0])
+            if not isinstance(data, dict) or not isinstance(data.get("artifacts"), list):
                 raise ValueError
+            files = data.get("files", [])
+            if not isinstance(files, list):
+                raise ValueError
+            result: dict[str, tuple[str, int]] = {}
+            for item in files:
+                fmt, digest, size = item["format"], item["sha256"], item["size"]
+                if (
+                    not isinstance(fmt, str)
+                    or not isinstance(digest, str)
+                    or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                    or type(size) is not int
+                    or size < 0
+                    or fmt in result  # two records for one format: no usable basis
+                ):
+                    raise ValueError
+                result[fmt] = (digest, size)
         except (ValueError, KeyError, TypeError):
             raise ControlError(E.STORE_CORRUPT) from None
-        return frozenset(values)
+        return result
 
     def _list_mac(
         self, snapshot_id: str, offset: int, limit: int, scope: str, selected: str = "all"
@@ -909,6 +935,17 @@ class JobControlStore(ControlStore):
                             {
                                 "artifacts": list(evidence.artifact_digests),
                                 "manifest": evidence.manifest_digest,
+                                # Additive key (0.1.55 review): absent in older rows.
+                                **(
+                                    {
+                                        "files": [
+                                            {"format": f, "sha256": d, "size": n}
+                                            for f, d, n in evidence.artifact_files
+                                        ]
+                                    }
+                                    if evidence.artifact_files
+                                    else {}
+                                ),
                             }
                         ),
                         self._now(),

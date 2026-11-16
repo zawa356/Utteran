@@ -15,7 +15,7 @@
 | 1 | 非表示テーブルの更新方式とCAS・Outboxの整合性を明確にする | **C2aで実装・文書化**: [b7/history-visibility §2](../b7/history-visibility.md)（付帯表の上書き＋独自revision、冪等PUT、イベントなし） |
 | 2 | 墓標化が既存snapshot schema・retry/rerun・replay・B9同期・履歴参照を壊さない | C2cの設計条件（§3 ③-a）。C2aの試験`dump`比較（既存16表の全行）をC2cでも基準に使い、墓標化後に各読み取り経路が通ることを試験する |
 | 3 | 削除後にprivate DB・WAL・replay等へ残る情報を確認する | C2cで、sentinelを入れたJobを墓標化し、DB本体・WAL・各replay表・backupを走査する試験を必須にする。残るものは文書と画面文言に列挙する |
-| 4 | 成果物削除は所有権と内容を**実行直前にも**検証し、想定外はfail closed | C2cの設計条件（§3 ④）。preflight時と実行時の2回、同じ検証関数を通す。C2aの読み取りビュー（`integrity`・`unexpected_count`）が検証の部品 |
+| 4 | 成果物削除は所有権と内容を**実行直前にも**検証し、想定外はfail closed | C2cの設計条件（§3 ④）。preflight時と実行時の2回、同じ検証関数を通す。C2aの読み取りビュー（`integrity`・`unexpected_count`）が検証の部品。**照合は形式別の記録だけ**（PR #52 P2-2。Job全体のdigest集合との照合は使わない。記録なし＝`unverified`＝拒否）。Windowsのsymlink/junction/reparse pointは削除前に別途厳格に検証する |
 | 5 | 一方向migrationに備え、backupと旧buildへのdowngrade不可を文書化 | **C2aで文書化・試験**: [b7/history-visibility §3](../b7/history-visibility.md)、[backend/persistence-recovery](../backend/persistence-recovery.md) |
 前提: 束C1（[b7/output-directory](../b7/output-directory.md)）、retryの整理（[retry-semantics](retry-semantics.md)）。
 
