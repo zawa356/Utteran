@@ -129,6 +129,9 @@ ENGINE_DECLARATIONS ──► core recipes（導出）・asr registry（非ス�
   0.1.53より前のsnapshot（`b2-verbatim`）は、retryでも従来どおり逐語で解釈される（用語集を持ち得ない）。
 - **混在時のfail closed**: 新GUI→旧workerは未知field（`extra="forbid"`）で拒否、旧GUI→新workerは既定`b2-verbatim`で従来動作、
   未知の版はprivate schemaとadapterの両方で拒否。
+- 用語の中の空白の連続（改行・tabを含む）は1個の空白にする（PR #50最終確認で追加。貼り付けた用語が「用語行＋改行＋prompt」の形を壊さない）。
+- **downgrade不可**: 0.1.53以降に作ったsnapshotは`prompt_compiler_version="glossary-bias-1"`を持ち、0.1.52以前のbuildはこの値を
+  読めない（未知の値として拒否）。v1は開発専用・未リリースだが、同じdata rootを古いbuildへ戻す運用はしない（B6 migrationと同じ一方向）。
 - **resume互換**: core `Config`にfieldを追加していない（コンパイル結果は既存の`asr.initial_prompt`に入る）。用語集が無ければ
   `Config`とstage hashは0.1.52と同一で、既存jobのresume cacheは無効化されない（試験で固定）。旧CLIは無変更。
 - 公開read-only `GET /api/v1/engines`（v1 opt-in時のみ）が`EngineCatalog`を返す。UIはこの宣言とB4/B5の結果から

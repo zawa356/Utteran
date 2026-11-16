@@ -83,6 +83,13 @@ pre-start再検査（`candidate_changed`）で投入前に止まる。`asr_model
 protocol v1のまま追加した（旧版workerはunknown fieldとして、旧版親の要求は欠落として、どちらも
 schemaで拒否され、fail closed）。
 
+## `prompt_compiler`（0.1.53）
+
+`WorkerExecutionContext.prompt_compiler`（`b2-verbatim` | `glossary-bias-1`、省略時`b2-verbatim`）は、B7がsnapshotの
+`ResolvedSpec.prompt_compiler_version`をそのまま送る値。B3は`adapt_settings`でこの版の`compile_prompt`を使い、`initial_prompt`と
+用語集から実行用`Config.asr.initial_prompt`を作る。`b2-verbatim`で用語集があれば`unsupported_setting`、未知の版はschemaで拒否。
+このfieldを知らない旧workerは`extra="forbid"`で要求全体を拒否する。詳細は[../backend/engine-adapters.md](../backend/engine-adapters.md) §7。
+
 ## handshake・順序
 
 最初はsequence=0のhello、能力single/cancelとprofileを返す。要求前なのでhelloの3 IDはnull。
