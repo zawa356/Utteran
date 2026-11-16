@@ -26,6 +26,7 @@ DTOとAPIの機械可読な正本は、コード（`src/utteran_contracts/`）�
 
 ## UI刷新（UI-1 設計 → UI-2 基盤 → UI-3-0 画面設計）
 
+- **UI-3 S5-B／束C2b（2026-11-16、`0.1.56`未リリース、Draft PR）**: [ui3/s5b](ui3/s5b-multi-job-board.md)。`--next-ui-v1`で複数ファイルの原子的な一括投入、`retry_of`連鎖を1行にした論理ジョブのキュー/履歴、非表示/再表示、成果物の読み取りビュー。機能接続であり、Design Freezeの画面構成は未達（同文書§5）。削除機能なし。Windows実機未受入。
 - **UI-3 S5-A（2026-11-12、`0.1.51`未リリース、Draft PR）**: [ui3/s5a](ui3/s5a-v1-single-job.md)。`--next-ui-v1`に限り、Vueの単一入力を保存済みB5 Preset/Policy（revision凍結、初回は明示作成）→ B5 validation（画面と同じ有効設定のときだけ）→ B7 resolution → B7 durable job → `GET`の状態表示へ接続。サーバーが`/next/`に書く`utteran-api-mode` metaだけでモードを決め、v1では旧投入を呼ばない。結果不明は同key・同bodyの明示再照合のみ、queue `paused`は明示再開のみ、取消は協調的のみ。B5 storeの初回並行openの競合を修正。`--next-ui`・既定は不変。Windows WebView2実機・実モデルは未受入。
 - **B4 ready/smoke（2026-11-12、`0.1.50`未リリース、Draft PR）**: [b4/smoke](b4/smoke.md)。開発専用の明示smoke入口（`python -m utteran_gui.capability_smoke`、専用markerのrootのみ・GUI稼働中は拒否）、profile内の単発子process、version付きprivate evidence（digestと固定codeのみ、24時間TTL、fail-closed読取）、`refresh/resolve`とB7 prestartでの読取専用統合。fw-cpuだけがready到達可、fw-cudaは`unknown`。実機手順は[smoke-local-acceptance](b4/smoke-local-acceptance.md)（**未実施**）。
 - **G-09（2026-11-11、`0.1.49`未リリース、Draft PR）**: [ui3/g09](ui3/g09-next-ui-v1-startup.md)。暫定・開発専用`--next-ui-v1`（専用markerのdata rootのみ、ポート先取り後に実authorityでB5〜B9）、同一data rootのGUIプロセス排他（全モード、OSロック。CLI・旧バイナリは対象外）、停止順序と`shutdown()`結果code。既定・`--next-ui`・API・schema・DBは不変。新UIのv1製品接続は未完了（旧投入は409）。

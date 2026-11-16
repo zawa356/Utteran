@@ -1,14 +1,14 @@
 # AI 作業状態
 
-## 現在地（2026-11-16、束C2b 複数ジョブUI — 作業中、0.1.56・未リリース、PR未作成）
+## 現在地（2026-11-16、束C2b 複数ジョブUI、0.1.56・未リリース、C2aに積んだDraft PR）
 
-- ブランチ`claude/c2b-multi-job-ui`（基点＝束C2a `claude/c2a-history-visibility`のHEAD `4421a78`、PR #52）。通常commit・push、作者`zawa356`。**PRはまだ作っていない**（画面接続後にDraft化）。
-- 済み（第1段）: frontendのAPIクライアント拡張（`retryOf`/`rerunOf`、一覧filter、visibility GET/PUT、artifacts GET）と`domain/v1/logicalJobs.ts`（`retry_of`連鎖→論理ジョブ）。
-- 済み（第2段）: `domain/v1/batchJobs.ts`（`core.v1.batch`、選択行を1つの原子的B7 batchへ。行override→leaf override、device指定は送信前に拒否）。Vitest 504 passed。**どちらも画面未接続。**
-- **未着手（この順で進める）**: (1) 画面: `V1BatchDisabled.vue`を`core.v1.batch`の実パネルへ置換（`features/transcribe/`）、
-  (2) Expertのキュー全件・履歴（論理ジョブ行、非表示/再表示、成果物ビュー、retry/rerun/取消）、(3) Normalの結果表示、(4) Playwright `v1` projectのE2Eと開発ハーネス（`tools/ui2/serve_next_ui.py --v1`はlayout v7が必要）、
-  (5) Design Freezeとのスクリーンショット比較、(6) Windows受入指示書W-C2。
-- 削除（墓標化・成果物削除）は束C2c（別PR）。条件は[program/c2-history-and-artifacts-design §0](docs/architecture/program/c2-history-and-artifacts-design.md)。
+- ブランチ`claude/c2b-multi-job-ui`（基点＝束C2a `claude/c2a-history-visibility`、PR #52）。stack: main ← #49 ← #50 ← #51 ← #52 ← 本PR。通常commit・push、作者`zawa356`。Ready化・mergeはowner承認制。
+- 内容: 一括投入（`core.v1.batch`、`V1Batch.vue`）、論理ジョブのキュー/履歴・取消・再試行・非表示/再表示（`core.v1.board`、`V1JobBoard.vue`）、成果物ビュー（`V1Artifacts.vue`）。
+  backendは`JobRuntime(store_type=)`の追加のみ。**削除機能なし。** 詳細[ui3/s5b-multi-job-board](docs/architecture/ui3/s5b-multi-job-board.md)。
+- #52のレビュー指摘（P2-1 一覧ETag、P2-2 形式別照合）は#52のブランチで修正しmerge済み。
+- 試験: Vitest 514、Playwright v1 14・全体67、pytestはPR本文。**Design Freezeとの比較では画面構成・見た目は未達**（同文書§5。機能接続のみ）。
+- **未検証**: Windows WebView2実機・実モデル（[W-C2指示書](docs/architecture/program/windows-acceptance-w-c2.md)）。
+- **次の一手**: C2c（墓標化・成果物削除、別PR。必須条件2〜4の試験を先に用意）→ D（UI-3-0の画面再構成。§5の比較表が出発点）→ B1（pyannote worker）。
 
 ## 現在地（2026-11-16、束C2a 履歴の非表示（layout v7）・成果物の読み取りビュー、0.1.55・未リリース、C1に積んだDraft PR）
 

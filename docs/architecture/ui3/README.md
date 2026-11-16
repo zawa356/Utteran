@@ -29,6 +29,9 @@ owner方針で新UIの正規の接続先は`/api/v1`。順序はv1起動/G-09排
 **2026-11-12 UI-3 S5-A（0.1.51、未リリース、Draft PR）:** `--next-ui-v1`に限り、単一入力をB5 Preset/Policy（revision凍結・明示作成）→ B5 validation → B7 resolution → durable job → `GET`へ接続。
 Normal/Expert共通の1つのcontroller、旧投入は呼ばない、複数投入は無効表示。正本は[s5a-v1-single-job.md](s5a-v1-single-job.md)。Windows WebView2実機は未受入。
 
+**S5-B／束C2b（2026-11-16、`0.1.56`未リリース）**: 複数ファイルの原子的な一括投入、論理ジョブ（`retry_of`連鎖）のキュー/履歴、非表示/再表示、成果物ビュー。
+正本は[s5b-multi-job-board.md](s5b-multi-job-board.md)。S5-Aの「複数投入は無効表示」は本束で実パネルに置き換わった。Design Freezeの画面構成は未達（同§5）。
+
 **2026-11-11 G-09（0.1.49、未リリース、Draft PR）:** 暫定・開発専用`utteran-gui --next-ui-v1`（専用markerのdata rootのみ、ポート先取り後にB5/B7/B8/B9を同一originで有効化）、
 同一data rootのGUIプロセス排他（3モード共通のOSロック）、起動失敗・停止・rollbackの境界。正本は[g09-next-ui-v1-startup.md](g09-next-ui-v1-startup.md)。
 **v1の製品接続ではない**: 現行S3-A/B1の旧投入はこのモードで409。Vue画面・Design Freezeは不変。実ジョブ・B4 ready/smoke・S3-B2・Windows WebView2実機は未受入。
