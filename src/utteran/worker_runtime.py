@@ -16,6 +16,7 @@ from utteran import application
 from utteran.config import Config, EnvironmentTokenProvider
 from utteran.config_adapter import ConfigAdaptationError, ExecutionContext, adapt_settings
 from utteran.errors import CancelledError, DependencyError, ModelNotFoundError
+from utteran.models.catalog import list_models
 from utteran.types import CancelToken, ProgressEvent
 from utteran_contracts.worker import WorkerArtifact, WorkerErrorCode, WorkerRequest
 from utteran_contracts.worker_framing import ProtocolError
@@ -34,12 +35,57 @@ def _keys(model: type[BaseModel], data: Any) -> None:
             _keys(nested, value)
 
 
+def _catalogue_id(backend: str, model: str) -> bool:
+    """True only for an exact canonical catalogue ID of that backend (static table)."""
+    return any(entry.model_id == model for entry in list_models(backend=backend))
+
+
+def _local_model_dir(value: str) -> Path:
+    """Structural check of the B7-frozen directory; existence/files are offline_preflight's.
+
+    No expanduser, resolve, cwd or environment lookup: the value must already be the
+    explicit absolute, normalized local path B7 recorded for the resolved model ID.
+    """
+    path = Path(value)
+    if (
+        value != value.strip()
+        or "\0" in value
+        or not path.is_absolute()
+        or any(part == ".." for part in path.parts)
+        or str(path) != value
+    ):
+        raise ProtocolError(WorkerErrorCode.INVALID_CONTEXT)
+    return path
+
+
+def bind_local_model(config: Config, model_dir: Path) -> Config:
+    """Explicit execution boundary: load the verified local directory for the checked ID.
+
+    Called only after adapt_settings compared the catalogue ID with the preset; the
+    adapter itself stays pure and never sees a path.
+    """
+    payload = config.model_dump(mode="json")
+    payload["asr"]["model"] = str(model_dir)
+    bound = Config.model_validate(payload)
+    if bound.asr.model != str(model_dir):
+        raise ProtocolError(WorkerErrorCode.INVALID_CONTEXT)
+    return bound
+
+
 def explicit_config(request: WorkerRequest) -> Config:
     data = request.context.base_config
     _keys(Config, data)
+    ctx = request.context
+    for value in (ctx.asr_backend, ctx.asr_model, ctx.asr_device, ctx.compute_type):
+        if value != value.strip() or not value.strip() or value.casefold() == "auto":
+            raise ProtocolError(WorkerErrorCode.INVALID_CONTEXT)
+    # The ID field carries only the resolved catalogue ID; a path, Hub repository or
+    # unknown name here is a malformed request, not a preset conflict.
+    if not _catalogue_id(ctx.asr_backend, ctx.asr_model):
+        raise ProtocolError(WorkerErrorCode.INVALID_CONTEXT)
+    model_dir = _local_model_dir(ctx.asr_model_dir)
     try:
         base = Config.model_validate(data)
-        ctx = request.context
         cfg = adapt_settings(
             request.settings,
             ExecutionContext(
@@ -67,10 +113,9 @@ def explicit_config(request: WorkerRequest) -> Config:
     for path in (Path(request.input_path), cfg.general.output_dir, cfg.general.job_dir):
         if path is None or not path.is_absolute():
             raise ProtocolError(WorkerErrorCode.INVALID_CONTEXT)
-    for value in (ctx.asr_backend, ctx.asr_model, ctx.asr_device, ctx.compute_type):
-        if value != value.strip() or not value.strip() or value.casefold() == "auto":
-            raise ProtocolError(WorkerErrorCode.INVALID_CONTEXT)
-    return cfg
+    # adapt_settings normalized cfg.asr.model to the checked ID; execution loads only the
+    # frozen local directory (offline_preflight then verifies it on disk).
+    return bind_local_model(cfg, model_dir)
 
 
 def offline_preflight(config: Config) -> None:
@@ -82,6 +127,8 @@ def offline_preflight(config: Config) -> None:
         raise ProtocolError(WorkerErrorCode.DEPENDENCY_MISSING)
     # Only an explicit absolute local model directory: no catalog/cache lookup,
     # Hub ID, tokenizer fallback, or auto device selection at this boundary.
+    # These files are a necessary pre-check, not a load guarantee: CTranslate2 and the
+    # model's own files (e.g. vocabulary) are only proven by the real load in core.
     model = Path(config.asr.model)
     if (
         not model.is_absolute()

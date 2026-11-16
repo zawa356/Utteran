@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "asr": {
+    "backend": "faster-whisper",
+    "model": "large-v3-turbo",
+    "language": "ja",
+    "initial_prompt": null,
+    "glossary": [],
+    "beam_size": 5,
+    "vad": { "enabled": true },
+    "word_timestamps": "auto",
+    "condition_on_previous_text": false
+  },
+  "diarization": {
+    "enabled": false,
+    "backend": "pyannote",
+    "model": "pyannote/speaker-diarization-community-1",
+    "device_preference": "auto",
+    "num_speakers": null,
+    "min_speakers": null,
+    "max_speakers": null,
+    "memory_guard": "auto"
+  },
+  "postprocessing": {
+    "boundary_snap_enabled": true,
+    "boundary_snap_unit": "A",
+    "merge_gap": 0.5,
+    "speaker_switch_penalty": 0.75
+  },
+  "output": {
+    "formats": ["srt", "json", "md"],
+    "newline": "lf",
+    "srt_bom": false,
+    "show_speaker": true,
+    "speaker_labels": {}
+  }
+}

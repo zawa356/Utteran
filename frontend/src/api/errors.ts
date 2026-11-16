@@ -27,6 +27,14 @@ export interface ApiErrorInit {
   /** True when an unsafe request may have reached the server but no answer arrived. */
   outcomeUnknown?: boolean;
   detail?: string | null;
+  /** v1 `error.issues` (JSON pointer + fixed code only; bounded). Never values or paths. */
+  issues?: readonly ApiIssue[];
+}
+
+/** One v1 issue: a JSON pointer into the request (`/files/0/input_path`) and a fixed code. */
+export interface ApiIssue {
+  readonly path: string;
+  readonly code: string;
 }
 
 export class ApiError extends Error {
@@ -38,6 +46,7 @@ export class ApiError extends Error {
   readonly outcomeUnknown: boolean;
   /** Legacy `detail` text (already server-side redacted). Shown only as secondary detail. */
   readonly detail: string | null;
+  readonly issues: readonly ApiIssue[];
 
   constructor(init: ApiErrorInit) {
     super(init.code ?? init.kind);
@@ -49,6 +58,7 @@ export class ApiError extends Error {
     this.requestId = init.requestId ?? null;
     this.outcomeUnknown = init.outcomeUnknown ?? false;
     this.detail = init.detail ?? null;
+    this.issues = init.issues ?? [];
   }
 }
 

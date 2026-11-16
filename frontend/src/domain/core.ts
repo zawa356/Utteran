@@ -1,6 +1,8 @@
 import { createHttpClient, type FetchLike } from "../api/http";
 import { createLegacyApi, type LegacyApi } from "../api/legacy";
+import { ApiError } from "../api/errors";
 import { createLegacyJobsApi, type LegacyJobsApi } from "../api/legacyJobs";
+import { createV1ResourcesApi, type V1ResourcesApi } from "../api/v1Resources";
 import type { HostBridge } from "../host";
 import { AdmissionGate } from "./admission";
 import { BatchSubmitter } from "./batchSubmission";
@@ -12,11 +14,33 @@ import { SettingsController } from "./settings";
 import { ShellController } from "./shell";
 import { TokenController } from "./token";
 import { TranscriptionFormController } from "./transcription";
+import type { ApiMode } from "./v1/apiMode";
+import { V1LibraryController } from "./v1/library";
+import { V1SingleJobController } from "./v1/singleJob";
 import { WizardStatusController } from "./wizard";
+
+/** S5-A v1 single-job path; present only when the server rendered `v1-dev` (`--next-ui-v1`). */
+export interface V1Core {
+  api: V1ResourcesApi;
+  library: V1LibraryController;
+  job: V1SingleJobController;
+}
+
+/**
+ * In v1 mode the legacy start/cancel routes are closed in the client too (the server answers 409
+ * anyway): no request is sent, so there is no legacy fallback by any path (button, Enter, batch).
+ */
+export function closeLegacyStarts(api: LegacyJobsApi): LegacyJobsApi {
+  const closed = () => Promise.reject(new ApiError({ kind: "conflict", status: null, code: "v1_mode_legacy_start_disabled" }));
+  return { ...api, startJob: closed, cancelJob: closed };
+}
 
 /** Everything the views use, created once and outside Vue (mode switches keep it). */
 export interface AppCore {
   host: HostBridge;
+  /** Chosen by the server page only (`utteran-api-mode` meta), fixed for the page lifetime. */
+  apiMode: ApiMode;
+  v1: V1Core | null;
   legacy: LegacyApi;
   shell: ShellController;
   environment: EnvironmentController;
@@ -39,10 +63,12 @@ export interface AppCore {
   start(): Promise<void>;
 }
 
-export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSource?: EventSourceFactory }): AppCore {
+export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSource?: EventSourceFactory; apiMode?: ApiMode }): AppCore {
+  const apiMode: ApiMode = deps.apiMode === "v1-dev" ? "v1-dev" : "legacy";
   const http = createHttpClient({ fetch: deps.fetch });
   const legacy = createLegacyApi(http);
-  const jobsApi = createLegacyJobsApi(http);
+  const legacyJobs = createLegacyJobsApi(http);
+  const jobsApi = apiMode === "v1-dev" ? closeLegacyStarts(legacyJobs) : legacyJobs;
   const settings = new SettingsController(legacy);
   // "Follow the default" on the environment panel reads the *saved* default (never the draft).
   const environment = new EnvironmentController(legacy, { defaultProfile: () => settings.store.get().saved?.defaultProfile ?? null });
@@ -62,8 +88,16 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
   // After a batch, re-read the settings (a GET; unsaved settings edits are rebased, never lost)
   // so the screen shows the server's current values. Nothing is PATCHed back.
   const batch = new BatchSubmitter(gate, inputs, { afterRun: () => void settings.load() });
+  let v1: V1Core | null = null;
+  if (apiMode === "v1-dev") {
+    const api = createV1ResourcesApi(http);
+    const library = new V1LibraryController(api);
+    v1 = { api, library, job: new V1SingleJobController(api, library.store, inputs.store, transcription.store) };
+  }
   return {
     host: deps.host,
+    apiMode,
+    v1,
     jobsApi,
     transcription,
     job,
@@ -71,6 +105,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     inputs,
     batch,
     dispose() {
+      v1?.job.dispose();
       batch.dispose();
       job.dispose();
       transcription.dispose();
@@ -83,10 +118,13 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     logs: new LogFolderController(legacy),
     wizard: new WizardStatusController(legacy),
     async start() {
+      // v1 reads only (GET): no Preset/Policy is created and the queue is not touched.
+      const v1Reads = v1 ? Promise.all([v1.library.load(), v1.job.loadQueue(), v1.job.loadRecent()]) : Promise.resolve();
       await settings.load();
       if (environment.store.get().load.phase === "idle") {
         await environment.selectDefault(settings.store.get().saved?.defaultProfile ?? null);
       }
+      await v1Reads;
     },
   };
 }

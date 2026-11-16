@@ -1,4 +1,4 @@
-import { ApiError, defaultRetryable, kindForStatus } from "./errors";
+import { ApiError, type ApiIssue, defaultRetryable, kindForStatus } from "./errors";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -46,11 +46,28 @@ interface ErrorBody {
   retryable: boolean | null;
   requestId: string | null;
   detail: string | null;
+  issues: ApiIssue[];
+}
+
+const MAX_ISSUES = 50;
+const POINTER = /^(\/[A-Za-z0-9_~.-]{1,64}){0,12}$/;
+const CODE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/** Only a JSON pointer and a fixed snake_case code survive; anything else is dropped. */
+function parseIssues(raw: unknown): ApiIssue[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ApiIssue[] = [];
+  for (const item of raw.slice(0, MAX_ISSUES)) {
+    if (typeof item !== "object" || item === null) continue;
+    const { path, code } = item as Record<string, unknown>;
+    if (typeof path === "string" && typeof code === "string" && POINTER.test(path) && CODE.test(code)) out.push({ path, code });
+  }
+  return out;
 }
 
 /** v1 envelope `{error:{code,retryable,request_id}}` or legacy `{detail}`; anything else is ignored. */
 export function parseErrorBody(raw: unknown): ErrorBody {
-  const empty: ErrorBody = { code: null, retryable: null, requestId: null, detail: null };
+  const empty: ErrorBody = { code: null, retryable: null, requestId: null, detail: null, issues: [] };
   if (typeof raw !== "object" || raw === null) return empty;
   const record = raw as Record<string, unknown>;
   const error = record.error;
@@ -61,6 +78,7 @@ export function parseErrorBody(raw: unknown): ErrorBody {
       retryable: typeof e.retryable === "boolean" ? e.retryable : null,
       requestId: typeof e.request_id === "string" ? e.request_id : null,
       detail: null,
+      issues: parseIssues(e.issues),
     };
   }
   if (typeof record.detail === "string") return { ...empty, detail: record.detail.slice(0, 500) };
@@ -136,6 +154,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
             retryable: info.retryable ?? defaultRetryable(kind, safe),
             requestId: info.requestId,
             detail: info.detail,
+            issues: info.issues,
           });
         }
         if (!parsed.ok) {

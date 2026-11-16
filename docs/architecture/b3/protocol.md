@@ -16,6 +16,18 @@ stdin/stdoutはUTF-8 JSONL。LFを含めてrequest/controlは16MiB、eventは1Mi
 受信bufferは最大32 eventのqueueと各record上限で拘束する。stderrは8192byte単位で同時に
 読み捨て、保持するmodule欠落検知windowも512byte以下。raw内容を診断へ転送しない。
 
+worker側のstdio（`utteran.worker.main`）: protocol出力はstdoutの私有dup fdだけが持ち、fd 1/2はNULへ。
+protocol入力も同様に**stdinの私有dup fd**（非継承）だけが読み、プロセスの標準入力（fd 0、Windowsでは
+`STD_INPUT_HANDLE`）はcore/backendのimport前にNULへ差し替える。PR #48のWindows再受入で、
+control threadがstdinパイプを同期read中だと、main threadのnumpy拡張moduleのネイティブ初期化
+（`numpy/_core/multiarray.py`の`_multiarray_umath`生成）が戻らず、readが完了するまで停止した
+（windows-latestで再現。実worker `-I -m utteran.worker`でも`progress asr`後に停止）。
+標準入力をNULにした構成と「thread開始前のnumpy事前import」の両方で解消を確認し、前者を採用した
+（numpyに限らずctranslate2/torch等の後続ネイティブ初期化にも効き、hello・cancel応答を遅らせない）。
+OS内部のどの層が待つのか（CRT/ローダー/パイプI/O）は特定していない。私有入力は`close()`しない
+（daemonのcontrol threadがreadline中にbuffer lockを保持するため。終了は従来どおり`os._exit`）。
+wire形式・event順序・timeoutは変更なし。
+
 全wire envelopeで`schema_version:1`と`protocol_version:1`を必須とする。
 Python構築時は既定1を提供するが、framingは欠落・bool・文字列も拒否する。
 JSON Schemaでもwire版をrequiredにしている。B1 ProcessingSettingsのschema版も検証する。
@@ -26,8 +38,13 @@ JSON Schemaでもwire版をrequiredにしている。B1 ProcessingSettingsのsch
 
 - `WorkerRequest`: type=execute、request/job/attempt ID、profile、input_path、B1 settings、
   WorkerExecutionContext、mode=single、resume、force。
-- `WorkerExecutionContext`: base_config、asr_backend/model/device、diarization_device、
+- `WorkerExecutionContext`: base_config、asr_backend/model/model_dir/device、diarization_device、
   compute_type、optional native_variant。core dataclassとは別のtransport型。
+  - `asr_model`は**解決済みカタログモデルID**（B7 `ResolvedSpec.model_id`）だけ。presetの
+    `settings.asr.model`との比較対象であり、pathを入れない。
+  - `asr_model_dir`は**同じsnapshotでB7が確定した絶対ローカルモデルディレクトリ**
+    （`ResolvedSpec.worker_model_dir`）。**必須**（1～32768字）。欠落・空はschemaで拒否し、
+    IDからの自動選択・catalog/cache探索・downloadで補わない（PR #48 P1、下記「モデルID/ディレクトリ」）。
 - `WorkerCancel`: type=cancel、同じ3 ID。1 workerへ2回目のexecuteを送れない。
 - `WorkerHello`, `WorkerAccepted`, `WorkerProgress`, `WorkerCompleted`, `WorkerError`,
   `WorkerCancelAcknowledged`: discriminated event union。
@@ -37,6 +54,34 @@ IDはASCII英数字で始まる最大128字の英数字/underscore/hyphen。path
 profileはcpu/cuda/intel/vulkanの登録enum。base_configの全nested keyはcoreモデルのfield一覧で
 検査し、extra=ignoreに任せない。ffmpeg executable、native/venv差替え、raw log指定は拒否。
 input/output/job directoryは絶対pathを要求する。Config.loadを呼ばない。
+
+### モデルID/ディレクトリ（PR #48 P1で分離）
+
+以前はB7が`asr_model`へ絶対ディレクトリを入れ、B3がそれをpresetのカタログIDと比較したため、
+`settings.asr.model`がID（例`large-v3-turbo`）の要求は常に`context_conflict`→`unsupported_setting`で
+推論前に失敗した（Windows実機受入、`fc71099`）。現在の不変条件:
+
+1. `explicit_config`は最初に`asr_model`が当該backendの**静的カタログの正規ID**と完全一致することを
+   確認する（path・Hub repository・未知名・`auto`・前後空白は`invalid_context`）。
+2. `asr_model_dir`は構造だけを検査する: 絶対path、前後空白なし、NULなし、`..`なし、
+   `str(Path(v)) == v`（正規化済み）。違反は`invalid_context`。expanduser・resolve・cwd・環境変数は使わない。
+3. 純粋な`adapt_settings`は従来どおりIDだけを受け取り、presetのIDと比較する（不一致は
+   `context_conflict`→`unsupported_setting`）。adapterはpathを見ない。
+4. 比較成功後、runtimeの明示境界`bind_local_model`が実行用`Config.asr.model`を`asr_model_dir`へ
+   置き換える。IDをリモート解決・catalog downloadへ変換しない。
+5. `offline_preflight`がその絶対ディレクトリの存在と`model.bin`/`config.json`/`tokenizer.json`/
+   `preprocessor_config.json`を確認する（欠落は`model_missing`、core preflight前）。これは必要条件の
+   事前検査で、CTranslate2のロード成功（モデル固有の語彙ファイル等）を保証しない。実ロードはcoreが行う。
+
+`stage_config_hashes`は実行用Config（`asr.model`=ディレクトリ）から計算するため、同じsnapshotの再試行は
+同じhashでresumeし、別ディレクトリの結果を再利用しない。ディレクトリやモデルrevisionの変化はB7の
+pre-start再検査（`candidate_changed`）で投入前に止まる。`asr_model_dir`はprivate IPCだけに存在し、
+公開v1 view・SSE・console・diagnosticsへ出さない（`IPCModel`のreprとpublic projectionは値を含まない）。
+
+互換性: B3の要求生成元はリポジトリ内のB7 dispatcherだけで、以前の「IDだけ・ディレクトリなし」の要求は
+`offline_preflight`で必ず`model_missing`になり実行不能だった。そのため`asr_model_dir`をrequiredとし、
+protocol v1のまま追加した（旧版workerはunknown fieldとして、旧版親の要求は欠落として、どちらも
+schemaで拒否され、fail closed）。
 
 ## handshake・順序
 

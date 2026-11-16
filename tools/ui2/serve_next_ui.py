@@ -12,7 +12,11 @@ Nothing here is imported by the product.
 
     uv run python tools/ui2/serve_next_ui.py --port 8791
 
-prints the launch URL. Settings are written to a temporary directory that is removed on exit.
+prints the launch URL. ``--v1 --data-root DIR`` (UI-3 S5-A) builds the ``--next-ui-v1`` shape
+instead: the same app plus the real B5/B7/B9 ``/api/v1`` sub-app on the real loopback authority
+(session/Host/Origin middleware unchanged), with the synthetic B4 provider and worker runner of
+``synthetic_v1.py``. ``DIR`` must be empty or absent; synthetic inputs are created under
+``DIR/in``. Settings are written to a temporary directory that is removed on exit.
 No real profile, model, path or token is read or shown.
 """
 
@@ -75,7 +79,13 @@ class SyntheticKeyring:
             self._values.pop((service, username), None)
 
 
-def build_app(data_dir: Path, next_ui_root: Path | None = None) -> Any:
+def build_app(
+    data_dir: Path,
+    next_ui_root: Path | None = None,
+    *,
+    v1_root: Path | None = None,
+    port: int | None = None,
+) -> Any:
     # Fix the log location inside the temporary directory so the harness never reads the real
     # core config (``config.toml``) or user log folders. Fallback/raw-log variants are tested by
     # rewriting the GET response in the browser test.
@@ -86,26 +96,52 @@ def build_app(data_dir: Path, next_ui_root: Path | None = None) -> Any:
     icon = data_dir / "icon"
     icon.mkdir(exist_ok=True)
     shutil.copyfile(ROOT / "icon" / "utteran-glyph-512.png", icon / "utteran-glyph-512.png")
+    jobs = synthetic_job_manager(data_dir)
+    v1: dict[str, Any] = {}
+    if v1_root is not None:
+        from synthetic_v1 import synthetic_v1_runtime
+
+        runtime, settings_path = synthetic_v1_runtime(v1_root, jobs.queue)
+        v1 = dict(
+            operation_queue=jobs.queue,
+            enable_v1_settings=True,
+            v1_authority=f"127.0.0.1:{port}",
+            v1_store_path=settings_path,
+            enable_v1_jobs=True,
+            v1_jobs_runtime=runtime,
+            enable_v1_events=True,
+        )
     return create_app(
         SESSION,
         repo_root=data_dir,
         settings_store=SettingsStore(data_dir / "gui-settings.json"),
         token_store=TokenStore(SyntheticKeyring()),
         environment_service=synthetic_environment_service(),
-        job_manager=synthetic_job_manager(data_dir),
+        job_manager=jobs,
         enable_next_ui=True,
         next_ui_root=next_ui_root,
+        **v1,
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=8791)
+    parser.add_argument("--v1", action="store_true", help="S5-A: serve the --next-ui-v1 shape")
+    parser.add_argument("--data-root", type=Path, help="empty or absent folder for the v1 data")
     args = parser.parse_args()
     import uvicorn
 
+    v1_root: Path | None = None
+    if args.v1:
+        if args.data_root is None:
+            parser.error("--v1 needs --data-root")
+        v1_root = args.data_root.resolve()
+        if v1_root.exists() and any(v1_root.iterdir()):
+            parser.error("--data-root must be empty or absent")
+        v1_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="utteran-ui2-") as temp:
-        app = build_app(Path(temp))
+        app = build_app(Path(temp), v1_root=v1_root, port=args.port)
         print(f"http://127.0.0.1:{args.port}/launch?session={SESSION}", flush=True)
         uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
 

@@ -86,6 +86,18 @@
 | `docs/architecture/b3/*` / `b7/*` / `ui3/g09-next-ui-v1-startup.md` | reviewed-no-change | worker protocol・B7 admission/prestart・G-09 marker/ロックの仕様は不変（marker定数は値を変えず`utteran_paths`へ移設） |
 | `docs/リリース手順.md` | reviewed-no-change | 規則どおりpatchを0.1.50へ（`pyproject.toml`・`uv.lock`）。手順変更なし |
 
+## UI-3 S5-A 新UIからv1単一ジョブ（2026-11-12、0.1.51）
+
+| 文書・ファイル | 判定 | 理由・変更内容 |
+|---|---|---|
+| `docs/architecture/ui3/s5a-v1-single-job.md` | **new** | 差分調査表、mode分離、Preset/Policy明示作成、二段階送信・凍結・Idempotency、paused/CAS、取消、unsupported、互換性、試験、CIとWindows未受入の区別 |
+| `docs/architecture/README.md` / `ui3/README.md` / `ui2/migration-next.md` / `backend/README.md` | updated | 0.1.51の現況、S5段階表、B5 store初回並行openの修正 |
+| `docs/architecture/ui3/g09-next-ui-v1-startup.md` | updated | 「旧投入409で開始できない」は当時の記録である旨を冒頭に追補（本文は保持） |
+| `AISTATE.md` / `変更履歴.md` / `README.md` / `README.en.md` | updated | 0.1.51開発版・未リリース、`--next-ui-v1`の単一ジョブ経路、実機未確認 |
+| `docs/architecture/b5/*` / `b7/*` / 8 schema | reviewed-no-change | DTO・wire・schemaは不変（`--check`）。B5 Repositoryの初回open待機は内部実装でAPI応答の形式を変えない。B7の同key replayは初回status（202）を再現する既存仕様のまま |
+| `docs/architecture/ui3/s3a-legacy-transcription.md` / `s3b1-multi-input-and-admission.md` | reviewed-no-change | `--next-ui`の旧API投入は不変 |
+| `docs/リリース手順.md` | reviewed-no-change | 規則どおりpatchを0.1.51へ（`pyproject.toml`・`uv.lock`）。手順変更なし |
+
 ## リンク検証
 
 `tests/test_docs_links.py`が`AGENTS.md`、`README.md`、`README.en.md`、`docs/architecture/README.md`、

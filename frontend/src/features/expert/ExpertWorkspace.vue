@@ -9,6 +9,9 @@ import InputList from "../transcribe/InputList.vue";
 import InputOverrides from "../transcribe/InputOverrides.vue";
 import TranscribeJob from "../transcribe/TranscribeJob.vue";
 import TranscribeOptions from "../transcribe/TranscribeOptions.vue";
+import V1BatchDisabled from "../transcribe/V1BatchDisabled.vue";
+import V1Job from "../transcribe/V1Job.vue";
+import V1Settings from "../transcribe/V1Settings.vue";
 
 /**
  * Expert C structure (UI-2): ① the shared input list (multi-select), ② per-file differences for
@@ -16,7 +19,9 @@ import TranscribeOptions from "../transcribe/TranscribeOptions.vue";
  * summary of a staged batch plus the S3-A detail of one job. Same controllers as Normal (no copy
  * of the state). The real multi-job queue (status of every job, cancel, filters) is S3-B2.
  */
-const { shell } = useCore();
+const { shell, apiMode } = useCore();
+// v1 mode (S5-A): the same v1 controllers as Normal; the legacy batch/start are not shown.
+const v1 = apiMode === "v1-dev";
 const state = useStore(shell.store);
 const { t } = useI18n();
 const panes = computed(() => [
@@ -45,15 +50,23 @@ const current = (pane: ExpertPane) => ({ "u-pane": true, "u-pane--current": stat
       </section>
       <section :class="current('inspector')" data-pane="inspector" :aria-label="t('expert.inspector')" data-testid="pane-inspector">
         <v-card class="pa-3"><InputOverrides /></v-card>
-        <v-card class="pa-3 mt-3"><TranscribeOptions /></v-card>
+        <v-alert v-if="v1" type="info" density="compact" class="mt-3" data-testid="v1-overrides-note">{{ t("v1.overrides.note") }}</v-alert>
+        <v-card v-if="v1" class="pa-3 mt-3"><V1Settings /></v-card>
+        <v-card v-else class="pa-3 mt-3"><TranscribeOptions /></v-card>
         <v-card class="pa-3 mt-3"><EnvironmentPanel detail /></v-card>
       </section>
       <section :class="current('queue')" data-pane="queue" :aria-label="t('expert.queue')" data-testid="pane-queue">
-        <v-card class="pa-3"><BatchPanel /></v-card>
-        <v-card class="pa-3 mt-3 u-stack">
-          <v-alert type="info" density="compact">{{ t("expert.queueNotMigrated") }}</v-alert>
-          <TranscribeJob />
-        </v-card>
+        <template v-if="v1">
+          <v-card class="pa-3"><V1BatchDisabled /></v-card>
+          <v-card class="pa-3 mt-3"><V1Job /></v-card>
+        </template>
+        <template v-else>
+          <v-card class="pa-3"><BatchPanel /></v-card>
+          <v-card class="pa-3 mt-3 u-stack">
+            <v-alert type="info" density="compact">{{ t("expert.queueNotMigrated") }}</v-alert>
+            <TranscribeJob />
+          </v-card>
+        </template>
       </section>
     </div>
   </div>

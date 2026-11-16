@@ -2,6 +2,7 @@
 
 更新: 2026-11-03 JST。開発版 **0.1.39（未リリース）**。基点 `main` = `e803ecc3`（PR #33 B8+B9 merge）。
 追補: 2026-11-12 JST、開発版 **0.1.50**（B4 ready/smokeの明示実行・private evidence。下表のB4/B7行）。
+追補: 2026-11-12 JST、開発版 **0.1.51**（UI-3 S5-A: `--next-ui-v1`の新UIがB5/B7の単一ジョブ経路を使う。B5 store初回並行openの競合修正。下表のB5行と[ui3/s5a](../ui3/s5a-v1-single-job.md)）。
 
 この文書群は**コードから逆引きした現在の実装**を記述する。Phaseごとの詳細仕様は各`bN/`へリンクする。
 読む順番は[../README.md](../README.md)。
@@ -19,7 +20,7 @@
 | B7 | 不変Job投入・永続Queue・単一slot dispatch | PR #32 `4fbb4d1` | 未 |
 | B8 | Setup Plan・承認・永続Setup実行 | PR #33 `e803ecc` | 未 |
 | B9 | SSE `/events`・`/sync`・diagnostics・Outbox compaction | PR #33 `e803ecc` | 未 |
-| U0〜U3 | 新UI | **未着手** | — |
+| U0〜U3 | 新UI | `--next-ui`（旧API）・`--next-ui-v1`（S5-A単一ジョブのみ、0.1.51）で opt-in | 未 |
 
 **B7〜B9はmain統合済み・未リリース・opt-in**。通常のGUI起動（`utteran_gui/app.py` → `create_app(session_key,
 repo_root=...)`）は**どれも有効化しない**。v1経路は`create_app(..., enable_v1_*=True)`を明示的に組み立てた
@@ -32,7 +33,7 @@ repo_root=...)`）は**どれも有効化しない**。v1経路は`create_app(..
 | 機能 | 状態 | 注意 |
 |---|---|---|
 | 旧GUI/CLI（`/api/*`、in-memory `OperationQueue`、旧wizard） | ✅ | 既定経路。v1 opt-in中は旧queueが閉じ、旧wizard/jobs投入は409 |
-| B5 Preset/Policy CRUD・preview（`/api/v1/presets` 等） | ✅ | 保存成功は実行readyを意味しない |
+| B5 Preset/Policy CRUD・preview（`/api/v1/presets` 等） | ✅ | 保存成功は実行readyを意味しない。0.1.51: 新規storeの初回openが並行しても、O_EXCLの作成者がschemaをcommitするまで他のopenerは有界待機（従来は`store_schema_unsupported`で失敗し得た。空のまま残るfileは引き続き拒否） |
 | B7 execution resolution / Job batch投入 / Queue CAS制御 | ✅ | — |
 | B4 明示smoke・private evidence（0.1.50） | ◐ ⚠ | 開発専用`python -m utteran_gui.capability_smoke`だけが実行。G-09 markerの専用rootのみ、GUI稼働中は拒否。refresh/resolveは読取のみ。fw-cpuのみready到達可、fw-cudaはidentity/VRAM未観測で`unknown`。**Windows実機・実GPU・実モデルは未受入**（[b4/smoke](../b4/smoke.md)） |
 | B7 Job実行（B3 worker dispatch） | ◐ ⚠ | B4のready証拠が必要。**既定レイアウト・配布版では証拠が置けないため通常 409 `execution_unavailable`（fail closed）**。0.1.50で専用root＋明示smoke後のfw-cpuだけがadmissionを通り得る（prestartでも同じ規則）。旧CLIへのsilent fallbackはしない |

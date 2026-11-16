@@ -173,7 +173,9 @@ def create_app(
     """Create one session-scoped application without importing the CLI package.
 
     ``enable_next_ui`` (default off) additionally serves the UI-2 frontend under ``/next/``
-    and makes ``/launch`` redirect there. It never enables any ``/api/v1`` surface.
+    and makes ``/launch`` redirect there. It never enables any ``/api/v1`` surface. The page
+    tells the frontend which API it may use (``legacy``, or ``v1-dev`` when the v1 settings
+    and jobs routes are mounted here, i.e. ``--next-ui-v1``).
     """
     if not session_key:
         raise ValueError("session_key must not be empty")
@@ -262,6 +264,9 @@ def create_app(
     app.router.add_event_handler("shutdown", shutdown_processes)
     app.mount("/assets", StaticFiles(directory=web_root), name="assets")
     next_bundle = try_load_bundle(next_ui_root or DEFAULT_ASSET_ROOT) if enable_next_ui else None
+    # S5-A: the Vue UI uses /api/v1 only when *this* app mounted the v1 settings and jobs
+    # routes (the development-only --next-ui-v1). Never chosen by the browser.
+    next_ui_api_mode = "v1-dev" if enable_v1_settings and enable_v1_jobs else "legacy"
     if next_bundle is not None and not isinstance(next_bundle, NextUiAssetsError):
         app.mount(
             f"{NEXT_UI_PREFIX}/assets",
@@ -341,7 +346,9 @@ def create_app(
                 )
             nonce = new_nonce()
             request.state.csp_nonce = nonce
-            return HTMLResponse(next_bundle.render(nonce), headers={"Cache-Control": "no-store"})
+            return HTMLResponse(
+                next_bundle.render(nonce, next_ui_api_mode), headers={"Cache-Control": "no-store"}
+            )
 
     @app.get("/logo", include_in_schema=False)
     def logo() -> FileResponse:

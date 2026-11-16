@@ -731,3 +731,69 @@ def test_nonfinite_and_unpaired_surrogates_are_safe_400(client, body):
         headers={"Content-Type": "application/json", "Idempotency-Key": KEY},
     )
     assert result.status_code == 400
+
+
+# ------------------------------------------ UI-3 S5-A: concurrent first open of a new store
+
+
+def test_concurrent_first_open_of_a_new_store_succeeds_for_every_opener(tmp_path):
+    """Found by the S5-A E2E: the Vue UI reads /presets and /execution-policies in parallel on a
+    fresh store; the opener that lost the O_EXCL race saw the creator's still-empty file and
+    failed closed with store_schema_unsupported."""
+    import threading
+
+    def open_store(path: Path, barrier: threading.Barrier, errors: list[BaseException]) -> None:
+        barrier.wait()
+        try:
+            Repository(path)
+        except BaseException as exc:  # collected for the assertion
+            errors.append(exc)
+
+    for round_ in range(15):
+        path = tmp_path / f"r{round_}" / "resources.sqlite3"
+        barrier = threading.Barrier(4)
+        errors: list[BaseException] = []
+        threads = [
+            threading.Thread(target=open_store, args=(path, barrier, errors)) for _ in range(4)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert errors == [], (round_, [getattr(e, "code", repr(e)) for e in errors])
+        assert len(Repository(path).list("presets")["items"]) == 0
+
+
+def test_an_opener_waits_for_the_creator_then_reads_the_same_installation(tmp_path):
+    import threading
+
+    path = tmp_path / "store" / "resources.sqlite3"
+    path.parent.mkdir()
+    path.write_bytes(b"")  # the creator's O_EXCL file, schema not written yet
+    result: dict[str, object] = {}
+
+    def opener() -> None:
+        try:
+            result["repo"] = Repository(path, timeout=5.0)
+        except BaseException as exc:
+            result["error"] = exc
+
+    thread = threading.Thread(target=opener)
+    thread.start()
+    thread.join(0.3)
+    assert thread.is_alive()  # waiting, not failing and never initializing a file it did not create
+    with sqlite3.connect(path, isolation_level=None) as db:
+        db.execute("BEGIN IMMEDIATE")
+        Repository._create_schema(db)
+        db.execute("COMMIT")
+    thread.join(5)
+    assert "error" not in result and isinstance(result["repo"], Repository)
+
+
+def test_a_lingering_empty_foreign_file_still_fails_closed_after_the_bounded_wait(tmp_path):
+    path = tmp_path / "store" / "resources.sqlite3"
+    path.parent.mkdir()
+    path.write_bytes(b"")
+    with pytest.raises(SettingsError, match="store_schema_unsupported"):
+        Repository(path, timeout=0.3)
+    assert path.read_bytes() == b""

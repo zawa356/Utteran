@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import sqlite3
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -44,6 +45,13 @@ def _storage_error(exc: sqlite3.Error | OSError) -> SettingsError:
     return SettingsError(code)
 
 
+_CREATOR_POLL_SECONDS = 0.02
+
+
+class _CreatorPending(Exception):
+    """A store file whose creator has not committed the schema yet (user_version 0)."""
+
+
 class Repository:
     def __init__(self, path: Path, *, timeout: float = 2.0) -> None:
         self.path = path
@@ -63,45 +71,62 @@ class Repository:
                 pass
             if os.name != "nt":
                 path.chmod(0o600)
-            with self._transaction() as db:
-                version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version == 0:
-                    if not created:
-                        raise SettingsError("store_schema_unsupported")
-                    # DDL and metadata are transactional; no executescript implicit commit.
-                    for statement in (
-                        "CREATE TABLE installation (id TEXT NOT NULL, secret BLOB NOT NULL)",
-                        "CREATE TABLE collections (kind TEXT PRIMARY KEY, "
-                        "revision INTEGER NOT NULL)",
-                        "CREATE TABLE records (kind TEXT, id TEXT, revision INTEGER, "
-                        "generation INTEGER, "
-                        "deleted INTEGER NOT NULL, body TEXT, PRIMARY KEY(kind,id,revision))",
-                        "CREATE INDEX records_snapshot ON records(kind,generation,id)",
-                        "CREATE TABLE replays (installation TEXT, method TEXT, "
-                        "endpoint TEXT, key TEXT, "
-                        "digest TEXT NOT NULL, status INTEGER NOT NULL, headers TEXT NOT NULL, "
-                        "body TEXT NOT NULL, PRIMARY KEY(installation,method,endpoint,key))",
-                    ):
-                        db.execute(statement)
-                    db.execute(
-                        "INSERT INTO installation VALUES (?,?)",
-                        (uuid4().hex, secrets.token_bytes(32)),
-                    )
-                    db.executemany(
-                        "INSERT INTO collections VALUES (?,1)",
-                        [("presets",), ("execution-policies",)],
-                    )
-                    db.execute("PRAGMA user_version=1")
-                elif version != 1:
+            # A concurrent opener that lost the O_EXCL race may see the creator's file before
+            # its schema transaction commits (user_version 0). It waits, bounded by the same
+            # timeout, and never initializes a file it did not create; a file that stays
+            # empty is still refused (store_schema_unsupported, fail closed). UI-3 S5-A.
+            deadline = time.monotonic() + self.timeout
+            while True:
+                try:
+                    self._open_existing(created)
+                    break
+                except _CreatorPending:
+                    pass
+                if time.monotonic() >= deadline:
                     raise SettingsError("store_schema_unsupported")
-                if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
-                    raise SettingsError("store_corrupt")
-                identity = db.execute("SELECT id,secret FROM installation").fetchall()
-                if len(identity) != 1 or len(identity[0][1]) != 32:
-                    raise SettingsError("store_corrupt")
-                self._installation, self._secret = identity[0]
+                time.sleep(_CREATOR_POLL_SECONDS)
         except (sqlite3.Error, OSError) as exc:
             raise _storage_error(exc) from None
+
+    def _open_existing(self, created: bool) -> None:
+        with self._transaction() as db:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version == 0 and created:
+                self._create_schema(db)
+                version = 1
+            if version == 0:
+                # Rolled back (never committed): an empty file is left byte for byte unchanged.
+                raise _CreatorPending
+            if version != 1:
+                raise SettingsError("store_schema_unsupported")
+            if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise SettingsError("store_corrupt")
+            identity = db.execute("SELECT id,secret FROM installation").fetchall()
+            if len(identity) != 1 or len(identity[0][1]) != 32:
+                raise SettingsError("store_corrupt")
+            self._installation, self._secret = identity[0]
+
+    @staticmethod
+    def _create_schema(db: sqlite3.Connection) -> None:
+        """Version-1 layout, inside the creator's transaction (DDL is transactional in SQLite)."""
+        for statement in (
+            "CREATE TABLE installation (id TEXT NOT NULL, secret BLOB NOT NULL)",
+            "CREATE TABLE collections (kind TEXT PRIMARY KEY, revision INTEGER NOT NULL)",
+            "CREATE TABLE records (kind TEXT, id TEXT, revision INTEGER, "
+            "generation INTEGER, "
+            "deleted INTEGER NOT NULL, body TEXT, PRIMARY KEY(kind,id,revision))",
+            "CREATE INDEX records_snapshot ON records(kind,generation,id)",
+            "CREATE TABLE replays (installation TEXT, method TEXT, "
+            "endpoint TEXT, key TEXT, "
+            "digest TEXT NOT NULL, status INTEGER NOT NULL, headers TEXT NOT NULL, "
+            "body TEXT NOT NULL, PRIMARY KEY(installation,method,endpoint,key))",
+        ):
+            db.execute(statement)
+        db.execute("INSERT INTO installation VALUES (?,?)", (uuid4().hex, secrets.token_bytes(32)))
+        db.executemany(
+            "INSERT INTO collections VALUES (?,1)", [("presets",), ("execution-policies",)]
+        )
+        db.execute("PRAGMA user_version=1")
 
     @contextmanager
     def _transaction(self, *, write: bool = True) -> Iterator[sqlite3.Connection]:

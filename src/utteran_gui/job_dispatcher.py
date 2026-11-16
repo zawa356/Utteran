@@ -78,7 +78,11 @@ def plan_request(
                     }
                 },
                 "asr_backend": "faster-whisper",
-                "asr_model": spec.worker_model_dir,
+                # Two meanings from the same frozen snapshot, never one field for both:
+                # the catalogue ID B3 checks against the preset, and the local directory
+                # B7 approved for that ID, which B3 alone loads (offline, no lookup).
+                "asr_model": spec.model_id,
+                "asr_model_dir": spec.worker_model_dir,
                 "asr_device": spec.device,
                 "diarization_device": "cpu",
                 "compute_type": spec.compute_type,
