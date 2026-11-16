@@ -112,8 +112,8 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
     return `${c.init.method} ${new URL(c.url, "http://x").pathname}`;
   }
   const error = (status: number, code: string, issues: unknown[] = []) => json(status, { schema_version: 1, error: { code, message_key: code, request_id: "r", retryable: false, issues } });
-  function job(session: Json): Json {
-    const file = (session.files as Json[])[0]!;
+  function job(session: Json, index = 0): Json {
+    const file = (session.files as Json[])[index]!;
     return {
       schema_version: 1,
       id: `job_${hex(32)}`,
@@ -205,14 +205,26 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
     if (path === "/api/v1/validations") {
       const preset = state.presets.find((p) => p.id === (body!.preset_ref as Json).id && p.revision === (body!.preset_ref as Json).revision);
       if (!preset) return error(422, "settings_invalid", [{ path: "/preset_ref", code: "reference_unresolved", message_key: "x" }]);
-      const effective = clone(preset.settings) as Json;
-      for (const o of body!.common_overrides as { path: string; value: unknown }[]) {
-        const parts = o.path.split("/").slice(1);
-        let node = effective;
-        for (const p of parts.slice(0, -1)) node = node[p] as Json;
-        node[parts.at(-1)!] = o.value;
-      }
-      const files = (body!.files as Json[]).map((f) => ({ client_file_id: f.client_file_id, valid: true, effective_settings: effective, provenance: [], issues: [], warnings: [], worker_support: "unverified" }));
+      const apply = (target: Json, overrides: { path: string; value: unknown }[]) => {
+        for (const o of overrides) {
+          const parts = o.path.split("/").slice(1);
+          let node = target;
+          for (const p of parts.slice(0, -1)) node = node[p] as Json;
+          node[parts.at(-1)!] = o.value;
+        }
+        return target;
+      };
+      const effective = apply(clone(preset.settings) as Json, body!.common_overrides as { path: string; value: unknown }[]);
+      // B5 leaf inheritance: Preset <- common overrides <- this file's overrides.
+      const files = (body!.files as Json[]).map((f) => ({
+        client_file_id: f.client_file_id,
+        valid: true,
+        effective_settings: apply(clone(effective) as Json, (f.overrides ?? []) as { path: string; value: unknown }[]),
+        provenance: [],
+        issues: [],
+        warnings: [],
+        worker_support: "unverified",
+      }));
       return remember(200, { schema_version: 1, valid: true, preset_ref: body!.preset_ref, policy_ref: body!.policy_ref, files });
     }
     if (path === "/api/v1/execution-resolutions") {
@@ -232,10 +244,12 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
       if (record.used) return error(409, "resolution_consumed");
       if (record.session !== canonical(body!.editing_session)) return error(409, "resolution_stale");
       record.used = true;
-      const created = job(body!.editing_session as Json);
-      state.jobs.push(created);
+      // B7: one job per file, all or none in one transaction.
+      const session = body!.editing_session as Json;
+      const created = (session.files as Json[]).map((_, index) => job(session, index));
+      state.jobs.push(...created);
       state.queue.revision += 1;
-      return remember(202, { schema_version: 1, jobs: [created], queue_revision: state.queue.revision });
+      return remember(202, { schema_version: 1, jobs: created, queue_revision: state.queue.revision });
     }
     if (path === "/api/v1/queue/control") {
       if (headers["If-Match"] !== `"${state.queue.revision}"`) return error(412, "revision_conflict");

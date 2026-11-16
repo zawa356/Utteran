@@ -15,7 +15,7 @@ import { OUTPUT_FORMATS_V1 } from "../../api/v1Resources";
 import template from "./presetTemplate.json";
 
 export interface SettingOverride {
-  readonly path: "/asr/language" | "/output/formats";
+  readonly path: "/asr/language" | "/output/formats" | "/asr/backend" | "/asr/model";
   readonly value: string | readonly OutputFormatV1[];
 }
 
