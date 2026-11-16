@@ -6,7 +6,7 @@
 - P1（Windows実機）: v1ジョブが推論前に`unsupported_setting`。B7がB3の`context.asr_model`へモデルの絶対ディレクトリを入れ、B3がPresetのカタログIDと比較していた。
 - 修正: private IPC `WorkerExecutionContext.asr_model_dir`（必須）を追加。B7は同じsnapshotから`asr_model=model_id`・`asr_model_dir=worker_model_dir`。B3はID検査→`adapt_settings`でPreset比較→`bind_local_model`で実行用`Config.asr.model`をdirへ→`offline_preflight`。
   `worker.schema.json`再生成。公開API・B5/B7 DTO・DB・UIは無変更。詳細[b3/protocol](docs/architecture/b3/protocol.md)「モデルID/ディレクトリ」。
-- 試験: `tests/test_b7_b3_model_route.py` 23件（修正前19件Red、修正後Green）。**Windows実機の再受入（`succeeded`・srt/json/md）は未実施**。後続のWindows受入で確認する。
+- 試験: `tests/test_b7_b3_model_route.py` 24件（P1本体23件は修正前19件Red・修正後Green、＋オフライン遮断ガードの自己確認1件）。**Windows実機の再受入（`succeeded`・srt/json/md）は未実施**。後続のWindows受入で確認する。
 
 ## 現在地（2026-11-13、PR #48追加P2修正、0.1.51据置、Draft維持）
 

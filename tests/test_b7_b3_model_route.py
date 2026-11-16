@@ -78,11 +78,24 @@ def with_context(request: WorkerRequest, **changes: Any) -> WorkerRequest:
 def offline(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """No network; faster_whisper's import probe only; core preflight recorded."""
 
-    def refuse(*args: Any, **kwargs: Any) -> None:
-        raise AssertionError("network access attempted")
+    # Loopback stays allowed: Windows asyncio builds its self-pipe with a 127.0.0.1
+    # socketpair. Anything else (Hub, catalogue download, DNS name) is a failure.
+    loopback = {"127.0.0.1", "::1"}
+    real_connect = socket.socket.connect
+    real_create = socket.create_connection
 
-    monkeypatch.setattr(socket.socket, "connect", refuse)
-    monkeypatch.setattr(socket, "create_connection", refuse)
+    def connect(sock: socket.socket, address: Any) -> None:
+        if not (isinstance(address, tuple) and address[0] in loopback):
+            raise AssertionError("network access attempted")
+        real_connect(sock, address)
+
+    def create_connection(address: Any, *args: Any, **kwargs: Any) -> socket.socket:
+        if address[0] not in loopback:
+            raise AssertionError("network access attempted")
+        return real_create(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket, "create_connection", create_connection)
     real = worker_runtime.importlib.util.find_spec
     monkeypatch.setattr(
         worker_runtime.importlib.util,
@@ -395,3 +408,11 @@ def test_same_snapshot_retries_get_the_same_execution_config_and_stage_hashes(
     )
     moved = explicit_config(with_context(request, asr_model_dir=str(env.tmp / "elsewhere")))
     assert stage_config_hashes(moved, "synthetic")["asr"] != first["asr"]
+
+
+def test_offline_guard_refuses_non_loopback_connections(offline: list[Any]) -> None:
+    """The guard used above must really refuse remote hosts (TEST-NET-1, never routed)."""
+    with socket.socket() as sock, pytest.raises(AssertionError, match="network access"):
+        sock.connect(("192.0.2.1", 443))
+    with pytest.raises(AssertionError, match="network access"):
+        socket.create_connection(("huggingface.co", 443))
