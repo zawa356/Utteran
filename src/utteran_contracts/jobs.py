@@ -25,6 +25,7 @@ from utteran_contracts.control import (
 )
 from utteran_contracts.editing import EditingSession, FileInput, SettingOverride
 from utteran_contracts.preview import Provenance
+from utteran_contracts.prompting import CURRENT_PROMPT_COMPILER, PromptCompiler
 from utteran_contracts.settings import Issue, Policy, ProcessingSettings, Ref
 
 Digest = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -39,8 +40,9 @@ ResumeMode = Literal["resume", "fresh", "force"]
 Backend = Literal["faster-whisper", "whisper-cpp", "openvino-genai"]
 Confidence = Literal["low", "medium"]
 EvidenceKind = Literal["smoke", "benchmark", "static_rule"]
-# B7 passes ProcessingSettings verbatim to the B2 adapter; no prompt compiler exists yet.
-PROMPT_COMPILER_VERSION = "b2-verbatim"
+# Version of utteran_contracts.prompting frozen into new snapshots. Snapshots written
+# before 0.1.53 carry "b2-verbatim" (no glossary) and keep that meaning on retry.
+PROMPT_COMPILER_VERSION = CURRENT_PROMPT_COMPILER
 ADAPTER_VERSION = "b4.1"
 
 JobErrorCode = Literal[
@@ -140,7 +142,7 @@ class ResolvedSpec(VersionedContract):
     diarization_device: Literal["cpu", "cuda", "xpu"] | None
     settings: ProcessingSettings
     adapter_version: Literal["b4.1"]
-    prompt_compiler_version: Literal["b2-verbatim"]
+    prompt_compiler_version: PromptCompiler
     inventory_revision: Revision
     policy_ref: Ref
     reason_codes: tuple[Identifier, ...]

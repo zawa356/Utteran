@@ -32,6 +32,7 @@ opt-in `/api/v1`（全部有効時）:
 | B5 | GET, POST | `/presets`、`/execution-policies` | POST: Idempotency-Key |
 | B5 | GET, PUT, DELETE | `/presets/{id}`、`/execution-policies/{id}` | PUT/DELETE: If-Match |
 | B5 | POST | `/validations` | — |
+| B7 | GET | `/engines` | 静的なエンジン宣言（`EngineCatalog`、0.1.53）。probeなし・値なし、readyの主張ではない |
 | B7 | POST | `/execution-resolutions` | Idempotency-Key（201、短命HMAC token） |
 | B7 | GET, POST | `/jobs` | POST: Idempotency-Key（202、batch all-or-nothing） |
 | B7 | GET | `/jobs/{job_id}` | ETag=revision |

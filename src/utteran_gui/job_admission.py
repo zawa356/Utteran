@@ -331,7 +331,7 @@ def build_spec(
         diarization_device=identity.diarization_device if settings.diarization.enabled else None,
         settings=settings,
         adapter_version=ADAPTER_VERSION,  # type: ignore[arg-type]
-        prompt_compiler_version=PROMPT_COMPILER_VERSION,  # type: ignore[arg-type]
+        prompt_compiler_version=PROMPT_COMPILER_VERSION,
         inventory_revision=selection.inventory_revision,
         policy_ref={"id": policy.id, "revision": policy.revision},  # type: ignore[arg-type]
         reason_codes=selection.reason_codes,

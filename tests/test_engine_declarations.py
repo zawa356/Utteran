@@ -37,6 +37,7 @@ from utteran_contracts.engines import (
     worker_refusals,
 )
 from utteran_contracts.jobs import JobSnapshot
+from utteran_contracts.prompting import CURRENT_PROMPT_COMPILER
 from utteran_contracts.worker import WorkerErrorCode
 from utteran_contracts.worker_framing import ProtocolError
 from utteran_gui.job_admission import WORKER_RECIPES
@@ -159,7 +160,7 @@ CASES: dict[str, tuple[dict[str, Any], str]] = {
 }
 # engine -> the cases it refuses. Anything not listed must be accepted.
 REFUSED = {
-    "faster-whisper": {"glossary", "extra_arguments", "vad_threshold", "never"},
+    "faster-whisper": {"extra_arguments", "vad_threshold", "never"},
     "whisper-cpp": {"glossary", "extra_arguments", "previous_text"},
     "openvino-genai": {"glossary", "extra_arguments", "previous_text", "vad_threshold"},
 }
@@ -188,6 +189,7 @@ def test_setting_is_refused_with_a_reason_or_accepted_never_dropped(
         "cpu",
         "int8" if variant is None else "ggml",
         variant,  # type: ignore[arg-type]
+        CURRENT_PROMPT_COMPILER,
     )
     if path in refused:
         with pytest.raises(ConfigAdaptationError) as error:
@@ -238,9 +240,9 @@ def test_worker_refusals_follow_the_declaration(settings_data: dict[str, Any]) -
         {**settings_data, "diarization": {**settings_data["diarization"], "enabled": True}}
     )
     assert worker_refusals(fw, diarized, recipe_id="fw-cpu") == ("worker_diarization_unsupported",)
-    assert worker_refusals(fw, _settings(settings_data, glossary=["x"]), recipe_id="fw-cpu") == (
-        "worker_glossary_unsupported",
-    )
+    glossary = _settings(settings_data, glossary=["x"])
+    assert worker_refusals(fw, glossary, recipe_id="fw-cpu") == ()
+    assert "worker_glossary_unsupported" in worker_refusals(get_engine("whisper-cpp"), glossary)
 
 
 def _respec(snapshot: JobSnapshot, **changes: Any) -> JobSnapshot:

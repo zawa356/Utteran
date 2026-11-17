@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 
+from utteran_contracts.engines import engine_catalog
 from utteran_contracts.jobs import CancelRequest, QueueControl, QueueItemPatch, QueueOrder
 from utteran_control.errors import ControlError
 from utteran_control.store import IdempotencyScope
@@ -99,6 +100,12 @@ def register_job_routes(app: FastAPI, runtime: JobRuntime) -> None:
 
     def json(status: int, body: dict[str, Any], headers: Any = None) -> JSONResponse:
         return JSONResponse(body, status_code=status, headers=dict(headers or {}))
+
+    @app.get("/engines")
+    async def engines() -> Response:
+        # Static declarations only (no probe, no path, no user value): what each engine
+        # accepts and what the worker executes. Not a readiness claim.
+        return json(200, engine_catalog().to_wire(), {"Cache-Control": "no-store"})
 
     @app.post("/execution-resolutions")
     async def resolve(request: Request) -> Response:

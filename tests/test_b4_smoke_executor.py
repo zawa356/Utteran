@@ -399,7 +399,7 @@ def test_pending_record_is_written_before_inference(settings, tmp_path) -> None:
         ("model_incomplete", "model_missing"),
         ("lock_changed", "profile_incompatible"),
         ("diarization", "settings_unsupported"),
-        ("glossary", "settings_unsupported"),
+        ("extra_arguments", "settings_unsupported"),
         ("unknown_model", "recipe_unavailable"),
     ],
 )
@@ -420,9 +420,15 @@ def test_prechecks_fail_closed_without_inference_or_evidence(
         data = settings.to_wire()
         data["diarization"]["enabled"] = True
         settings = ProcessingSettings.model_validate(data)
-    elif mutation == "glossary":
+    elif mutation == "extra_arguments":
+        # 0.1.53: a glossary is compiled for faster-whisper (accepted, see
+        # test_prompt_compiler.py); extra arguments remain a refused setting.
         data = settings.to_wire()
-        data["asr"]["glossary"] = ["term"]
+        data["asr"]["extra_arguments"] = {
+            "backend": "whisper-cpp",
+            "tokens": ["--flag"],
+            "allow_unverified": True,
+        }
         settings = ProcessingSettings.model_validate(data)
     elif mutation == "unknown_model":
         updates["model_id"] = "not-in-catalog"

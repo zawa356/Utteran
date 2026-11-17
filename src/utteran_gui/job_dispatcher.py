@@ -98,6 +98,8 @@ def plan_request(
                 # Unused while diarization is off; the frozen device otherwise.
                 "diarization_device": spec.diarization_device or "cpu",
                 "compute_type": spec.compute_type,
+                # The version frozen with the snapshot, not the current one.
+                "prompt_compiler": spec.prompt_compiler_version,
                 **({} if variant is None else {"native_variant": variant}),
             },
             "resume": snapshot.resume_mode != "fresh",
