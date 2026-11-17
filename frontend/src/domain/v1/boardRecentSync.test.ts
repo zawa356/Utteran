@@ -13,12 +13,19 @@ import { createCore } from "../core";
 function setup() {
   const server = fakeV1Server();
   const lines: string[] = [];
+  // While set, every `GET /api/v1/jobs` waits for it (a slow list read after a successful write).
+  const gate: { hold: Promise<void> | null; waiting: number } = { hold: null, waiting: 0 };
   const fetch: FetchLike = async (url, init) => {
-    lines.push(`${init.method} ${new URL(url, "http://x").pathname}`);
+    const line = `${init.method} ${new URL(url, "http://x").pathname}`;
+    lines.push(line);
+    if (gate.hold !== null && line === "GET /api/v1/jobs") {
+      gate.waiting += 1;
+      await gate.hold;
+    }
     return server.fetch(url, init);
   };
   const core = createCore({ fetch, host: createFakeHost(), apiMode: "v1-dev" });
-  return { server, lines, board: core.v1!.board, job: core.v1!.job };
+  return { server, lines, gate, core, board: core.v1!.board, job: core.v1!.job };
 }
 
 /** One finished logical job made of two internal jobs (failed → retried → succeeded). */
@@ -124,5 +131,67 @@ describe("v1 board hide/show keeps the auxiliary server job list in step", () =>
       expect(s.job.store.get().recent).toBe(shown);
       expect(visibilityPuts(s)).toBe(1); // stopped at the first problem, nothing resent
     }
+  });
+
+  it("closing the 'done' message while the lists are still being re-read does not lose the sync (PR #53 review)", async () => {
+    const s = setup();
+    const { root, ids } = await finishedRetryChain(s);
+    await s.job.loadRecent();
+    s.board.setShowHidden(true);
+    await s.board.refresh();
+
+    for (const [hidden, expected] of [
+      [true, []],
+      [false, [...ids].sort()],
+    ] as const) {
+      let release!: () => void;
+      s.gate.hold = new Promise<void>((resolve) => (release = resolve));
+      s.gate.waiting = 0;
+      const puts = visibilityPuts(s);
+      const writing = s.board.setHidden(root, hidden);
+      // Both PUTs succeeded, the message says so, and the re-read of the lists is still waiting.
+      await vi.waitFor(() => expect(s.gate.waiting).toBe(1));
+      expect(s.board.store.get().action).toMatchObject({ kind: hidden ? "hide" : "show", phase: "done" });
+      expect(visibilityPuts(s)).toBe(puts + 2);
+      s.board.dismissAction();
+      expect(s.board.store.get().action).toBeNull();
+      // Nothing is edited locally while the answer is outstanding.
+      expect(recentIds(s).sort()).toEqual(hidden ? [...ids].sort() : []);
+      s.gate.hold = null;
+      release();
+      await writing;
+      await settled(s);
+      expect(recentIds(s).sort()).toEqual(expected);
+      expect(s.board.store.get().action).toBeNull(); // not re-opened, not attributed to a later write
+      expect(visibilityPuts(s)).toBe(puts + 2);
+    }
+    expect(s.lines.filter((line) => line.startsWith("DELETE "))).toEqual([]);
+  });
+
+  it("one settled write notifies once; a disposed board notifies nothing", async () => {
+    const s = setup();
+    const { root } = await finishedRetryChain(s);
+    await s.job.loadRecent();
+    const reads = listReads(s);
+    await s.board.setHidden(root, true);
+    await settled(s);
+    await Promise.resolve();
+    // One re-read of the board and one of the auxiliary list (each a single page here).
+    expect(listReads(s)).toBe(reads + 2);
+
+    const d = setup();
+    const chain = await finishedRetryChain(d);
+    await d.job.loadRecent();
+    const shown = d.job.store.get().recent;
+    let release!: () => void;
+    d.gate.hold = new Promise<void>((resolve) => (release = resolve));
+    const writing = d.board.setHidden(chain.root, true);
+    await vi.waitFor(() => expect(d.gate.waiting).toBe(1));
+    d.board.dispose();
+    d.gate.hold = null;
+    release();
+    await writing;
+    await Promise.resolve();
+    expect(d.job.store.get().recent).toBe(shown);
   });
 });

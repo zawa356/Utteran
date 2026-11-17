@@ -112,9 +112,10 @@ PlaywrightのDOM試験の合格をデザイン再現の証拠としない。画�
 |---|---|---|
 | W-01: 長いパスのpytestが治具の`mkdir`で停止（70文字×3階層はWindowsで作成不能） | 治具だけを修正。`job_output_name`が拒否する最短の親長を契約から求め（現行168）、実際の基点長に合わせて短い階層で親を作る（拒否境界＋16、Windowsのディレクトリ上限248未満、拡張パスなし）。製品の`PATH_BUDGET`・拒否動作は無変更 | `tests/test_job_output_dir.py`: 既存の422／`/files/0/output_dir`／`output_path_too_long`／生成0件に加え、親の実在・長さ・契約の拒否を事前確認。境界の1文字手前は受理される試験を追加（36件） |
 | P3: 常設案内がv1の実装と不一致 | サーバー由来の`apiMode === "v1-dev"`のときだけ`app.previewNoticeV1`を表示（`previewNoticeKey`）。`v1.mode.notice`を「通常＝1ファイル、Expert＝一括投入・キュー/履歴・成果物照合」へ。旧`--next-ui`の`app.previewNotice`と`tx.batch.*`は無変更 | Vitest `shell.test.ts`（mode別のkey、ja/en文言）、Playwright `transcription-s5a.v1.spec.ts`（v1の通常/Expert）・`api-mode.spec.ts`（legacyは従来文言） |
-| P3: 非表示直後に補助一覧「サーバー上のジョブ（v1）」へ内部Jobが残る | 非表示/再表示が`done`になりボードを読み直した後に、**取得済みの**補助一覧だけを`GET /jobs`から読み直す（`BoardOptions.onVisibilitySettled` → `refreshRecentIfLoaded`）。pending・拒否・412・結果不明では読み直さず、手元での先行削除もしない。pollingなし | Vitest `boardRecentSync.test.ts` 4件（retry連鎖2件が消える→再表示で戻る、未取得は読まない、結果不明は再送なし・明示再照合後に反映、412/拒否）、Playwright `transcription-s5b.v1.spec.ts`（1件の行、2件の連鎖、DELETE 0件） |
+| P3: 非表示直後に補助一覧「サーバー上のジョブ（v1）」へ内部Jobが残る | 非表示/再表示が`done`になりボードを読み直した後に、**取得済みの**補助一覧だけを`GET /jobs`から読み直す（`BoardOptions.onVisibilitySettled` → `refreshRecentIfLoaded`）。pending・拒否・412・結果不明では読み直さず、手元での先行削除もしない。pollingなし。読み直すかどうかはその書き込み自身の結果で決め、表示中の完了メッセージには依存しない（再読込の待機中に「閉じる」を押しても同期は落ちない。コードレビュー指摘） | Vitest `boardRecentSync.test.ts` 6件（retry連鎖2件が消える→再表示で戻る、未取得は読まない、結果不明は再送なし・明示再照合後に反映、412/拒否、`GET /jobs`を遅延させた待機中に完了メッセージを閉じても同期される、1回の書き込みで通知は1回・dispose後は通知なし）、Playwright `transcription-s5b.v1.spec.ts`（1件の行、2件の連鎖、DELETE 0件） |
 
-上表の修正後の件数: Vitest 525 passed、Playwright 68 passed（legacy 53＋v1 15）、pytest 1647 passed／9 skipped／1 xfailed（Cloud Linux）。
+上表の修正後の件数: Vitest 527 passed、Playwright v1 15 passed・legacy 53件（下記の既存の不安定な1件を除き成功）、pytest 1647 passed／9 skipped／1 xfailed（Cloud Linux）。
+legacyの`settings-s1.spec.ts`「token: register, confirm-delete…」（確認ダイアログをEscで閉じる箇所）はCloudの手元実行で断続的に失敗する。基点`1c76453`のソースでも6回中3回失敗し、今回の変更とは無関係。試験は変更していない（未対応の既知事項）。
 **修正後のHEADでのWindows実機再試験（W-01のpytest、実WebView2での案内文と補助一覧）は未実施**（Codexの別受入）。
 
 ## 7. 未実装・後続

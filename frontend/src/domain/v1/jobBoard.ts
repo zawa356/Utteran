@@ -344,6 +344,9 @@ export class V1JobBoardController {
   private async run(action: BoardAction): Promise<void> {
     this.store.patch({ action });
     let remaining = [...action.remaining];
+    // The outcome of *this* write. The shown `action` can be dismissed (or replaced) while the
+    // lists are re-read below, so it is not what decides the notification.
+    let visibilityDone = false;
     try {
       if (action.kind === "cancel" || action.kind === "retry") {
         const frozen = this.frozen!;
@@ -365,6 +368,7 @@ export class V1JobBoardController {
       if (this.disposed) return;
       this.frozen = null;
       this.store.patch({ action: { ...action, remaining: [], phase: "done", error: null } });
+      visibilityDone = action.kind === "hide" || action.kind === "show";
     } catch (error) {
       if (this.disposed) return;
       const apiError = toApiError(error);
@@ -374,8 +378,7 @@ export class V1JobBoardController {
     }
     // Whatever happened, the lists come from the server again.
     await this.refresh();
-    const settled = this.store.get().action;
-    if (!this.disposed && settled !== null && settled.phase === "done" && (settled.kind === "hide" || settled.kind === "show")) this.options.onVisibilitySettled?.();
+    if (visibilityDone && !this.disposed) this.options.onVisibilitySettled?.();
   }
 
   dispose(): void {

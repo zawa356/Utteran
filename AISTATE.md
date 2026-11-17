@@ -8,7 +8,8 @@
   1. W-01: `tests/test_job_output_dir.py`の長いパスの治具を、契約から求めた拒否境界＋実基点長で動的に作る形へ（skip/xfail・assert緩和なし）。
   2. 常設案内: `apiMode === "v1-dev"`のときだけ`app.previewNoticeV1`。`v1.mode.notice`を実装に合わせて改訂。legacy文言は不変。
   3. 補助一覧: 非表示/再表示が`done`になった後に、取得済みの「サーバー上のジョブ（v1）」だけを読み直す。未確定の結果では読み直さない。
-- 試験（Cloud Linux）: pytest 1647 passed／9 skipped／1 xfailed、Vitest 525、Playwright 68（legacy 53＋v1 15）。CIはPR #53のコメントに記録。
+     コードレビュー指摘（再読込の待機中に完了メッセージを閉じると同期が落ちる）は、書き込み自身の結果で判定する形に修正。
+- 試験（Cloud Linux）: pytest 1647 passed／9 skipped／1 xfailed、Vitest 527、Playwright v1 15。legacyは`settings-s1.spec.ts`のtoken確認ダイアログ（Esc）1件が手元で断続的に失敗（基点`1c76453`でも再現、今回の変更と無関係、未対応）。CIはPR #53のコメントに記録。
 - **未検証**: 修正後HEADでのWindows実機（W-01のpytest PASS、実WebView2での案内文と補助一覧）。W-12（DPI 125/150/200%、picker確定、Explorer複数WAV D&D）はBLOCKEDのまま。
 - **次の一手**: Codexによる修正HEADのWindows再試験 → ownerの再レビュー。その後C2c（別PR、試験計画を先に）→ D → B1。
 
