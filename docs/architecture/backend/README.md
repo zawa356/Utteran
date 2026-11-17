@@ -5,6 +5,12 @@
 追補: 2026-11-12 JST、開発版 **0.1.51**（UI-3 S5-A: `--next-ui-v1`の新UIがB5/B7の単一ジョブ経路を使う。B5 store初回並行openの競合修正。下表のB5行と[ui3/s5a](../ui3/s5a-v1-single-job.md)）。
 追補: 2026-11-16 JST、開発版 **0.1.52**（束A1: backend固有分岐をエンジン宣言表へ一本化。workerの実行範囲と下表の状態は不変。[engine-adapters](engine-adapters.md)）。
 
+## 追補（2026-11-17、0.1.56未リリース、現行main）
+
+束A1/A2/C1/C2a/C2bを[#49](https://github.com/zawa356/Utteran/pull/49)〜[#53](https://github.com/zawa356/Utteran/pull/53)でmainへ統合。HEAD `c5af76726f913e4044f6e73492fee851c2acdd8c`、[最終main CI](https://github.com/zawa356/Utteran/actions/runs/44033681672)は初回success。以下のB1〜B9統合表は先行基盤の履歴。現行のv1 runtimeは**layout v7**（C2aでjob_visibilityを追加）、一覧のETag・形式別成果物照合は[#52](https://github.com/zawa356/Utteran/pull/52)の修正を含む。
+
+専用rootで明示起動する`--next-ui-v1`（通常：単件／Expert：原子的batch）はWindows 11実WebView2と実CPU `fw-cpu / large-v3-turbo` の差分受入**CONDITIONAL**。W-01と補助一覧同期はPASS。native DPI・Explorer D&Dは[#22](https://github.com/zawa356/Utteran/issues/22)、W-06/W-11異常系は[#55](https://github.com/zawa356/Utteran/issues/55)で未受入。旧GUI/CLIと`--next-ui`は不変、GPU経路、Windows ACL、実配布・installer等は未受入。次は安全な履歴墓標化・成果物削除[#56](https://github.com/zawa356/Utteran/issues/56)（未実装）。旧時点の「Windows未受入」表記はこの追補と[W-C2レビュー](https://github.com/zawa356/Utteran/pull/53#pullrequestreview-5934044093)を優先する。
+
 この文書群は**コードから逆引きした現在の実装**を記述する。Phaseごとの詳細仕様は各`bN/`へリンクする。
 読む順番は[../README.md](../README.md)。
 
@@ -36,7 +42,7 @@ repo_root=...)`）は**どれも有効化しない**。v1経路は`create_app(..
 | 旧GUI/CLI（`/api/*`、in-memory `OperationQueue`、旧wizard） | ✅ | 既定経路。v1 opt-in中は旧queueが閉じ、旧wizard/jobs投入は409 |
 | B5 Preset/Policy CRUD・preview（`/api/v1/presets` 等） | ✅ | 保存成功は実行readyを意味しない。0.1.51: 新規storeの初回openが並行しても、O_EXCLの作成者がschemaをcommitするまで他のopenerは有界待機（従来は`store_schema_unsupported`で失敗し得た。空のまま残るfileは引き続き拒否） |
 | B7 execution resolution / Job batch投入 / Queue CAS制御 | ✅ | — |
-| B4 明示smoke・private evidence（0.1.50） | ◐ ⚠ | 開発専用`python -m utteran_gui.capability_smoke`だけが実行。G-09 markerの専用rootのみ、GUI稼働中は拒否。refresh/resolveは読取のみ。fw-cpuのみready到達可、fw-cudaはidentity/VRAM未観測で`unknown`。**Windows実機・実GPU・実モデルは未受入**（[b4/smoke](../b4/smoke.md)） |
+| B4 明示smoke・private evidence（0.1.50） | ◐ ⚠ | 開発専用`python -m utteran_gui.capability_smoke`だけが実行。G-09 markerの専用rootのみ、GUI稼働中は拒否。refresh/resolveは読取のみ。fw-cpuのみready到達可、fw-cudaはidentity/VRAM未観測で`unknown`。**Windows fw-cpu実モデルのsmoke・readyは隔離VMで実測済み。GPU実機は未受入**（[b4/smoke](../b4/smoke.md)、[#53](https://github.com/zawa356/Utteran/pull/53)） |
 | B7 Job実行（B3 worker dispatch） | ◐ ⚠ | B4のready証拠が必要。**既定レイアウト・配布版では証拠が置けないため通常 409 `execution_unavailable`（fail closed）**。0.1.50で専用root＋明示smoke後のfw-cpuだけがadmissionを通り得る（prestartでも同じ規則）。旧CLIへのsilent fallbackはしない |
 | B7 force cancel / 汎用retry以外の高度な操作 | — | `cancel_mode_unsupported` |
 | B8 Setup plan（read-only）/ approval / operation | ✅ | plan作成に副作用なし |
