@@ -354,8 +354,14 @@ def test_api_vertical_preset_to_succeeded_job_with_three_artifacts(
     assert request.context.asr_model == "large-v3-turbo"
     assert request.context.asr_model_dir == str(env.model)
     assert loaded == [str(env.model)] and backend.calls == 1 and len(offline) == 1
-    produced = sorted(p.suffix for p in env.output.iterdir() if p.is_file())
-    assert produced == [".json", ".md", ".srt"]
+    # 0.1.54: the job writes into its own directory, every artifact with that same stem;
+    # nothing is written straight into the user's output directory any more.
+    assert [p for p in env.output.iterdir() if p.is_file()] == []
+    (own,) = list(env.output.iterdir())
+    assert own.name == f"a_{env.store.get_snapshot(job_id).output_stamp}_{job_id[4:12]}"
+    assert sorted(p.name for p in own.iterdir() if not p.name.startswith(".")) == [
+        own.name + suffix for suffix in (".json", ".md", ".srt")
+    ]
     # The private directory never reaches the public v1 views.
     assert str(env.model) not in public and str(env.tmp) not in public
     assert "asr_model_dir" not in public

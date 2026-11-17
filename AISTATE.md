@@ -1,5 +1,16 @@
 # AI 作業状態
 
+## 現在地（2026-11-16、束C1 ジョブ固有の出力ディレクトリ・同一stem、0.1.54・未リリース、A2に積んだDraft PR）
+
+- ブランチ`claude/c1-job-output-dir`（基点＝束A2 `claude/a2-glossary-prompt-compiler`のHEAD `cd7d98e`）。stack: main ← #49（A1）← #50（A2）← 本PR。通常commit・push、作者`zawa356`。
+- 内容: `<入力stem>_<YYYYMMDD-HHMMSS>_<Job ID 8桁>/`に同一stemで全成果物。`JobSnapshot.output_stamp`を投入時に凍結、dispatcherが所有marker付きで専用dirを確保（他人のdirは`blocked`）、
+  stemはprivate IPCと`run_pipeline(output_stem=)`で渡す（**core `Config`は無変更**: field追加は旧CLI goldenが検出したため不採用）。詳細[b7/output-directory](docs/architecture/b7/output-directory.md)。
+- 試験: 新規`tests/test_job_output_dir.py` 31件、既存2件を改訂（変更履歴に明記）。数値とCIはPR本文。
+- **未検証**: Windows実機（W-A1指示書の手順6c）。UIは出力先dirを表示しない（公開DTO無変更、束C2）。
+- レビュー修正（同日、版据置）: 短縮Job ID衝突時にID部分を8→32桁へ伸ばして確保（`resolve_output`）。#49はGenAIの`vad_threshold`宣言、#50は用語内の改行正規化。
+- **owner判断待ち（未実装）**: retryの定義の差異（[program/retry-semantics](docs/architecture/program/retry-semantics.md)）、C2の非表示/履歴削除/成果物削除（[program/c2-history-and-artifacts-design](docs/architecture/program/c2-history-and-artifacts-design.md)）。DB layout変更と削除APIには着手していない。
+- **次の一手**: C2（成果物/履歴の公開API、履歴のみ/成果物込み削除、S5-B UIの複数ジョブ・キュー全件）→ B1（pyannote worker）→ D（UI-3-0製品UI）。ロードマップ§3。
+
 ## 現在地（2026-11-16、束A2 用語集/Promptコンパイラ・エンジン能力API、0.1.53・未リリース、A1に積んだDraft PR）
 
 - ブランチ`claude/a2-glossary-prompt-compiler`（基点＝束A1 `claude/eloquent-ramanujan-hy71xu`のHEAD `b4f9214`。A1のPR #49が未mergeのためstack。指示書§9の裁量で作成）。通常commit・push、作者`zawa356`。

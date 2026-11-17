@@ -1,5 +1,7 @@
 # Phase B7 — Immutable Job Submission / Durable Queue Controls / Safe Dispatch
 
+> 追補（2026-11-16、0.1.54）: ジョブ固有の出力ディレクトリと同一stem命名は[output-directory.md](output-directory.md)。
+
 2026-11-02 JST、開発版 **0.1.36（未リリース）**、**Draft・未マージ**。
 
 > **現況追補（2026-11-02）**: B7は[PR #32](https://github.com/zawa356/Utteran/pull/32)でmainへ統合済み

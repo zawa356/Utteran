@@ -41,12 +41,21 @@ def export_all(
     output_dir: Path,
     formats: Sequence[str],
     options: ExportOptions,
+    *,
+    stem: str | None = None,
 ) -> list[Path]:
-    """Write all requested formats using one collision-free filename stem."""
+    """Write all requested formats using one filename stem.
+
+    Default: the input stem, numbered until no requested path exists (never overwrites).
+    With an explicit ``stem`` the caller owns ``output_dir`` exclusively (the v1 per-job
+    directory): exactly that stem is used and the job's own earlier partial files are
+    replaced.
+    """
     exporters = [create_exporter(name) for name in dict.fromkeys(formats)]
     _ensure_git_ignored_output(output_dir, [item.extension for item in exporters])
     output_dir.mkdir(parents=True, exist_ok=True)
-    stem = _available_stem(output_dir, result.input_path.stem, exporters)
+    if stem is None:
+        stem = _available_stem(output_dir, result.input_path.stem, exporters)
     paths: list[Path] = []
     for exporter in exporters:
         path = output_dir / f"{stem}.{exporter.extension}"

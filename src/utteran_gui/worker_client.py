@@ -59,6 +59,7 @@ def verify_result(request: WorkerRequest, event: WorkerCompleted) -> None:
     try:
         general = cast(dict[str, Any], request.context.base_config["general"])
         output = Path(general["output_dir"]).resolve()
+        stem = request.context.output_stem
         jobs = Path(general["job_dir"]).resolve()
         manifest_path = Path(event.manifest.path).resolve()
         if manifest_path != jobs / event.core_job_id / "manifest.json":
@@ -91,6 +92,9 @@ def verify_result(request: WorkerRequest, event: WorkerCompleted) -> None:
         for item in event.artifacts:
             path = Path(item.path).resolve()
             if path.parent != output or path.suffix[1:] not in expected_formats:
+                raise ValueError
+            # Per-job directory: every artifact carries exactly the requested stem.
+            if stem is not None and path.stem != stem:
                 raise ValueError
             _verify_file(item)
             paths.add(str(path))

@@ -1,6 +1,6 @@
 # W-A1 — Windows実機受入指示書（束A1: エンジン宣言表と実行契約の一本化）
 
-更新: 2026-11-16 JST（開発版`0.1.52`＝束A1、`0.1.53`＝束A2）。実施者: Codex／専用Windows 11 VM。設計: [../backend/engine-adapters.md](../backend/engine-adapters.md)。
+更新: 2026-11-16 JST（開発版`0.1.52`＝束A1、`0.1.53`＝束A2、`0.1.54`＝束C1）。実施者: Codex／専用Windows 11 VM。設計: [../backend/engine-adapters.md](../backend/engine-adapters.md)。
 
 > **本書は手順書であり、結果ではない。** Cloud工程ではWindows実機・WebView2・実モデルを一切実行していない。
 > 実ユーザーのdata root・既定のユーザー領域・既存データのあるディレクトリでは**実行しない**。
@@ -48,6 +48,14 @@ GPUは対象外（VMにGPUが無ければCUDAは**未受入**のまま記録す�
    - 用語を約500文字分に増やしたrevisionでvalidationに`glossary_may_be_truncated`が出ること（投入は任意）。
    - `GET /api/v1/engines`が200で、faster-whisperの`glossary`が`prompt_bias`、他が`unsupported`であること。
    - **認識結果への効果は合否に含めない**（biasであり保証しない）。観測した場合は所見として書く。
+6c. **束C1のHEAD（0.1.54）だけ — 出力ディレクトリ（W-C1）**。設計は[b7/output-directory](../b7/output-directory.md)。
+   - 手順4の正常系の後、出力先の直下に`<入力名>_<YYYYMMDD-HHMMSS>_<8桁>`が**1つ**でき、その中にSRT/JSON/MDが**ディレクトリと同じ名前**で
+     各1件と`.utteran-job`があること。出力先の直下に成果物が直接置かれていないこと。
+   - 出力先に事前に置いた合成ファイル（例: `<入力名>.srt`）の内容が変わっていないこと。
+   - 同じ入力をもう一度投入 → 別のディレクトリになること（1回目の成果物の更新日時・内容が不変）。
+   - 入力名に日本語・空白・`#`・`&`・括弧を含む合成ファイルで投入 → `succeeded`、ディレクトリ名と成果物名が一致。
+   - 深い出力先（合計およそ200文字超のpath）で投入 → 投入時に`output_path_too_long`で拒否されること（ジョブが作られない）。
+   - Explorerで名前の並び（入力名→時刻順）と、エクスプローラーの「隠しファイル」設定に関係なく`.utteran-job`が邪魔にならないかを所見として書く。
 7. GUIを閉じ、既定起動（引数なし）で旧GUIが従来どおり開き、専用root以外にcontrol DBが作られていないことを確認。
 
 ## 3. 報告フォーマット
@@ -60,6 +68,7 @@ HEAD: <sha>            OS/ビルド: <Windows 11 ...>     GPU: なし/あり(<�
 手順5 取消: cancelled / <status>
 手順6 拒否: 話者分離=<code>  用語集(0.1.52のみ)=<code>  whisper-cpp=<code>   旧API呼出: なし/あり
 手順6b 用語集(0.1.53): validation警告=<codes>  job=<status>(<error code>)  truncated警告: 出た/出ない  /engines: 200/<status>
+手順6c 出力dir(0.1.54): dir数=<n> 名前一致: yes/no  既存ファイル不変: yes/no  再投入で別dir: yes/no  特殊文字名: <status>  長path拒否: <code>
 手順7 既定起動: 正常 / 異常(<概要>)
 未実施・未観測: <CUDA 等>
 ```

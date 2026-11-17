@@ -99,6 +99,15 @@ class WorkerExecutionContext(IPCModel):
     # Prompt compiler frozen in the job snapshot (utteran_contracts.prompting). A worker
     # that does not know the field or the value refuses the request; it never guesses.
     prompt_compiler: PromptCompiler = "b2-verbatim"
+    # Exact artifact stem of the per-job output directory (base_config.general.output_dir
+    # must be a directory of this same name). Absent: core's legacy naming in output_dir.
+    output_stem: (
+        Annotated[
+            str,
+            Field(strict=True, pattern=r'^[^<>:"/\\|?*\x00-\x1f\x7f]{1,200}$'),
+        ]
+        | None
+    ) = None
 
 
 class Identified(Envelope):
