@@ -12,11 +12,11 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 > [docs/architecture/README.md](docs/architecture/README.md)を正本とします。B5〜B9のv1 APIはすべて
 > **main統合済み・未リリース・明示opt-in**で、通常のGUI/CLI起動では有効になりません。
 > 開発者向けの暫定フラグ`utteran-gui --next-ui-v1`（0.1.49）は、専用の空ディレクトリを`UTTERAN_DATA_ROOT`に指定したときだけv1を起動する**開発専用モード**です。
-> 0.1.51（UI-3 S5-A）から、このモードの新UIは**単一ファイル**を保存済みPreset/Policy → 実行可否の確認（B5検証・B7 resolution）→ 永続ジョブ投入 → 状態表示の
-> v1経路だけで扱います（旧APIへは投入しない。複数ファイルの一括投入は未対応）。開発専用で、Windows WebView2実機・実モデルでは未確認です
-> （[S5-A](docs/architecture/ui3/s5a-v1-single-job.md)、[G-09](docs/architecture/ui3/g09-next-ui-v1-startup.md)）。`--next-ui`と既定GUIは従来どおり旧APIです。
+> **0.1.56（2026-11-17、PR #49〜#53をmain統合、未リリース）**: `--next-ui-v1`の通常モードは1ファイルずつのv1投入、Expertは複数ファイルを1リクエストで原子的に一括投入し、論理ジョブ（retry連鎖）のキュー/履歴・非表示/再表示と成果物の形式別照合を利用できます。
+> Windows 11の実WebView2とCPU実モデルで差分を受入済み（**CONDITIONAL**）。OS DPI 125/150/200%とExplorer複数WAVのネイティブD&Dは未受入（[#22](https://github.com/zawa356/Utteran/issues/22)）。履歴レコード・成果物の削除、Viewer、Design Freezeどおりの画面構成、既定UI切替は未実装/未承認です（[S5-B](docs/architecture/ui3/s5b-multi-job-board.md)、[C2c #56](https://github.com/zawa356/Utteran/issues/56)）。
+> `--next-ui`は従来の旧APIへの順次投入、引数なしは旧GUIのままです。v1は専用data rootでの明示opt-inに限ります。実機証拠とmain CIは[PR #53](https://github.com/zawa356/Utteran/pull/53#issuecomment-6940939036)に記録しています。
 > 0.1.50の開発用`python -m utteran_gui.capability_smoke`は、同じ専用rootでB4のready証拠を明示的に1回だけ作る**開発専用の入口**です。
-> 通常の起動・APIはsmokeを実行せず、実機（Windows・GPU）での成功は未確認です（[B4 smoke](docs/architecture/b4/smoke.md)）。
+> 通常の起動・APIはsmokeを実行せず、Windows fw-cpu実モデルsmokeは専用VMで成功していますが、CUDA等のGPU実機検証は別課題です（[B4 smoke](docs/architecture/b4/smoke.md)）。
 
 > 次期GUI（UI-2、試験版）: Vue 3 + Vuetify 4の新frontend基盤は、`frontend/`をbuildしたうえで開発者flag
 > `utteran-gui --next-ui`を付けたときだけ開きます。既定のGUIは従来の旧UIのままです。移行済みは文字起こし（UI-3 S3-A/S3-B1:
