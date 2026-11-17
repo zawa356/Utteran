@@ -14,6 +14,7 @@ control store, queue CAS and dispatcher run unchanged. Only two things are synth
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import sys
 import threading
@@ -36,6 +37,7 @@ from utteran_contracts.worker import (
     WorkerErrorCode,
     WorkerRequest,
 )
+from utteran_control.history_repository import HistoryControlStore
 from utteran_gui.job_admission import ProviderResult
 from utteran_gui.job_runtime import JobRuntime
 from utteran_gui.operation_queue import OperationQueue
@@ -144,7 +146,18 @@ class SyntheticRunner:
                 raise WorkerClientError(WorkerErrorCode.CANCELLED)
         elif cancel is not None and cancel.wait(1.0):
             raise WorkerClientError(WorkerErrorCode.CANCELLED)
-        artifact = WorkerArtifact(path=str(self.output / "synthetic.srt"), size=1, sha256="a" * 64)
+        # A real (synthetic, non-transcript) file in the job's own directory, so the
+        # read-only artifact view has something to verify. Old snapshots keep the flat name.
+        general = request.context.base_config["general"]
+        assert isinstance(general, dict)
+        target_dir = Path(str(general["output_dir"]))
+        stem = request.context.output_stem or "synthetic"
+        target = target_dir / f"{stem}.srt"
+        content = b"1\n00:00:00,000 --> 00:00:01,000\nsynthetic\n"
+        target.write_bytes(content)
+        artifact = WorkerArtifact(
+            path=str(target), size=len(content), sha256=hashlib.sha256(content).hexdigest()
+        )
         manifest = WorkerArtifact(path=str(self.output / "manifest.json"), size=1, sha256="b" * 64)
         return WorkerCompleted(
             sequence=5,
@@ -178,5 +191,7 @@ def synthetic_v1_runtime(root: Path, legacy_queue: OperationQueue) -> tuple[JobR
         runner=SyntheticRunner(layout["output"]),
         job_dir=root / "jobs",
         poll_interval=0.2,
+        # Layout v7 (history visibility) like the real --next-ui-v1 runtime.
+        store_type=HistoryControlStore,
     )
     return runtime, settings_path

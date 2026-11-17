@@ -9,15 +9,17 @@ import InputList from "../transcribe/InputList.vue";
 import InputOverrides from "../transcribe/InputOverrides.vue";
 import TranscribeJob from "../transcribe/TranscribeJob.vue";
 import TranscribeOptions from "../transcribe/TranscribeOptions.vue";
-import V1BatchDisabled from "../transcribe/V1BatchDisabled.vue";
+import V1Batch from "../transcribe/V1Batch.vue";
 import V1Job from "../transcribe/V1Job.vue";
+import V1JobBoard from "../transcribe/V1JobBoard.vue";
 import V1Settings from "../transcribe/V1Settings.vue";
 
 /**
  * Expert C structure (UI-2): ① the shared input list (multi-select), ② per-file differences for
  * the selection, the common settings and the S2 environment details, ③ the S3-B1 admission
  * summary of a staged batch plus the S3-A detail of one job. Same controllers as Normal (no copy
- * of the state). The real multi-job queue (status of every job, cancel, filters) is S3-B2.
+ * of the state). In v1 mode (bundle C2b) ③ is the atomic batch of the selected rows, the board of
+ * every durable job (logical jobs: queue, history, hide/show, outputs) and the single-job panel.
  */
 const { shell, apiMode } = useCore();
 // v1 mode (S5-A): the same v1 controllers as Normal; the legacy batch/start are not shown.
@@ -57,7 +59,8 @@ const current = (pane: ExpertPane) => ({ "u-pane": true, "u-pane--current": stat
       </section>
       <section :class="current('queue')" data-pane="queue" :aria-label="t('expert.queue')" data-testid="pane-queue">
         <template v-if="v1">
-          <v-card class="pa-3"><V1BatchDisabled /></v-card>
+          <v-card class="pa-3"><V1Batch /></v-card>
+          <v-card class="pa-3 mt-3"><V1JobBoard /></v-card>
           <v-card class="pa-3 mt-3"><V1Job /></v-card>
         </template>
         <template v-else>

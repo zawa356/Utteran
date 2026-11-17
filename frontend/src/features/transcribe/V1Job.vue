@@ -3,6 +3,7 @@ import { computed, onUnmounted, ref, watch } from "vue";
 import { fileName } from "../../api/legacyJobs";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCodeText, useV1 } from "../../composables/v1";
+import V1Artifacts from "./V1Artifacts.vue";
 import { summarize } from "../../domain/v1/settings";
 import type { MessageKey } from "../../i18n";
 
@@ -144,6 +145,8 @@ const switchBlocked = computed(() => {
         <p v-if="view.errorCode" class="text-body-2" data-testid="v1-job-error">{{ t("v1.job.error", { reason: reason(view.errorCode) }) }}</p>
         <p v-if="view.artifactCount !== null" class="text-body-2" data-testid="v1-job-artifacts">{{ t("v1.job.artifacts", { count: view.artifactCount }) }}</p>
         <p class="text-caption">{{ t("v1.job.noProgress") }}</p>
+        <!-- Result: the read-only view of this job's own output folder (formats, sizes, integrity). -->
+        <V1Artifacts v-if="s.tracking === 'final'" :job-id="view.id" />
       </template>
       <p v-if="s.tracking === 'lost'" class="text-body-2" data-testid="v1-lost">{{ t("v1.job.lost") }}</p>
       <p v-if="s.tracking === 'stopped'" class="text-caption" data-testid="v1-stopped">{{ t("v1.job.stopped") }}</p>
@@ -198,7 +201,7 @@ const switchBlocked = computed(() => {
     </v-card>
 
     <!-- Durable jobs on the server (re-display after a restart; not a claim about an unknown send) -->
-    <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-recent">
+    <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-recent" :data-phase="s.recent.phase">
       <h3 class="u-subheading">{{ t("v1.recent.title") }}</h3>
       <p class="text-caption">{{ t("v1.recent.explain") }}</p>
       <ErrorAlert v-if="s.recent.phase === 'error' && s.recent.error" :error="s.recent.error" testid="v1-recent-error" />

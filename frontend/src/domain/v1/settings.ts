@@ -15,7 +15,7 @@ import { OUTPUT_FORMATS_V1 } from "../../api/v1Resources";
 import template from "./presetTemplate.json";
 
 export interface SettingOverride {
-  readonly path: "/asr/language" | "/output/formats";
+  readonly path: "/asr/language" | "/output/formats" | "/asr/backend" | "/asr/model";
   readonly value: string | readonly OutputFormatV1[];
 }
 
@@ -157,7 +157,6 @@ export function knownWorkerLimits(settings: JsonObject): string[] {
   const limits: string[] = [];
   if (s.backend !== "faster-whisper" && s.backend !== "auto") limits.push("worker_backend_unsupported");
   if (s.diarization) limits.push("worker_diarization_unsupported");
-  if (s.glossary > 0) limits.push("worker_glossary_unsupported");
   if ((settings.asr as JsonObject).extra_arguments) limits.push("worker_arguments_unsupported");
   return limits;
 }

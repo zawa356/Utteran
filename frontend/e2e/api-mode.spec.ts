@@ -13,6 +13,10 @@ test("--next-ui stays on the legacy API: meta says legacy, no URL/storage upgrad
   await expect(app.getByTestId("transcribe-not-migrated")).toBeVisible();
   await expect(app.getByTestId("v1-mode-notice")).toHaveCount(0);
   await expect(app.getByTestId("tx-start")).toBeVisible();
+  // The standing notice of `--next-ui` is the legacy one (sequential legacy submission), unchanged.
+  await expect(app.getByTestId("preview-notice")).toHaveAttribute("data-notice", "app.previewNotice");
+  await expect(app.getByTestId("preview-notice")).toContainText("複数ファイルの順次投入");
+  await expect(app.getByTestId("preview-notice")).not.toContainText("--next-ui-v1");
 
   await app.evaluate(() => {
     localStorage.setItem("utteran-api-mode", "v1-dev");
@@ -25,6 +29,7 @@ test("--next-ui stays on the legacy API: meta says legacy, no URL/storage upgrad
   await expect(app.getByTestId("tx-start")).toBeVisible();
   await app.getByTestId("mode-expert").click();
   await expect(app.getByTestId("tx-batch-start")).toBeVisible();
+  await expect(app.getByTestId("preview-notice")).toHaveAttribute("data-notice", "app.previewNotice");
   await expect(app.getByTestId("v1-batch-start")).toHaveCount(0);
   expect(v1Requests).toEqual([]);
   // The legacy server has no v1 surface at all.

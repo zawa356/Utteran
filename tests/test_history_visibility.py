@@ -617,3 +617,40 @@ def test_evidence_without_a_per_file_record_never_verifies(
     with pytest.raises(ControlError) as error:
         env.store.artifact_evidence(job_id)
     assert error.value.code is E.STORE_CORRUPT
+
+
+def test_runtime_can_open_layout_v7_without_setup_services_and_not_by_default(
+    tmp_path: Path,
+) -> None:
+    """Development harnesses (tools/ui2) need history visibility without B8 setup."""
+
+    def runtime(root: Path, **kwargs: Any) -> tuple[JobRuntime, Path]:
+        root.mkdir()
+        env = Env(root, None)
+        path = env.store.path
+        return (
+            JobRuntime(
+                store_path=path,
+                settings_path=env.settings_path,
+                legacy_queue=OperationQueue(),
+                provider=env.provider,
+                runner=FakeRunner(env),
+                job_dir=root / "jobs",
+                autostart_dispatcher=False,
+                **kwargs,
+            ),
+            path,
+        )
+
+    explicit, path = runtime(tmp_path / "a", store_type=HistoryControlStore)
+    explicit.activate()
+    try:
+        assert isinstance(explicit.store, HistoryControlStore) and version(path) == 7
+    finally:
+        explicit.shutdown()
+    default, path = runtime(tmp_path / "b")
+    default.activate()
+    try:
+        assert not isinstance(default.store, HistoryControlStore) and version(path) == 3
+    finally:
+        default.shutdown()

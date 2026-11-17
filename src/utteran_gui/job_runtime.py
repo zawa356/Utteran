@@ -66,6 +66,7 @@ class JobRuntime:
         poll_interval: float = 0.5,
         autostart_dispatcher: bool = True,
         setup: SetupComponents | None = None,
+        store_type: type[JobControlStore] | None = None,
     ) -> None:
         self.store_path = store_path
         self.settings_path = settings_path
@@ -73,6 +74,9 @@ class JobRuntime:
         self.provider = provider
         self.runner = runner
         self.job_dir = job_dir
+        # Explicit layout choice for development harnesses and tests (e.g. the v7 history
+        # store without the B8 setup services). None = decided by ``setup`` below.
+        self.store_type = store_type
         self.verifier = verifier or OsProcessVerifier()
         self.clock = clock
         self.lease_seconds = lease_seconds
@@ -130,6 +134,8 @@ class JobRuntime:
                     from utteran_control.history_repository import HistoryControlStore
 
                     store_type = HistoryControlStore
+                if self.store_type is not None:
+                    store_type = self.store_type
                 store = store_type(self.store_path, clock=self.clock)
                 report = store.recover(self.verifier)
                 compact = getattr(store, "compact_events", None)

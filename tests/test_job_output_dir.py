@@ -141,12 +141,58 @@ def test_submission_freezes_one_stamp_and_each_job_gets_its_own_directory(tmp_pa
     assert job_output(snapshots[0], jobs[0].id) == dirs[0]
 
 
+# CreateDirectory refuses a directory path of 248 characters or more without the
+# extended-length prefix; the fixture below stays under it on every platform.
+WINDOWS_DIRECTORY_LIMIT = 248
+_SEGMENT = 24
+
+
+def _first_refused_parent_length() -> int:
+    """Shortest parent length ``job_output_name`` refuses, read from the contract itself."""
+    for length in range(1, PATH_BUDGET + 1):
+        try:
+            job_output_name("a.wav", STAMP, JOB, parent="p" * length)
+        except ValueError:
+            return length
+    raise AssertionError("the contract refuses no parent within PATH_BUDGET")
+
+
+def _parent_over_budget(base: Path) -> Path:
+    """A creatable directory under ``base`` whose path no longer fits a job directory.
+
+    The length is computed from the real base (the temporary root differs per OS and
+    user), built from short components, and kept an ordinary path Windows can create.
+    """
+    target = _first_refused_parent_length() + 16
+    deep = base
+    while len(str(deep)) < target:
+        missing = target - len(str(deep)) - 1  # one separator per component
+        deep = deep / ("d" * max(1, min(_SEGMENT, missing)))
+    if deep == base:
+        deep = base / "d"
+    return deep
+
+
+def test_parent_just_inside_the_budget_is_still_accepted() -> None:
+    # The fixture is meaningful only if the boundary is real: one character shorter fits.
+    edge = _first_refused_parent_length()
+    assert edge < WINDOWS_DIRECTORY_LIMIT - 16
+    name = job_output_name("a.wav", STAMP, JOB, parent="p" * (edge - 1))
+    assert name == f"a_{STAMP}_{JOB[4:12]}"
+    assert (edge - 1) + 2 + 2 * len(name) + len(".json") <= PATH_BUDGET
+
+
 def test_output_path_that_cannot_fit_is_refused_at_submission(tmp_path: Path) -> None:
     env = Env(tmp_path, None)
-    deep = env.output
-    for _ in range(3):
-        deep = deep / ("d" * 70)
+    deep = _parent_over_budget(env.output)
     deep.mkdir(parents=True)
+    # The fixture itself must exist as an ordinary directory (no extended-length prefix),
+    # so the refusal below comes from admission and not from a path nobody could create.
+    assert deep.is_dir()
+    assert not str(deep).startswith("\\\\?\\")
+    assert len(str(deep)) < WINDOWS_DIRECTORY_LIMIT
+    with pytest.raises(ValueError, match=r"^output_path_too_long$"):
+        job_output_name("a.wav", STAMP, JOB, parent=str(deep))
     session = env.session(env.file("a.wav"))
     session["files"][0]["output_dir"] = str(deep)
     token = env.resolution(session).token

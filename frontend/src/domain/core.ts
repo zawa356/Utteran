@@ -15,6 +15,8 @@ import { ShellController } from "./shell";
 import { TokenController } from "./token";
 import { TranscriptionFormController } from "./transcription";
 import type { ApiMode } from "./v1/apiMode";
+import { V1BatchController } from "./v1/batchJobs";
+import { V1JobBoardController } from "./v1/jobBoard";
 import { V1LibraryController } from "./v1/library";
 import { V1SingleJobController } from "./v1/singleJob";
 import { WizardStatusController } from "./wizard";
@@ -24,6 +26,10 @@ export interface V1Core {
   api: V1ResourcesApi;
   library: V1LibraryController;
   job: V1SingleJobController;
+  /** S5-B: the selected rows as one atomic B7 batch (same file ids as `job`). */
+  batch: V1BatchController;
+  /** Every durable job as logical jobs: queue, history, hide/show, artifact view. */
+  board: V1JobBoardController;
 }
 
 /**
@@ -92,7 +98,9 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
   if (apiMode === "v1-dev") {
     const api = createV1ResourcesApi(http);
     const library = new V1LibraryController(api);
-    v1 = { api, library, job: new V1SingleJobController(api, library.store, inputs.store, transcription.store) };
+    const job = new V1SingleJobController(api, library.store, inputs.store, transcription.store);
+    const batch = new V1BatchController(api, library.store, inputs.store, transcription.store, { fileIdFor: (rowId) => job.fileIdFor(rowId) });
+    v1 = { api, library, job, batch, board: new V1JobBoardController(api, { onVisibilitySettled: () => job.refreshRecentIfLoaded() }) };
   }
   return {
     host: deps.host,
@@ -106,6 +114,8 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     batch,
     dispose() {
       v1?.job.dispose();
+      v1?.batch.dispose();
+      v1?.board.dispose();
       batch.dispose();
       job.dispose();
       transcription.dispose();

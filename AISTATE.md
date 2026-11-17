@@ -1,5 +1,29 @@
 # AI 作業状態
 
+## 現在地（2026-11-17、PR #53 Windows統合受入CONDITIONALの所見3件を修正、0.1.56据置・未リリース）
+
+- ブランチ`claude/c2b-multi-job-ui`（PR #53、Draft、基点＝#52）。照合基点`1c76453`の上に通常commit。Ready化・merge・tag・releaseはowner承認制。#49〜#52は無変更。
+- Windows 11 VM受入（`1c76453`、実WebView2・CPU実モデル・合成データ）: **12 PASS／W-01 FAIL／W-12 BLOCKED**。詳細と残件は[ui3/s5b §8](docs/architecture/ui3/s5b-multi-job-board.md)。
+- 修正（製品の公開API・DB layout・IPC・実行アルゴリズム・既定GUI/CLI/旧`--next-ui`は無変更）:
+  1. W-01: `tests/test_job_output_dir.py`の長いパスの治具を、契約から求めた拒否境界＋実基点長で動的に作る形へ（skip/xfail・assert緩和なし）。
+  2. 常設案内: `apiMode === "v1-dev"`のときだけ`app.previewNoticeV1`。`v1.mode.notice`を実装に合わせて改訂。legacy文言は不変。
+  3. 補助一覧: 非表示/再表示が`done`になった後に、取得済みの「サーバー上のジョブ（v1）」だけを読み直す。未確定の結果では読み直さない。
+     コードレビュー指摘（再読込の待機中に完了メッセージを閉じると同期が落ちる）は、書き込み自身の結果で判定する形に修正。
+- 試験（Cloud Linux）: pytest 1647 passed／9 skipped／1 xfailed、Vitest 527、Playwright v1 15。legacyは`settings-s1.spec.ts`のtoken確認ダイアログ（Esc）1件が手元で断続的に失敗（基点`1c76453`でも再現、今回の変更と無関係、未対応）。CIはPR #53のコメントに記録。
+- **未検証**: 修正後HEADでのWindows実機（W-01のpytest PASS、実WebView2での案内文と補助一覧）。W-12（DPI 125/150/200%、picker確定、Explorer複数WAV D&D）はBLOCKEDのまま。
+- **次の一手**: Codexによる修正HEADのWindows再試験 → ownerの再レビュー。その後C2c（別PR、試験計画を先に）→ D → B1。
+
+## 現在地（2026-11-16、束C2b 複数ジョブUI、0.1.56・未リリース、C2aに積んだDraft PR）
+
+- ブランチ`claude/c2b-multi-job-ui`（基点＝束C2a `claude/c2a-history-visibility`、PR #52）。stack: main ← #49 ← #50 ← #51 ← #52 ← 本PR。通常commit・push、作者`zawa356`。Ready化・mergeはowner承認制。
+- 内容: 一括投入（`core.v1.batch`、`V1Batch.vue`）、論理ジョブのキュー/履歴・取消・再試行・非表示/再表示（`core.v1.board`、`V1JobBoard.vue`）、成果物ビュー（`V1Artifacts.vue`）。
+  backendは`JobRuntime(store_type=)`の追加のみ。**削除機能なし。** 詳細[ui3/s5b-multi-job-board](docs/architecture/ui3/s5b-multi-job-board.md)。
+- #52のレビュー指摘（P2-1 一覧ETag、P2-2 形式別照合）は#52のブランチで修正しmerge済み。
+- 試験: Vitest 514、Playwright v1 14・全体67、pytestはPR本文。**Design Freezeとの比較では画面構成・見た目は未達**（同文書§5。機能接続のみ）。
+- レビュー修正（2026-11-17、版据置、PR #53 P2-1/P2-2）: キューの並びと位置は`GET /queue`の実順。分岐した連鎖でも未完了の内部Jobを行に残し、対象を明示して取消。束Dの受入条件は[ui3/s5b §5.1](docs/architecture/ui3/s5b-multi-job-board.md)。Vitest 520、Playwright 68。
+- **未検証**: Windows WebView2実機・実モデル（[W-C2指示書](docs/architecture/program/windows-acceptance-w-c2.md)）。
+- **次の一手**: C2c（墓標化・成果物削除、別PR。必須条件2〜4の試験を先に用意）→ D（UI-3-0の画面再構成。§5の比較表が出発点）→ B1（pyannote worker）。
+
 ## 現在地（2026-11-16、束C2a 履歴の非表示（layout v7）・成果物の読み取りビュー、0.1.55・未リリース、C1に積んだDraft PR）
 
 - owner確定（同日）: retry＝B7維持＋UIで論理ジョブ化＋retryごとに別dir＋markerのみのdirは自動削除しない。C2＝非表示先行（v7可）、墓標化、既定拒否、「完全消去」と表示しない、必須条件5つ。

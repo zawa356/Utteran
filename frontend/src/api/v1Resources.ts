@@ -298,8 +298,16 @@ export interface JobV1 {
   lastAttemptState: "active" | "released" | "interrupted" | null;
   artifactCount: number | null;
   errorCode: string | null;
+  /** B7 keeps `retry`: a new job with the same snapshot, linked to the job it retries. */
+  retryOf: string | null;
+  /** `rerun`: a different logical job (new snapshot); kept only to show where it came from. */
+  rerunOf: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+function optJobId(value: unknown, where: string): string | null {
+  return value === null ? null : id(value, where, JOB_ID);
 }
 
 export function parseJob(raw: unknown): JobV1 {
@@ -326,6 +334,8 @@ export function parseJob(raw: unknown): JobV1 {
     lastAttemptState: attempts.at(-1) ?? null,
     artifactCount: result === null ? null : positive(result.artifact_count, "result.artifact_count"),
     errorCode: error === null ? null : code(error.code, "error.code"),
+    retryOf: optJobId(r.retry_of, "job.retry_of"),
+    rerunOf: optJobId(r.rerun_of, "job.rerun_of"),
     createdAt: timestamp(r.created_at, "job.created_at"),
     updatedAt: timestamp(r.updated_at, "job.updated_at"),
   };
@@ -387,6 +397,59 @@ export function parseQueue(raw: unknown): QueueViewV1 {
   };
 }
 
+export const JOB_VISIBILITY_FILTERS = ["visible", "hidden", "all"] as const;
+export type JobVisibilityFilter = (typeof JOB_VISIBILITY_FILTERS)[number];
+
+/** History-list visibility of one job (layout v7). Its revision is not the job revision. */
+export interface JobVisibilityV1 {
+  jobId: string;
+  hidden: boolean;
+  revision: number;
+  updatedAt: string | null;
+}
+
+export function parseVisibility(raw: unknown): JobVisibilityV1 {
+  const r = record(raw, "visibility");
+  version(r, "visibility");
+  const revision = int(r.revision, "visibility.revision");
+  if (revision < 0) throw new ShapeError("visibility.revision");
+  return {
+    jobId: id(r.job_id, "visibility.job_id", JOB_ID),
+    hidden: bool(r.hidden, "visibility.hidden"),
+    revision,
+    updatedAt: r.updated_at === null ? null : timestamp(r.updated_at, "visibility.updated_at"),
+  };
+}
+
+export const ARTIFACT_STATES = ["available", "missing", "legacy", "none"] as const;
+export const ARTIFACT_INTEGRITY = ["verified", "changed", "unverified"] as const;
+
+/** Read-only view of a job's own output directory: no file name, no path. */
+export interface JobArtifactsV1 {
+  jobId: string;
+  state: (typeof ARTIFACT_STATES)[number];
+  items: { format: OutputFormatV1; size: number; integrity: (typeof ARTIFACT_INTEGRITY)[number] }[];
+  unexpectedCount: number;
+}
+
+export function parseArtifacts(raw: unknown): JobArtifactsV1 {
+  const r = record(raw, "artifacts");
+  version(r, "artifacts");
+  const unexpected = int(r.unexpected_count, "artifacts.unexpected_count");
+  if (unexpected < 0) throw new ShapeError("artifacts.unexpected_count");
+  return {
+    jobId: id(r.job_id, "artifacts.job_id", JOB_ID),
+    state: oneOf(r.state, ARTIFACT_STATES, "artifacts.state"),
+    items: list(r.items, "artifacts.items").map((item, i) => {
+      const x = record(item, `artifacts.items[${i}]`);
+      const size = int(x.size, "artifact.size");
+      if (size < 0) throw new ShapeError("artifact.size");
+      return { format: oneOf(x.format, OUTPUT_FORMATS_V1, "artifact.format"), size, integrity: oneOf(x.integrity, ARTIFACT_INTEGRITY, "artifact.integrity") };
+    }),
+    unexpectedCount: unexpected,
+  };
+}
+
 /** A 2xx answer that does not fit what was asked (not a refusal: the outcome cannot be read). */
 function malformed(status: number): ApiError {
   return new ApiError({ kind: "malformed", status, retryable: true });
@@ -410,10 +473,20 @@ export interface V1ResourcesApi {
   submit(intent: MutationIntent<JsonObject>): Promise<{ status: number; batch: JobBatchV1 }>;
   getJob(jobId: string, signal?: AbortSignal): Promise<JobV1>;
   /** One page of `GET /api/v1/jobs` (B7: oldest first, 100 per page, opaque `next_cursor`). */
-  listJobs(cursor?: string | null, signal?: AbortSignal): Promise<JobListV1>;
+  listJobs(cursor?: string | null, signal?: AbortSignal, visibility?: JobVisibilityFilter): Promise<JobListV1>;
+  getVisibility(jobId: string, signal?: AbortSignal): Promise<JobVisibilityV1>;
+  /**
+   * `PUT /jobs/{id}/visibility` with `If-Match` = the visibility revision. Idempotent on the server
+   * (asking for the stored state changes nothing), so an unknown outcome is resolved by sending the
+   * same request again; no Idempotency-Key is involved. Nothing is deleted by this call.
+   */
+  setVisibility(jobId: string, expectedRevision: number, hidden: boolean, signal?: AbortSignal): Promise<JobVisibilityV1>;
+  getArtifacts(jobId: string, signal?: AbortSignal): Promise<JobArtifactsV1>;
   getQueue(signal?: AbortSignal): Promise<QueueViewV1>;
   setDispatch(intent: MutationIntent<JsonObject>, expectedRevision: number): Promise<QueueViewV1>;
   cancel(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; job: JobV1 }>;
+  /** B7 retry: a *new* job with the same snapshot, `retry_of` = the job retried (Design Freeze §7). */
+  retry(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; job: JobV1 }>;
 }
 
 export const V1_WRITE_TIMEOUT_MS = 30_000;
@@ -487,8 +560,30 @@ export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
       etagRevision(response.headers, response.data.revision, response.status);
       return response.data;
     },
-    async listJobs(cursor, signal) {
-      return (await http.request({ method: "GET", path: "/api/v1/jobs", query: { cursor: cursor ?? null }, signal }, parseJobList)).data;
+    async listJobs(cursor, signal, visibility) {
+      // The filter is part of the cursor's MAC on the server: every page of one listing sends the same one.
+      return (await http.request({ method: "GET", path: "/api/v1/jobs", query: { cursor: cursor ?? null, visibility: visibility ?? null }, signal }, parseJobList)).data;
+    },
+    async getVisibility(id, signal) {
+      const response = await http.request({ method: "GET", path: `/api/v1/jobs/${jobId(id)}/visibility`, signal }, parseVisibility);
+      if (response.data.jobId !== id) throw malformed(response.status);
+      etagRevision(response.headers, response.data.revision, response.status);
+      return response.data;
+    },
+    async setVisibility(id, expectedRevision, hidden, signal) {
+      const response = await http.request(
+        { method: "PUT", path: `/api/v1/jobs/${jobId(id)}/visibility`, body: { schema_version: 1, hidden }, headers: { "If-Match": ifMatch(expectedRevision) }, timeoutMs: V1_WRITE_TIMEOUT_MS, signal },
+        parseVisibility,
+      );
+      // The answer must describe the job and the state that was asked for.
+      if (response.data.jobId !== id || response.data.hidden !== hidden) throw malformed(response.status);
+      etagRevision(response.headers, response.data.revision, response.status);
+      return response.data;
+    },
+    async getArtifacts(id, signal) {
+      const response = await http.request({ method: "GET", path: `/api/v1/jobs/${jobId(id)}/artifacts`, signal }, parseArtifacts);
+      if (response.data.jobId !== id) throw malformed(response.status);
+      return response.data;
     },
     async getQueue(signal) {
       const response = await http.request({ method: "GET", path: "/api/v1/queue", signal }, parseQueue);
@@ -500,6 +595,12 @@ export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
     },
     async cancel(id, expectedRevision, intent) {
       const response = await write(`/api/v1/jobs/${jobId(id)}/cancel`, "POST", intent, parseJob, { "If-Match": ifMatch(expectedRevision) });
+      return { status: response.status, job: response.data };
+    },
+    async retry(id, expectedRevision, intent) {
+      const response = await write(`/api/v1/jobs/${jobId(id)}/retry`, "POST", intent, parseJob, { "If-Match": ifMatch(expectedRevision) });
+      // The answer must be the new job that retries exactly this one.
+      if (response.data.retryOf !== id || response.data.id === id) throw malformed(response.status);
       return { status: response.status, job: response.data };
     },
   };

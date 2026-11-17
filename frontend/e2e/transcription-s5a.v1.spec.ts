@@ -73,6 +73,18 @@ test("first start: empty store, nothing created implicitly; explicit Preset/Poli
   const seen = recordApi(app);
   await expect(app.getByTestId("v1-mode-notice")).toBeVisible();
   await expect(app.getByTestId("transcribe-not-migrated")).toHaveCount(0);
+  // Standing notices describe v1 as it is (Normal = one file, Expert = atomic batch, queue, history),
+  // in Normal and in Expert; the legacy wording is not shown in this mode.
+  for (const mode of ["mode-normal", "mode-expert", "mode-normal"]) {
+    await app.getByTestId(mode).click();
+    const notice = app.getByTestId("preview-notice");
+    await expect(notice).toHaveAttribute("data-notice", "app.previewNoticeV1");
+    await expect(notice).toContainText("--next-ui-v1");
+    await expect(notice).toContainText("Expert");
+    for (const wrong of ["順次投入", "単一ファイル", "旧画面"]) await expect(notice).not.toContainText(wrong);
+  }
+  for (const wrong of ["順次投入", "単一ファイル", "旧画面"]) await expect(app.getByTestId("v1-mode-notice")).not.toContainText(wrong);
+  await expect(app.getByTestId("v1-mode-notice")).toContainText("Expert");
   await expect(app.getByTestId("v1-presets-empty")).toBeVisible();
   await expect(app.getByTestId("v1-policies-empty")).toBeVisible();
   await expect(app.getByTestId("v1-queue-dispatch")).toContainText(/停止中/);
@@ -233,10 +245,14 @@ test("cooperative cancel: requested first, cancelled only when GET says so; no f
   expect((await cancel.allHeaders())["if-match"]).toMatch(/^"\d+"$/);
 });
 
-test("Expert uses the same v1 controller; multi-file start is shown disabled; a reload re-reads the durable jobs only", async ({ app }) => {
+test("Expert uses the same v1 controller; the batch panel cannot submit before its own check; a reload re-reads the durable jobs only", async ({ app }) => {
   const seen = recordApi(app);
   await app.getByTestId("mode-expert").click();
-  await expect(app.getByTestId("v1-batch-start")).toBeDisabled();
+  // Bundle C2b: the disabled placeholder became the real batch panel (transcription-s5b.v1.spec.ts).
+  // Nothing is selected and nothing was checked, so neither step can be pressed.
+  await expect(app.getByTestId("v1-batch")).toBeVisible();
+  await expect(app.getByTestId("v1-batch-check")).toBeDisabled();
+  await expect(app.getByTestId("v1-batch-submit")).toBeDisabled();
   await expect(app.getByTestId("tx-batch-start")).toHaveCount(0);
   await expect(app.getByTestId("tx-start")).toHaveCount(0);
   // One v1 job panel (the shared controller), in the third pane.

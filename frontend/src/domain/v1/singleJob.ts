@@ -636,6 +636,15 @@ export class V1SingleJobController {
    * cursor, a changed snapshot revision or a duplicate id is an error, never a finished partial
    * list. No retry. A newer load or `dispose()` makes an older one write nothing.
    */
+  /**
+   * Re-read the auxiliary list after the visible set changed elsewhere on the page (hide/show on
+   * the board). Only a list the user already asked for is re-read; an unread list stays unread.
+   */
+  refreshRecentIfLoaded(): void {
+    if (this.disposed || this.store.get().recent.phase === "idle") return;
+    void this.loadRecent();
+  }
+
   async loadRecent(): Promise<void> {
     if (this.disposed) return;
     const generation = ++this.recentGeneration;
