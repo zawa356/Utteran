@@ -17,6 +17,7 @@ import { TranscriptionFormController } from "./transcription";
 import type { ApiMode } from "./v1/apiMode";
 import { V1BatchController } from "./v1/batchJobs";
 import { V1JobBoardController } from "./v1/jobBoard";
+import { V1DeletionController } from "./v1/jobDeletion";
 import { V1LibraryController } from "./v1/library";
 import { V1SingleJobController } from "./v1/singleJob";
 import { WizardStatusController } from "./wizard";
@@ -30,6 +31,8 @@ export interface V1Core {
   batch: V1BatchController;
   /** Every durable job as logical jobs: queue, history, hide/show, artifact view. */
   board: V1JobBoardController;
+  /** C2c: history-only / history-and-outputs deletion of one internal job (plan → approval → execute). */
+  deletion: V1DeletionController;
 }
 
 /**
@@ -100,7 +103,15 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     const library = new V1LibraryController(api);
     const job = new V1SingleJobController(api, library.store, inputs.store, transcription.store);
     const batch = new V1BatchController(api, library.store, inputs.store, transcription.store, { fileIdFor: (rowId) => job.fileIdFor(rowId) });
-    v1 = { api, library, job, batch, board: new V1JobBoardController(api, { onVisibilitySettled: () => job.refreshRecentIfLoaded() }) };
+    const board = new V1JobBoardController(api, { onVisibilitySettled: () => job.refreshRecentIfLoaded() });
+    // After a settled deletion every list is read from the server again (nothing is removed locally).
+    const deletion = new V1DeletionController(api, {
+      onSettled: () => {
+        void board.refresh();
+        job.refreshRecentIfLoaded();
+      },
+    });
+    v1 = { api, library, job, batch, board, deletion };
   }
   return {
     host: deps.host,
@@ -116,6 +127,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
       v1?.job.dispose();
       v1?.batch.dispose();
       v1?.board.dispose();
+      v1?.deletion.dispose();
       batch.dispose();
       job.dispose();
       transcription.dispose();

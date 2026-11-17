@@ -450,6 +450,114 @@ export function parseArtifacts(raw: unknown): JobArtifactsV1 {
   };
 }
 
+// ------------------------------------------------------------------ C2c deletion
+
+export const DELETION_MODES = ["history", "history_and_artifacts"] as const;
+export type DeletionModeV1 = (typeof DELETION_MODES)[number];
+export const DELETION_REFUSALS = [
+  "not_finished",
+  "deletion_in_progress",
+  "not_succeeded",
+  "legacy_output",
+  "evidence_unverified",
+  "platform_unverified",
+  "directory_missing",
+  "directory_ambiguous",
+  "marker_mismatch",
+  "unexpected_entries",
+  "unsafe_entry",
+  "artifact_changed",
+  "artifact_missing",
+  "filesystem_error",
+] as const;
+export type DeletionRefusalV1 = (typeof DELETION_REFUSALS)[number];
+export const RETAINED_CODES = ["backups", "related_jobs", "replay_public_views", "event_skeleton", "core_cache", "output_files"] as const;
+export type RetainedCodeV1 = (typeof RETAINED_CODES)[number];
+const DELETION_TOKEN = /^dp1\.[0-9]{13}\.[0-9a-f]{64}$/;
+
+/** Every key of a deletion answer is known: an unknown field is a malformed answer, not ignored. */
+function exactKeys(r: JsonObject, allowed: readonly string[], where: string): void {
+  for (const key of Object.keys(r)) if (!allowed.includes(key)) throw new ShapeError(`${where}.${key}`);
+  for (const key of allowed) if (!(key in r)) throw new ShapeError(`${where}.${key}`);
+}
+
+/** Read-only preflight of one deletion (`POST /jobs/{id}/deletion-plans`). No name, no path. */
+export interface JobDeletionPlanV1 {
+  jobId: string;
+  mode: DeletionModeV1;
+  allowed: boolean;
+  refusal: DeletionRefusalV1 | null;
+  /** Opaque, short-lived; sent back unchanged with the explicit approval. Never rendered. */
+  planToken: string | null;
+  expiresAt: string | null;
+  resume: boolean;
+  artifacts: { format: OutputFormatV1; size: number }[];
+  relatedJobs: number;
+  retained: RetainedCodeV1[];
+}
+
+export function parseDeletionPlan(raw: unknown): JobDeletionPlanV1 {
+  const r = record(raw, "deletionPlan");
+  exactKeys(r, ["schema_version", "job_id", "mode", "allowed", "refusal", "plan_token", "expires_at", "resume", "artifacts", "related_jobs", "retained"], "deletionPlan");
+  version(r, "deletionPlan");
+  const allowed = bool(r.allowed, "deletionPlan.allowed");
+  const planToken = r.plan_token === null ? null : str(r.plan_token, "deletionPlan.plan_token");
+  if (planToken !== null && !DELETION_TOKEN.test(planToken)) throw new ShapeError("deletionPlan.plan_token");
+  const refusal = r.refusal === null ? null : oneOf(r.refusal, DELETION_REFUSALS, "deletionPlan.refusal");
+  const expiresAt = r.expires_at === null ? null : timestamp(r.expires_at, "deletionPlan.expires_at");
+  // The same consistency rule as the server DTO: allowed <=> token <=> no refusal.
+  if (allowed !== (planToken !== null) || allowed !== (refusal === null) || allowed !== (expiresAt !== null)) throw new ShapeError("deletionPlan");
+  const mode = oneOf(r.mode, DELETION_MODES, "deletionPlan.mode");
+  const artifacts = list(r.artifacts, "deletionPlan.artifacts").map((item, i) => {
+    const x = record(item, `deletionPlan.artifacts[${i}]`);
+    exactKeys(x, ["format", "size"], "deletionPlan.artifact");
+    return { format: oneOf(x.format, OUTPUT_FORMATS_V1, "deletionPlan.artifact.format"), size: int(x.size, "deletionPlan.artifact.size") };
+  });
+  if (mode === "history" && artifacts.length > 0) throw new ShapeError("deletionPlan.artifacts");
+  return {
+    jobId: id(r.job_id, "deletionPlan.job_id", JOB_ID),
+    mode,
+    allowed,
+    refusal,
+    planToken,
+    expiresAt,
+    resume: bool(r.resume, "deletionPlan.resume"),
+    artifacts,
+    relatedJobs: int(r.related_jobs, "deletionPlan.related_jobs"),
+    retained: list(r.retained, "deletionPlan.retained").map((item, i) => oneOf(item, RETAINED_CODES, `deletionPlan.retained[${i}]`)),
+  };
+}
+
+/** Outcome of one deletion. `incomplete`: the history record was kept (nothing is claimed erased). */
+export interface JobDeletionV1 {
+  jobId: string;
+  mode: DeletionModeV1;
+  outcome: "completed" | "incomplete";
+  deletedAt: string | null;
+  artifactsRemoved: number;
+  artifactsRemaining: number;
+  retained: RetainedCodeV1[];
+}
+
+export function parseDeletion(raw: unknown): JobDeletionV1 {
+  const r = record(raw, "deletion");
+  exactKeys(r, ["schema_version", "job_id", "mode", "outcome", "deleted_at", "artifacts_removed", "artifacts_remaining", "retained"], "deletion");
+  version(r, "deletion");
+  const outcome = oneOf(r.outcome, ["completed", "incomplete"] as const, "deletion.outcome");
+  const deletedAt = r.deleted_at === null ? null : timestamp(r.deleted_at, "deletion.deleted_at");
+  const remaining = int(r.artifacts_remaining, "deletion.artifacts_remaining");
+  if ((outcome === "completed") !== (deletedAt !== null) || (outcome === "completed" && remaining > 0)) throw new ShapeError("deletion");
+  return {
+    jobId: id(r.job_id, "deletion.job_id", JOB_ID),
+    mode: oneOf(r.mode, DELETION_MODES, "deletion.mode"),
+    outcome,
+    deletedAt,
+    artifactsRemoved: int(r.artifacts_removed, "deletion.artifacts_removed"),
+    artifactsRemaining: remaining,
+    retained: list(r.retained, "deletion.retained").map((item, i) => oneOf(item, RETAINED_CODES, `deletion.retained[${i}]`)),
+  };
+}
+
 /** A 2xx answer that does not fit what was asked (not a refusal: the outcome cannot be read). */
 function malformed(status: number): ApiError {
   return new ApiError({ kind: "malformed", status, retryable: true });
@@ -487,6 +595,13 @@ export interface V1ResourcesApi {
   cancel(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; job: JobV1 }>;
   /** B7 retry: a *new* job with the same snapshot, `retry_of` = the job retried (Design Freeze §7). */
   retry(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; job: JobV1 }>;
+  /** C2c preflight. Read-only on the server: nothing is deleted, no key is involved. */
+  planDeletion(jobId: string, mode: DeletionModeV1, signal?: AbortSignal): Promise<JobDeletionPlanV1>;
+  /**
+   * C2c execution with the plan token, `If-Match` = the job revision the plan was made for, and an
+   * Idempotency-Key (the same intent replays the first answer). Never sent without an explicit approval.
+   */
+  deleteJob(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<JobDeletionV1>;
 }
 
 export const V1_WRITE_TIMEOUT_MS = 30_000;
@@ -602,6 +717,20 @@ export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
       // The answer must be the new job that retries exactly this one.
       if (response.data.retryOf !== id || response.data.id === id) throw malformed(response.status);
       return { status: response.status, job: response.data };
+    },
+    async planDeletion(id, mode, signal) {
+      const response = await http.request(
+        { method: "POST", path: `/api/v1/jobs/${jobId(id)}/deletion-plans`, body: { schema_version: 1, mode }, timeoutMs: V1_WRITE_TIMEOUT_MS, signal },
+        parseDeletionPlan,
+      );
+      if (response.data.jobId !== id || response.data.mode !== mode) throw malformed(response.status);
+      return response.data;
+    },
+    async deleteJob(id, expectedRevision, intent) {
+      const response = await write(`/api/v1/jobs/${jobId(id)}/deletions`, "POST", intent, parseDeletion, { "If-Match": ifMatch(expectedRevision) });
+      // The answer must be about exactly this job and the mode that was approved.
+      if (response.data.jobId !== id || response.data.mode !== intent.body.mode) throw malformed(response.status);
+      return response.data;
     },
   };
 }

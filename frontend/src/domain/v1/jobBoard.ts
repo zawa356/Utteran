@@ -302,6 +302,14 @@ export class V1JobBoardController {
     return !this.actionOpen() && this.store.get().visibilitySupported && group.attempts.every(isFinished);
   }
 
+  /**
+   * C2c: a row may offer deletion only when every internal job of it is finished and no board write is
+   * open. Which one internal job is deleted is chosen explicitly in the dialog (never the whole chain).
+   */
+  canDelete(group: LogicalJob): boolean {
+    return !this.actionOpen() && group.attempts.every(isFinished);
+  }
+
   async cancel(rootId: string, jobId?: string): Promise<void> {
     const group = this.find(rootId);
     if (this.disposed || !group || !this.canCancel(group, jobId)) return;
