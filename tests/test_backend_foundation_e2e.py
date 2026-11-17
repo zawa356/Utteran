@@ -470,13 +470,13 @@ def test_opt_in_migrates_v3_to_v6_with_restorable_pre_cutover_backup(
 
     s = stack_factory(before=seed_v3)
     live = s.store.path
-    assert user_version(live) == 6
+    assert user_version(live) == 7  # 0.1.55: the runtime target is layout v7
     backup = s.runtime.last_backup
     assert backup is not None and backup.is_file()
     # The pre-cutover backup keeps the pre-migration layout (taken before the v6 open).
     assert user_version(backup) == 3
     # One-way: every older class refuses the migrated file.
-    for old in (JobControlStore, SetupControlStore, EventsControlStore):
+    for old in (JobControlStore, SetupControlStore, EventsControlStore, ManagedControlStore):
         with pytest.raises(ControlError) as excinfo:
             old(live)
         assert excinfo.value.code is E.STORE_SCHEMA_UNSUPPORTED

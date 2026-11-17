@@ -312,6 +312,43 @@ class JobList(VersionedContract):
     next_cursor: Annotated[StrictStr, Field(max_length=200)] | None
 
 
+class JobVisibility(VersionedContract):
+    """History-list visibility of one job. Separate from the job's own state/revision."""
+
+    job_id: JobId
+    hidden: StrictBool
+    # 0 = never set. CAS value for PUT /jobs/{id}/visibility (not the job revision).
+    revision: Annotated[StrictInt, Field(ge=0)]
+    updated_at: AwareDatetime | None
+
+
+class JobVisibilityWrite(VersionedContract):
+    hidden: StrictBool
+
+
+class JobArtifact(Contract):
+    """One generated file: format, size and integrity only. No name, no path."""
+
+    format: Literal["srt", "vtt", "json", "txt", "md"]
+    size: Annotated[StrictInt, Field(ge=0)]
+    # verified: bytes equal the digest recorded at completion. changed: they differ
+    # (edited or replaced). unverified: no completion evidence to compare with.
+    integrity: Literal["verified", "changed", "unverified"]
+
+
+class JobArtifacts(VersionedContract):
+    """Read-only view of a job's own output directory (0.1.54 layout). Value-free."""
+
+    job_id: JobId
+    # available: the job's own directory was found. missing: it should exist but does
+    # not. legacy: accepted before per-job directories (location not provable).
+    # none: the job has not produced a directory (not started / no output yet).
+    state: Literal["available", "missing", "legacy", "none"]
+    items: tuple[JobArtifact, ...]
+    # Files or directories in the job's directory that Utteran did not write.
+    unexpected_count: Annotated[StrictInt, Field(ge=0)]
+
+
 def spec_view(spec: ResolvedSpec) -> ResolvedSpecView:
     """Allowlist projection; settings, model directory and fingerprints stay private."""
     return ResolvedSpecView(
@@ -355,4 +392,8 @@ PUBLIC_MODELS: tuple[type[Contract], ...] = (
     JobBatch,
     JobList,
     QueueView,
+    JobVisibility,
+    JobVisibilityWrite,
+    JobArtifact,
+    JobArtifacts,
 )

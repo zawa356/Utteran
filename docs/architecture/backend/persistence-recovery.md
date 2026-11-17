@@ -15,6 +15,10 @@ POSIXではディレクトリ0700・ファイル0600に揃える。**Windows ACL
 
 ## Control store layout（SQLite `PRAGMA user_version`）
 
+> 追補（2026-11-16、0.1.55）: **layout v7**（v6＋`job_visibility`、追加のみ）。v1 runtime（B8構成あり）は`HistoryControlStore`でv7を開く。
+> v7は0.1.54以前のbuildでは開けない（一方向）。起動時のpre-open backupはv6のまま残り、旧buildで開ける。手順と試験は
+> [../b7/history-visibility.md §3](../b7/history-visibility.md)。以下のv6に関する記述は0.1.39〜0.1.54の状態。
+
 | version | 開くclass（`TARGET_VERSION`） | 追加内容 | 導入 |
 |---|---|---|---|
 | 1 | `ControlStore`（B6初版） | `operations` `operation_private` `operation_history` `attempts` `attempt_private` `leases` `queue` `queue_items` `replays` `outbox` `counters` `installation` | B6 |

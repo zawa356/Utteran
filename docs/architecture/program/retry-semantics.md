@@ -1,6 +1,15 @@
-# retryの意味 — Design FreezeとB7実装の差異と解決案（owner判断待ち）
+# retryの意味 — Design FreezeとB7実装の差異と確定方針
 
-更新: 2026-11-16 JST。状態: **整理のみ。B7の契約・DB・UIは変更していない。** 判断後に実装する。
+更新: 2026-11-16 JST。状態: **owner確定（下記）**。B7の契約・DBは変更しない。
+
+## 0. owner確定（2026-11-16）
+
+1. **案A**: B7の既存retry契約（同じsnapshotを持つ新しいJob、`retry_of`）を維持する。UIは`retry_of`の連鎖を1つの論理ジョブとして扱う（束C2b）。
+2. **出力先はA-1**: retryごとに別ディレクトリ（束C1の現状どおり）。
+3. **markerだけのディレクトリは自動削除しない。**
+4. UI-3-0 Design Freezeに「内部Job ID」と「論理ジョブ」の区別を追補する（[design-freeze §7](../ui3/design-freeze.md)に追補済み）。
+
+以下は判断時の整理（経緯として残す）。
 
 ## 1. 事実
 
