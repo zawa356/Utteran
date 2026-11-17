@@ -1,5 +1,15 @@
 # AI 作業状態
 
+## 現在地（2026-11-17、束A1/A2/C1/C2a/C2bをmain統合、0.1.56・未リリース）
+
+- **正本main**: `c5af76726f913e4044f6e73492fee851c2acdd8c`。PR [#49](https://github.com/zawa356/Utteran/pull/49) → [#50](https://github.com/zawa356/Utteran/pull/50) → [#51](https://github.com/zawa356/Utteran/pull/51) → [#52](https://github.com/zawa356/Utteran/pull/52) → [#53](https://github.com/zawa356/Utteran/pull/53)を依存順に通常merge commitで統合。全PR merged/closed。タグ・Releaseなし。mainの最終treeはPR #53受入HEAD `ad8c38e65975168b32b4daa021867555a03e0641` と完全一致。
+- **CI**: 上記5段のmain push CIはいずれも初回success。最終mainは[run 44033681672](https://github.com/zawa356/Utteran/actions/runs/44033681672) **completed/success（attempt 1）**。PR #53のpush成功、PR側は初回legacy E2E failure→失敗ジョブ再実行success（[#54](https://github.com/zawa356/Utteran/issues/54)で追跡）。
+- **Windows受入**: 固定HEAD `ad8c38e`、Windows 11 Hyper-V VM／実WebView2／実CPU `fw-cpu / large-v3-turbo`／合成WAV。W-01は**78 passed・1 skipped**、Vitest **527 passed**、v1 Playwright **15 passed**（負荷時の先行タイムアウトは同設定再試験でPASS）。通常/Expert/legacyの日英文言、retry連鎖の補助一覧**2→0→2**、DELETE 0、DB各表・Outbox・成果物hash不変を確認。**CONDITIONAL**：W-12のOS DPI 125/150/200%・Explorer複数WAV D&DはVMネイティブ入力障害でBLOCKED。picker確定/取消はPASS。完了通知をGET待ち中に閉じる競合は実機では未再現、遅延GETのVitestでPASS。旧HEADの通常統合受入と新HEADの差分実測を混同しない。詳細は[PR #53受入レビュー](https://github.com/zawa356/Utteran/pull/53#pullrequestreview-5934044093)。
+- **Issue正本（未受入は未受入のまま）**: [#22](https://github.com/zawa356/Utteran/issues/22) DPI/D&D、[#45](https://github.com/zawa356/Utteran/issues/45) legacy token Esc、[#54](https://github.com/zawa356/Utteran/issues/54) legacy環境表示E2E、[#55](https://github.com/zawa356/Utteran/issues/55) W-06接続断・W-11移行中強制kill。次工程の削除機能は新規[#56](https://github.com/zawa356/Utteran/issues/56)（束C2c、未実装）。
+- **次の一手**: mainの本統合状態を基点に束C2cの合成データによる設計・試験を先行し、独立PRで安全性をレビュー。その後、束D（Design Freezeの製品画面再現）→ B1等。旧GUI/CLIおよび`--next-ui`はそのまま、`--next-ui-v1`は開発専用・明示opt-in。既定切替・実ユーザーデータ移行・releaseは未承認。
+
+以下の「現在地」は各作業時点の履歴であり、最新状態は本節を優先する。
+
 ## 現在地（2026-11-17、PR #53 Windows統合受入CONDITIONALの所見3件を修正、0.1.56据置・未リリース）
 
 - ブランチ`claude/c2b-multi-job-ui`（PR #53、Draft、基点＝#52）。照合基点`1c76453`の上に通常commit。Ready化・merge・tag・releaseはowner承認制。#49〜#52は無変更。
