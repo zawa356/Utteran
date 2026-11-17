@@ -12,14 +12,13 @@ transcription API.
 > The current backend (Phase A-B9) structure, feature status, limits and test coverage are maintained in
 > [docs/architecture/README.md](docs/architecture/README.md). The B5-B9 v1 APIs are all **merged into main,
 > unreleased and explicit opt-in**; normal GUI/CLI startup does not enable them.
-> The temporary developer flag `utteran-gui --next-ui-v1` (0.1.49) starts v1 only with a dedicated empty directory as
-> `UTTERAN_DATA_ROOT` and is **development-only**. From 0.1.51 (UI-3 S5-A) the new UI in this mode handles a **single file** through
-> the v1 path only: saved Preset/Policy → execution check (B5 validation, B7 resolution) → durable job → status (never the legacy API;
-> several files at once are not available). Not verified on Windows WebView2 or with real models
-> ([S5-A](docs/architecture/ui3/s5a-v1-single-job.md), [G-09](docs/architecture/ui3/g09-next-ui-v1-startup.md)). `--next-ui` and the default GUI keep the legacy API.
+> The temporary `utteran-gui --next-ui-v1` flag requires a dedicated marked `UTTERAN_DATA_ROOT` and remains development-only.
+> **0.1.56 (merged to main on 2026-11-17 via PRs #49–#53; unreleased):** Normal mode submits one file at a time using v1. Expert mode supports atomic multi-file submission in one request, logical retry-linked jobs in queue/history, hide/restore and per-format artifact integrity views.
+> The changed behavior passed Windows 11 WebView2 and real CPU-model acceptance **conditionally**. Native OS DPI 125/150/200% and Explorer multi-WAV drag-and-drop are still unverified ([#22](https://github.com/zawa356/Utteran/issues/22)). History/artifact deletion ([C2c #56](https://github.com/zawa356/Utteran/issues/56)), the full viewer, Design Freeze screen layout and default UI switch remain unimplemented or unapproved ([S5-B](docs/architecture/ui3/s5b-multi-job-board.md)).
+> The older `--next-ui` still submits sequentially to the legacy API, and default GUI/CLI launch is unchanged. See the [PR #53 merge and acceptance record](https://github.com/zawa356/Utteran/pull/53#issuecomment-6940939036).
 > The 0.1.50 developer entry `python -m utteran_gui.capability_smoke` explicitly runs one B4 smoke in the same dedicated
-> root to record ready evidence. Normal startup and APIs never run a smoke; success on real Windows/GPU hardware is
-> not verified ([B4 smoke](docs/architecture/b4/smoke.md)).
+> root to record ready evidence. Normal startup and APIs never run a smoke; the real fw-cpu smoke succeeded in a dedicated Windows VM; GPU hardware acceptance is
+> still pending ([B4 smoke](docs/architecture/b4/smoke.md)).
 
 > Next GUI (UI-2, preview): a Vue 3 + Vuetify 4 frontend foundation is opened only with the developer flag
 > `utteran-gui --next-ui` after building `frontend/`. The default GUI is unchanged (legacy UI). Migrated so far: transcription
