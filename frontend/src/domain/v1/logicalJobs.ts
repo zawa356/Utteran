@@ -9,15 +9,30 @@
  * Pure: no I/O, no clock. Internal job ids stay the unit for the API, CAS and output directories.
  */
 
-import type { JobV1 } from "../../api/v1Resources";
+import { FINAL_STATUSES_V1, type JobV1 } from "../../api/v1Resources";
+
+/** `interrupted` is finished for the lists (it can be retried); B7 never resumes it by itself. */
+const FINISHED = new Set<string>([...FINAL_STATUSES_V1, "interrupted"]);
+
+export function isFinished(job: JobV1): boolean {
+  return FINISHED.has(job.status);
+}
 
 export interface LogicalJob {
   /** Internal id of the first job of the chain that is present in the input (stable row key). */
   readonly rootId: string;
   /** Internal jobs of this logical job, oldest first. Never empty. */
   readonly attempts: readonly JobV1[];
-  /** The newest internal job: its status, error and artifacts are what the row shows. */
+  /** The newest internal job (list order). What a *finished* row shows; see `open` for unfinished rows. */
   readonly latest: JobV1;
+  /**
+   * Every internal job of the chain that is not finished, in list order. B7 does not forbid two
+   * retries of the same job, so a chain can branch and an older branch can still be waiting or
+   * running after the newest job finished: a row is finished only when this is empty.
+   */
+  readonly open: readonly JobV1[];
+  /** More than one job retries the same job (the chain is a tree, not a line). */
+  readonly branched: boolean;
   /** Internal ids of every job in the chain, oldest first (for per-job actions such as hide). */
   readonly jobIds: readonly string[];
   /** The logical job this one was re-run from, when that job is present; else the raw id or null. */
@@ -76,10 +91,13 @@ export function groupLogicalJobs(jobs: readonly JobV1[]): LogicalJob[] {
     const attempts = [...chain].sort((a, b) => Number(b.id === rootId) - Number(a.id === rootId));
     const root = attempts[0]!;
     const rerunOf = root.rerunOf;
+    const parents = attempts.map((job) => job.retryOf).filter((id): id is string => id !== null);
     result.push({
       rootId,
       attempts,
       latest: attempts[attempts.length - 1]!,
+      open: attempts.filter((job) => !isFinished(job)),
+      branched: new Set(parents).size !== parents.length,
       jobIds: attempts.map((job) => job.id),
       rerunOfRootId: rerunOf === null ? null : (rootOf.get(rerunOf) ?? rerunOf),
       incomplete: attempts.some((job) => incomplete.has(job.id)),

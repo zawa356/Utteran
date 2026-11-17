@@ -765,4 +765,11 @@ export const en: Record<MessageKey, string> = {
   "v1.artifacts.integrity.unverified": "no record to compare with",
   "v1.artifacts.unexpected": "This folder contains {count} file(s) Utteran did not write.",
   "v1.artifacts.note": "File names and locations are not shown. Showing the text and opening the folder will come later.",
+  "v1.board.place.active": "Using the running slot",
+  "v1.board.place.waiting": "Waiting, position {position}",
+  "v1.board.place.held": "held",
+  "v1.board.place.unknown": "Its place in the queue was not reported",
+  "v1.board.queueOrderNote": "The order is the server's queue order (running, then waiting by position). Rows without a reported place come last and show no position.",
+  "v1.board.branches": "This row has {count} unfinished attempts (the same job was retried more than once). Each can be cancelled on its own.",
+  "v1.board.branched": "The same job was retried more than once. The newest attempt is shown.",
 };

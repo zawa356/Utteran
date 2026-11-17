@@ -231,3 +231,58 @@ test("retry is the same row: cancel a running job, retry it, the row returns to 
   await expect(row(app, "history", id!)).toHaveAttribute("data-attempts", "2");
   expect(legacyWrites(seen)).toEqual([]);
 });
+
+test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after the job that was already waiting", async ({ app, request }) => {
+  const seen = recordApi(app);
+  // slow-meeting occupies the slot; cancel it (A = cancelled), keep meeting.wav (B) waiting behind a second slow job.
+  await expert(app, request, ["slow-meeting.wav"]);
+  const [a] = await submitBatch(app, seen);
+  await ensureQueueRunning(app);
+  await expect(row(app, "queue", a!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
+  await row(app, "queue", a!).getByTestId("v1-board-cancel").click();
+  await expect(row(app, "history", a!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
+  await app.getByTestId("v1-board-action-close").click();
+
+  // Pause dispatch through the real API so the order below is stable, then queue B.
+  const queue = await api<{ revision: number }>(request, "/api/v1/queue");
+  const paused = await request.patch("/api/v1/queue/control", {
+    headers: { "x-utteran-session": SESSION, "If-Match": `"${queue.revision}"`, "Idempotency-Key": `s5b-pause-${a!.slice(4, 24)}` },
+    data: { schema_version: 1, dispatch: "paused" },
+  });
+  expect(paused.status()).toBe(200);
+  await app.getByTestId("tx-list-select-none").click();
+  await addInput(app, input("meeting.wav"));
+  await app.getByTestId("tx-list-check").last().locator("input").check();
+  await expect(app.getByTestId("v1-batch-count")).toContainText("1");
+  const [b] = await submitBatch(app, seen);
+  await expect(row(app, "queue", b!)).toHaveAttribute("data-status", "queued");
+
+  // Retry A: B7 queues the new internal job *behind* B. The row of A must not be shown before B.
+  await row(app, "history", a!).getByTestId("v1-board-retry").click();
+  await expect(row(app, "queue", a!)).toHaveAttribute("data-attempts", "2", { timeout: 20_000 });
+  const order = await app.getByTestId("v1-board-queue").locator('[data-testid="v1-board-row"]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-root")));
+  expect(order.indexOf(b!)).toBeGreaterThanOrEqual(0);
+  expect(order.indexOf(b!)).toBeLessThan(order.indexOf(a!));
+  // The positions on screen are B7's own.
+  const view = await api<{ items: { resource_id: string; position: number | null }[] }>(request, "/api/v1/queue");
+  const retried = await row(app, "queue", a!).getAttribute("data-job");
+  const position = (id: string) => view.items.find((i) => i.resource_id === id)!.position!;
+  expect(position(b!)).toBeLessThan(position(retried!));
+  await expect(row(app, "queue", b!).getByTestId("v1-board-row-place")).toContainText(String(position(b!)));
+  await expect(row(app, "queue", a!).getByTestId("v1-board-row-place")).toContainText(String(position(retried!)));
+
+  // Clean up: cancel both waiting jobs and resume dispatch for later specs.
+  await app.getByTestId("v1-board-action-close").click();
+  await row(app, "queue", b!).getByTestId("v1-board-cancel").click();
+  await expect(row(app, "history", b!)).toHaveAttribute("data-status", "cancelled", { timeout: 20_000 });
+  await app.getByTestId("v1-board-action-close").click();
+  await row(app, "queue", a!).getByTestId("v1-board-cancel").click();
+  await expect(row(app, "history", a!)).toHaveAttribute("data-status", "cancelled", { timeout: 20_000 });
+  const again = await api<{ revision: number }>(request, "/api/v1/queue");
+  const resumed = await request.patch("/api/v1/queue/control", {
+    headers: { "x-utteran-session": SESSION, "If-Match": `"${again.revision}"`, "Idempotency-Key": `s5b-resume-${a!.slice(4, 24)}` },
+    data: { schema_version: 1, dispatch: "running" },
+  });
+  expect(resumed.status()).toBe(200);
+  expect(legacyWrites(seen)).toEqual([]);
+});

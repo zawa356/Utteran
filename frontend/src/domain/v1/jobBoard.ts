@@ -15,18 +15,18 @@
 
 import type { ApiError } from "../../api/errors";
 import { MutationIntent, type RandomSource } from "../../api/idempotency";
-import { FINAL_STATUSES_V1, type JobArtifactsV1, type JobV1, type JobVisibilityFilter, type JsonObject, type QueueViewV1, type V1ResourcesApi } from "../../api/v1Resources";
+import type { JobArtifactsV1, JobV1, JobVisibilityFilter, JsonObject, QueueViewV1, V1ResourcesApi } from "../../api/v1Resources";
 import { ApiError as ApiErrorClass } from "../../api/errors";
 import { browserScheduler, type Scheduler } from "../../transport/scheduler";
 import { classifyStartFailure } from "../admission";
 import { toApiError } from "../operation";
 import { Store } from "../store";
-import { groupLogicalJobs, type LogicalJob } from "./logicalJobs";
+import { groupLogicalJobs, isFinished, type LogicalJob } from "./logicalJobs";
+
+export { isFinished };
 
 export const BOARD_MAX_PAGES = 100;
 export const BOARD_POLL_MS = 2000;
-/** `interrupted` is finished for the list (it can be retried); B7 never resumes it by itself. */
-const FINISHED = new Set<string>([...FINAL_STATUSES_V1, "interrupted"]);
 const RETRYABLE = new Set<string>(["failed", "cancelled", "interrupted"]);
 
 export type BoardActionKind = "cancel" | "retry" | "hide" | "show";
@@ -51,7 +51,11 @@ export interface ArtifactEntry {
 export interface BoardState {
   phase: "idle" | "pending" | "done" | "error";
   error: ApiError | null;
-  /** Logical jobs that are not finished (oldest first, like the queue). */
+  /**
+   * Logical jobs with at least one unfinished internal job, in the order of `GET /queue`: the active
+   * item first, then waiting items by their B7 position. Rows whose place the queue did not report
+   * come last and are shown without a place (`placeOf` = null), never with a guessed one.
+   */
   queue: readonly LogicalJob[];
   /** Finished logical jobs, newest first. */
   history: readonly LogicalJob[];
@@ -61,18 +65,46 @@ export interface BoardState {
   /** False when the store has no history visibility (layout before v7): hide/show is not offered. */
   visibilitySupported: boolean;
   queueView: QueueViewV1 | null;
+  /** B7 queue facts per internal job id, from the same refresh as `queue`. */
+  places: Readonly<Record<string, QueuePlace>>;
   action: BoardAction | null;
   artifacts: Readonly<Record<string, ArtifactEntry>>;
 }
 
-const initial: BoardState = { phase: "idle", error: null, queue: [], history: [], hidden: [], showHidden: false, visibilitySupported: true, queueView: null, action: null, artifacts: {} };
+/** Where B7 says an internal job is in the queue. `position` is null for the active item. */
+export interface QueuePlace {
+  readonly active: boolean;
+  readonly position: number | null;
+  readonly held: boolean;
+  readonly blockers: readonly string[];
+}
+
+const initial: BoardState = { phase: "idle", error: null, queue: [], history: [], hidden: [], showHidden: false, visibilitySupported: true, queueView: null, places: {}, action: null, artifacts: {} };
+
+/** Queue facts by internal job id (only what `GET /queue` reported; nothing is inferred). */
+export function queuePlaces(view: QueueViewV1): Record<string, QueuePlace> {
+  const places: Record<string, QueuePlace> = {};
+  for (const item of view.items) {
+    if (item.resourceKind !== "job") continue;
+    places[item.resourceId] = { active: item.id === view.activeItemId, position: item.position, held: item.held, blockers: item.blockers };
+  }
+  return places;
+}
+
+const rank = (place: QueuePlace | undefined): number => (place === undefined ? Number.POSITIVE_INFINITY : place.active ? 0 : (place.position ?? Number.POSITIVE_INFINITY));
+
+/**
+ * The internal job an unfinished row shows and acts on: the unfinished job that B7 runs or will run
+ * first (active, then lowest position); without queue facts, the first unfinished one as listed.
+ * A finished row shows its newest job.
+ */
+export function currentJob(group: LogicalJob, places: Readonly<Record<string, QueuePlace>>): JobV1 {
+  if (group.open.length === 0) return group.latest;
+  return [...group.open].sort((a, b) => rank(places[a.id]) - rank(places[b.id]))[0]!;
+}
 
 function listError(code: "job_list_inconsistent" | "job_list_too_long"): ApiError {
   return new ApiErrorClass({ kind: "malformed", code, retryable: true });
-}
-
-export function isFinished(job: JobV1): boolean {
-  return FINISHED.has(job.status);
 }
 
 export interface BoardOptions {
@@ -158,11 +190,18 @@ export class V1JobBoardController {
       const queueView = await this.api.getQueue(abort.signal);
       if (!current()) return;
       const groups = groupLogicalJobs(visible);
+      const places = queuePlaces(queueView);
+      // A row is finished only when *every* internal job is: a still-waiting branch keeps it in the
+      // queue (and keeps the polling alive) even if the newest job of the chain already ended.
+      const unfinished = groups.filter((g) => g.open.length > 0);
+      const order = new Map(unfinished.map((g, index) => [g.rootId, index]));
+      unfinished.sort((a, b) => rank(places[currentJob(a, places).id]) - rank(places[currentJob(b, places).id]) || order.get(a.rootId)! - order.get(b.rootId)!);
       this.store.patch({
         phase: "done",
         error: null,
-        queue: groups.filter((g) => !isFinished(g.latest)),
-        history: groups.filter((g) => isFinished(g.latest)).reverse(),
+        queue: unfinished,
+        places,
+        history: groups.filter((g) => g.open.length === 0).reverse(),
         hidden: groupLogicalJobs(hiddenJobs).reverse(),
         visibilitySupported: supported,
         queueView,
@@ -170,7 +209,7 @@ export class V1JobBoardController {
     } catch (error) {
       if (!current()) return;
       // Nothing partial is shown as "the jobs".
-      this.store.patch({ phase: "error", error: toApiError(error), queue: [], history: [], hidden: [] });
+      this.store.patch({ phase: "error", error: toApiError(error), queue: [], history: [], hidden: [], places: {} });
     } finally {
       if (this.abort === abort) this.abort = null;
       this.schedule();
@@ -231,12 +270,25 @@ export class V1JobBoardController {
     return phase === "pending" || phase === "unknown";
   }
 
-  canCancel(group: LogicalJob): boolean {
-    return !this.actionOpen() && !isFinished(group.latest) && group.latest.status !== "cancelling";
+  /** The job a row shows and acts on now (see `currentJob`). */
+  current(group: LogicalJob): JobV1 {
+    return currentJob(group, this.store.get().places);
+  }
+
+  /** B7's place for an internal job, or null when the queue did not report one. */
+  placeOf(jobId: string): QueuePlace | null {
+    return this.store.get().places[jobId] ?? null;
+  }
+
+  /** `jobId` = one specific unfinished job of the row (a branch); default = the row's current job. */
+  canCancel(group: LogicalJob, jobId?: string): boolean {
+    const target = jobId === undefined ? (group.open.length > 0 ? this.current(group) : null) : (group.open.find((job) => job.id === jobId) ?? null);
+    return !this.actionOpen() && target !== null && target.status !== "cancelling";
   }
 
   canRetry(group: LogicalJob): boolean {
-    return !this.actionOpen() && RETRYABLE.has(group.latest.status);
+    // Only a row with nothing unfinished: a retry while a branch still waits would add another branch.
+    return !this.actionOpen() && group.open.length === 0 && RETRYABLE.has(group.latest.status);
   }
 
   canHide(group: LogicalJob): boolean {
@@ -244,10 +296,11 @@ export class V1JobBoardController {
     return !this.actionOpen() && this.store.get().visibilitySupported && group.attempts.every(isFinished);
   }
 
-  async cancel(rootId: string): Promise<void> {
+  async cancel(rootId: string, jobId?: string): Promise<void> {
     const group = this.find(rootId);
-    if (this.disposed || !group || !this.canCancel(group)) return;
-    const job = group.latest;
+    if (this.disposed || !group || !this.canCancel(group, jobId)) return;
+    // Never "the newest job": exactly the unfinished job the row (or the branch button) names.
+    const job = jobId === undefined ? this.current(group) : group.open.find((item) => item.id === jobId)!;
     this.frozen = { jobId: job.id, revision: job.revision, intent: new MutationIntent<JsonObject>({ schema_version: 1, mode: "cooperative" }, this.options.random) };
     await this.run({ kind: "cancel", rootId, remaining: [job.id], phase: "pending", error: null });
   }

@@ -67,6 +67,10 @@ export interface FakeV1 {
   artifacts: Map<string, Json>;
   /** Set a job's status by id (bumps its revision). */
   setStatus(jobId: string, status: string): void;
+  /** B7 `PUT /queue/order` result: waiting job ids in dispatch order (null = submission order). */
+  queueOrder: string[] | null;
+  /** Job ids whose queue item is held. */
+  held: Set<string>;
 }
 
 /** B7 `list_jobs`: 100 per page, oldest first, one immutable snapshot per listing. */
@@ -93,6 +97,8 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
     resolveError: null,
     visibility: new Map(),
     artifacts: new Map(),
+    queueOrder: null,
+    held: new Set(),
     setStatus(jobId, status) {
       const found = state.jobs.find((j) => j.id === jobId);
       if (found) {
@@ -149,7 +155,19 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
       updated_at: NOW,
     };
   }
-  const queueView = () => ({ schema_version: 1, revision: state.queue.revision, dispatch: state.queue.dispatch, active_item_id: null, items: state.jobs.filter((j) => j.status === "queued").map((j, i) => ({ id: `qi_${String(i).padStart(32, "0")}`, resource_id: j.id, resource_kind: "job", position: i + 1, held: false, blockers: [] })) });
+  // Like B7: one active item (running/cancelling, no position), then waiting items by position.
+  const queueView = () => {
+    const itemId = (j: Json) => `qi_${(j.id as string).slice(4)}`;
+    const active = state.jobs.find((j) => j.status === "running" || j.status === "cancelling") ?? null;
+    const waiting = state.jobs.filter((j) => j.status === "queued" || j.status === "held" || j.status === "blocked");
+    const order = state.queueOrder;
+    if (order) waiting.sort((a, b) => (order.indexOf(a.id as string) + 1 || 1e9) - (order.indexOf(b.id as string) + 1 || 1e9));
+    const items = [
+      ...(active ? [{ id: itemId(active), resource_id: active.id, resource_kind: "job", position: null, held: false, blockers: [] }] : []),
+      ...waiting.map((j, i) => ({ id: itemId(j), resource_id: j.id, resource_kind: "job", position: i + 1, held: state.held.has(j.id as string), blockers: [] })),
+    ];
+    return { schema_version: 1, revision: state.queue.revision, dispatch: state.queue.dispatch, active_item_id: active ? itemId(active) : null, items };
+  };
 
   function handle(c: Call): Reply {
     const url = new URL(c.url, "http://x");

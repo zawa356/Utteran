@@ -7,6 +7,7 @@
   backendは`JobRuntime(store_type=)`の追加のみ。**削除機能なし。** 詳細[ui3/s5b-multi-job-board](docs/architecture/ui3/s5b-multi-job-board.md)。
 - #52のレビュー指摘（P2-1 一覧ETag、P2-2 形式別照合）は#52のブランチで修正しmerge済み。
 - 試験: Vitest 514、Playwright v1 14・全体67、pytestはPR本文。**Design Freezeとの比較では画面構成・見た目は未達**（同文書§5。機能接続のみ）。
+- レビュー修正（2026-11-17、版据置、PR #53 P2-1/P2-2）: キューの並びと位置は`GET /queue`の実順。分岐した連鎖でも未完了の内部Jobを行に残し、対象を明示して取消。束Dの受入条件は[ui3/s5b §5.1](docs/architecture/ui3/s5b-multi-job-board.md)。Vitest 520、Playwright 68。
 - **未検証**: Windows WebView2実機・実モデル（[W-C2指示書](docs/architecture/program/windows-acceptance-w-c2.md)）。
 - **次の一手**: C2c（墓標化・成果物削除、別PR。必須条件2〜4の試験を先に用意）→ D（UI-3-0の画面再構成。§5の比較表が出発点）→ B1（pyannote worker）。
 

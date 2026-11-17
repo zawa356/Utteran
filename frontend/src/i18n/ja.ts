@@ -763,6 +763,13 @@ export const ja = {
   "v1.artifacts.integrity.unverified": "照合できる記録がありません",
   "v1.artifacts.unexpected": "このフォルダには、Utteranが書いていないファイルが{count}件あります。",
   "v1.artifacts.note": "ファイル名と場所は表示しません。本文の表示とフォルダを開く操作は今後対応します。",
+  "v1.board.place.active": "実行中の枠を使用中",
+  "v1.board.place.waiting": "待機 {position}番目",
+  "v1.board.place.held": "保留中",
+  "v1.board.place.unknown": "キュー内の位置は取得できていません",
+  "v1.board.queueOrderNote": "並びはサーバーのキューの順（実行中、次に待機の順番）です。位置を取得できていない行は末尾に置き、順番を表示しません。",
+  "v1.board.branches": "この行には未完了の試行が{count}件あります（同じジョブが複数回再試行されています）。それぞれ個別に取消できます。",
+  "v1.board.branched": "この行は同じジョブが複数回再試行されています。表示しているのは最新の試行です。",
 } as const;
 
 export type MessageKey = keyof typeof ja;

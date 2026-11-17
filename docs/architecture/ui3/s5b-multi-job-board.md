@@ -28,15 +28,21 @@
 
 - **論理ジョブ**（`domain/v1/logicalJobs.ts`）: `retry_of`の連鎖を1行に。行の状態・成果物は連鎖の最新の内部Job。`rerun`は別の行。
   元の試行が一覧に無い連鎖は「不完全」と表示して独立行にする。循環・重複IDでも止まらず欠落させない。
-- **キュー**＝終了していない行（古い順）、**履歴**＝終了した行（新しい順）、**非表示の履歴**＝スイッチを入れたときだけ読む。
+- **キュー**＝未完了の内部Jobが1つでもある行、**履歴**＝全ての内部Jobが終了した行（新しい順）、**非表示の履歴**＝スイッチを入れたときだけ読む。
+- **キューの並びはB7の順**（PR #53レビュー P2-1）: `GET /queue`の`items`を内部Job IDで行へ紐づけ、実行中（active）→ 待機の`position`順に並べ、
+  行に「実行中の枠を使用中／待機 N番目／保留中」を表示する。キューが位置を返さなかった行（`waiting_user`等、読み取りの間に状態が変わった行）は末尾に置き、
+  **順番を表示しない**（推測しない）。行の作成順はキューの順ではない: A失敗→B待機→A再試行では、Aの行はBの後ろに出る。
+- **分岐した連鎖**（PR #53レビュー P2-2）: B7は同じJobへの再試行を複数回受け付けるので、連鎖は枝分かれし得る。行が表示・操作する内部Job（`currentJob`）は
+  「未完了のうちB7が先に実行するもの」で、最新の内部Jobではない。最新の枝が終了していても、未完了の枝が残る行はキューに残り、pollingも続く。
+  未完了の枝が複数あるときは全てを列挙し、**枝ごとの内部Job IDで個別に取消**する。未完了の枝がある間は再試行・非表示を出さない（枝をさらに増やさない）。
 - 一覧は`GET /api/v1/jobs`の全ページ（上限100ページ）と`GET /api/v1/queue`が正本。途中のページ失敗・revision不一致・重複IDは**エラー**で、部分的な一覧を出さない。
 - 表示中かつ未完了の行があるときだけ2秒間隔で読み直す。全部終わるか、エラーになるか、画面を離れると止まる。
 - 書き込みは明示操作だけ、一度に1つ:
 
 | 操作 | API | 凍結するもの | 結果不明のとき |
 |---|---|---|---|
-| 取消 | `POST /jobs/{id}/cancel`（協調的のみ） | 最新の内部Job ID・revision・intent | 同じkey・bodyで再照合 |
-| 再試行 | `POST /jobs/{id}/retry`（B7契約: 新しい内部Job、`retry_of`） | 同上。応答が「そのJobを指す新しいJob」でなければ不正 | 同上（replayで同じJobが返り、二重に作られない） |
+| 取消 | `POST /jobs/{id}/cancel`（協調的のみ） | 行の現在の内部Job（または指定した枝）のID・revision・intent | 同じkey・bodyで再照合 |
+| 再試行 | `POST /jobs/{id}/retry`（B7契約: 新しい内部Job、`retry_of`） | 全て終了した行の最新の内部Job。応答が「そのJobを指す新しいJob」でなければ不正 | 同上（replayで同じJobが返り、二重に作られない） |
 | 非表示/再表示 | 行の各内部Jobへ `GET` → `PUT /jobs/{id}/visibility` | PUT直前に読んだvisibility revision | 同じ操作をやり直す（冪等。既に同じ状態なら何も書かない） |
 
 - 412は「状態が先に変わっていた」と表示して一覧を読み直す。未解決の操作がある間、他の書き込みは始めない。
@@ -70,6 +76,18 @@
 | 複数投入 | ③「キュー投入」で件数と対象を確認して投入 | 「一括投入」パネル（確認→投入の2段階、対象一覧、拒否理由） | 機能は達成、見た目は未達 |
 | 非表示 | 第5案に明示の画面なし（履歴削除と成果物削除を分ける方針のみ） | 「非表示」「再表示」、非表示の履歴のスイッチ | 方針に沿う新規要素（束Dで配置を決める） |
 
+### 5.1 束Dの受入条件（未完了のまま引き継ぐ）
+
+次は**本束では未達**であり、束Dの完了条件とする（DOM試験の合格では満たしたことにしない。Windows VMの画面確認を受ける）。
+
+1. Expertの管理sidebar（文字起こし／キュー／結果と履歴／モデル／セットアップ／設定）とページ切替。
+2. キュー専用ページ: 表（#・名前・状態・工程）、行選択で右に詳細ペイン、検索・絞り込み・並べ替え。
+3. キュー操作の統合: 一時停止/再開、順序変更、保留、「終了したジョブを片付け」（B7のAPIは既存。CAS・冪等性を崩さない）。
+4. 「結果と履歴」ページの分離と、再実行（rerun）の接続。
+5. 状態チップ（色＋アイコン）、標準サイズのボタン、狭幅・高DPIでの縮退。
+6. ジョブ詳細: 投入時設定の要約・保存先・出力名（公開DTOの拡張が要る場合は別途設計）。
+7. 製品画面とDesign Freezeのスクリーンショット比較を、主要画面ごとに更新する。
+
 **結論**: S5-Bは「実API→成果物」までの機能縦断を通したが、Design Freezeの画面構成（sidebar・専用ページ・表・詳細ペイン・状態チップ）は未実装である。
 PlaywrightのDOM試験の合格をデザイン再現の証拠としない。画面の再構成は束Dで行い、その際は本表を出発点にし、Windows VMの画面確認を受ける。
 
@@ -77,9 +95,9 @@ PlaywrightのDOM試験の合格をデザイン再現の証拠としない。画�
 
 | 種別 | 内容 | 件数 |
 |---|---|---|
-| Vitest | `logicalJobs.test.ts` 10、`batchJobs.test.ts` 7、`jobBoard.test.ts` 10（fake v1 serverをfile別override・1 file＝1 job・visibility・artifacts・retryへ拡張） | 全体 514 passed |
-| Playwright `v1` | `transcription-s5b.v1.spec.ts` 4（準備1＋一括投入・成果物、非表示/再表示、再試行＝同じ行）。実FastAPI・layout v7・実dispatcher・合成runner | v1 project 14 passed |
-| Playwright 全体 | legacy 53＋v1 14 | 67 passed |
+| Vitest | `logicalJobs.test.ts` 11、`batchJobs.test.ts` 7、`jobBoard.test.ts` 15（fake v1 serverをfile別override・1 file＝1 job・visibility・artifacts・retry・B7のキュー順/保留へ拡張） | 全体 520 passed |
+| Playwright `v1` | `transcription-s5b.v1.spec.ts` 5（準備1＋一括投入・成果物、非表示/再表示、再試行＝同じ行、再試行した行のキュー位置）。実FastAPI・layout v7・実dispatcher・合成runner | v1 project 15 passed |
+| Playwright 全体 | legacy 53＋v1 15 | 68 passed |
 | pytest | `test_history_visibility.py`に`JobRuntime(store_type=)`の試験 | 全体はPR本文 |
 
 ### 6.1 既存試験の改訂（削除・skipなし）

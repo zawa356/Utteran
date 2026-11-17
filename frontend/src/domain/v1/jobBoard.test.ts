@@ -214,3 +214,104 @@ describe("v1 job board: lists, polling and artifacts", () => {
     expect(b.store.get().artifacts[a!]).toMatchObject({ phase: "error", view: null });
   });
 });
+
+describe("PR #53 review P2-1: the queue order is B7's order, not the age of a row's first job", () => {
+  it("A failed, B waiting, retry A: the retried row comes after B, with B7's positions", async () => {
+    const { server, board: b } = board();
+    const [a, bId] = server.addJobs(2);
+    server.setStatus(a!, "failed");
+    await b.refresh();
+    await b.retry(a!);
+    const retried = server.jobs[2]!.id as string;
+    const s = b.store.get();
+    // The row keeps its key (root A) but sits where its unfinished job is in the queue: after B.
+    expect(rows(s.queue)).toEqual([bId, a]);
+    expect(b.current(s.queue[1]!).id).toBe(retried);
+    expect(b.placeOf(bId!)).toMatchObject({ active: false, position: 1 });
+    expect(b.placeOf(retried)).toMatchObject({ active: false, position: 2 });
+    expect(b.placeOf(a!)).toBeNull(); // the failed job itself is not in the queue
+  });
+
+  it("follows a B7 reorder, shows the active item first and reports holds", async () => {
+    const { server, board: b } = board();
+    const [a, c, d] = server.addJobs(3);
+    await b.refresh();
+    expect(rows(b.store.get().queue)).toEqual([a, c, d]);
+    server.queueOrder = [d!, a!, c!];
+    server.held.add(a!);
+    await b.refresh();
+    expect(rows(b.store.get().queue)).toEqual([d, a, c]);
+    expect(b.placeOf(a!)).toMatchObject({ position: 2, held: true });
+    server.setStatus(c!, "running");
+    await b.refresh();
+    expect(rows(b.store.get().queue)).toEqual([c, d, a]);
+    expect(b.placeOf(c!)).toMatchObject({ active: true, position: null });
+  });
+
+  it("a row whose place the queue did not report comes last and claims no position", async () => {
+    const { server, board: b } = board();
+    const [a, c] = server.addJobs(2);
+    server.setStatus(a!, "waiting_user"); // unfinished, but not a queue item in this snapshot
+    await b.refresh();
+    expect(rows(b.store.get().queue)).toEqual([c, a]);
+    expect(b.placeOf(a!)).toBeNull();
+  });
+});
+
+describe("PR #53 review P2-2: a branched retry chain never loses an unfinished job", () => {
+  async function branched() {
+    const ctx = board();
+    const [a] = ctx.server.addJobs(1);
+    ctx.server.setStatus(a!, "failed");
+    await ctx.board.refresh();
+    // B7 allows two retries of the same failed job with different keys (two sibling jobs).
+    const { MutationIntent } = await import("../../api/idempotency");
+    const first = await ctx.api.retry(a!, 2, new MutationIntent({ schema_version: 1 }));
+    const second = await ctx.api.retry(a!, 2, new MutationIntent({ schema_version: 1 }));
+    return { ...ctx, a: a!, b: first.job.id, c: second.job.id };
+  }
+
+  it("the newest branch is cancelled, the older one still waits: the row stays in the queue and is polled", async () => {
+    const { server, board: b, t, a, b: older, c: newer } = await branched();
+    server.setStatus(newer, "cancelled");
+    b.watch(true);
+    await b.refresh();
+    const s = b.store.get();
+    expect(s.history).toEqual([]);
+    expect(rows(s.queue)).toEqual([a]);
+    const row = s.queue[0]!;
+    expect(row.latest.id).toBe(newer); // the newest job is finished ...
+    expect(row.open.map((j) => j.id)).toEqual([older]); // ... but one job is not
+    expect(row.branched).toBe(true);
+    expect(b.current(row).id).toBe(older);
+    expect(t.pending).toHaveLength(1); // still polling
+    // No retry while something is unfinished (it would add another branch), no hide either.
+    expect(b.canRetry(row)).toBe(false);
+    expect(b.canHide(row)).toBe(false);
+    // Cancel acts on the unfinished job, not on "the newest".
+    await b.cancel(a);
+    expect(server.writes().at(-1)!.line).toBe(`POST /api/v1/jobs/${older}/cancel`);
+    expect(server.jobs.find((j) => j.id === older)!.status).toBe("cancelled");
+    const after = b.store.get();
+    expect(after.queue).toEqual([]);
+    expect(rows(after.history)).toEqual([a]);
+    expect(t.pending).toHaveLength(0); // everything finished: polling stops
+    expect(b.canRetry(after.history[0]!)).toBe(true);
+  });
+
+  it("two unfinished branches: both are listed and each is cancelled by its own id", async () => {
+    const { server, board: b, a, b: older, c: newer } = await branched();
+    await b.refresh();
+    const row = b.store.get().queue[0]!;
+    expect(row.open.map((j) => j.id)).toEqual([older, newer]);
+    expect(b.current(row).id).toBe(older); // the one B7 will run first
+    expect(b.canCancel(row, newer)).toBe(true);
+    expect(b.canCancel(row, a)).toBe(false); // a finished job of the row is not a cancel target
+    await b.cancel(a, newer);
+    expect(server.writes().at(-1)!.line).toBe(`POST /api/v1/jobs/${newer}/cancel`);
+    expect(server.jobs.find((j) => j.id === older)!.status).toBe("queued");
+    expect(b.store.get().queue[0]!.open.map((j) => j.id)).toEqual([older]);
+    await b.cancel(a, "job_" + "0".repeat(32)); // not a job of this row: nothing is sent
+    expect(server.writes().filter((w) => w.line.endsWith("/cancel"))).toHaveLength(1);
+  });
+});

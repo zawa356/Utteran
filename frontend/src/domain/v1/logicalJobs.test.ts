@@ -60,6 +60,8 @@ describe("logical jobs (Design Freeze §7): one row per retry_of chain", () => {
     expect(groups[0]!.latest.id).toBe(jid(4));
     expect(groups[0]!.latest.status).toBe("succeeded");
     expect(groups[0]!.incomplete).toBe(false);
+    expect(groups[0]!.branched).toBe(false);
+    expect(groups[0]!.open).toEqual([]);
     expect(groups[1]!.attempts).toHaveLength(1);
     expect(logicalJobOf(groups, jid(2))?.rootId).toBe(jid(1));
     expect(logicalJobOf(groups, jid(9))).toBeNull();
@@ -78,6 +80,8 @@ describe("logical jobs (Design Freeze §7): one row per retry_of chain", () => {
   it("two retries of the same job stay in one logical job, in list order", () => {
     const groups = groupLogicalJobs([job(1), job(2, { retry_of: jid(1) }), job(3, { retry_of: jid(1) })]);
     expect(groups).toHaveLength(1);
+    expect(groups[0]!.branched).toBe(true);
+    expect(groups[0]!.open).toEqual([]); // every job is failed here
     expect(groups[0]!.jobIds).toEqual([jid(1), jid(2), jid(3)]);
     expect(groups[0]!.latest.id).toBe(jid(3));
   });
@@ -145,5 +149,15 @@ describe("history visibility and artifact view clients", () => {
     expect((await api.getArtifacts(jid(1))).state).toBe("none");
     expect(fetch.calls[1]!.init.method).toBe("GET");
     expect(fetch.calls[1]!.url).toContain(`/api/v1/jobs/${jid(1)}/artifacts`);
+  });
+});
+
+describe("unfinished jobs of a chain (PR #53 review P2-2)", () => {
+  it("lists every unfinished internal job, also when a newer job of the chain is finished", () => {
+    const groups = groupLogicalJobs([job(1), job(2, { retry_of: jid(1), status: "queued" }), job(3, { retry_of: jid(1), status: "cancelled" }), job(4, { status: "running" })]);
+    expect(groups[0]!.latest.id).toBe(jid(3));
+    expect(groups[0]!.open.map((j) => j.id)).toEqual([jid(2)]);
+    expect(groups[1]!.open.map((j) => j.id)).toEqual([jid(4)]);
+    expect(groupLogicalJobs([job(5, { status: "interrupted" })])[0]!.open).toEqual([]);
   });
 });
