@@ -6,12 +6,14 @@ import LegacyLink from "../../components/LegacyLink.vue";
 import NotMigrated from "../../components/NotMigrated.vue";
 import { useCore, useI18n } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
-import { type Mode, SECTION_STATUS, type SectionId, SECTIONS } from "../../domain/shell";
+import { type Mode, previewNoticeKey, SECTION_STATUS, type SectionId, SECTIONS } from "../../domain/shell";
 import ExpertWorkspace from "../expert/ExpertWorkspace.vue";
 import SettingsPage from "../settings/SettingsPage.vue";
 import NormalWorkspace from "../workspace/NormalWorkspace.vue";
 
-const { shell } = useCore();
+const { shell, apiMode } = useCore();
+// Server-rendered API mode only (S5-A): the legacy text stays as it is for `--next-ui`.
+const notice = previewNoticeKey(apiMode);
 const state = useStore(shell.store);
 const { t } = useI18n();
 const display = useDisplay();
@@ -86,7 +88,7 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
       </template>
     </v-navigation-drawer>
     <v-main>
-      <v-alert type="warning" density="compact" class="ma-2" data-testid="preview-notice">{{ t("app.previewNotice") }}</v-alert>
+      <v-alert type="warning" density="compact" class="ma-2" data-testid="preview-notice" :data-notice="notice">{{ t(notice) }}</v-alert>
       <template v-if="state.section === 'transcribe'">
         <ExpertWorkspace v-if="state.mode === 'expert'" />
         <NormalWorkspace v-else />

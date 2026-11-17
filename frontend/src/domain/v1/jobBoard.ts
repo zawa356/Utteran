@@ -111,6 +111,12 @@ export interface BoardOptions {
   scheduler?: Scheduler;
   random?: RandomSource;
   pollMs?: number;
+  /**
+   * Called once after a hide/show ended `done` and the board was re-read from the server. Other
+   * cached job lists of the page re-read themselves here. Never called while the write is pending,
+   * refused, in conflict or of unknown outcome.
+   */
+  onVisibilitySettled?: () => void;
 }
 
 interface Frozen {
@@ -368,6 +374,8 @@ export class V1JobBoardController {
     }
     // Whatever happened, the lists come from the server again.
     await this.refresh();
+    const settled = this.store.get().action;
+    if (!this.disposed && settled !== null && settled.phase === "done" && (settled.kind === "hide" || settled.kind === "show")) this.options.onVisibilitySettled?.();
   }
 
   dispose(): void {

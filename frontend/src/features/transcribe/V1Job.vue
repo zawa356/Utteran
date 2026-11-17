@@ -201,7 +201,7 @@ const switchBlocked = computed(() => {
     </v-card>
 
     <!-- Durable jobs on the server (re-display after a restart; not a claim about an unknown send) -->
-    <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-recent">
+    <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-recent" :data-phase="s.recent.phase">
       <h3 class="u-subheading">{{ t("v1.recent.title") }}</h3>
       <p class="text-caption">{{ t("v1.recent.explain") }}</p>
       <ErrorAlert v-if="s.recent.phase === 'error' && s.recent.error" :error="s.recent.error" testid="v1-recent-error" />

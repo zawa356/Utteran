@@ -1,5 +1,17 @@
 # AI 作業状態
 
+## 現在地（2026-11-17、PR #53 Windows統合受入CONDITIONALの所見3件を修正、0.1.56据置・未リリース）
+
+- ブランチ`claude/c2b-multi-job-ui`（PR #53、Draft、基点＝#52）。照合基点`1c76453`の上に通常commit。Ready化・merge・tag・releaseはowner承認制。#49〜#52は無変更。
+- Windows 11 VM受入（`1c76453`、実WebView2・CPU実モデル・合成データ）: **12 PASS／W-01 FAIL／W-12 BLOCKED**。詳細と残件は[ui3/s5b §8](docs/architecture/ui3/s5b-multi-job-board.md)。
+- 修正（製品の公開API・DB layout・IPC・実行アルゴリズム・既定GUI/CLI/旧`--next-ui`は無変更）:
+  1. W-01: `tests/test_job_output_dir.py`の長いパスの治具を、契約から求めた拒否境界＋実基点長で動的に作る形へ（skip/xfail・assert緩和なし）。
+  2. 常設案内: `apiMode === "v1-dev"`のときだけ`app.previewNoticeV1`。`v1.mode.notice`を実装に合わせて改訂。legacy文言は不変。
+  3. 補助一覧: 非表示/再表示が`done`になった後に、取得済みの「サーバー上のジョブ（v1）」だけを読み直す。未確定の結果では読み直さない。
+- 試験（Cloud Linux）: pytest 1647 passed／9 skipped／1 xfailed、Vitest 525、Playwright 68（legacy 53＋v1 15）。CIはPR #53のコメントに記録。
+- **未検証**: 修正後HEADでのWindows実機（W-01のpytest PASS、実WebView2での案内文と補助一覧）。W-12（DPI 125/150/200%、picker確定、Explorer複数WAV D&D）はBLOCKEDのまま。
+- **次の一手**: Codexによる修正HEADのWindows再試験 → ownerの再レビュー。その後C2c（別PR、試験計画を先に）→ D → B1。
+
 ## 現在地（2026-11-16、束C2b 複数ジョブUI、0.1.56・未リリース、C2aに積んだDraft PR）
 
 - ブランチ`claude/c2b-multi-job-ui`（基点＝束C2a `claude/c2a-history-visibility`、PR #52）。stack: main ← #49 ← #50 ← #51 ← #52 ← 本PR。通常commit・push、作者`zawa356`。Ready化・mergeはowner承認制。

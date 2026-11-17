@@ -73,6 +73,18 @@ test("first start: empty store, nothing created implicitly; explicit Preset/Poli
   const seen = recordApi(app);
   await expect(app.getByTestId("v1-mode-notice")).toBeVisible();
   await expect(app.getByTestId("transcribe-not-migrated")).toHaveCount(0);
+  // Standing notices describe v1 as it is (Normal = one file, Expert = atomic batch, queue, history),
+  // in Normal and in Expert; the legacy wording is not shown in this mode.
+  for (const mode of ["mode-normal", "mode-expert", "mode-normal"]) {
+    await app.getByTestId(mode).click();
+    const notice = app.getByTestId("preview-notice");
+    await expect(notice).toHaveAttribute("data-notice", "app.previewNoticeV1");
+    await expect(notice).toContainText("--next-ui-v1");
+    await expect(notice).toContainText("Expert");
+    for (const wrong of ["順次投入", "単一ファイル", "旧画面"]) await expect(notice).not.toContainText(wrong);
+  }
+  for (const wrong of ["順次投入", "単一ファイル", "旧画面"]) await expect(app.getByTestId("v1-mode-notice")).not.toContainText(wrong);
+  await expect(app.getByTestId("v1-mode-notice")).toContainText("Expert");
   await expect(app.getByTestId("v1-presets-empty")).toBeVisible();
   await expect(app.getByTestId("v1-policies-empty")).toBeVisible();
   await expect(app.getByTestId("v1-queue-dispatch")).toContainText(/停止中/);

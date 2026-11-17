@@ -36,6 +36,15 @@ async function api<T>(request: APIRequestContext, path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** Rows of the auxiliary list "jobs on the server (v1)" that name one internal job id. */
+const recentItem = (page: Page, id: string) => page.getByTestId("v1-recent-item").filter({ hasText: id });
+
+/** Read the auxiliary list on request (the user's own button), and wait for the server's answer. */
+async function loadRecent(page: Page): Promise<void> {
+  await page.getByTestId("v1-recent-reload").click();
+  await expect(page.getByTestId("v1-recent")).toHaveAttribute("data-phase", "done");
+}
+
 async function listsLoaded(page: Page): Promise<void> {
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
 }
@@ -165,10 +174,14 @@ test("hide and show: the row leaves and returns; the job, its state and its outp
   await ensureQueueRunning(app);
   await expect(row(app, "history", id!)).toHaveAttribute("data-status", "succeeded", { timeout: 30_000 });
   const job = await api<{ revision: number; status: string }>(request, `/api/v1/jobs/${id}`);
+  // The auxiliary list was read before the hide (Windows acceptance P3: it must not stay stale).
+  await loadRecent(app);
+  await expect(recentItem(app, id!)).toHaveCount(1);
 
   await row(app, "history", id!).getByTestId("v1-board-hide").click();
   await expect(app.getByTestId("v1-board-action")).toHaveAttribute("data-action-phase", "done");
   await expect(row(app, "history", id!)).toHaveCount(0);
+  await expect(recentItem(app, id!)).toHaveCount(0);
   const visible = await api<{ items: { id: string }[] }>(request, "/api/v1/jobs");
   expect(visible.items.map((j) => j.id)).not.toContain(id);
   // Still there by id, same state and revision; the output directory is still verified.
@@ -182,6 +195,7 @@ test("hide and show: the row leaves and returns; the job, its state and its outp
   await row(app, "hidden", id!).getByTestId("v1-board-show").click();
   await expect(row(app, "history", id!)).toBeVisible();
   await expect(row(app, "hidden", id!)).toHaveCount(0);
+  await expect(recentItem(app, id!)).toHaveCount(1);
   expect(await api(request, `/api/v1/jobs/${id}/visibility`)).toMatchObject({ hidden: false, revision: 2 });
   expect(await api(request, `/api/v1/jobs/${id}`)).toMatchObject({ revision: job.revision, status: "succeeded" });
 
@@ -229,6 +243,31 @@ test("retry is the same row: cancel a running job, retry it, the row returns to 
   await row(app, "queue", id!).getByTestId("v1-board-cancel").click();
   await expect(row(app, "history", id!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await expect(row(app, "history", id!)).toHaveAttribute("data-attempts", "2");
+
+  // Windows acceptance P3: hiding a finished retry chain removes *both* internal jobs from the
+  // auxiliary list that was read before, and showing it brings both back. Nothing is deleted.
+  await app.getByTestId("v1-board-action-close").click();
+  const chain = [id!, internal];
+  const before = await Promise.all(chain.map((job) => api<{ revision: number; status: string }>(request, `/api/v1/jobs/${job}`)));
+  await loadRecent(app);
+  for (const job of chain) await expect(recentItem(app, job)).toHaveCount(1);
+  await row(app, "history", id!).getByTestId("v1-board-hide").click();
+  await expect(app.getByTestId("v1-board-action")).toHaveAttribute("data-action-phase", "done");
+  await expect(row(app, "history", id!)).toHaveCount(0);
+  for (const job of chain) await expect(recentItem(app, job)).toHaveCount(0);
+  const visible = await api<{ items: { id: string }[] }>(request, "/api/v1/jobs");
+  for (const job of chain) expect(visible.items.map((j) => j.id)).not.toContain(job);
+
+  await app.getByTestId("v1-board-action-close").click();
+  await app.getByTestId("v1-board-show-hidden").locator("input").check();
+  await row(app, "hidden", id!).getByTestId("v1-board-show").click();
+  await expect(app.getByTestId("v1-board-action")).toHaveAttribute("data-action-phase", "done");
+  await expect(row(app, "history", id!)).toHaveAttribute("data-attempts", "2");
+  for (const job of chain) await expect(recentItem(app, job)).toHaveCount(1);
+  // Same job records as before (state and revision), four visibility PUTs, no DELETE.
+  for (const [index, job] of chain.entries()) expect(await api(request, `/api/v1/jobs/${job}`)).toMatchObject(before[index]!);
+  expect(seen.filter((r) => r.method() === "PUT" && line(r).endsWith("/visibility")).map(line).sort()).toEqual(chain.flatMap((job) => [`PUT /api/v1/jobs/${job}/visibility`, `PUT /api/v1/jobs/${job}/visibility`]).sort());
+  expect(seen.filter((r) => r.method() === "DELETE")).toEqual([]);
   expect(legacyWrites(seen)).toEqual([]);
 });
 

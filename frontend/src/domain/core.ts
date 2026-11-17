@@ -100,7 +100,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     const library = new V1LibraryController(api);
     const job = new V1SingleJobController(api, library.store, inputs.store, transcription.store);
     const batch = new V1BatchController(api, library.store, inputs.store, transcription.store, { fileIdFor: (rowId) => job.fileIdFor(rowId) });
-    v1 = { api, library, job, batch, board: new V1JobBoardController(api) };
+    v1 = { api, library, job, batch, board: new V1JobBoardController(api, { onVisibilitySettled: () => job.refreshRecentIfLoaded() }) };
   }
   return {
     host: deps.host,

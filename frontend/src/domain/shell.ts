@@ -1,4 +1,5 @@
 import { Store } from "./store";
+import type { ApiMode } from "./v1/apiMode";
 
 export const SECTIONS = ["transcribe", "results", "models", "queue", "setup", "settings"] as const;
 export type SectionId = (typeof SECTIONS)[number];
@@ -47,4 +48,13 @@ export class ShellController {
   toggleNav(): void {
     this.store.patch({ navCollapsed: !this.store.get().navCollapsed });
   }
+}
+
+/**
+ * The standing notice of the shell. `apiMode` is the server-rendered value only (S5-A); the legacy
+ * text (`--next-ui`, sequential legacy submission) is never shown as a description of v1 and the
+ * v1 text never replaces it in legacy mode.
+ */
+export function previewNoticeKey(apiMode: ApiMode): "app.previewNotice" | "app.previewNoticeV1" {
+  return apiMode === "v1-dev" ? "app.previewNoticeV1" : "app.previewNotice";
 }

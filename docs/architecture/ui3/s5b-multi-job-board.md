@@ -1,10 +1,11 @@
 # UI-3 S5-B（束C2b）— 複数ジョブの一括投入・論理ジョブのキュー/履歴・成果物ビュー
 
-更新: 2026-11-16 JST（開発版`0.1.56`・未リリース）。対象は`--next-ui-v1`（開発専用）だけ。既定GUI・`--next-ui`は不変。
+更新: 2026-11-17 JST（開発版`0.1.56`・未リリース。Windows統合受入の結果と所見3件の修正を反映）。対象は`--next-ui-v1`（開発専用）だけ。既定GUI・`--next-ui`は不変。
 前提: [s5a-v1-single-job](s5a-v1-single-job.md)、[../b7/history-visibility](../b7/history-visibility.md)、[design-freeze §7](design-freeze.md)（内部Job IDと論理ジョブ）。
 
 > **機能の接続であって、デザインの再現ではない。** §5の比較のとおり、画面構成と見た目はDesign Freezeにまだ届いていない（束D）。
-> Cloudの合成試験（実FastAPI＋headless Chromium）までで、Windows WebView2実機・実モデルは未受入。**この束に削除機能は無い。**
+> Windows 11 VM（実WebView2・CPU実モデル、合成データ）の統合受入は **CONDITIONAL**（HEAD `1c76453`、14項目中12 PASS／W-01 FAIL／W-12 BLOCKED。§8）。
+> 一括投入・キュー順・retry分岐・非表示/再表示・成果物照合・v6→v7移行の経路は実機で受入済み。残件あり（§8.2）。**この束に削除機能は無い。**
 
 ## 1. 画面
 
@@ -105,6 +106,17 @@ PlaywrightのDOM試験の合格をデザイン再現の証拠としない。画�
 - `transcription-s5a.v1.spec.ts`「Expert uses the same v1 controller…」: 無効表示の`v1-batch-start`を確認していた1行を、
   実パネルの「確認・投入とも、確認前は押せない」へ改訂（placeholderを削除したため）。それ以外の検証は同じ。
 
+### 6.2 Windows受入の所見への対応（2026-11-17、版据置）
+
+| 所見 | 対応 | 回帰試験 |
+|---|---|---|
+| W-01: 長いパスのpytestが治具の`mkdir`で停止（70文字×3階層はWindowsで作成不能） | 治具だけを修正。`job_output_name`が拒否する最短の親長を契約から求め（現行168）、実際の基点長に合わせて短い階層で親を作る（拒否境界＋16、Windowsのディレクトリ上限248未満、拡張パスなし）。製品の`PATH_BUDGET`・拒否動作は無変更 | `tests/test_job_output_dir.py`: 既存の422／`/files/0/output_dir`／`output_path_too_long`／生成0件に加え、親の実在・長さ・契約の拒否を事前確認。境界の1文字手前は受理される試験を追加（36件） |
+| P3: 常設案内がv1の実装と不一致 | サーバー由来の`apiMode === "v1-dev"`のときだけ`app.previewNoticeV1`を表示（`previewNoticeKey`）。`v1.mode.notice`を「通常＝1ファイル、Expert＝一括投入・キュー/履歴・成果物照合」へ。旧`--next-ui`の`app.previewNotice`と`tx.batch.*`は無変更 | Vitest `shell.test.ts`（mode別のkey、ja/en文言）、Playwright `transcription-s5a.v1.spec.ts`（v1の通常/Expert）・`api-mode.spec.ts`（legacyは従来文言） |
+| P3: 非表示直後に補助一覧「サーバー上のジョブ（v1）」へ内部Jobが残る | 非表示/再表示が`done`になりボードを読み直した後に、**取得済みの**補助一覧だけを`GET /jobs`から読み直す（`BoardOptions.onVisibilitySettled` → `refreshRecentIfLoaded`）。pending・拒否・412・結果不明では読み直さず、手元での先行削除もしない。pollingなし | Vitest `boardRecentSync.test.ts` 4件（retry連鎖2件が消える→再表示で戻る、未取得は読まない、結果不明は再送なし・明示再照合後に反映、412/拒否）、Playwright `transcription-s5b.v1.spec.ts`（1件の行、2件の連鎖、DELETE 0件） |
+
+上表の修正後の件数: Vitest 525 passed、Playwright 68 passed（legacy 53＋v1 15）、pytest 1647 passed／9 skipped／1 xfailed（Cloud Linux）。
+**修正後のHEADでのWindows実機再試験（W-01のpytest、実WebView2での案内文と補助一覧）は未実施**（Codexの別受入）。
+
 ## 7. 未実装・後続
 
 - 画面の再構成とDesign Freezeの再現（束D）。rerun・キューの順序変更/保留/一時停止のボードへの統合。
@@ -112,3 +124,23 @@ PlaywrightのDOM試験の合格をデザイン再現の証拠としない。画�
 - 履歴レコードの削除（墓標化）・成果物削除（束C2c、別PR）。
 - B9 SSE（`/events`）による更新（現状は有界polling）。進捗%（G-03）。
 - Windows受入: [../program/windows-acceptance-w-c2.md](../program/windows-acceptance-w-c2.md)。
+
+## 8. Windows統合受入（2026-11-17、HEAD `1c76453`）
+
+出典: [実機報告](https://github.com/zawa356/Utteran/pull/53#issuecomment-6934835816)、[オーナーレビュー](https://github.com/zawa356/Utteran/pull/53#pullrequestreview-5931054818)。Windows 11 Pro（Hyper-V VM）、実WebView2、CPU実モデル`faster-whisper:large-v3-turbo`、合成データのみ。
+**判定はCONDITIONAL。以下は`1c76453`での実測であり、その後の修正HEADで再実行したものではない。**
+
+### 8.1 実機で受入済みの経路
+
+- W-02〜W-05: CPU smoke・inventory、Expertからの1 POST・3件の原子的一括投入（全件完走）、ファイル別の出力先と形式override、不正1件を含むbatchは生成0件。
+- W-06〜W-10: 確認の失効、実行順・保留・並べ替えがB7と一致、協調取消、retry（新ID・同一snapshot）、兄弟retryの個別取消、再起動後の復元、
+  非表示/再表示でジョブ・snapshot・結果・Outboxが不変、成果物の形式別検証・差し替え検知・未知ファイル検知。旧投入・DELETEは0件。
+- W-11: C1（layout v6）からv7への移行で同じジョブ・成果物を保持。旧版は`store_schema_unsupported`で拒否。バックアップからの復元。
+- W-13: 既定GUIでv1 APIは404・v1 DB生成0件、CLIの出力と元ファイルの不変。
+
+### 8.2 残件（合格扱いにしない）
+
+- **W-01 FAIL**: 上記§6.2の治具問題。Cloudで修正済みだが、Windows実機でのPASSは未確認。
+- **W-12 BLOCKED**: 100%の狭幅/最大化・日本語IME・picker起動は確認済み。DPI 125/150/200%、pickerでの選択確定、Explorerからの複数WAVのD&Dは未実施。
+- 未実施: 実CPU稼働中の接続断（W-06の一部）、強制kill（W-11の一部）。
+- 対象外のまま: CUDA/NPU、Design Freezeの画面構成（束D、§5）、履歴・成果物の削除（束C2c）。
