@@ -7,7 +7,7 @@
 | （既定） | 旧`/api/*`、`/launch`、`/`、`/assets`、`/logo` | — |
 | `enable_v1_settings=True`, `v1_authority="127.0.0.1:<port>"` | `/api/v1` sub-app（B5） | `v1_authority`必須（無いと`ValueError`） |
 | `+ enable_v1_jobs=True` | B7 routes。`JobRuntime.activate()`で旧queueを閉じる | settings必須 |
-| `+ enable_v1_setup=True` | B8 routes。runtimeはlayout v6の`ManagedControlStore` | jobs必須・runtimeに`setup`部品 |
+| `+ enable_v1_setup=True` | B8 routes。現行v1 runtimeはlayout v7の`HistoryControlStore`（v6以前は歴史的実装）。 | jobs必須・runtimeに`setup`部品 |
 | `+ enable_v1_events=True`（`v1_events_config`任意） | B9 routes | jobs必須 |
 
 `/api/v1/*`は旧`/api/*`のsession middlewareを通らず、v1 sub-app自身が**session（header `x-utteran-session`
