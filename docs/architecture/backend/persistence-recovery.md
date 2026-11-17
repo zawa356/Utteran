@@ -1,5 +1,11 @@
 # Persistence, migration, recovery and privacy
 
+## 2026-11-17 追補（0.1.56、現行main）
+
+束C2a/#52のlayout v7（v6＋`job_visibility`）はmainへ統合済み（最終main `c5af76726f913e4044f6e73492fee851c2acdd8c`）。Windows 11専用VMでは旧HEAD `1c76453` においてv6→v7通常移行、旧版の`store_schema_unsupported`拒否、backupからの復元を確認し、差分HEAD `ad8c38e` では非表示/再表示時のDB各表・Outbox全行ハッシュ不変を確認した。[PR #53 Windows受入レビュー](https://github.com/zawa356/Utteran/pull/53#pullrequestreview-5934044093)。**移行中の強制killはNOT_RUN**（[#55](https://github.com/zawa356/Utteran/issues/55)）。実ユーザーデータのrestore・Windows ACL・完全消去を保証するものではない。
+
+履歴のみの墓標化・生成成果物の削除は未実装（[#56](https://github.com/zawa356/Utteran/issues/56)）。private DB/WAL/backup/replayに残る内容の検証と所有確認はC2cの必須条件であり、先行受入をもって削除可能としない。
+
 ## 保存先
 
 `utteran_paths.resolve_data_paths()`が唯一の解決経路（`UTTERAN_DATA_ROOT`指定時はその配下）。
