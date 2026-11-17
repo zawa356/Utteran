@@ -1,5 +1,12 @@
 # UI-3-0 — 第5案で設計確定した隔離プロトタイプ
 
+## 最新の実装進捗（2026-11-17、0.1.56未リリース）
+
+- [PR #49〜#53](https://github.com/zawa356/Utteran/pull/53)（A1/A2/C1/C2a/C2b）をmainへ依存順に統合し、main `c5af76726f913e4044f6e73492fee851c2acdd8c` の[CI](https://github.com/zawa356/Utteran/actions/runs/44033681672)は初回success。
+- 開発専用`--next-ui-v1`の通常モードは単件、Expertは原子的batch、論理Jobのキュー/履歴・hide/show・成果物の読み取り照合を実装。既定GUI/CLIと旧`--next-ui`は不変。Design Freezeの3ペイン製品画面構成、Viewer、削除はまだ未達（[S5-B](s5b-multi-job-board.md)）。
+- Windows 11 VM実WebView2/CPUモデルの**差分受入PASS、全体CONDITIONAL**。W-01、案内ja/en、補助一覧2→0→2はPASS。OS DPI 125/150/200%とExplorer複数WAV D&DはBLOCKED（[#22](https://github.com/zawa356/Utteran/issues/22)）。接続断/移行中killはNOT_RUN（[#55](https://github.com/zawa356/Utteran/issues/55)）。[PR #53受入](https://github.com/zawa356/Utteran/pull/53#pullrequestreview-5934044093)。
+- 次工程：履歴墓標化・成果物削除の安全な設計と試験（[C2c #56](https://github.com/zawa356/Utteran/issues/56)）→束D等。以下のDraft・未実機受入などの記述は当時の実装履歴。
+
 **2026-11-06 Design Freeze:** ownerがWindowsブラウザで第5案を概観し、細かなUI改修は後続として設計基準を承認。[PR #38](https://github.com/zawa356/Utteran/pull/38)をmainにマージ（`701a94e`）。開発版`0.1.43`、未リリース。**本番機能の完成・Windows WebView2実機受入ではない。**
 
 現在のUI-3-0正本: **[設計確定・受入・S1〜S5引継ぎ](design-freeze.md)**。
