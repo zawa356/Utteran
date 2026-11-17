@@ -3,13 +3,16 @@
 from utteran.asr.base import ASRBackend
 from utteran.config import Config, WhisperCppConfig
 from utteran.errors import BackendUnavailableError, ConfigurationError
+from utteran_contracts.engines import ENGINE_DECLARATIONS
+from utteran_contracts.engines import NON_SPACE_LANGUAGES as NON_SPACE_LANGUAGES
 
-NON_SPACE_LANGUAGES = frozenset({"ja", "zh", "th", "lo", "my", "yue"})
+# Engines whose word timing cannot support diarization for non-space languages.
+_SPACE_ONLY = frozenset(e.engine for e in ENGINE_DECLARATIONS if not e.non_space_word_timestamps)
 
 
 def validate_asr_configuration(config: Config) -> None:
     """Reject GenAI combinations whose word timing cannot support diarization."""
-    if config.asr.backend != "openvino-genai" or not config.diarization.enabled:
+    if config.asr.backend not in _SPACE_ONLY or not config.diarization.enabled:
         return
     language = config.asr.language.casefold() if config.asr.language else None
     if language is None or language in NON_SPACE_LANGUAGES:

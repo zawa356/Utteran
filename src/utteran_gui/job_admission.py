@@ -30,6 +30,7 @@ from utteran_contracts.capabilities import (
     ResolvedSelection,
 )
 from utteran_contracts.editing import EditingSession
+from utteran_contracts.engines import engine_for_family, worker_recipes, worker_refusals
 from utteran_contracts.jobs import (
     ADAPTER_VERSION,
     PROMPT_COMPILER_VERSION,
@@ -64,9 +65,10 @@ INFLIGHT_WAIT = 10.0
 INFLIGHT_POLL = 0.05
 MAX_LIVE_TOKENS = 256
 HASH_BLOCK = 1024 * 1024
-# Recipes whose execution the B3 worker implements (faster-whisper, local model, no
-# diarization, single file). Everything else is declaratively unsupported in B7.
-WORKER_RECIPES = frozenset({"fw-cpu", "fw-cuda"})
+# Recipes whose execution the B3 worker implements, derived from the engine
+# declarations (utteran_contracts.engines). Everything else is declaratively
+# unsupported in B7; a new route is enabled there, never by editing this module.
+WORKER_RECIPES = worker_recipes()
 PROFILES = ("cpu", "cuda", "intel", "vulkan")
 _REPARSE = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
 
@@ -259,16 +261,16 @@ def _worker_issues(
 ) -> list[str]:
     identity = candidate.deployment.identity
     issues = []
-    if identity.recipe_id not in WORKER_RECIPES:
+    try:
+        engine = engine_for_family(identity.model_family)
+    except ValueError:
+        return ["worker_backend_unsupported"]
+    refusals = worker_refusals(engine, settings, recipe_id=identity.recipe_id)
+    if "worker_backend_unsupported" in refusals:
         issues.append("worker_backend_unsupported")
     if identity.execution_path != "worker":
         issues.append("worker_execution_path")
-    if settings.diarization.enabled:
-        issues.append("worker_diarization_unsupported")
-    if settings.asr.glossary:
-        issues.append("worker_glossary_unsupported")
-    if settings.asr.extra_arguments is not None:
-        issues.append("worker_arguments_unsupported")
+    issues.extend(code for code in refusals if code != "worker_backend_unsupported")
     if not identity.local_complete_model or candidate.id not in models:
         issues.append("worker_model_not_local")
     if candidate.runnable != "ready":
@@ -289,11 +291,7 @@ def _fallbacks(selection: ResolvedSelection) -> tuple[FallbackSpec, ...]:
                 profile_generation=identity.profile_generation,
                 model_id=identity.model_id,
                 model_revision=identity.model_revision,
-                backend="faster-whisper"
-                if identity.model_family == "ctranslate2"
-                else "whisper-cpp"
-                if identity.model_family == "ggml"
-                else "openvino-genai",
+                backend=engine_for_family(identity.model_family).engine,
                 requested_route=candidate.requested_route,
                 device=identity.device,
                 compute_type=identity.compute_type,
@@ -325,12 +323,12 @@ def build_spec(
         model_id=identity.model_id,
         model_revision=identity.model_revision,
         model_files_fingerprint=identity.model_files_fingerprint,
-        backend="faster-whisper",
+        backend=engine_for_family(identity.model_family).engine,
         requested_route=candidate.requested_route,
         device=identity.device,
         device_index=identity.device_index,
         compute_type=identity.compute_type,
-        diarization_device=None,
+        diarization_device=identity.diarization_device if settings.diarization.enabled else None,
         settings=settings,
         adapter_version=ADAPTER_VERSION,  # type: ignore[arg-type]
         prompt_compiler_version=PROMPT_COMPILER_VERSION,  # type: ignore[arg-type]

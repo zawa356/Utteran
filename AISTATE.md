@@ -1,5 +1,17 @@
 # AI 作業状態
 
+## 現在地（2026-11-16、大規模開発プログラム開始・束A1 エンジン宣言表、0.1.52・未リリース、Draft PR）
+
+- 指示書「Fable向け大規模開発・実行指示書（2026-11-16）」を適用。計画・棚卸し・証拠マトリクスは[program/roadmap](docs/architecture/program/roadmap-2026-11-16.md)（束A〜F、依存、PR構成、Windowsゲート）。
+- 基点`main` `9e5d3653c38cb26fbfc1efe7552cbc703c70cf98`（PR #48統合、0.1.51。main CI run 43806702505 success、`origin/main`と一致を確認）。
+  セッション指定ブランチ`claude/eloquent-ramanujan-hy71xu`で通常commit・push。force push・merge・Ready化・tag・releaseなし。commit作者は既存履歴と同じ`zawa356`。依存追加なし。
+- 束A1（本PR）: `utteran_contracts.engines`の宣言表へ、B4 evaluator・B2 adapter・B3 preflight・B5警告・B7 admission/dispatcherのbackend固有分岐を一本化。
+  **fw経路の挙動・公開DTO・IPC wire・DB・既定起動は不変**。workerが実行する範囲も不変（fw-cpu/fw-cuda、話者分離・用語集なし）。詳細[backend/engine-adapters](docs/architecture/backend/engine-adapters.md)。
+- 試験: 新規`tests/test_engine_declarations.py` 43件。既存は削除・skip・緩和なし。数値とCIはPR本文に記録。
+- **未検証**: Windows実機（W-A1: PR #48縦断の非退行、[指示書](docs/architecture/program/windows-acceptance-w-a1.md)）、GPU全般。whisper.cpp・OpenVINO GenAI・pyannoteのworker実行は**未実装**（宣言で閉じている）。
+- 最終確認（同日、版据置）: GenAIの`vad_threshold`宣言をFalseへ（黙って捨てられる値を拒否）。詳細[engine-adapters §5.1](docs/architecture/backend/engine-adapters.md)。
+- **次の一手**: 束A2（用語集/Promptコンパイルとエンジン能力の公開read-only API）→ C1（ジョブ固有出力dir）→ B1（pyannote worker）。順序と理由はロードマップ§3。
+
 ## 現在地（2026-11-16、PR #48 Windows再受入P1（numpy初回import停止）修正、0.1.51据置、Draft維持）
 
 - 修正前HEAD `b6c1a28e1079ef1d1ed1bb761fcf172ce8a08fa2`（remoteと一致）。同じブランチへ通常commit・push。Ready化・merge・tag・release・force pushなし。

@@ -1,6 +1,7 @@
 """The core-owned list of implemented recipes; never a backend/route product."""
 
 from utteran_contracts.capabilities import CapabilityRecipe, RecipeCatalog, RequestedRoute
+from utteran_contracts.engines import get_engine
 
 
 def _recipe(
@@ -13,9 +14,12 @@ def _recipe(
     devices: tuple[str, ...],
     compute: tuple[str, ...],
     extras: tuple[str, ...],
-    *,
-    worker: bool = False,
 ) -> CapabilityRecipe:
+    # Engine-level facts come from the one declaration table; a recipe only adds the
+    # route, devices and extras of one execution profile.
+    engine = get_engine(backend)
+    if engine.model_family != family or (variant is not None) != bool(engine.native_variants):
+        raise ValueError("recipe_engine_mismatch")
     return CapabilityRecipe.model_validate(
         dict(
             schema_version=1,
@@ -35,9 +39,9 @@ def _recipe(
             platforms=("Windows", "Linux"),
             required_extras=extras,
             native_required=variant is not None,
-            worker_supported=worker,
-            word_timestamps=True,
-            non_space_diarization=backend != "openvino-genai",
+            worker_supported=recipe_id in engine.worker.recipes,
+            word_timestamps="always" in engine.word_timestamp_modes,
+            non_space_diarization=engine.non_space_word_timestamps,
         )
     )
 
@@ -53,7 +57,6 @@ RECIPES = (
         ("cpu",),
         ("int8", "int8_float32", "float32"),
         (),
-        worker=True,
     ),
     _recipe(
         "fw-cuda",
@@ -65,7 +68,6 @@ RECIPES = (
         ("cuda",),
         ("int8", "int8_float32", "int8_float16", "float16", "float32"),
         ("cuda",),
-        worker=True,
     ),
     _recipe(
         "wc-cpu", "whisper-cpp", "ggml", "cpu", "cpu", "cpu", ("cpu",), ("ggml",), ("whisper-cpp",)

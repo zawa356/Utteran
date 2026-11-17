@@ -1,0 +1,59 @@
+# W-A1 — Windows実機受入指示書（束A1: エンジン宣言表と実行契約の一本化）
+
+更新: 2026-11-16 JST（開発版`0.1.52`）。実施者: Codex／専用Windows 11 VM。設計: [../backend/engine-adapters.md](../backend/engine-adapters.md)。
+
+> **本書は手順書であり、結果ではない。** Cloud工程ではWindows実機・WebView2・実モデルを一切実行していない。
+> 実ユーザーのdata root・既定のユーザー領域・既存データのあるディレクトリでは**実行しない**。
+> 音声・転写本文・実パス・tokenを報告やログへ貼らない（件数・状態・固定codeだけを書く）。
+
+## 0. 目的と合否
+
+束A1はfaster-whisper経路の**挙動を変えない**リファクタリングである。確認するのは次の2点だけ。
+
+1. PR #48で合格した縦断経路（`faster-whisper / large-v3-turbo / fw-cpu / int8`）が退行していない。
+2. workerが実行しない設定は、推論前に固定codeで止まり、別エンジンや旧CLIへ流れない。
+
+GPUは対象外（VMにGPUが無ければCUDAは**未受入**のまま記録する）。
+
+## 1. 前提
+
+| 項目 | 条件 |
+|---|---|
+| checkout | 対象Draft PRのHEAD（SHAを記録）。PR #48受入時のcheckoutを流用する場合も`git status`がcleanでHEADが一致すること |
+| data root | **新しい専用root**（例: `%LOCALAPPDATA%\Utteran-A1-WinVM\data`）。PR #48のrootを再利用する場合は、既存ジョブを壊さないことを確認してから |
+| 環境変数 | 親シェルから`UTTERAN_DATA_ROOT`等を継承していないことを確認してから、このシェルだけで設定する |
+| profile・モデル | PR #48受入と同じ（`setup.ps1 -Profile cpu`、`large-v3-turbo`一式。VC++ v14 x64再頒布可能パッケージ導入済み） |
+| B4証拠 | [b4/smoke-local-acceptance](../b4/smoke-local-acceptance.md)の手順でfw-cpuのsmokeを取り直す（24時間TTL） |
+| 入力 | 合成音声（短い無音/トーン、または自作の読み上げ）。実録音を使わない |
+
+## 2. 手順
+
+1. `uv sync --extra dev --extra gui --locked` → `uv run --no-sync pytest -m "not requires_model" -q tests/test_engine_declarations.py tests/test_b7_b3_model_route.py tests/test_worker_runtime.py`
+   - 期待: 全件passed（件数を記録）。
+2. smokeを実行し、別processの`refresh`でfw-cpuが`ready`になることを確認。
+3. `utteran-gui --next-ui-v1`を起動（WebView2）。
+4. **正常系**: Preset/Policyを選び（無ければ作成）、合成音声1件を投入。
+   - 期待: `queued → running → succeeded`、SRT/JSON/MD各1件、再起動後も履歴に残る。
+5. **取消**: もう1件投入し、running中に取消。
+   - 期待: `cancelling → cancelled`、成果物0件、次のジョブを投入できる。
+6. **拒否系**（どれも推論を開始しないこと）:
+   - Presetで話者分離を有効にして投入 → validationに`worker_unsupported`（`/diarization/enabled`）、resolutionは4xxで拒否（codeを記録）。
+   - Presetに用語集を1語入れて投入 → `worker_unsupported`（`/asr/glossary`）、resolutionは4xxで拒否（codeを記録）。
+   - Presetのbackendを`whisper-cpp`にして投入 → `worker_unsupported`（`/asr/backend`）、resolutionは4xxで拒否（codeを記録）。
+   - どの場合も旧`POST /api/jobs`が呼ばれない（Network欄で確認）、profileの`faster_whisper`以外が起動しない。
+7. GUIを閉じ、既定起動（引数なし）で旧GUIが従来どおり開き、専用root以外にcontrol DBが作られていないことを確認。
+
+## 3. 報告フォーマット
+
+```
+HEAD: <sha>            OS/ビルド: <Windows 11 ...>     GPU: なし/あり(<名称>)
+手順1 pytest: <passed>/<failed>/<skipped>
+手順2 smoke: passed / failed(<code>)     ready: yes / no(<reason_code>)
+手順4 正常系: succeeded / <status>(<error code>)   成果物: srt=<n> json=<n> md=<n>   履歴永続: yes/no
+手順5 取消: cancelled / <status>
+手順6 拒否: 話者分離=<code>  用語集=<code>  whisper-cpp=<code>   旧API呼出: なし/あり
+手順7 既定起動: 正常 / 異常(<概要>)
+未実施・未観測: <CUDA 等>
+```
+
+失敗時は、固定code・ジョブ状態・時刻・画面のスクリーンショット（合成データのみ）を付け、転写本文や実パスは含めない。

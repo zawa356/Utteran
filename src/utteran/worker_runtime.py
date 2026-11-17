@@ -18,6 +18,7 @@ from utteran.config_adapter import ConfigAdaptationError, ExecutionContext, adap
 from utteran.errors import CancelledError, DependencyError, ModelNotFoundError
 from utteran.models.catalog import list_models
 from utteran.types import CancelToken, ProgressEvent
+from utteran_contracts.engines import get_engine
 from utteran_contracts.worker import WorkerArtifact, WorkerErrorCode, WorkerRequest
 from utteran_contracts.worker_framing import ProtocolError
 
@@ -119,24 +120,33 @@ def explicit_config(request: WorkerRequest) -> Config:
 
 
 def offline_preflight(config: Config) -> None:
-    # pyannote Pipeline.from_pretrained can resolve transitive remote components.
-    # whisper.cpp invokes native argv (including prompt/input); not enabled here.
-    if config.asr.backend != "faster-whisper" or config.diarization.enabled:
+    """Refuse anything the engine declaration does not let the worker execute.
+
+    The declaration (utteran_contracts.engines) is the single list of worker routes:
+    whisper.cpp passes prompt/input as native argv and pyannote may resolve remote
+    components, so both stay closed there until proven otherwise.
+    """
+    try:
+        engine = get_engine(config.asr.backend)
+    except ValueError:
+        raise ProtocolError(WorkerErrorCode.UNSUPPORTED_SETTING) from None
+    worker = engine.worker
+    if worker.status != "implemented" or (config.diarization.enabled and not worker.diarization):
         raise ProtocolError(WorkerErrorCode.UNSUPPORTED_SETTING)
-    if importlib.util.find_spec("faster_whisper") is None:
+    if (
+        engine.runtime_module is not None
+        and importlib.util.find_spec(engine.runtime_module) is None
+    ):
         raise ProtocolError(WorkerErrorCode.DEPENDENCY_MISSING)
     # Only an explicit absolute local model directory: no catalog/cache lookup,
     # Hub ID, tokenizer fallback, or auto device selection at this boundary.
-    # These files are a necessary pre-check, not a load guarantee: CTranslate2 and the
+    # These files are a necessary pre-check, not a load guarantee: the runtime and the
     # model's own files (e.g. vocabulary) are only proven by the real load in core.
     model = Path(config.asr.model)
     if (
         not model.is_absolute()
         or not model.is_dir()
-        or any(
-            not (model / name).is_file()
-            for name in ("model.bin", "config.json", "tokenizer.json", "preprocessor_config.json")
-        )
+        or any(not (model / name).is_file() for name in worker.required_model_files)
     ):
         raise ProtocolError(WorkerErrorCode.MODEL_MISSING)
     application.preflight_dependencies(config, EnvironmentTokenProvider())
