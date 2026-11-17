@@ -8,6 +8,7 @@ output. Synthetic data under ``tmp_path`` only. Residues are measured, not assum
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import os
 import shutil
@@ -20,8 +21,6 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from utteran_control.deletion_repository import DeletionControlStore
-from utteran_gui.job_deletion import JobDeletionService
 
 from test_b7_api import AUTHORITY, ROOT
 from test_b7_jobs import SENTINEL, SESSION, Env, FakeRunner, dispatcher, scope
@@ -29,11 +28,14 @@ from test_history_visibility import TABLES, _setup, dump, version
 from utteran_contracts.jobs import JobDeletion, JobDeletionPlan
 from utteran_contracts.output_naming import job_output_name
 from utteran_contracts.worker import WorkerArtifact, WorkerCompleted
+from utteran_control.deletion_repository import DeletionControlStore
 from utteran_control.errors import ControlError
 from utteran_control.errors import ErrorCode as E
+from utteran_control.events_repository import DiagnosticsService
 from utteran_control.history_repository import HistoryControlStore
 from utteran_control.job_repository import JobControlStore
 from utteran_gui.api import SESSION_HEADER, create_app
+from utteran_gui.job_deletion import JobDeletionService
 from utteran_gui.job_dispatcher import OUTPUT_MARKER
 from utteran_gui.job_runtime import JobRuntime
 from utteran_gui.operation_queue import OperationQueue
@@ -361,6 +363,9 @@ def test_history_deletion_scrubs_private_values_and_keeps_the_skeleton(env: V8) 
     sync_after = env.store.snapshot()
     assert sync_after.event_cursor == sync_before.event_cursor
     assert job_id in {op.id for op in sync_after.operations}
+    # Diagnostics keep the value-free skeleton (codes, times, attempt ids).
+    entries = DiagnosticsService(env.store).page(job_id, "job").items
+    assert entries and entries[-1].code == "completion_verified"
 
 
 def test_deleted_job_reads_are_410_and_lists_exclude_it(env: V8) -> None:
@@ -425,7 +430,8 @@ def test_cas_replay_and_conflicts(env: V8) -> None:
     assert env.store.get_job(job_id).status == "succeeded"
     key = env.key("del")
     first = env.delete(job_id, "history", plan=plan, key=key)
-    again = env.delete(job_id, "history", plan=plan, key=key)  # lost response: same answer
+    # Lost response: the same request (same key, revision and body) gets the same answer.
+    again = env.delete(job_id, "history", plan=plan, key=key, revision=revision)
     assert again.replayed and again.status == first.status
     assert again.deletion.to_wire() == first.deletion.to_wire()
     with pytest.raises(ControlError) as error:  # same key, other body
@@ -438,7 +444,7 @@ def test_cas_replay_and_conflicts(env: V8) -> None:
         )
     assert error.value.code is E.IDEMPOTENCY_CONFLICT
     with pytest.raises(ControlError) as error:  # a new key after deletion
-        env.delete(job_id, "history", plan=plan)
+        env.delete(job_id, "history", plan=plan, revision=revision)
     assert error.value.code is E.JOB_DELETED
 
 
@@ -525,6 +531,22 @@ def test_measured_residue_db_journal_replays_and_backup(tmp_path: Path) -> None:
     with sqlite3.connect(env.store.path) as db:
         bodies = " ".join(r[0] for r in db.execute("SELECT body FROM batch_replays"))
     assert job_id in bodies and SENTINEL not in bodies and str(env.inputs) not in bodies
+
+
+def test_secure_delete_clears_one_job_among_many_from_the_db_file(tmp_path: Path) -> None:
+    """Page splits of 40 jobs, then one deletion: its values leave the file, others stay.
+
+    Control measurement (design doc §6): the same run with ``secure_delete`` forced off
+    left 2 copies of the deleted job's input name in the file.
+    """
+    env = V8(tmp_path)
+    ids = [env.finished(f"bulk{i:03d}.wav") for i in range(40)]
+    assert raw(env.store.path).count(b"bulk017") == 2  # input_path, file.input_path
+    env.delete(ids[17], "history")
+    data = raw(env.store.path)
+    assert data.count(b"bulk017") == 0
+    assert data.count(b"bulk018") == 2  # the other jobs are untouched
+    assert [j.id for j in env.store.list_jobs().items] == ids[:17] + ids[18:]
 
 
 # ============================================================ 4. artifacts (④)
@@ -652,15 +674,15 @@ def test_jobs_without_provable_ownership_are_refused(env: V8) -> None:
     assert env.plan(old).refusal == "evidence_unverified"
     # A snapshot accepted before 0.1.54 (no output_stamp) cannot prove its files.
     legacy = env.finished("legacy.wav")
-    monkey = env.service
+    real_context = env.store.deletion_context
 
     def without_stamp(job_id: str) -> Any:
-        snapshot = env.store.get_snapshot(job_id)
-        data = snapshot.to_wire()
+        ctx = real_context(job_id)
+        data = ctx.snapshot.to_wire()
         data.pop("output_stamp", None)
-        return type(snapshot).model_validate(data)
+        return dataclasses.replace(ctx, snapshot=type(ctx.snapshot).model_validate(data))
 
-    monkey._snapshot = without_stamp  # type: ignore[method-assign]
+    env.store.deletion_context = without_stamp  # type: ignore[method-assign]
     assert env.plan(legacy).refusal == "legacy_output"
 
 
@@ -715,8 +737,17 @@ def test_a_file_swapped_after_verification_is_never_deleted(env: V8, swap: str) 
     assert srt.exists() and srt.read_bytes() != b""  # the swapped file survives
     assert env.store.get_job(job_id).status == "succeeded"  # history not deleted
     assert env.store.deletion_state(job_id) == "artifacts_pending"
+    # History-only deletion would orphan the remaining files: refused while pending.
+    history = env.plan(job_id, "history")
+    assert not history.allowed and history.refusal == "deletion_in_progress"
     with pytest.raises(ControlError) as error:
-        env.delete(job_id, "history")
+        env.store.complete_deletion(
+            job_id,
+            env.store.get_job(job_id).revision,
+            "history",
+            scope(f"/api/v1/jobs/{job_id}/deletions", env.key()),
+            "0" * 64,
+        )
     assert error.value.code is E.DELETION_IN_PROGRESS
     assert env.plan(job_id).refusal == "artifact_changed"
 
@@ -895,7 +926,8 @@ def test_http_plan_and_delete_roundtrip_guards_and_value_free_bodies(env: V8) ->
     ) as c:
         plans = f"/api/v1/jobs/{job_id}/deletion-plans"
         mode = {"schema_version": 1, "mode": "history_and_artifacts"}
-        assert c.post(plans, json=mode).status_code == 403  # Origin required for writes
+        foreign = {"Origin": "http://evil.example"}
+        assert c.post(plans, json=mode, headers=foreign).status_code == 403
         assert c.post(plans, json=mode, headers={**origin, SESSION_HEADER: "x"}).status_code == 401
         assert c.post(plans, json={**mode, "force": True}, headers=origin).status_code == 422
         assert (
@@ -967,8 +999,12 @@ def test_http_deletion_is_unavailable_without_layout_v8(tmp_path: Path) -> None:
 
 def test_default_legacy_app_has_no_deletion_route(tmp_path: Path) -> None:
     app = create_app(SESSION, repo_root=ROOT)
-    with TestClient(app, base_url="http://" + AUTHORITY) as c:
-        response = c.post("/api/v1/jobs/" + "job_" + "0" * 32 + "/deletions", json={})
+    with TestClient(app, base_url="http://" + AUTHORITY, headers={SESSION_HEADER: SESSION}) as c:
+        response = c.post(
+            "/api/v1/jobs/" + "job_" + "0" * 32 + "/deletions",
+            json={},
+            headers={"Origin": "http://" + AUTHORITY},
+        )
         assert response.status_code == 404
 
 

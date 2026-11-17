@@ -157,7 +157,9 @@ def test_runtime_activation_backs_up_v6_before_opening_v7(tmp_path: Path) -> Non
     )
     runtime.activate()
     try:
-        assert isinstance(runtime.store, HistoryControlStore) and version(path) == 7
+        # 0.1.57 (C2c): the runtime target is layout v8 (a HistoryControlStore subclass);
+        # the v6 pre-open backup is what this test is about and is unchanged.
+        assert isinstance(runtime.store, HistoryControlStore) and version(path) == 8
         assert runtime.last_backup is not None and version(runtime.last_backup) == 6
         restored = tmp_path / "restore-drill.sqlite3"
         shutil.copyfile(runtime.last_backup, restored)

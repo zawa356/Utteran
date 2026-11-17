@@ -448,8 +448,9 @@ def test_v1_dev_launch_end_to_end_over_real_loopback(
     store = marked_root / "data" / "control-v1" / "operations.sqlite3"
     assert store.is_file() and list(store.parent.glob("operations-rollback-*.sqlite3"))
     with sqlite3.connect(store) as db:
-        # 0.1.55: the v1 runtime opens layout v7 (v6 + job_visibility).
-        assert int(db.execute("PRAGMA user_version").fetchone()[0]) == 7
+        # 0.1.55: the v1 runtime opened layout v7 (v6 + job_visibility).
+        # 0.1.57 (C2c): layout v8 (v7 + deletion journal/gate).
+        assert int(db.execute("PRAGMA user_version").fetchone()[0]) == 8
     with GuiInstanceLock(marked_root):  # released after shutdown
         pass
     assert not any(t.name == "utteran-v1-dispatch" for t in threading.enumerate())
