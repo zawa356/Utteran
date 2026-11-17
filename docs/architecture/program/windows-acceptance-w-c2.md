@@ -7,6 +7,15 @@
 > 実ユーザーのdata root・既定のユーザー領域・既存データのあるディレクトリでは**実行しない**（control DBが一方向に移行する）。
 > 音声・転写本文・実パス・tokenを報告やログへ貼らない（件数・状態・固定codeだけ）。**この束に削除機能は無い。削除操作を試さない。**
 
+## 実施結果への追補（2026-11-17）
+
+本書は**実行時の指示書**であり、結果の証拠は別管理する。初回HEAD `1c76453` の実機受入は12 PASS／W-01 FAIL／W-12 BLOCKED。その後、修正HEAD `ad8c38e` をWindows 11 Hyper-V VMで差分再試験し、**修正差分PASS・総合CONDITIONAL**と判定した（[PR #53受入レビュー](https://github.com/zawa356/Utteran/pull/53#pullrequestreview-5934044093)）。
+
+- W-01 78 passed/1 skipped（既存symlink権限制約）。長いパス422拒否と境界直前受理をPASS。実WebView2のv1/legacy日英案内・retry補助一覧2→0→2・DB/成果物不変・DELETE 0をPASS。Windows Vitest 527、Playwright v1 15成功。
+- W-12：native file/folder picker確定/取消はPASS。**OS DPI 125/150/200%、Explorer複数WAV D&DはBLOCKED**（[#22](https://github.com/zawa356/Utteran/issues/22)）。GET遅延中の完了メッセージ先行closeは実機で競合条件未再現（Vitest 6件はPASS）。
+- W-06実CPU中の接続断・W-11移行途中のkillはNOT_RUN（[#55](https://github.com/zawa356/Utteran/issues/55)）。
+- #49〜#53は2026-11-17にmainへ統合済み。最終main `c5af767`、[main CI 44033681672](https://github.com/zawa356/Utteran/actions/runs/44033681672) success。**削除機能は未実装**（[#56](https://github.com/zawa356/Utteran/issues/56)）。
+
 ## 0. 目的と合否
 
 1. 複数ファイルを1回で投入でき、全件が成功する（全件か無しか）。

@@ -5,6 +5,12 @@
 このディレクトリには **「現在の実装の正本」** と **「各Phaseの提出・検証記録（歴史資料）」** が混在する。
 UI刷新（U0〜U3）やバックエンド変更を始める前に、まず次の正本を読むこと。
 
+## 現在地（2026-11-17、0.1.56・未リリース）
+
+PR [#49](https://github.com/zawa356/Utteran/pull/49) → [#50](https://github.com/zawa356/Utteran/pull/50) → [#51](https://github.com/zawa356/Utteran/pull/51) → [#52](https://github.com/zawa356/Utteran/pull/52) → [#53](https://github.com/zawa356/Utteran/pull/53)の束A1/A2/C1/C2a/C2bを**main統合済み**。HEAD `c5af76726f913e4044f6e73492fee851c2acdd8c`、[main CI](https://github.com/zawa356/Utteran/actions/runs/44033681672)初回success。開発専用`--next-ui-v1`で原子的batch、論理ジョブのキュー/履歴、非表示/再表示、成果物の形式別照合を利用できる。**既定GUI・`--next-ui`・CLIは従来経路のまま**。
+
+Windows差分は[UI-3 S5-B](ui3/s5b-multi-job-board.md#0-統合windows差分受入の確定記録2026-11-17)と[PR #53受入レビュー](https://github.com/zawa356/Utteran/pull/53#pullrequestreview-5934044093)で**CONDITIONAL**。W-01・日英案内・実CPUのhide/show同期はPASS、OS DPIとExplorer D&Dは[#22](https://github.com/zawa356/Utteran/issues/22)でBLOCKED。回復性の未実施は[#55](https://github.com/zawa356/Utteran/issues/55)、legacy E2E間欠失敗は[#45](https://github.com/zawa356/Utteran/issues/45)・[#54](https://github.com/zawa356/Utteran/issues/54)。削除機能C2cは**未実装**、次工程[#56](https://github.com/zawa356/Utteran/issues/56)。下記の古い進捗節は作成当時の記録であり、本節が現況の正本。
+
 ## 現在の実装の正本（current）
 
 | 読む順 | 文書 | 内容 |
@@ -12,7 +18,7 @@ UI刷新（U0〜U3）やバックエンド変更を始める前に、まず次�
 | 1 | [backend/README.md](backend/README.md) | 現在地、機能ごとの提供状況（実装済み/限定/未実装/実機未検証）、既知の制約 |
 | 2 | [backend/components.md](backend/components.md) | 実コードのモジュール責務・依存境界・起動経路（Mermaid図） |
 | 3 | [backend/interfaces.md](backend/interfaces.md) | `create_app()`の有効化条件、現行route一覧、DTO正本、状態遷移、Phase A OpenAPIとの差異 |
-| 4 | [backend/persistence-recovery.md](backend/persistence-recovery.md) | SQLite layout v1〜v6、migration、backup/restore、排他・fencing・復旧、privacy |
+| 4 | [backend/persistence-recovery.md](backend/persistence-recovery.md) | SQLite layout v1〜v7、migration、backup/restore、排他・fencing・復旧、privacy |
 | 5 | [backend/testing-and-operations.md](backend/testing-and-operations.md) | CIジョブの守備範囲、E2E、実機受入ゲート、障害時の確認手順 |
 | — | [backend/engine-adapters.md](backend/engine-adapters.md) | エンジン宣言表と共通の実行契約（0.1.52）。エンジン／経路を開く手順 |
 | — | [program/roadmap-2026-11-16.md](program/roadmap-2026-11-16.md) | 大規模開発プログラムのロードマップ・棚卸し・機能/証拠マトリクス、Windows受入指示書 |

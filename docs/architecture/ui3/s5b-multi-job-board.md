@@ -4,8 +4,15 @@
 前提: [s5a-v1-single-job](s5a-v1-single-job.md)、[../b7/history-visibility](../b7/history-visibility.md)、[design-freeze §7](design-freeze.md)（内部Job IDと論理ジョブ）。
 
 > **機能の接続であって、デザインの再現ではない。** §5の比較のとおり、画面構成と見た目はDesign Freezeにまだ届いていない（束D）。
-> Windows 11 VM（実WebView2・CPU実モデル、合成データ）の統合受入は **CONDITIONAL**（HEAD `1c76453`、14項目中12 PASS／W-01 FAIL／W-12 BLOCKED。§8）。
+> Windows 11 VMでの**初回統合受入（旧HEAD `1c76453`）**はCONDITIONAL（12 PASS／W-01 FAIL／W-12 BLOCKED、§8）。最新差分受入は§0を参照。
 > 一括投入・キュー順・retry分岐・非表示/再表示・成果物照合・v6→v7移行の経路は実機で受入済み。残件あり（§8.2）。**この束に削除機能は無い。**
+
+## 0. 統合・Windows差分受入の確定記録（2026-11-17）
+
+- 本束C2bは[#53](https://github.com/zawa356/Utteran/pull/53)（HEAD `ad8c38e65975168b32b4daa021867555a03e0641`）として、A1/A2/C1/C2aと依存順にmainへ統合済み。最終main `c5af76726f913e4044f6e73492fee851c2acdd8c`、treeは受入HEADと一致。main最終CI [run 44033681672](https://github.com/zawa356/Utteran/actions/runs/44033681672) **初回success**。版`0.1.56`据置・未リリース。
+- **差分受入 PASS／PR全体 CONDITIONAL**：Windows 11 VM実WebView2＋実CPU `fw-cpu / large-v3-turbo`（合成WAV）。W-01 pytest **78 passed/1 skipped**、長い出力先の422拒否・拒否境界直前の受理。Normal/Expert/legacyのja/en案内、再試行後の補助一覧**2件→0件→2件**、DELETE 0、DB・Outboxの全行ハッシュと成果物SHA-256の不変性を確認。Vitest **527 passed**、Playwright v1 **15 passed**（先行失敗は再試験で全件成功、負荷との因果関係は未証明）。[受入レビュー](https://github.com/zawa356/Utteran/pull/53#pullrequestreview-5934044093)。
+- **未受入を維持**：W-12のWindows OS DPI 125/150/200%・Explorer複数WAVネイティブD&DはVM入力障害でBLOCKED。ファイル/フォルダーpickerの選択確定・取消はPASS。完了メッセージをGET応答待機中に閉じる競合は実機で再現していないが、遅延GETのVitestはPASS。W-06実CPU稼働中接続断・W-11移行中killはNOT_RUN。後続 [#22](https://github.com/zawa356/Utteran/issues/22)・[#55](https://github.com/zawa356/Utteran/issues/55)。legacy E2E間欠失敗は[#45](https://github.com/zawa356/Utteran/issues/45)・[#54](https://github.com/zawa356/Utteran/issues/54)。
+- **次**：破壊的な履歴墓標化・成果物削除は未実装、別工程 [C2c #56](https://github.com/zawa356/Utteran/issues/56)。Design Freezeの製品画面再構成（束D）、Viewerは後続。本書§6.2と§8の「未再試験/W-01 FAIL」は**旧HEADでの実測・所見修正時点の履歴**であり、最終判定は本§0を優先する。
 
 ## 1. 画面
 
