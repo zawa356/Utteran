@@ -2,7 +2,9 @@
 
 更新: 2026-11-16 JST（開発版`0.1.55`・未リリース、束C2a）。全体設計は[../program/c2-history-and-artifacts-design.md](../program/c2-history-and-artifacts-design.md)。
 
-> この束は**読み取りと非表示だけ**。何も削除しない。履歴レコードの削除（墓標化）と成果物削除は別PR（束C2c）で、未実装。
+> この束は**読み取りと非表示だけ**。何も削除しない。履歴レコードの削除（墓標化）と成果物削除は別PR（束C2c）。
+> 追補（2026-11-17、0.1.57）: 束C2cでlayout v8（v7＋削除journal/ゲート）を追加。削除済みJobは本書の各routeで410 `job_deleted`、一覧の全filterから除外される。
+> 設計と残留の実測は[../program/c2c-deletion-design.md](../program/c2c-deletion-design.md)。
 > Windows実機は未確認。
 
 ## 1. 何をするか

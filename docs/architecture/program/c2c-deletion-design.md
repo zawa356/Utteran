@@ -206,6 +206,19 @@ token自体は状態を持たず、実行時にserverが**新しく検証してf
 | rollback journalのファイルシステム上の解放済みブロック、SSD/ファイルシステムのスナップショット、OSのごみ箱・検索index・クラウド同期 | 任意 | アプリから制御できない |
 | ③後の出力ディレクトリ | 成果物とmarker | ③は実ファイルを消さない。以後アプリから④は不可 |
 
+### 6.1 実測（Cloud Linux、合成データ、2026-11-17）
+
+| 測定 | 結果 | 試験 |
+|---|---|---|
+| ③後のDB本体に、Prompt sentinel・入力ファイル名・入力dir | 0件 | `test_history_deletion_scrubs_private_values_and_keeps_the_skeleton` |
+| 40件のJobのうち1件を③（ページ分割後） | 対象の入力名 2→0件、隣のJobは2件のまま | `test_secure_delete_clears_one_job_among_many_from_the_db_file` |
+| 同上を`secure_delete`無しで実行した対照（一時的な計測スクリプト、製品コードは無変更） | 対象の入力名が**2件残留** | 設計判断の根拠（§0） |
+| 削除トランザクション中の`operations.sqlite3-journal` | sentinelを**含む**（commitでunlink） | `test_measured_residue_db_journal_replays_and_backup` |
+| `-wal`ファイル・`journal_mode` | 無し・`delete` | 同上、`test_v7_migrates_to_v8_additively_and_older_classes_refuse_it` |
+| 削除前に取ったbackup | sentinelを**含む**（書き換えない） | `test_measured_residue_db_journal_replays_and_backup` |
+| `batch_replays`の本文 | 削除済みJobのIDと公開projectionを含む／sentinel・入力dirは含まない | 同上 |
+| retry子Jobのsnapshot | 同じPrompt sentinelを**含む**（別Job） | `test_retry_chain_members_keep_their_own_copy_and_keep_working` |
+
 ## 7. 試験（`tests/test_c2c_deletion.py`）
 
 区分は指示書§7に合わせる。Redを先に確認したもの・Greenの数はPR本文に記録する。

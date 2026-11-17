@@ -1,5 +1,16 @@
 # AI 作業状態
 
+## 現在地（2026-11-17、束C2c 履歴の墓標化・所有確認付き成果物削除、0.1.57・未リリース、Draft PR）
+
+- 基点main `6532174696f39352892e7b5c574c55438330f963`（PR #57統合、0.1.56）。そのmain CI [run 44064410570](https://github.com/zawa356/Utteran/actions/runs/44064410570)は**failure**：
+  UI-2 frontend jobの`transcription-s5b.v1.spec.ts`のretry系2件がtimeout（他14ジョブsuccess）。#57はdocsのみで、同じ2件はCloud Linuxの手元再実行で15/15 PASS（再現せず）。C2cとは無関係の間欠失敗として[#56](https://github.com/zawa356/Utteran/issues/56)へ記録。
+- セッション指定ブランチ`ccr-d7e1bc0b-x1qkq0`（基点＝上記main）。通常commit・push、作者`zawa356`。Ready化・merge・tag・releaseはowner承認制。
+- 内容: layout v8（`DeletionControlStore`）、③墓標化、④検証済み成果物の削除（POSIXのみ、Windowsは`platform_unverified`で拒否）、`deletion-plans`/`deletions` API、2種類の確認UI。
+  設計・棚卸し・残留の実測は[program/c2c-deletion-design](docs/architecture/program/c2c-deletion-design.md)。**完全消去とは表示しない**（backup・retry連鎖・公開replay・core作業キャッシュに残る）。
+- 試験（Cloud Linux）: 数値とCIはPR本文。Redを先にコミット（`fe0c815`）。
+- **未検証**: Windows実機（v7→v8移行、③、④の拒否、backup残存）。④のWindows有効化はハンドルベース実装＋実機受入の後（後続Issue）。
+- **次の一手**: ownerレビュー → Codex Windows受入（[W-C2c指示](docs/architecture/program/windows-acceptance-w-c2c.md)）→ 束D。
+
 ## 現在地（2026-11-17、束A1/A2/C1/C2a/C2bをmain統合、0.1.56・未リリース）
 
 - **正本main**: `c5af76726f913e4044f6e73492fee851c2acdd8c`。PR [#49](https://github.com/zawa356/Utteran/pull/49) → [#50](https://github.com/zawa356/Utteran/pull/50) → [#51](https://github.com/zawa356/Utteran/pull/51) → [#52](https://github.com/zawa356/Utteran/pull/52) → [#53](https://github.com/zawa356/Utteran/pull/53)を依存順に通常merge commitで統合。全PR merged/closed。タグ・Releaseなし。mainの最終treeはPR #53受入HEAD `ad8c38e65975168b32b4daa021867555a03e0641` と完全一致。

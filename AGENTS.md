@@ -26,7 +26,9 @@ Priority when sources disagree: code → offline schemas (`docs/architecture/b*/
   The GUI process never imports core `utteran`; it talks to profile venvs via subprocesses.
 - Fail closed: no silent fallback to an unsupported backend or the legacy CLI; unknown store schema is refused;
   unverifiable owners stay `recovery_required`. One heavy slot is shared by jobs and setup.
-- Control store migration is one-way (v1→v6). Never delete, reinitialize, or downgrade a user DB.
+- Control store migration is one-way (v1→v8). Never delete, reinitialize, or downgrade a user DB.
+- C2c deletion (layout v8): only the guarded tombstone path may rewrite `job_snapshots`/`job_results`; artifact deletion
+  stays fail closed (verified own files only, dir-fd based, refused on Windows). Never add a "force" override or `rmtree`.
 
 ## Quality gates (same as CI; see testing-and-operations.md)
 

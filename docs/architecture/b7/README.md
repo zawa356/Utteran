@@ -1,6 +1,7 @@
 # Phase B7 — Immutable Job Submission / Durable Queue Controls / Safe Dispatch
 
 > 追補（2026-11-16、0.1.55）: 履歴の非表示（layout v7）と成果物の読み取りビューは[history-visibility.md](history-visibility.md)。
+> 追補（2026-11-17、0.1.57）: 履歴の墓標化と所有確認付き成果物削除（layout v8、`deletion-plans`/`deletions`）は[../program/c2c-deletion-design.md](../program/c2c-deletion-design.md)。
 >
 > 追補（2026-11-16、0.1.54）: ジョブ固有の出力ディレクトリと同一stem命名は[output-directory.md](output-directory.md)。
 
