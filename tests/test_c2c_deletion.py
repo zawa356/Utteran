@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 import os
 import shutil
 import sqlite3
@@ -1010,3 +1011,161 @@ def test_default_legacy_app_has_no_deletion_route(tmp_path: Path) -> None:
 
 def test_tables_constant_covers_the_dumped_tables() -> None:
     assert "job_snapshots" in TABLES and "job_results" in TABLES
+
+
+# ================================================== 6. owner review PR #58 (P1-1, P1-2, P2-1)
+#
+# Deterministic race injection, no timing: the os call the deletion would make next is
+# wrapped so that a "third party" acts exactly inside the window the review describes.
+# Every test first lets the deletion run as far as the code allows, then checks the
+# invariants that must hold whatever the implementation: bytes that were never verified
+# survive, and a job is not tombstoned while anything of it is unaccounted for.
+
+QUARANTINE = ".utteran-deleting-"
+VICTIM = b"third-party sentinel bytes, never verified by the deletion\n"
+
+
+def _attempt_artifacts(env: V8, job_id: str) -> tuple[JobDeletionPlan, Any]:
+    """Plan ④ and, only if the plan is allowed, execute it. Returns (plan, outcome/error)."""
+    plan = env.plan(job_id)
+    if not plan.allowed:
+        return plan, None
+    try:
+        return plan, env.delete(job_id, plan=plan)
+    except ControlError as error:
+        return plan, error
+
+
+def _not_tombstoned(env: V8, job_id: str) -> None:
+    snapshot = env.store.get_snapshot(job_id)  # raises 410 once tombstoned
+    assert snapshot.resolved.settings.asr.initial_prompt == SENTINEL
+    assert env.store.deletion_state(job_id) != "completed"
+
+
+def _victims(root: Path) -> list[Path]:
+    return [p for p in root.rglob("*") if p.is_file() and p.read_bytes() == VICTIM]
+
+
+def test_review_p1_1_a_name_swapped_after_verification_never_loses_foreign_bytes(
+    env: V8, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job_id = env.finished()
+    victim = env.output / "victim.bin"
+    victim.write_bytes(VICTIM)
+    real_unlink = os.unlink
+    swapped: list[int] = []
+
+    def unlink(path: Any, *args: Any, dir_fd: int | None = None, **kwargs: Any) -> None:
+        # Right after the deletion verified the quarantined file through its fd, a third
+        # party replaces that name with another inode (the window of review P1-1).
+        if dir_fd is not None and str(path).startswith(QUARANTINE) and not swapped:
+            swapped.append(victim.stat().st_ino)
+            os.rename(victim, path, dst_dir_fd=dir_fd)
+        real_unlink(path, *args, dir_fd=dir_fd, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", unlink)
+    plan, _ = _attempt_artifacts(env, job_id)
+    monkeypatch.setattr(os, "unlink", real_unlink)
+    assert _victims(env.tmp), "a file the deletion never verified was deleted"
+    _not_tombstoned(env, job_id)
+    assert not plan.allowed and plan.refusal == "artifact_deletion_disabled"
+
+
+def test_review_p1_1_a_directory_swapped_before_rmdir_is_never_removed(
+    env: V8, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job_id = env.finished()
+    foreign = env.output / "foreign-empty-dir"
+    foreign.mkdir()
+    foreign_ino = foreign.stat().st_ino
+    real_rmdir = os.rmdir
+
+    def rmdir(path: Any, *args: Any, dir_fd: int | None = None, **kwargs: Any) -> None:
+        # After the deletion's stat of the job directory, the name is pointed elsewhere.
+        if dir_fd is not None:
+            os.rename(path, "own-moved-aside", src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+            os.rename(foreign, path, dst_dir_fd=dir_fd)
+        real_rmdir(path, *args, dir_fd=dir_fd, **kwargs)
+
+    monkeypatch.setattr(os, "rmdir", rmdir)
+    plan, _ = _attempt_artifacts(env, job_id)
+    monkeypatch.setattr(os, "rmdir", real_rmdir)
+    assert any(p.stat().st_ino == foreign_ino for p in env.output.iterdir() if p.is_dir()), (
+        "an unrelated directory was removed"
+    )
+    assert plan.refusal == "artifact_deletion_disabled"
+
+
+@pytest.mark.parametrize("failure", ["unknown_file", "permission", "renamed"])
+def test_review_p1_2_a_directory_that_stays_is_never_reported_as_completed(
+    env: V8, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    job_id = env.finished()
+    directory = env.directory(job_id)
+    real_rmdir = os.rmdir
+
+    def rmdir(path: Any, *args: Any, dir_fd: int | None = None, **kwargs: Any) -> None:
+        if dir_fd is not None:
+            if failure == "unknown_file":
+                (directory / "dropped-by-user.txt").write_bytes(VICTIM)
+            elif failure == "permission":
+                raise PermissionError(13, "synthetic")
+            else:
+                os.rename(path, "renamed-meanwhile", src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        real_rmdir(path, *args, dir_fd=dir_fd, **kwargs)
+
+    monkeypatch.setattr(os, "rmdir", rmdir)
+    plan, outcome = _attempt_artifacts(env, job_id)
+    monkeypatch.setattr(os, "rmdir", real_rmdir)
+    completed = (
+        outcome is not None
+        and not isinstance(outcome, ControlError)
+        and (outcome.deletion.outcome == "completed")
+    )
+    assert not completed, "a deletion that left a directory behind was reported completed"
+    _not_tombstoned(env, job_id)
+    assert plan.refusal == "artifact_deletion_disabled"
+
+
+def _pending_from_an_earlier_build(env: V8, job_id: str) -> None:
+    """A journal row as the pre-review build wrote it before touching any file."""
+    evidence = env.store.artifact_evidence(job_id) or {}
+    targets = {
+        "id_length": 8,
+        "files": [{"format": f, "sha256": d, "size": n} for f, (d, n) in evidence.items()],
+    }
+    with sqlite3.connect(env.store.path) as db:
+        db.execute(
+            "INSERT INTO job_deletions VALUES (?, 'history_and_artifacts', "
+            "'artifacts_pending', ?, '2026-11-17T00:00:00.000000Z', NULL)",
+            (job_id, json.dumps(targets)),
+        )
+
+
+@pytest.mark.parametrize("moved", ["output_parent", "job_directory"])
+def test_review_p2_1_a_moved_output_is_not_taken_for_a_finished_deletion(
+    env: V8, moved: str
+) -> None:
+    job_id = env.finished()
+    directory = env.directory(job_id)
+    names = sorted(p.name for p in directory.iterdir())
+    _pending_from_an_earlier_build(env, job_id)
+    if moved == "output_parent":
+        target = env.tmp / "moved-output"
+        env.output.rename(target)
+        kept = target / directory.name
+    else:
+        kept = directory.with_name("renamed-by-user")
+        directory.rename(kept)
+    plan, outcome = _attempt_artifacts(env, job_id)
+    assert (
+        outcome is None
+        or isinstance(outcome, ControlError)
+        or (outcome.deletion.outcome != "completed")
+    ), "a moved output was taken for deleted files"
+    _not_tombstoned(env, job_id)
+    assert env.store.deletion_state(job_id) == "artifacts_pending"
+    assert sorted(p.name for p in kept.iterdir()) == names  # the moved files are all there
+    history = env.plan(job_id, "history")
+    assert not history.allowed and history.refusal == "deletion_in_progress"
+    assert plan.refusal == "artifact_deletion_disabled"
