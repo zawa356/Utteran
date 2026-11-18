@@ -52,6 +52,8 @@ class ErrorCode(StrEnum):
     DELETION_IN_PROGRESS = "deletion_in_progress"
     DELETION_PLAN_STALE = "deletion_plan_stale"
     DELETION_PLAN_EXPIRED = "deletion_plan_expired"
+    # ④ (history + output files) is refused on every platform (PR #58 owner review).
+    ARTIFACT_DELETION_DISABLED = "artifact_deletion_disabled"
 
 
 # Intended HTTP mapping for B9; B6 itself serves no HTTP.
@@ -92,6 +94,7 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.DELETION_IN_PROGRESS: 409,
     ErrorCode.DELETION_PLAN_STALE: 409,
     ErrorCode.DELETION_PLAN_EXPIRED: 409,
+    ErrorCode.ARTIFACT_DELETION_DISABLED: 409,
 }
 
 

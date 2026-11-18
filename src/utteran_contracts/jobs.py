@@ -358,18 +358,10 @@ DeletionMode = Literal["history", "history_and_artifacts"]
 DeletionRefusal = Literal[
     "not_finished",
     "deletion_in_progress",
-    "not_succeeded",
-    "legacy_output",
-    "evidence_unverified",
-    "platform_unverified",
-    "directory_missing",
-    "directory_ambiguous",
-    "marker_mismatch",
-    "unexpected_entries",
-    "unsafe_entry",
-    "artifact_changed",
-    "artifact_missing",
-    "filesystem_error",
+    # ④ (history + output files) is refused on every platform: a removal of exactly the
+    # verified inode cannot be proven on POSIX (names are resolved again), and the
+    # Windows handle-based path is not implemented (PR #58 review, #59).
+    "artifact_deletion_disabled",
 ]
 # What stays after a deletion (shown to the user; "complete erasure" is never claimed).
 RetainedCode = Literal[
@@ -405,7 +397,7 @@ class JobDeletionPlan(VersionedContract):
     refusal: DeletionRefusal | None
     plan_token: DeletionToken | None
     expires_at: AwareDatetime | None
-    # True when an earlier artifact deletion of this job stopped part-way (journal).
+    # Reserved for a future artifact deletion; always false while ④ is disabled.
     resume: StrictBool
     artifacts: tuple[DeletionTarget, ...]
     # Other jobs holding a copy of the same snapshot (retry chain, rerun links).
@@ -431,7 +423,12 @@ class JobDeletionRequest(VersionedContract):
 
 
 class JobDeletion(VersionedContract):
-    """Outcome of one deletion request. ``incomplete``: history kept, retry after a new plan."""
+    """Outcome of one deletion request.
+
+    While ④ is disabled only ``history`` deletions complete: ``outcome`` is ``completed`` and
+    both artifact counts are 0. ``incomplete`` is kept in the vocabulary for a future,
+    proven artifact deletion and is never produced by this build.
+    """
 
     job_id: JobId
     mode: DeletionMode

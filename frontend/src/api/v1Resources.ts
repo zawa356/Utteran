@@ -454,22 +454,8 @@ export function parseArtifacts(raw: unknown): JobArtifactsV1 {
 
 export const DELETION_MODES = ["history", "history_and_artifacts"] as const;
 export type DeletionModeV1 = (typeof DELETION_MODES)[number];
-export const DELETION_REFUSALS = [
-  "not_finished",
-  "deletion_in_progress",
-  "not_succeeded",
-  "legacy_output",
-  "evidence_unverified",
-  "platform_unverified",
-  "directory_missing",
-  "directory_ambiguous",
-  "marker_mismatch",
-  "unexpected_entries",
-  "unsafe_entry",
-  "artifact_changed",
-  "artifact_missing",
-  "filesystem_error",
-] as const;
+/** ④ (history + outputs) is refused on every platform (`artifact_deletion_disabled`, PR #58 review). */
+export const DELETION_REFUSALS = ["not_finished", "deletion_in_progress", "artifact_deletion_disabled"] as const;
 export type DeletionRefusalV1 = (typeof DELETION_REFUSALS)[number];
 export const RETAINED_CODES = ["backups", "related_jobs", "replay_public_views", "event_skeleton", "core_cache", "output_files"] as const;
 export type RetainedCodeV1 = (typeof RETAINED_CODES)[number];

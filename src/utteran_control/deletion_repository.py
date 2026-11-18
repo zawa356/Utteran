@@ -4,8 +4,10 @@ A deletion keeps the *skeleton* every other reader relies on -- the operation ro
 immutable state journal and outbox events, attempts, queue and visibility rows, and the
 ``retry_of``/``rerun_of`` links -- and replaces the private content (the frozen snapshot
 body and its digest, the completion evidence, private side rows) with fixed tombstone
-values. Nothing here touches a file; the owned-artifact deletion (④) lives in
-``utteran_gui.job_deletion`` and uses :meth:`begin_artifact_deletion` as its journal.
+values. Nothing here touches a file. The owned-artifact deletion (④) is refused on every
+platform (PR #58 owner review): ``complete_deletion`` rejects that mode, and nothing writes
+a new ``artifacts_pending`` journal row. The v8 columns for it stay (layout unchanged); a
+row of that state written by the pre-review build blocks the history deletion of its job.
 
 Immutability (docs/architecture/program/c2c-deletion-design.md §3):
 - ``job_snapshots`` and ``job_results`` keep their ``BEFORE DELETE`` triggers. Their
@@ -336,31 +338,6 @@ class DeletionControlStore(HistoryControlStore):
         if not self._finished(db, job_id, status, flagged):
             raise ControlError(E.INVALID_TRANSITION)
 
-    def begin_artifact_deletion(
-        self, job_id: str, expected_revision: int, targets: Mapping[str, Any]
-    ) -> bool:
-        """Commit the intent (journal) before any file is touched.
-
-        ``targets`` names formats, sizes and digests only (no path, no name). Returns False
-        when a journal already exists: an interrupted deletion resumes with its *original*
-        targets, which are never overwritten.
-        """
-        if type(expected_revision) is not int:
-            raise ControlError(E.REQUEST_INVALID)
-        with self._transaction() as db:
-            self._check_deletable(db, job_id, expected_revision)
-            row = self._deletion_row(db, job_id)
-            if row is not None:
-                if row[0] != "history_and_artifacts":
-                    raise ControlError(E.STORE_CORRUPT)
-                return False
-            db.execute(
-                "INSERT INTO job_deletions VALUES (?, 'history_and_artifacts', "
-                "'artifacts_pending', ?, ?, NULL)",
-                (job_id, canonical(dict(targets)), self._now()),
-            )
-            return True
-
     def complete_deletion(
         self,
         job_id: str,
@@ -369,17 +346,19 @@ class DeletionControlStore(HistoryControlStore):
         scope: IdempotencyScope,
         digest: str,
         *,
-        removed: int = 0,
         retained: Sequence[str] = (),
     ) -> AcceptedDeletion:
-        """Tombstone the job's private record in ONE transaction (③; the end of ④).
+        """Tombstone the job's private record in ONE transaction (③ only).
 
-        ``history`` is refused while an artifact deletion of the job is pending (the
-        files would lose their only owner record). ``history_and_artifacts`` needs that
-        journal: the caller deleted and verified the files first.
+        ``history_and_artifacts`` (④) is refused here too (defence in depth: no caller can
+        complete it, PR #58 review). ``history`` is refused while a journal row of an
+        artifact deletion exists (written by the pre-review build): its files may still
+        exist or have been moved, so the record that names them is never tombstoned.
         """
         self._validate_scope(scope)
-        if mode not in ("history", "history_and_artifacts") or type(expected_revision) is not int:
+        if mode == "history_and_artifacts":
+            raise ControlError(E.ARTIFACT_DELETION_DISABLED)
+        if mode != "history" or type(expected_revision) is not int:
             raise ControlError(E.REQUEST_INVALID)
         self._deleting = True
         try:
@@ -392,21 +371,12 @@ class DeletionControlStore(HistoryControlStore):
                 self._check_deletable(db, job_id, expected_revision)
                 row = self._deletion_row(db, job_id)
                 now = self._now()
-                if mode == "history":
-                    if row is not None:
-                        raise ControlError(E.DELETION_IN_PROGRESS)
-                    db.execute(
-                        "INSERT INTO job_deletions VALUES (?, 'history', 'completed', NULL, ?, ?)",
-                        (job_id, now, now),
-                    )
-                else:
-                    if row is None or row[1] != "artifacts_pending":
-                        raise ControlError(E.INVALID_TRANSITION)
-                    db.execute(
-                        "UPDATE job_deletions SET state = 'completed', targets = NULL, "
-                        "completed_at = ? WHERE operation_id = ?",
-                        (now, job_id),
-                    )
+                if row is not None:
+                    raise ControlError(E.DELETION_IN_PROGRESS)
+                db.execute(
+                    "INSERT INTO job_deletions VALUES (?, 'history', 'completed', NULL, ?, ?)",
+                    (job_id, now, now),
+                )
                 self._tombstone(db, job_id)
                 deletion = JobDeletion.model_validate(
                     {
@@ -415,7 +385,7 @@ class DeletionControlStore(HistoryControlStore):
                         "mode": mode,
                         "outcome": "completed",
                         "deleted_at": now,
-                        "artifacts_removed": removed,
+                        "artifacts_removed": 0,
                         "artifacts_remaining": 0,
                         "retained": list(retained),
                     }

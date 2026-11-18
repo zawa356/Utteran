@@ -4,10 +4,10 @@ import type { APIRequestContext, Page, Request } from "@playwright/test";
 import { choose, expect, SESSION, shot, test } from "./fixtures";
 
 /**
- * Bundle C2c against the real FastAPI app in the `--next-ui-v1` shape (layout v8): the two separate
- * deletions of one internal job. Synthetic only (tools/ui2/synthetic_v1.py writes one .srt into the
+ * Bundle C2c against the real FastAPI app in the `--next-ui-v1` shape (layout v8): the history-only
+ * deletion of one internal job, and the outputs deletion, which is refused on every platform. Synthetic only (tools/ui2/synthetic_v1.py writes one .srt into the
  * job's own directory under the run's temporary data root). Headless Chromium on Linux — NOT a
- * WebView2 acceptance, and NOT evidence that deleting files is safe on Windows (refused there).
+ * WebView2 acceptance, and NOT evidence that deleting files is safe on Windows (refused on every platform).
  *
  * Runs after the S5-A/S5-B specs on the same data root; every assertion is scoped to the jobs this
  * spec creates. The test reads the synthetic output folder directly to prove what was (not) deleted.
@@ -150,46 +150,38 @@ test("history only: two-step confirmation, cancel is the default, the files stay
   expect(existsSync(input("meeting.wav"))).toBe(true);
 });
 
-test("history and outputs: only the verified files of that job are deleted, the input and other jobs stay", async ({ app, request }) => {
+test("history and outputs is disabled on every platform: the plan is refused, approval impossible, nothing written", async ({ app, request }) => {
+  // PR #58 owner review: a removal of exactly the verified files cannot be proven, so ④ is refused.
   const seen = recordApi(app);
-  const keep = await finishedJob(app, request, seen, "meeting.wav");
   const id = await finishedJob(app, request, seen, "other.wav");
   const directory = ownDirectory(id)!;
-  const kept = ownDirectory(keep)!;
-  const keptFiles = readdirSync(kept).sort();
+  writeFileSync(join(directory, "notes-by-user.txt"), "mine"); // any file state: the same refusal
+  const before = readdirSync(directory).sort().map((name) => [name, readFileSync(join(directory, name), "utf8")]);
 
   await row(app, id).getByTestId("v1-board-delete-artifacts").click();
   await expect(dialog(app)).toHaveAttribute("data-mode", "history_and_artifacts");
   await expect(dialog(app)).toHaveAttribute("data-phase", "planned");
   await expect(app.getByTestId("v1-delete-cancel")).toBeFocused();
-  await expect(app.getByTestId("v1-delete-files").locator('[data-format="srt"]')).toBeVisible();
-  expect((await dialog(app).textContent()) ?? "").not.toContain(".srt");
-  await shot(app, "s5c-artifacts-plan");
-  await app.getByTestId("v1-delete-confirm").click();
-  await expect(app.getByTestId("v1-delete-outcome")).toHaveAttribute("data-outcome", "done");
-  await app.getByTestId("v1-delete-cancel").click();
-  expect(existsSync(directory)).toBe(false);
-  expect(readdirSync(kept).sort()).toEqual(keptFiles);
-  expect(existsSync(input("other.wav"))).toBe(true);
-  expect((await request.get(`/api/v1/jobs/${id}`, { headers: AUTH })).status()).toBe(410);
-  expect(await api(request, `/api/v1/jobs/${keep}/artifacts`)).toMatchObject({ state: "available" });
-});
-
-test("a file the app did not write refuses the outputs deletion (nothing deleted); history-only stays possible", async ({ app, request }) => {
-  const seen = recordApi(app);
-  const id = await finishedJob(app, request, seen, "meeting.wav");
-  const directory = ownDirectory(id)!;
-  writeFileSync(join(directory, "notes-by-user.txt"), "mine");
-  const before = readdirSync(directory).sort();
-
-  await row(app, id).getByTestId("v1-board-delete-artifacts").click();
-  await expect(app.getByTestId("v1-delete-refusal")).toHaveAttribute("data-refusal", "unexpected_entries");
+  await expect(app.getByTestId("v1-delete-refusal")).toHaveAttribute("data-refusal", "artifact_deletion_disabled");
   await expect(app.getByTestId("v1-delete-confirm")).toBeDisabled();
+  await expect(app.getByTestId("v1-delete-files")).toHaveCount(0);
+  await expect(app.getByTestId("v1-delete-retained")).toHaveCount(0); // a refused plan deletes nothing
+  await shot(app, "s5c-artifacts-disabled");
   await app.getByTestId("v1-delete-cancel").click();
   expect(deletions(seen)).toEqual([]);
-  expect(readdirSync(directory).sort()).toEqual(before);
-  expect(await api(request, `/api/v1/jobs/${id}`)).toMatchObject({ status: "succeeded" });
+  // The server refuses an execution too (409, fixed code), whatever token is sent.
+  const job = await api<{ revision: number }>(request, `/api/v1/jobs/${id}`);
+  const forced = await request.post(`/api/v1/jobs/${id}/deletions`, {
+    headers: { ...HEADERS, "If-Match": `"${job.revision}"`, "Idempotency-Key": `s5c-art-${id.slice(4, 24)}` },
+    data: { schema_version: 1, mode: "history_and_artifacts", plan_token: `dp1.${"9".repeat(13)}.${"a".repeat(64)}` },
+  });
+  expect(forced.status()).toBe(409);
+  expect(((await forced.json()) as { error: { code: string } }).error.code).toBe("artifact_deletion_disabled");
+  expect(readdirSync(directory).sort().map((name) => [name, readFileSync(join(directory, name), "utf8")])).toEqual(before);
+  expect(existsSync(input("other.wav"))).toBe(true);
+  expect(await api(request, `/api/v1/jobs/${id}`)).toMatchObject({ status: "succeeded", revision: job.revision });
 
+  // History-only stays possible for the same job.
   await row(app, id).getByTestId("v1-board-delete-history").click();
   await expect(dialog(app)).toHaveAttribute("data-phase", "planned");
   await expect(app.getByTestId("v1-delete-confirm")).toBeEnabled();

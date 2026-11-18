@@ -13,13 +13,13 @@ function plan(overrides: Record<string, unknown> = {}) {
   return {
     schema_version: 1,
     job_id: JOB,
-    mode: "history_and_artifacts",
+    mode: "history",
     allowed: true,
     refusal: null,
     plan_token: TOKEN,
     expires_at: NOW,
     resume: false,
-    artifacts: [{ format: "srt", size: 10 }],
+    artifacts: [],
     related_jobs: 0,
     retained: ["backups", "replay_public_views", "event_skeleton", "core_cache"],
     ...overrides,
@@ -29,10 +29,10 @@ function result(overrides: Record<string, unknown> = {}) {
   return {
     schema_version: 1,
     job_id: JOB,
-    mode: "history_and_artifacts",
+    mode: "history",
     outcome: "completed",
     deleted_at: NOW,
-    artifacts_removed: 1,
+    artifacts_removed: 0,
     artifacts_remaining: 0,
     retained: ["backups"],
     ...overrides,
@@ -46,7 +46,7 @@ function setup(replies: Reply[] | ((call: Call) => Reply)) {
   const controller = new V1DeletionController(api, { onSettled: () => (settled += 1) });
   return { fetch, controller, settled: () => settled };
 }
-const target = (mode: "history" | "history_and_artifacts" = "history_and_artifacts") => ({ rootId: JOB, jobId: JOB, revision: 7, mode });
+const target = (mode: "history" | "history_and_artifacts" = "history") => ({ rootId: JOB, jobId: JOB, revision: 7, mode });
 const body = (call: Call) => JSON.parse(String(call.init.body)) as Record<string, unknown>;
 const header = (call: Call, name: string) => new Headers(call.init.headers).get(name);
 
@@ -55,14 +55,18 @@ describe("C2c deletion parsers: allowlisted, consistent, value-free", () => {
     expect(parseDeletionPlan(plan()).planToken).toBe(TOKEN);
     expect(() => parseDeletionPlan({ ...plan(), path: "/x" })).toThrow();
     expect(() => parseDeletionPlan(plan({ allowed: false }))).toThrow(); // allowed false with a token
-    expect(() => parseDeletionPlan(plan({ refusal: "artifact_changed" }))).toThrow();
-    expect(() => parseDeletionPlan(plan({ mode: "history" }))).toThrow(); // files in a history plan
+    expect(() => parseDeletionPlan(plan({ refusal: "artifact_deletion_disabled" }))).toThrow();
+    expect(() => parseDeletionPlan(plan({ artifacts: [{ format: "srt", size: 1 }] }))).toThrow(); // files in a history plan
     expect(() => parseDeletionPlan(plan({ plan_token: "v1.x" }))).toThrow();
     expect(() => parseDeletionPlan(plan({ refusal: "some_new_code", allowed: false, plan_token: null, expires_at: null }))).toThrow();
-    expect(() => parseDeletionPlan({ ...plan(), artifacts: [{ format: "srt", size: 1, name: "a.srt" }] })).toThrow();
-    const refused = parseDeletionPlan(plan({ allowed: false, refusal: "platform_unverified", plan_token: null, expires_at: null, artifacts: [] }));
+    expect(() => parseDeletionPlan({ ...plan(), mode: "history_and_artifacts", artifacts: [{ format: "srt", size: 1, name: "a.srt" }] })).toThrow();
+    // Codes of the pre-review build are no longer part of the contract.
+    for (const old of ["platform_unverified", "unexpected_entries", "artifact_changed"]) {
+      expect(() => parseDeletionPlan(plan({ allowed: false, refusal: old, plan_token: null, expires_at: null }))).toThrow();
+    }
+    const refused = parseDeletionPlan(plan({ mode: "history_and_artifacts", allowed: false, refusal: "artifact_deletion_disabled", plan_token: null, expires_at: null }));
     expect(refused.allowed).toBe(false);
-    expect(refused.refusal).toBe("platform_unverified");
+    expect(refused.refusal).toBe("artifact_deletion_disabled");
   });
 
   it("accepts completed/incomplete results and refuses contradictions", () => {
@@ -82,20 +86,20 @@ describe("C2c deletion controller: plan → explicit approval → execute", () =
     expect(fetch.calls).toHaveLength(1);
     expect(fetch.calls[0]!.url).toContain(`/api/v1/jobs/${JOB}/deletion-plans`);
     expect(header(fetch.calls[0]!, "Idempotency-Key")).toBeNull();
-    expect(body(fetch.calls[0]!)).toEqual({ schema_version: 1, mode: "history_and_artifacts" });
+    expect(body(fetch.calls[0]!)).toEqual({ schema_version: 1, mode: "history" });
     await controller.confirm();
     expect(controller.store.get().phase).toBe("done");
     const sent = fetch.calls[1]!;
     expect(sent.url).toContain(`/api/v1/jobs/${JOB}/deletions`);
     expect(header(sent, "If-Match")).toBe('"7"');
     expect(header(sent, "Idempotency-Key")).toMatch(/.{16,}/);
-    expect(body(sent)).toEqual({ schema_version: 1, mode: "history_and_artifacts", plan_token: TOKEN });
+    expect(body(sent)).toEqual({ schema_version: 1, mode: "history", plan_token: TOKEN });
     expect(settled()).toBe(1);
   });
 
-  it("never offers approval for a refused plan, and a second click is ignored while in flight", async () => {
-    const refused = setup([json(200, plan({ allowed: false, refusal: "unexpected_entries", plan_token: null, expires_at: null, artifacts: [] }))]);
-    await refused.controller.plan(target());
+  it("never offers approval for a refused plan (④ is disabled), and a second click is ignored while in flight", async () => {
+    const refused = setup([json(200, plan({ mode: "history_and_artifacts", allowed: false, refusal: "artifact_deletion_disabled", plan_token: null, expires_at: null }))]);
+    await refused.controller.plan(target("history_and_artifacts"));
     expect(refused.controller.canConfirm()).toBe(false);
     await refused.controller.confirm();
     expect(refused.fetch.calls).toHaveLength(1);
@@ -115,6 +119,7 @@ describe("C2c deletion controller: plan → explicit approval → execute", () =
   });
 
   it("keeps the outcome categories apart: incomplete, rejected (stale), conflict (412)", async () => {
+    // `incomplete` is not produced by the server while ④ is disabled; the client still keeps it apart.
     const partial = setup([json(200, plan()), json(200, result({ outcome: "incomplete", deleted_at: null, artifacts_removed: 0, artifacts_remaining: 1 }))]);
     await partial.controller.plan(target());
     await partial.controller.confirm();
@@ -156,7 +161,7 @@ describe("C2c deletion controller: plan → explicit approval → execute", () =
     await controller.plan(target());
     await controller.confirm();
     expect(controller.store.get().phase).toBe("unknown");
-    const wrongMode = setup([json(200, plan({ mode: "history", artifacts: [] }))]);
+    const wrongMode = setup([json(200, plan({ mode: "history" }))]);
     await wrongMode.controller.plan(target("history_and_artifacts"));
     expect(wrongMode.controller.store.get().phase).toBe("plan_error");
   });

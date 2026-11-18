@@ -91,11 +91,14 @@ watch(
               <p v-else class="text-body-2" data-testid="v1-delete-no-files">{{ t("v1.delete.noFiles") }}</p>
             </template>
           </template>
-          <p v-if="s.plan.relatedJobs > 0" class="text-body-2" data-testid="v1-delete-related">{{ t("v1.delete.related", { count: s.plan.relatedJobs }) }}</p>
-          <p class="text-caption">{{ t("v1.delete.retainedTitle") }}</p>
-          <ul class="text-caption u-notes" data-testid="v1-delete-retained">
-            <li v-for="code in s.plan.retained" :key="code" :data-code="code">{{ t(`v1.delete.retained.${code}` as MessageKey) }}</li>
-          </ul>
+          <!-- What remains is described only for a deletion that can happen (a refused plan deletes nothing). -->
+          <template v-if="s.plan.allowed">
+            <p v-if="s.plan.relatedJobs > 0" class="text-body-2" data-testid="v1-delete-related">{{ t("v1.delete.related", { count: s.plan.relatedJobs }) }}</p>
+            <p class="text-caption">{{ t("v1.delete.retainedTitle") }}</p>
+            <ul class="text-caption u-notes" data-testid="v1-delete-retained">
+              <li v-for="code in s.plan.retained" :key="code" :data-code="code">{{ t(`v1.delete.retained.${code}` as MessageKey) }}</li>
+            </ul>
+          </template>
         </template>
 
         <p v-if="executing" role="status" class="text-body-2" data-testid="v1-delete-executing">{{ t("v1.delete.executing") }}</p>

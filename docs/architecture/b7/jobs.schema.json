@@ -488,7 +488,7 @@
     },
     "JobDeletion": {
       "additionalProperties": false,
-      "description": "Outcome of one deletion request. ``incomplete``: history kept, retry after a new plan.",
+      "description": "Outcome of one deletion request.\n\nWhile ④ is disabled only ``history`` deletions complete: ``outcome`` is ``completed`` and\nboth artifact counts are 0. ``incomplete`` is kept in the vocabulary for a future,\nproven artifact deletion and is never produced by this build.",
       "properties": {
         "artifacts_remaining": {
           "maximum": 6,
@@ -628,18 +628,7 @@
               "enum": [
                 "not_finished",
                 "deletion_in_progress",
-                "not_succeeded",
-                "legacy_output",
-                "evidence_unverified",
-                "platform_unverified",
-                "directory_missing",
-                "directory_ambiguous",
-                "marker_mismatch",
-                "unexpected_entries",
-                "unsafe_entry",
-                "artifact_changed",
-                "artifact_missing",
-                "filesystem_error"
+                "artifact_deletion_disabled"
               ],
               "type": "string"
             },

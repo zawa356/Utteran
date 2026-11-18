@@ -1,4 +1,4 @@
-"""Bundle C2c: tombstoning a history record (③) and the owned-artifact deletion (④).
+"""Bundle C2c: tombstoning a history record (③); the owned-artifact deletion (④) is refused.
 
 The point of these tests is as much "what is never deleted" as "what is deleted":
 the original input, other jobs' outputs, files the user placed, the skeleton the B9 sync
@@ -8,7 +8,6 @@ output. Synthetic data under ``tmp_path`` only. Residues are measured, not assum
 
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import os
@@ -27,7 +26,6 @@ from test_b7_api import AUTHORITY, ROOT
 from test_b7_jobs import SENTINEL, SESSION, Env, FakeRunner, dispatcher, scope
 from test_history_visibility import TABLES, _setup, dump, version
 from utteran_contracts.jobs import JobDeletion, JobDeletionPlan
-from utteran_contracts.output_naming import job_output_name
 from utteran_contracts.worker import WorkerArtifact, WorkerCompleted
 from utteran_control.deletion_repository import DeletionControlStore
 from utteran_control.errors import ControlError
@@ -42,7 +40,7 @@ from utteran_gui.job_runtime import JobRuntime
 from utteran_gui.operation_queue import OperationQueue
 
 POSIX_ONLY = pytest.mark.skipif(
-    sys.platform == "win32", reason="④ is refused on Windows (platform_unverified); see below"
+    sys.platform == "win32", reason="the synthetic symlink/hardlink fixtures need POSIX"
 )
 FORMATS = ("srt", "vtt", "json", "txt", "md")
 OTHER = "job_" + "e" * 32
@@ -550,32 +548,85 @@ def test_secure_delete_clears_one_job_among_many_from_the_db_file(tmp_path: Path
     assert [j.id for j in env.store.list_jobs().items] == ids[:17] + ids[18:]
 
 
-# ============================================================ 4. artifacts (④)
+# ============================================================ 4. artifacts (④): disabled
+#
+# Spec change after the PR #58 owner review (P1-1, P1-2, P2-1): a removal of exactly the
+# verified file/directory cannot be proven on POSIX (unlinkat/renameat/rmdir resolve the
+# name again; a same-user process can swap it). ④ is therefore refused on every platform.
+# The earlier positive tests (files removed, resume, TOCTOU restore, longer id forms) were
+# replaced by these refusal tests; the review races are pinned in section 6.
+
+FILE_CALLS = ("unlink", "remove", "rename", "replace", "rmdir", "link", "removedirs")
 
 
-@POSIX_ONLY
-def test_artifact_deletion_removes_only_verified_files_marker_and_directory(env: V8) -> None:
-    job_id = env.finished("talk.wav")
-    other = env.finished("other.wav")
-    directory = env.directory(job_id)
-    keep_other = tree(env.directory(other))
-    (env.output / "user-notes.txt").write_text("mine", encoding="utf-8")
-    input_bytes = (env.inputs / "talk.wav").read_bytes()
+def _spy_file_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    calls: list[str] = []
+    for name in FILE_CALLS:
+        real = getattr(os, name)
+
+        def spy(*args: Any, _real: Any = real, _name: str = name, **kwargs: Any) -> Any:
+            calls.append(_name)
+            return _real(*args, **kwargs)
+
+        monkeypatch.setattr(os, name, spy)
+    monkeypatch.setattr(shutil, "rmtree", lambda *a, **k: calls.append("rmtree"))
+    return calls
+
+
+@pytest.mark.parametrize("kind", ["succeeded", "failed"])
+def test_artifact_deletion_is_refused_on_every_platform_with_zero_writes(
+    env: V8, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    job_id = env.finished("talk.wav") if kind == "succeeded" else env.failed()
+    files = tree(env.tmp)
+    db = dump(env.store.path)
+    calls = _spy_file_calls(monkeypatch)
     plan = env.plan(job_id)
-    assert plan.allowed and plan.refusal is None and not plan.resume
-    assert sorted(a.format for a in plan.artifacts) == sorted(FORMATS)
-    wire = str(plan.to_wire())
-    assert directory.name not in wire and str(env.tmp) not in wire
-    result = env.delete(job_id, plan=plan).deletion
-    assert result.outcome == "completed" and result.artifacts_removed == 5
-    assert result.artifacts_remaining == 0
-    assert not directory.exists()
-    assert tree(env.directory(other)) == keep_other
-    assert (env.output / "user-notes.txt").read_text(encoding="utf-8") == "mine"
-    assert (env.inputs / "talk.wav").read_bytes() == input_bytes
+    assert not plan.allowed and plan.refusal == "artifact_deletion_disabled"
+    assert plan.plan_token is None and plan.artifacts == () and not plan.resume
+    # A well-formed token (even a valid history token) cannot open ④ at execution either.
+    history = env.plan(job_id, "history")
+    assert history.allowed
+    endpoint = f"/api/v1/jobs/{job_id}/deletions"
+    revision = env.store.get_job(job_id).revision
+    forged = "dp1." + "9" * 13 + "." + "a" * 64
+    for token in (forged, history.plan_token):
+        with pytest.raises(ControlError) as error:
+            env.service.execute(
+                job_id,
+                revision,
+                scope(endpoint, env.key("del")),
+                {"schema_version": 1, "mode": "history_and_artifacts", "plan_token": token},
+                session=SESSION,
+            )
+        assert error.value.code is E.ARTIFACT_DELETION_DISABLED and error.value.status == 409
+    assert calls == []  # no file call at all during plan or execute
+    assert tree(env.tmp) == files and dump(env.store.path) == db
+    assert env.count("job_deletions") == 0  # no journal is created by a refusal
+    assert env.store.get_job(job_id).status == kind
+
+
+def test_no_file_removing_code_is_reachable_from_the_deletion_paths(env: V8) -> None:
+    import inspect
+
+    import utteran_gui.job_deletion as module
+
+    source = inspect.getsource(module)
+    for call in ("os.", "shutil", "unlink", "rmdir", "rename(", "rmtree"):
+        assert call not in source.split('"""', 2)[2], call  # code after the module doc
+    assert not hasattr(env.store, "begin_artifact_deletion")
+    job_id = env.finished()
     with pytest.raises(ControlError) as error:
-        env.store.get_job(job_id)
-    assert error.value.code is E.JOB_DELETED
+        env.store.complete_deletion(
+            job_id,
+            env.store.get_job(job_id).revision,
+            "history_and_artifacts",
+            scope(f"/api/v1/jobs/{job_id}/deletions", env.key()),
+            "0" * 64,
+        )
+    assert error.value.code is E.ARTIFACT_DELETION_DISABLED
+    assert env.count("job_deletions") == 0
+    assert env.directory(job_id).is_dir()
 
 
 def _mutate(env: V8, job_id: str, case: str) -> None:
@@ -618,242 +669,86 @@ def _mutate(env: V8, job_id: str, case: str) -> None:
         raise AssertionError(case)
 
 
-REFUSALS = {
-    "edited_same_size": "artifact_changed",
-    "other_format_bytes": "artifact_changed",
-    "extra_file": "unexpected_entries",
-    "subdirectory": "unexpected_entries",
-    "symlink_artifact": "unsafe_entry",
-    "hardlink_artifact": "unsafe_entry",
-    "marker_mismatch": "directory_missing",
-    "marker_symlink": "directory_missing",
-    "missing_artifact": "artifact_missing",
-    "directory_symlink": "directory_missing",
-    "quarantine_leftover": "unexpected_entries",
-}
+# Whatever state the files are in, ④ is refused with the same code and nothing changes.
+REFUSALS = (
+    "edited_same_size",
+    "other_format_bytes",
+    "extra_file",
+    "subdirectory",
+    "symlink_artifact",
+    "hardlink_artifact",
+    "marker_mismatch",
+    "marker_symlink",
+    "missing_artifact",
+    "directory_symlink",
+    "quarantine_leftover",
+)
 
 
 @POSIX_ONLY
-@pytest.mark.parametrize("case", sorted(REFUSALS))
-def test_unprovable_artifacts_are_refused_with_zero_side_effects(env: V8, case: str) -> None:
+@pytest.mark.parametrize("case", REFUSALS)
+def test_artifact_refusal_holds_for_any_file_state_with_zero_side_effects(
+    env: V8, case: str
+) -> None:
     job_id = env.finished()
     _mutate(env, job_id, case)
     files = tree(env.tmp)
     db = dump(env.store.path)
     plan = env.plan(job_id)
-    assert not plan.allowed and plan.refusal == REFUSALS[case] and plan.plan_token is None
+    assert not plan.allowed and plan.refusal == "artifact_deletion_disabled"
+    assert plan.plan_token is None
     assert tree(env.tmp) == files and dump(env.store.path) == db
     assert env.plan(job_id, "history").allowed  # ③ stays possible
 
 
-@POSIX_ONLY
-def test_a_plan_made_before_a_change_is_stale_and_deletes_nothing(env: V8) -> None:
+def test_plan_token_expiry_tamper_mode_and_session_binding(env: V8) -> None:
     job_id = env.finished()
-    plan = env.plan(job_id)
-    assert plan.allowed
-    _mutate(env, job_id, "edited_same_size")
-    files = tree(env.tmp)
-    with pytest.raises(ControlError) as error:
-        env.delete(job_id, plan=plan)
-    assert error.value.code is E.DELETION_PLAN_STALE
-    assert tree(env.tmp) == files
-    assert env.store.get_job(job_id).status == "succeeded"
-
-
-@POSIX_ONLY
-def test_jobs_without_provable_ownership_are_refused(env: V8) -> None:
-    failed = env.failed()
-    assert env.plan(failed).refusal == "not_succeeded"
-    # Evidence written before the per-format record: unverified.
-    old = env.finished("old.wav")
-    with sqlite3.connect(env.store.path) as db:
-        db.execute("DROP TRIGGER job_results_guarded_update")
-        db.execute(
-            "UPDATE job_results SET evidence = ? WHERE operation_id = ?",
-            ('{"artifacts":["' + "a" * 64 + '"],"manifest":"' + "c" * 64 + '"}', old),
-        )
-    assert env.plan(old).refusal == "evidence_unverified"
-    # A snapshot accepted before 0.1.54 (no output_stamp) cannot prove its files.
-    legacy = env.finished("legacy.wav")
-    real_context = env.store.deletion_context
-
-    def without_stamp(job_id: str) -> Any:
-        ctx = real_context(job_id)
-        data = ctx.snapshot.to_wire()
-        data.pop("output_stamp", None)
-        return dataclasses.replace(ctx, snapshot=type(ctx.snapshot).model_validate(data))
-
-    env.store.deletion_context = without_stamp  # type: ignore[method-assign]
-    assert env.plan(legacy).refusal == "legacy_output"
-
-
-@POSIX_ONLY
-def test_longer_id_directories_and_ambiguous_ownership(env: V8) -> None:
-    path = env.file("same.wav")
-    job = env.submit(path).batch.jobs[0]
-    snapshot = env.store.get_snapshot(job.id)
-    assert snapshot.output_stamp is not None
-    short = env.output / job_output_name(
-        str(path), snapshot.output_stamp, job.id, parent=str(env.output), id_length=8
-    )
-    short.mkdir()
-    (short / "foreign.txt").write_text("someone else's", encoding="utf-8")
-    assert dispatcher(env, WritingRunner(env)).run_once()
-    owned = env.directory(job.id)
-    assert owned.name.endswith(job.id[4:16])  # the 12-digit form
-    plan = env.plan(job.id)
-    assert plan.allowed
-    # A copy with this job's marker at another id length: ownership is ambiguous.
-    copy = env.output / job_output_name(
-        str(path), snapshot.output_stamp, job.id, parent=str(env.output), id_length=16
-    )
-    shutil.copytree(owned, copy)
-    assert env.plan(job.id).refusal == "directory_ambiguous"
-    shutil.rmtree(copy)  # test cleanup of the synthetic copy only
-    env.delete(job.id)
-    assert not owned.exists()
-    assert (short / "foreign.txt").read_text(encoding="utf-8") == "someone else's"
-
-
-@POSIX_ONLY
-@pytest.mark.parametrize("swap", ["replace_inode", "rewrite_in_place"])
-def test_a_file_swapped_after_verification_is_never_deleted(env: V8, swap: str) -> None:
-    job_id = env.finished()
-    directory = env.directory(job_id)
-    srt = directory / f"{directory.name}.srt"
-
-    def fault(stage: str) -> None:
-        if stage == "before_remove:srt":
-            if swap == "replace_inode":
-                staged = directory.parent / "staged"
-                staged.write_bytes(b"user content")
-                os.replace(staged, srt)
-            else:
-                with srt.open("r+b") as handle:
-                    handle.write(b"X")
-
-    env.service._fault = fault
-    result = env.delete(job_id).deletion
-    assert result.outcome == "incomplete" and result.artifacts_removed == 0
-    assert srt.exists() and srt.read_bytes() != b""  # the swapped file survives
-    assert env.store.get_job(job_id).status == "succeeded"  # history not deleted
-    assert env.store.deletion_state(job_id) == "artifacts_pending"
-    # History-only deletion would orphan the remaining files: refused while pending.
-    history = env.plan(job_id, "history")
-    assert not history.allowed and history.refusal == "deletion_in_progress"
-    with pytest.raises(ControlError) as error:
-        env.store.complete_deletion(
-            job_id,
-            env.store.get_job(job_id).revision,
-            "history",
-            scope(f"/api/v1/jobs/{job_id}/deletions", env.key()),
-            "0" * 64,
-        )
-    assert error.value.code is E.DELETION_IN_PROGRESS
-    assert env.plan(job_id).refusal == "artifact_changed"
-
-
-@POSIX_ONLY
-def test_partial_failure_keeps_history_and_a_new_plan_resumes(
-    env: V8, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    job_id = env.finished()
-    directory = env.directory(job_id)
-    real = os.unlink
-    failures = {"left": 1}
-
-    def flaky(path: Any, *args: Any, **kwargs: Any) -> None:
-        if (
-            str(path).startswith(".utteran-deleting-")
-            and failures["left"]
-            and kwargs.get("dir_fd") is not None
-            and env.service._current == "json"
-        ):
-            failures["left"] -= 1
-            raise PermissionError("synthetic")
-        real(path, *args, **kwargs)
-
-    monkeypatch.setattr(os, "unlink", flaky)
-    result = env.delete(job_id).deletion
-    assert result.outcome == "incomplete" and result.artifacts_remaining >= 1
-    assert env.store.get_job(job_id).status == "succeeded"
-    assert (directory / f"{directory.name}.json").exists()  # restored, not left half-renamed
-    monkeypatch.setattr(os, "unlink", real)
-    resume = env.plan(job_id)
-    assert resume.allowed and resume.resume
-    done = env.delete(job_id, plan=resume).deletion
-    assert done.outcome == "completed" and not directory.exists()
-
-
-@POSIX_ONLY
-def test_crash_after_the_files_before_the_tombstone_resumes(env: V8) -> None:
-    job_id = env.finished()
-    directory = env.directory(job_id)
-
-    def crash(stage: str) -> None:
-        if stage == "after_files":
-            raise RuntimeError("synthetic crash")
-
-    env.service._fault = crash
-    with pytest.raises(RuntimeError):
-        env.delete(job_id)
-    assert not directory.exists()
-    assert env.store.get_job(job_id).status == "succeeded"
-    env.service._fault = None
-    # A new service (restart): the DB journal alone is enough to finish safely.
-    env.service = JobDeletionService(env.store, clock=lambda: env.now)
-    plan = env.plan(job_id)
-    assert plan.allowed and plan.resume and plan.artifacts == ()
-    assert env.delete(job_id, plan=plan).deletion.outcome == "completed"
-
-
-@POSIX_ONLY
-def test_plan_token_expiry_tamper_and_session_binding(env: V8) -> None:
-    job_id = env.finished()
-    plan = env.plan(job_id)
+    plan = env.plan(job_id, "history")
     token = plan.plan_token
     assert token is not None
     tampered = token[:-1] + ("0" if token[-1] != "0" else "1")
-    body = {"schema_version": 1, "mode": "history_and_artifacts", "plan_token": tampered}
     endpoint = f"/api/v1/jobs/{job_id}/deletions"
     revision = env.store.get_job(job_id).revision
-    with pytest.raises(ControlError) as error:
-        env.service.execute(job_id, revision, scope(endpoint, env.key()), body, session=SESSION)
-    assert error.value.code is E.DELETION_PLAN_STALE
-    with pytest.raises(ControlError) as error:
-        env.delete(job_id, plan=plan, who="another-session-value")
-    assert error.value.code is E.DELETION_PLAN_STALE
-    with pytest.raises(ControlError) as error:  # history token cannot delete files
-        env.service.execute(
+
+    def send(body_token: str, who: str = SESSION) -> Any:
+        return env.service.execute(
             job_id,
             revision,
             scope(endpoint, env.key()),
-            {
-                "schema_version": 1,
-                "mode": "history_and_artifacts",
-                "plan_token": env.plan(job_id, "history").plan_token,
-            },
-            session=SESSION,
+            {"schema_version": 1, "mode": "history", "plan_token": body_token},
+            session=who,
         )
+
+    with pytest.raises(ControlError) as error:
+        send(tampered)
+    assert error.value.code is E.DELETION_PLAN_STALE
+    with pytest.raises(ControlError) as error:
+        send(token, who="another-session-value")
     assert error.value.code is E.DELETION_PLAN_STALE
     env.now += timedelta(seconds=301)
     with pytest.raises(ControlError) as error:
-        env.delete(job_id, plan=plan)
+        send(token)
     assert error.value.code is E.DELETION_PLAN_EXPIRED
-    assert env.directory(job_id).is_dir()
+    assert env.store.get_job(job_id).status == "succeeded"  # nothing was deleted
+    # A restart (new service, new process-local key) invalidates every outstanding plan.
+    env.now -= timedelta(seconds=301)
+    env.service = JobDeletionService(env.store, clock=lambda: env.now)
+    with pytest.raises(ControlError) as error:
+        send(token)
+    assert error.value.code is E.DELETION_PLAN_STALE
 
 
-@POSIX_ONLY
 def test_concurrent_resends_delete_once(env: V8) -> None:
     job_id = env.finished()
-    plan = env.plan(job_id)
+    plan = env.plan(job_id, "history")
     key = env.key("del")
+    revision = env.store.get_job(job_id).revision
     results: list[Any] = []
     errors: list[BaseException] = []
 
     def send() -> None:
         try:
-            results.append(env.delete(job_id, plan=plan, key=key))
+            results.append(env.delete(job_id, "history", plan=plan, key=key, revision=revision))
         except BaseException as exc:  # pragma: no cover - reported below
             errors.append(exc)
 
@@ -865,29 +760,7 @@ def test_concurrent_resends_delete_once(env: V8) -> None:
     assert not errors
     assert sorted(r.replayed for r in results) == [False, True, True, True]
     assert len({str(r.deletion.to_wire()) for r in results}) == 1
-
-
-def test_artifact_deletion_is_refused_where_the_platform_is_unverified(
-    env: V8, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import utteran_gui.job_deletion as module
-
-    job_id = env.finished()
-    monkeypatch.setattr(module, "platform_supported", lambda: False)
-    files = tree(env.tmp)
-    plan = env.plan(job_id)
-    assert not plan.allowed and plan.refusal == "platform_unverified"
-    assert env.plan(job_id, "history").allowed
-    assert tree(env.tmp) == files
-
-
-def test_windows_is_never_reported_as_supported() -> None:
-    import utteran_gui.job_deletion as module
-
-    if sys.platform == "win32":
-        assert module.platform_supported() is False
-    else:
-        assert module.platform_supported() is True
+    assert env.count("job_deletions") == 1
 
 
 # ============================================================ 5. HTTP
@@ -917,16 +790,16 @@ def _client(env: V8) -> Any:
     )
 
 
-@POSIX_ONLY
 def test_http_plan_and_delete_roundtrip_guards_and_value_free_bodies(env: V8) -> None:
     job_id = env.finished("private-name.wav")
     directory = env.directory(job_id)
+    files = (tree(env.output), tree(env.inputs))
     origin = {"Origin": "http://" + AUTHORITY}
     with TestClient(
         _client(env), base_url="http://" + AUTHORITY, headers={SESSION_HEADER: SESSION}
     ) as c:
         plans = f"/api/v1/jobs/{job_id}/deletion-plans"
-        mode = {"schema_version": 1, "mode": "history_and_artifacts"}
+        mode = {"schema_version": 1, "mode": "history"}
         foreign = {"Origin": "http://evil.example"}
         assert c.post(plans, json=mode, headers=foreign).status_code == 403
         assert c.post(plans, json=mode, headers={**origin, SESSION_HEADER: "x"}).status_code == 401
@@ -935,6 +808,13 @@ def test_http_plan_and_delete_roundtrip_guards_and_value_free_bodies(env: V8) ->
             c.post(plans, json={"schema_version": 1, "mode": "all"}, headers=origin).status_code
             == 422
         )
+        # ④: refused at the plan and at the execution, nothing written.
+        refused = c.post(
+            plans, json={"schema_version": 1, "mode": "history_and_artifacts"}, headers=origin
+        )
+        assert refused.status_code == 200
+        assert refused.json()["refusal"] == "artifact_deletion_disabled"
+        assert refused.json()["plan_token"] is None
         got = c.post(plans, json=mode, headers=origin)
         assert got.status_code == 200 and got.headers["cache-control"] == "no-store"
         plan = JobDeletionPlan.model_validate(got.json())
@@ -944,10 +824,21 @@ def test_http_plan_and_delete_roundtrip_guards_and_value_free_bodies(env: V8) ->
             "private-name" not in text and directory.name not in text and str(env.tmp) not in text
         )
         url = f"/api/v1/jobs/{job_id}/deletions"
-        body = {"schema_version": 1, "mode": "history_and_artifacts", "plan_token": plan.plan_token}
+        etag = c.get(f"/api/v1/jobs/{job_id}").headers["etag"]
+        artifacts = c.post(
+            url,
+            json={
+                "schema_version": 1,
+                "mode": "history_and_artifacts",
+                "plan_token": plan.plan_token,
+            },
+            headers={**origin, "Idempotency-Key": env.key("http-art"), "If-Match": etag},
+        )
+        assert artifacts.status_code == 409
+        assert artifacts.json()["error"]["code"] == "artifact_deletion_disabled"
+        body = {"schema_version": 1, "mode": "history", "plan_token": plan.plan_token}
         key = {"Idempotency-Key": env.key("http-del")}
         assert c.post(url, json=body, headers={**origin, **key}).status_code == 428
-        etag = c.get(f"/api/v1/jobs/{job_id}").headers["etag"]
         stale = c.post(url, json=body, headers={**origin, **key, "If-Match": '"99"'})
         assert stale.status_code == 412
         assert (
@@ -959,7 +850,7 @@ def test_http_plan_and_delete_roundtrip_guards_and_value_free_bodies(env: V8) ->
         done = c.post(url, json=body, headers={**origin, **key, "If-Match": etag})
         assert done.status_code == 200, done.text
         result = JobDeletion.model_validate(done.json())
-        assert result.outcome == "completed" and not directory.exists()
+        assert result.outcome == "completed" and result.artifacts_removed == 0
         again = c.post(url, json=body, headers={**origin, **key, "If-Match": etag})
         assert again.status_code == 200 and again.json() == done.json()
         gone = c.get(f"/api/v1/jobs/{job_id}")
@@ -969,6 +860,7 @@ def test_http_plan_and_delete_roundtrip_guards_and_value_free_bodies(env: V8) ->
         assert job_id not in c.get("/api/v1/jobs?visibility=all").text
         assert c.post(plans, json=mode, headers=origin).status_code == 410
         assert c.delete(f"/api/v1/jobs/{job_id}", headers=origin).status_code == 405
+    assert (tree(env.output), tree(env.inputs)) == files  # no output or input file touched
 
 
 def test_http_deletion_is_unavailable_without_layout_v8(tmp_path: Path) -> None:
