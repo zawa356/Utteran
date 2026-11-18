@@ -320,3 +320,77 @@ def test_the_committed_exceptions_file_is_well_formed_and_awaits_the_owner() -> 
         assert not entries[0].approved and problems
     else:
         assert data["approved_by"] == gate.OWNER and entries[0].approved
+
+
+# ------------------------------------------- owner review of PR #64 (P2-1 scope, P2-2 dates)
+
+OTHER_GHSA = "GHSA-5555-6666-7777"
+
+
+def _other_high() -> tuple[str, dict[str, Any]]:
+    return (
+        "lodash-like",
+        finding(
+            "lodash-like",
+            [
+                advisory(
+                    url=f"https://github.com/advisories/{OTHER_GHSA}",
+                    source=2,
+                    name="lodash-like",
+                    range="<2",
+                )
+            ],
+        ),
+    )
+
+
+def test_review_p2_1_a_second_approved_entry_cannot_except_another_advisory(
+    tmp_path: Path,
+) -> None:
+    second = entry(
+        advisory=OTHER_GHSA,
+        source=2,
+        package="lodash-like",
+        vulnerable_range="<2",
+        installed_versions=["1.0.0"],
+    )
+    code, text = run(tmp_path, report(_other_high()), [entry(), second])
+    assert code == 1, text
+    assert f"{OTHER_GHSA} -> EXCEPTED" not in text
+    assert "cannot decide" in text  # the file itself is refused: at most one entry
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        {
+            "advisory": OTHER_GHSA,
+            "source": 2,
+            "package": "lodash-like",
+            "vulnerable_range": "<2",
+            "installed_versions": ["1.0.0"],
+        },
+        {"source": 2},
+        {"package": "lodash-like"},
+        {"issue": 63},
+    ],
+)
+def test_review_p2_1_the_only_entry_is_pinned_to_this_advisory_package_and_issue(
+    tmp_path: Path, scope: dict[str, Any]
+) -> None:
+    audit = report(_other_high())
+    code, text = run(tmp_path, audit, [entry(**scope)])
+    assert code == 1, text
+    assert "cannot decide" in text
+    assert f"{OTHER_GHSA} -> EXCEPTED" not in text
+
+
+def test_review_p2_2_an_entry_created_in_the_future_is_not_applied(tmp_path: Path) -> None:
+    future = entry(created="2027-11-18", expires="2027-12-18")
+    code, text = run(tmp_path, report(), [future], today=TODAY)
+    assert code == 1, text
+    assert "NOT YET VALID" in text and "EXCEPTED" not in text
+    # The first day of the window is valid (created == today).
+    same_day = entry(created=TODAY, expires="2026-12-18")
+    assert run(tmp_path, report(), [same_day], today=TODAY)[0] == 0
+    assert run(tmp_path, report(), [same_day], today="2026-11-19")[0] == 1  # before created
