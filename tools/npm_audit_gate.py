@@ -10,7 +10,9 @@ critical vulnerability remains. The only way a high/critical finding can pass is
   rose, the lockfile moved) the entry no longer matches and the finding fails again;
 * approved by the repository owner (``approved_by`` = OWNER, ``approval_url`` = a comment or a
   review on this repository); an unapproved entry is never applied;
-* not expired, and valid for at most MAX_DAYS days after it was created.
+* inside its window (created <= today <= expires), the window being at most MAX_DAYS days;
+* within the fixed scope ALLOWED_SCOPE (one GHSA, npm source, package and issue) and alone
+  in the file (MAX_ENTRIES = 1): any other advisory needs a reviewed change of this script.
 
 A finding that is only a consequence of other advisories (npm "via" names a package, e.g. vite
 -> picomatch) passes only when every advisory it leads to is excepted. Every finding of every
@@ -36,6 +38,15 @@ from typing import Any
 OWNER = "zawa356"
 REPOSITORY = "zawa356/Utteran"
 MAX_DAYS = 31
+# The only exception this gate can apply (Issue #62, PR #64 owner review P2-1). Another advisory
+# needs a reviewed change of this constant, not just another entry in the JSON file.
+MAX_ENTRIES = 1
+ALLOWED_SCOPE = {
+    "advisory": "GHSA-fc5q-39xc-vjpf",
+    "source": 1247710,
+    "package": "picomatch",
+    "issue": 62,
+}
 BLOCKING = ("high", "critical")
 SEVERITIES = ("info", "low", "moderate", "high", "critical")
 _GHSA = re.compile(r"GHSA(-[23456789cfghjmpqrvwx]{4}){3}")
@@ -95,6 +106,8 @@ def load_exceptions(path: Path, today: date) -> tuple[list[Exception_], list[str
         raise GateError("exceptions file must be {schema_version, exceptions}")
     if data["schema_version"] != 1 or not isinstance(data["exceptions"], list):
         raise GateError("exceptions file: unsupported schema")
+    if len(data["exceptions"]) > MAX_ENTRIES:
+        raise GateError(f"exceptions file may hold at most {MAX_ENTRIES} entry")
     entries: list[Exception_] = []
     problems: list[str] = []
     seen: set[str] = set()
@@ -107,6 +120,11 @@ def load_exceptions(path: Path, today: date) -> tuple[list[Exception_], list[str
         seen.add(advisory)
         if type(raw["source"]) is not int or type(raw["issue"]) is not int:
             raise GateError(f"{advisory}: source and issue must be integers")
+        if any(raw[key] != value for key, value in ALLOWED_SCOPE.items()):
+            raise GateError(
+                f"{advisory}: outside the allowed scope (only {ALLOWED_SCOPE['advisory']} on "
+                f"{ALLOWED_SCOPE['package']}, issue #{ALLOWED_SCOPE['issue']})"
+            )
         for field in ("package", "vulnerable_range", "reason"):
             if not isinstance(raw[field], str) or not raw[field].strip():
                 raise GateError(f"{advisory}: {field} must be a non-empty string")
@@ -129,6 +147,11 @@ def load_exceptions(path: Path, today: date) -> tuple[list[Exception_], list[str
             problems.append(f"{advisory}: NOT APPROVED by the owner (approved_by/approval_url)")
         elif approved_by != OWNER or not isinstance(url, str) or not _APPROVAL.fullmatch(url):
             raise GateError(f"{advisory}: approval must be by {OWNER} with a link on {REPOSITORY}")
+        elif today < created:
+            # A window that starts later cannot be used to push the 31-day limit forward.
+            problems.append(
+                f"{advisory}: NOT YET VALID (created {created.isoformat()} is after today)"
+            )
         elif today > expires:
             problems.append(f"{advisory}: EXPIRED on {expires.isoformat()} (re-review needed)")
         else:

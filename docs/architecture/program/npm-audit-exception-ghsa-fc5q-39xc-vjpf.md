@@ -49,7 +49,10 @@ picomatchが動くのは開発者とCIのNode.jsプロセスだけ（`vite build
   1. GHSA id・npm source id・package名・vulnerable range・severityが記録と完全一致（勧告の更新、上流修正によるrange変更、severity上昇で**自動的に無効**）。
   2. lockfileのインストール版が記録（`4.0.7`）の範囲内。
   3. `approved_by`がリポジトリowner（`zawa356`）で、`approval_url`がこのリポジトリのissue/PRコメントまたはレビュー。
-  4. 期限内（`expires`は`created`から最大31日、本件は2026-12-18）。
+  4. 有効期間内: **`created <= 今日(UTC) <= expires`**、期間は最大31日（本件は2026-11-18〜2026-12-18）。`created`が未来のエントリは承認欄が埋まっていても適用しない（`NOT YET VALID`。期間の先送りを防ぐ、PR #64レビューP2-2）。
+  5. **適用できる対象はスクリプトに固定**（`ALLOWED_SCOPE`: `GHSA-fc5q-39xc-vjpf`・npm source `1247710`・`picomatch`・Issue #62）。例外ファイルは**最大1件**（`MAX_ENTRIES = 1`）。
+     別のGHSA・別source・別package・別issueのエントリや2件目のエントリは、承認欄の有無にかかわらずファイル全体を不正として失敗する（PR #64レビューP2-1）。
+     別の勧告に例外が必要になった場合は、JSONへの追記ではなく、スクリプトの対象定数を変える**新しいowner レビュー付きPR**が必要。
 - 他パッケージを経由する派生finding（vite・tinyglobby・fdir）は、辿った先の勧告が**全て**例外に該当するときだけ通す。別の勧告を1つでも含めば失敗。
 - 例外がどのfindingにも該当しなくなったら失敗（不要になった例外の削除を強制）。npm・ネットワーク・JSONの異常は常に失敗。
 - 失敗の握り潰しは使わない（`continue-on-error`・`|| true`・`if: always()`・auditの削除・全severity抑制なし）。CIではauditをUI-2ジョブの**最後の手順へ移動**し、auditが赤でもlint・型・Vitest・build・E2E・wheelの結果が隠れないようにした（ジョブ自体は失敗する）。
@@ -59,10 +62,11 @@ picomatchが動くのは開発者とCIのNode.jsプロセスだけ（`vite build
 
 1. 本書と`npm run audit:prod`の出力を確認する。
 2. 承認する場合、Issue #62またはPRに承認コメントを書き、そのURLとログインを`frontend/audit-exceptions.json`の`approval_url`・`approved_by`へ記入してcommitする（PRレビュー対象）。承認しない場合は記入せず、CIは赤のまま上流修正を待つ。
-3. 期限（2026-12-18）までに再審査する: picomatch/viteの修正版の有無（`npm view picomatch dist-tags`、勧告の"Patched versions"）、勧告の更新、依存経路。修正版が出たら依存を更新して例外を削除する（rangeが変われば例外は自動的に無効になりCIが失敗する）。延長する場合も新しい承認と最大31日の期限が必要。
+3. 期限（2026-12-18）までに再審査する: picomatch/viteの修正版の有無（`npm view picomatch dist-tags`、勧告の"Patched versions"）、勧告の更新、依存経路。修正版が出たら依存を更新して例外を削除する（rangeが変われば例外は自動的に無効になりCIが失敗する）。延長する場合は、**既存の`approval_url`を再利用せず**、ownerが新しい受容コメントを書き、そのURLと新しい`created`（その日以前）・`expires`（31日以内）を記入する（PRレビュー対象）。
 
 ## 6. 残留リスク
 
 - 例外期間中、`picomatch@4.0.7`はCI・開発環境で使われ続ける（パターンはリポジトリ管理下、§3）。
 - 同じ勧告が別の経路（新しい依存）で現れた場合も、package名・range・severity・インストール版が一致すれば例外が及ぶ。経路の変化はレビューで確認する（依存更新はlockfileの差分としてPRに現れる）。
-- `approval_url`の実在や記入者の真正性はスクリプトでは検証しない（ネットワーク不要の決定的ゲートのため）。ファイルの変更はPRレビューで確認する前提。
+- `approved_by`・`approval_url`は**文字列の形式だけ**を検証する。リンク先コメントの存在・投稿者・内容（本件・本期間・本勧告への受容か）は検証せず、機械的な本人確認ではない（ネットワーク不要の決定的ゲートのため）。
+  ownerがPRのdiffとリンク先を目視で確認することが運用上の前提。
