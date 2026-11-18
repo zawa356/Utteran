@@ -1,5 +1,15 @@
 # AI 作業状態
 
+## 現在地（2026-11-18、PR #58オーナーレビュー修正：成果物削除を全環境で無効化、0.1.57据置・未リリース、Draft継続）
+
+- 修正前HEAD `0b7bb885b8b9ed0b432b962a2c24915f3d7278cf`（remoteと一致）。同じブランチ`ccr-d7e1bc0b-x1qkq0`へ通常commit・push。作者`zawa356`。Ready化・merge・tag・release・force pushなし。
+- [オーナーレビュー](https://github.com/zawa356/Utteran/pull/58#pullrequestreview-5937766575) P1-1（検証後の名前差替えで未検証ファイル/dirを削除）、P1-2（rmdir失敗でもcompleted・墓標化）、P2-1（pending再開で移動を削除済みと誤認）。
+- 対応: 決定的な競合注入のRed試験7件を先にコミット（`f579b0e`、旧コードで7件とも安全性の不変条件で失敗）→ **④（履歴＋成果物）を全プラットフォームで拒否**（`artifact_deletion_disabled`）し、
+  製品からファイル削除コードを除去。POSIXは「検証したinodeそのもの」を消す手段を持たず、同一ユーザーのプロセスによる名前差替えを排除できないため（[c2c設計 §5.0](docs/architecture/program/c2c-deletion-design.md)）。③は変更なし。
+- 初版で作られ得た`artifacts_pending`行がある場合、そのJobの③も`deletion_in_progress`で拒否し、自動完了しない。
+- 試験・CIの数値はPR #58のコメント。**Windows実機は未受入**（修正後HEADのレビュー後にCodexへ。旧HEADの受入で代替しない）。base main CIの間欠E2Eは[#60](https://github.com/zawa356/Utteran/issues/60)で別管理。
+- 後続: Windowsのハンドルベース④・core作業キャッシュは[#59](https://github.com/zawa356/Utteran/issues/59)。POSIXで④を再び有効にするには、名前差替えに対する証明可能な設計とowner承認が必要。
+
 ## 現在地（2026-11-17、束C2c 履歴の墓標化・所有確認付き成果物削除、0.1.57・未リリース、Draft PR）
 
 - 基点main `6532174696f39352892e7b5c574c55438330f963`（PR #57統合、0.1.56）。そのmain CI [run 44064410570](https://github.com/zawa356/Utteran/actions/runs/44064410570)は**failure**：

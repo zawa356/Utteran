@@ -1,9 +1,9 @@
 # 束C2 設計案 — 履歴の非表示・履歴レコードの削除・生成成果物の削除
 
 更新: 2026-11-16 JST。状態: **owner確定（§0）**。束C2a（読み取り・非表示）は実装済み（`0.1.55`、[b7/history-visibility](../b7/history-visibility.md)）。
-履歴レコードの削除・成果物削除（束C2c）は`0.1.57`で実装（Draft PR、Windows未受入、Windowsでの成果物削除は拒否）。
+履歴レコードの削除（墓標化）は束C2c `0.1.57`で実装（Draft PR、Windows未受入）。**成果物削除は2026-11-18のオーナーレビューにより全環境で無効**（安全性を証明できないため）。
 **現行の設計・実測は[c2c-deletion-design.md](c2c-deletion-design.md)を正本とする**（§3以降の旧案と異なる点: 一時表ではなく永続ゲート表〔一時表はSQLiteで不成立を実測〕、
-削除済みJobは410、APIは`deletion-plans`/`deletions`の2本、成果物削除はPOSIXのみ）。以下は確定時の設計記録として残す。
+削除済みJobは410、APIは`deletion-plans`/`deletions`の2本、成果物削除は全環境で拒否）。以下は確定時の設計記録として残す。
 
 ## 0. owner確定（2026-11-16）と必須条件
 

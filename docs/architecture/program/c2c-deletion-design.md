@@ -1,10 +1,14 @@
-# 束C2c 設計追補 — 履歴レコードの墓標化（③）と所有確認付き成果物削除（④）
+# 束C2c 設計追補 — 履歴レコードの墓標化（③）と成果物削除（④、全環境で無効）
 
-更新: 2026-11-17 JST（開発版`0.1.57`・未リリース）。正本の前提は[c2-history-and-artifacts-design §0](c2-history-and-artifacts-design.md)（owner確定事項・必須条件5つ）。
+更新: 2026-11-18 JST（開発版`0.1.57`・未リリース、PR #58オーナーレビュー修正）。初版 2026-11-17。正本の前提は[c2-history-and-artifacts-design §0](c2-history-and-artifacts-design.md)（owner確定事項・必須条件5つ）。
 追跡: [Issue #56](https://github.com/zawa356/Utteran/issues/56)。
 
 > **成功の定義は「完全消去」ではない。** 本文書は「どこから何を消すか」と同じ重みで「どこに何が残るか」を記録する。
 > 実装・試験は合成データと`tmp_path`だけで行った。Windows実機は未受入（§8）。
+>
+> **2026-11-18の変更（[オーナーレビュー](https://github.com/zawa356/Utteran/pull/58#pullrequestreview-5937766575) P1-1・P1-2・P2-1）**:
+> **④（履歴＋成果物の削除）は全プラットフォーム（Windows・macOS・Linux）で拒否する**（`artifact_deletion_disabled`）。ファイルを削除するコードは製品から取り除いた。
+> ③（履歴のみの墓標化）は変更なし。理由・脅威モデル・再現試験は§5.0。§5.1〜§5.4は不採用になった初版設計の記録として残す。
 
 ## 0. 結論（要約）
 
@@ -15,14 +19,15 @@
 | 不変トリガー | `job_snapshots`・`job_results`の`BEFORE UPDATE`だけを「ゲート行があり、かつ新しい値が**固定の墓標定数**、他の列は不変、Jobは終了状態」のときに限り通す条件付きトリガーへ置換。`BEFORE DELETE`・他の表の不変トリガーは無変更 |
 | 一時表案（§3.1旧案） | **不成立**（実測、§3.2）。mainスキーマのトリガーはTEMP表を参照できない。v5の`outbox_compaction`と同型の**永続ゲート表**を採用 |
 | 削除後の公開表現 | `GET /jobs/{id}`・`/visibility`・`/artifacts`・`retry`・`rerun`・`cancel`・`revalidate`・削除済みJobを含む旧replayは **410 `job_deleted`**（値なし）。`GET /jobs`の全filterから除外。B9 `/sync`・`/events`・diagnosticsは骨格（ID・kind・revision・status・固定code・時刻）だけを従来どおり返す |
-| ④の対象 | 0.1.54以降の**成功したJob**の、所有markerが一致する**唯一の**専用ディレクトリだけ。形式別証拠（`evidence.files`）とサイズ・SHA-256が完全一致する既知形式ファイル＋marker以外が1つでもあれば全体拒否 |
-| ④の手順 | preflight（読み取り）→ 短命plan token → 実行直前に同じ検証 → DBへ削除意図（journal）をcommit → ファイルごとに「隔離名へrename → inode再確認 → unlink」→ marker → 空なら`rmdir` → 全成功時だけ③（同一DBトランザクション） |
-| ④のOS | POSIXで`dir_fd`/`O_NOFOLLOW`/`O_DIRECTORY`が使える環境だけ。**Windowsは`platform_unverified`で拒否（fail closed）**。理由と後続は§8 |
+| ④ | **全プラットフォームで拒否（2026-11-18）**。計画は`allowed:false`・`refusal:"artifact_deletion_disabled"`・tokenなし、実行は409 `artifact_deletion_disabled`（読込み・書込みの前に拒否、journalも作らない）。store側も`history_and_artifacts`の完了を拒否。削除ルーチンはコードに無い（§5.0） |
+| ④の旧設計 | 所有marker・形式別SHA/size・dir fd・隔離名rename→再検証→unlink（§5.1〜§5.4）。**レビューでTOCTOUと完了判定の欠陥が確定し不採用** |
 | 消去の強さ | 削除トランザクションの接続で`PRAGMA secure_delete=ON`。合成試験でDB本体からsentinelが消えることを実測。backup・rollback journalの解放済み領域・retry連鎖の他Job・core作業キャッシュには残る（§6） |
 
 ## 1. private情報の保存箇所（棚卸し、0.1.56 main `6532174`）
 
 「private」= 入力/出力の絶対path、ファイル名、Prompt・用語集を含む処理設定、入力ファイルのSHA-256・inode等の同一性、成果物の内容digest。
+
+> 「④後」の列は初版設計（不採用、§5.0）の記録。現行では④が実行されないので、成果物と出力dirは常に「③後」のとおり**残る**。
 
 | # | 保存箇所 | 内容 | 不変性 | ③後 | ④後 |
 |---|---|---|---|---|---|
@@ -139,9 +144,47 @@ mainスキーマの表に作ったトリガーから`CREATE TEMP TABLE`の表を
 6. `PRAGMA secure_delete=ON` → `job_deletions`へ記録 → ゲート → snapshot/evidence/private付帯行の置換・削除 → ゲート削除 → replay記録 → commit。
 7. commit後に一覧のプロセス内snapshotを破棄。
 
-## 5. ④の手順と状態
+## 5. ④（履歴＋成果物の削除）
 
-### 5.1 対象の検証（preflightと実行直前に同じ関数）
+### 5.0 全プラットフォームで無効にした理由（2026-11-18、現行）
+
+**結論**: 「確認したファイル/ディレクトリ**そのもの**だけを消す」ことを、外部プロセスが同時に出力先を変更できる条件で証明できない。証明できない破壊操作は有効にしない。
+
+**脅威モデル**: 出力先ディレクトリ（ユーザーが選んだ場所）は、同じユーザーの任意のプロセス（エディタ、同期クライアント、別のツール、悪意あるスクリプト）が
+いつでも作成・改名・置換できる。管理者権限や別ユーザーは想定に入れない（入れればさらに不利）。アプリは出力先の書込権限を排他できない。
+
+**OS上の根拠**:
+
+| 手段 | なぜ不十分か |
+|---|---|
+| 親dirのfd固定（`dir_fd`） | 親を固定するだけ。`unlinkat(dir_fd, name)`・`renameat`・`rmdir`は**名前を引き直す**ので、検証したinodeと消すinodeが同じである保証がない（P1-1） |
+| 隔離名へrename → fdで再検証 → unlink | 再検証後にfdを閉じ、隔離名で`unlinkat`するため、その間に隔離名が別inodeへ差し替えられ得る（P1-1、§7の再現試験） |
+| 0700の隔離ディレクトリ | 同じユーザーのプロセスは書ける。親の差替えも可能 |
+| unlink直前の`lstat`、`flock`、短い待ち、64-bit乱数名 | いずれも検査と削除の間の窓を閉じない（`flock`は協調ロックで他プロセスを止めない） |
+| 「inodeを指定して削除」 | POSIX・Linuxにそのようなシステムコールは無い（fdから名前を消すAPIが無い） |
+| `rmdir`の名前 | `stat`の後に名前を別の空ディレクトリへ向けられると、無関係なディレクトリを消す（P1-1） |
+
+Windowsはハンドルに対する削除（`SetFileInformationByHandle(FileDispositionInfoEx)`）があり有望だが、未実装・実機未受入（[#59](https://github.com/zawa356/Utteran/issues/59)）。
+
+**初版実装の欠陥（再現済み）**: `tests/test_c2c_deletion.py`の§6（`test_review_*`、7件）は、次のOS呼び出しの直前に第三者の操作を決定的に差し込む（時間依存なし）。初版HEAD `0b7bb88`で**7件すべてが安全性の不変条件で失敗**した（`f579b0e`）。
+
+| 指摘 | 注入 | 初版の結果 | 現行 |
+|---|---|---|---|
+| P1-1 ファイル | 隔離名をfdで検証した直後、その名前を別inodeの合成sentinelへ置換 | **sentinelが削除された** | 計画で拒否。ファイル呼出し0、sentinel不変 |
+| P1-1 ディレクトリ | `rmdir`直前に名前を無関係な空ディレクトリへ置換 | **無関係なディレクトリが消えた** | 同上 |
+| P1-2 | `rmdir`直前に未知ファイル投入／`EACCES`／名前変更 | **3件とも`completed`で墓標化** | 同上。墓標化されない |
+| P2-1 | 初版のpending journal＋出力先の親、またはjob dirを中身ごと移動 | **2件とも「削除済み」と誤認して墓標化** | 計画で拒否、履歴のみの削除も`deletion_in_progress`、snapshot・journal・移動先のファイルは不変 |
+
+**現行の契約**:
+- 計画: `mode:"history_and_artifacts"`は常に`allowed:false`、`refusal:"artifact_deletion_disabled"`、`plan_token:null`、`artifacts:[]`。ファイルシステムは読まない。
+- 実行: 本文の`mode`が`history_and_artifacts`なら、replay照合の後・Job読込みの前に409 `artifact_deletion_disabled`。DB・ファイルへの書込み0、journalを作らない。
+- store: `complete_deletion(mode="history_and_artifacts")`は`artifact_deletion_disabled`。`begin_artifact_deletion`は削除した（新しい`artifacts_pending`行を作る経路が無い）。
+- 初版で作られ得た`artifacts_pending`行（開発用rootのみ）がある場合: そのJobの③も`deletion_in_progress`で拒否し、自動では完了させない。
+  ファイルが残っている／移動された可能性があるため。回復はowner判断（ファイルを人が確認したうえでの手動処置）とし、アプリは推定で墓標化しない。
+- v8のDDL（`mode`・`state`・`targets`列）は変更しない（将来の証明済み実装のための予約。layout番号を増やさない）。
+- 製品の`utteran_gui.job_deletion`は`os`/`shutil`を使わない（`test_no_file_removing_code_is_reachable_from_the_deletion_paths`で固定）。
+
+### 5.1 （不採用・初版の記録）対象の検証（preflightと実行直前に同じ関数）
 
 全て満たすときだけ許可。1つでも外れたら**何も消さず**、固定codeで拒否する。
 
@@ -163,7 +206,7 @@ mainスキーマの表に作ったトリガーから`CREATE TEMP TABLE`の表を
 
 `job_artifacts()`／`owned_directory()`（C2aの読み取りビュー）は削除の根拠に**使わない**。削除専用の検証（`job_deletion.verify_artifacts`）はfdを開いたまま中身を検証する。
 
-### 5.2 実行（TOCTOU対策）
+### 5.2 （不採用・初版の記録）実行（TOCTOU対策）— §5.0のとおり窓が閉じていなかった
 
 1. **再検証**（§5.1と同じ関数、fdを保持）→ fingerprint（dirとmarkerの(dev, ino)、各ファイルの形式・サイズ・SHA-256・(dev, ino)・mtime）がplan tokenと一致しなければ409 `deletion_plan_stale`。
 2. **意図をcommit**: `job_deletions`へ`artifacts_pending`と対象（形式・サイズ・SHA-256。名前やpathは書かない）を記録。
@@ -176,13 +219,13 @@ mainスキーマの表に作ったトリガーから`CREATE TEMP TABLE`の表を
 
 `shutil.rmtree`は使わない。ディレクトリを辿って消すことはしない（対象は検証済みの名前だけ）。
 
-### 5.3 plan token
+### 5.3 plan token（③で現行）
 
 `dp1.<有効期限ms>.<HMAC>`。HMACはinstallation secretで、(Job ID・mode・Job revision・fingerprint・期限・session binding)に対して計算する。
 token自体は状態を持たず、実行時にserverが**新しく検証してfingerprintを計算し直し**、MACが一致したときだけ進む。
 期限切れ（既定300秒）は409 `deletion_plan_expired`、それ以外の不一致（改ざん・状態変化・別session）は409 `deletion_plan_stale`。**serverが新しいplanを勝手に発行して削除することはない。**
 
-### 5.4 中断・再起動・部分削除
+### 5.4 （不採用・初版の記録）中断・再起動・部分削除 — 「元パスに無い」を「削除済み」と扱った誤り（P2-1）を含む
 
 | 中断した時点 | DB | ディスク | 次の操作 |
 |---|---|---|---|
@@ -224,14 +267,14 @@ token自体は状態を持たず、実行時にserverが**新しく検証してf
 区分は指示書§7に合わせる。Redを先に確認したもの・Greenの数はPR本文に記録する。
 1. migration/recovery: v7→v8の追加移行（全行同一）、失敗時rollback、旧classの拒否、pre-open backupと復元、ゲート残存時のfail closed。
 2. 墓標化: 状態境界、CAS/同key replay/異body、非公開値の消去、retry/rerun・B9 `/sync`・cursor・Outbox・snapshot read・二重削除、DB本体・journal・replay・backupのsentinel走査。
-3. 成果物削除: marker、各ID長、形式別SHA/size、旧形式、異形式のバイト置換、編集・余計なファイル・他Job・元音声、symlink、TOCTOU（検証後の差替え）、途中失敗、二重実行、再開。
+3. 成果物削除（2026-11-18以降は拒否の試験）: どのJob状態・ファイル状態（11種）でも`artifact_deletion_disabled`、ファイル呼出し0（`os.unlink/rename/rmdir/link/replace/remove`・`shutil.rmtree`をspy）、ファイルツリーとDB全表が不変、journal 0件、偽tokenや③のtokenでも実行は409、store単体でも拒否、製品モジュールに削除コードが無いこと。
+   レビュー再現（§5.0の表、7件）。初版の「消せる」試験（成功・再開・TOCTOU時の復元・長いID形式・Windowsだけの拒否）は仕様変更により拒否試験へ置換した。
 4. API: session/Host/Origin、If-Match、planの失効/改ざん、JSON schema、409/412/404/410、値の非漏えい。
 5. frontend: Vitest（2種類の確認、既定フォーカス、二重送信、結果不明）とPlaywright v1（合成runner）。
 
 ## 8. Windows（未受入、fail closed）
 
-- Windowsの`os`は`dir_fd`を受けないため、§5.2の「同じdir fdの中で検証して消す」手順が成立しない。パスで消す実装はreparse point・junctionの差替えに対して安全を証明できない。
-  よって**Windowsでは④を`platform_unverified`で拒否**し、③（DBだけ）は動作する。
+- **④は全プラットフォームで拒否**（§5.0）。初版のWindows専用コード`platform_unverified`は廃止し、`artifact_deletion_disabled`に統一した。③（DBだけ）は動作する。
 - 後続案: ハンドルベース（`FILE_FLAG_OPEN_REPARSE_POINT`で開き、`GetFileInformationByHandle`で同一性・属性を確認し、`SetFileInformationByHandle(FileDispositionInfoEx)`で**ハンドルに対して**削除）。
   Codex実機受入でreparse point・junction・ACL・開いているファイル・長いpath・OneDrive配下を確認してから有効化を判断する（後続Issue）。
-- Windows受入で今回確認できること: ④がWindowsで拒否され副作用0、③のmigration・墓標化・backup残存。
+- Windows受入で今回確認できること: ④が拒否され副作用0（`artifact_deletion_disabled`）、③のmigration・墓標化・backup残存。

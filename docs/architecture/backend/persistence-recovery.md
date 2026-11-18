@@ -4,6 +4,7 @@
 
 - **layout v8**（`DeletionControlStore`）= v7 ＋ `job_deletions`（削除journal、行は消さない）＋ `job_deletion_gate`（削除トランザクション内だけで開閉、開くときに空でなければ`store_corrupt`）＋ `deletion_replays`。
   `job_snapshots`/`job_results`の`BEFORE UPDATE`だけを墓標定数に限る条件付きトリガーへ置換。一方向、v7のpre-open backupは0.1.56で開ける（試験で復元ドリル）。
+- **成果物削除（④）は全環境で無効**（2026-11-18、PR #58レビュー）。`artifacts_pending`行を新たに作る経路は無い。
 - **削除の残留**: DB本体は`secure_delete`で対象Jobの値が消えることを実測。**backup・rollback journalの解放済み領域・retry連鎖の他Job・公開projectionのreplay・core作業キャッシュには残る**。
   WALは使っていない（`journal_mode=delete`を試験で固定）。詳細と表は[../program/c2c-deletion-design.md §1・§6](../program/c2c-deletion-design.md)。
 - 下の「Privacy」表の「完全消去手段なし」は引き続き正しい（C2cは完全消去を提供しない）。保持期間・暗号化・ACL・backup保持方針はowner判断待ちのまま。

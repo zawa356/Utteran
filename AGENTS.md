@@ -27,8 +27,9 @@ Priority when sources disagree: code → offline schemas (`docs/architecture/b*/
 - Fail closed: no silent fallback to an unsupported backend or the legacy CLI; unknown store schema is refused;
   unverifiable owners stay `recovery_required`. One heavy slot is shared by jobs and setup.
 - Control store migration is one-way (v1→v8). Never delete, reinitialize, or downgrade a user DB.
-- C2c deletion (layout v8): only the guarded tombstone path may rewrite `job_snapshots`/`job_results`; artifact deletion
-  stays fail closed (verified own files only, dir-fd based, refused on Windows). Never add a "force" override or `rmtree`.
+- C2c deletion (layout v8): only the guarded tombstone path may rewrite `job_snapshots`/`job_results`. Artifact deletion is
+  refused on every platform (`artifact_deletion_disabled`): POSIX cannot remove exactly the verified inode. Do not re-enable it
+  without a proven design and owner approval; never add a "force" override, `rmtree` or name-based unlink of user output.
 
 ## Quality gates (same as CI; see testing-and-operations.md)
 
