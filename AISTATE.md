@@ -1,10 +1,10 @@
 # AI 作業状態
 
-## 現在地（2026-11-18、Issue #62 npm audit：単一勧告の期限付き例外の提案、Draft PR、版変更なし）
+## 現在地（2026-11-18、Issue #62 npm audit：単一勧告の期限付き例外をowner承認、Draft PR、版変更なし）
 
 - 基点main `6532174`。ブランチ`claude/issue-62-audit-picomatch`（PR #58とは独立。#58のコードは変更しない）。
 - picomatch GHSA-fc5q-39xc-vjpf（修正版なし）で`npm run audit:prod`が失敗。出荷物（wheel・PyInstaller・installer・`web-next`）にpicomatchが無いことを実測、
-  ビルド経路のglobパターンは全てリポジトリのリテラル。`tools/npm_audit_gate.py`＋**未承認**の例外ファイルを追加。**owner承認まで適用されない。**
+  ビルド経路のglobパターンは全てリポジトリのリテラル。 `tools/npm_audit_gate.py`＋**2026-12-18までの限定承認**を記録。承認は[PR #64のオーナーコメント](https://github.com/zawa356/Utteran/pull/64#issuecomment-6981408931)。承認反映後のCI 15/15は未検証。
 - 根拠: [program/npm-audit-exception-ghsa-fc5q-39xc-vjpf](docs/architecture/program/npm-audit-exception-ghsa-fc5q-39xc-vjpf.md)。数値とCIはPR本文。
 
 ## 現在地（2026-11-17、束A1/A2/C1/C2a/C2bをmain統合、0.1.56・未リリース）

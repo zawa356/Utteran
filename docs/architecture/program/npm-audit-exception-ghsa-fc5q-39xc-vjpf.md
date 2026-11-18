@@ -1,7 +1,7 @@
 # npm audit 例外の根拠 — GHSA-fc5q-39xc-vjpf（picomatch ReDoS、Issue #62）
 
 作成: 2026-11-18 JST。対象: `frontend/`の本番依存監査（CI `UI-2 frontend`の`npm run audit:prod`）。
-状態: **提案（owner未承認）**。例外ファイルは`approved_by`/`approval_url`が空のまま入っており、**承認されるまで適用されない**（CIは赤のまま）。
+状態: **owner限定承認済み（2026-11-18〜2026-12-18）**。承認根拠: [PR #64のオーナーリスク受容コメント](https://github.com/zawa356/Utteran/pull/64#issuecomment-6981408931)。承認情報は`frontend/audit-exceptions.json`に記録済み。監査ゲートは該当GHSAだけを例外とし、他のHigh/Criticalを引き続き阻止する。
 
 ## 1. 事実
 

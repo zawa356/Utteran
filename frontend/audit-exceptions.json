@@ -7,13 +7,15 @@
       "package": "picomatch",
       "vulnerable_range": "<=4.0.7",
       "severity": "high",
-      "installed_versions": ["4.0.7"],
+      "installed_versions": [
+        "4.0.7"
+      ],
       "created": "2026-11-18",
       "expires": "2026-12-18",
       "issue": 62,
       "reason": "ReDoS from an attacker-controlled glob pattern (CWE-1333). No patched picomatch exists. picomatch is reached only through vite (the build tool; an optional peer of vuetify, hence in the --omit=dev graph) and is absent from the shipped bundle, wheel and PyInstaller data; build-time glob patterns come only from repository files. Evidence: docs/architecture/program/npm-audit-exception-ghsa-fc5q-39xc-vjpf.md",
-      "approved_by": null,
-      "approval_url": null
+      "approved_by": "zawa356",
+      "approval_url": "https://github.com/zawa356/Utteran/pull/64#issuecomment-6981408931"
     }
   ]
 }
