@@ -1,5 +1,12 @@
 # AI 作業状態
 
+## 現在地（2026-11-18、Issue #62 npm audit：単一勧告の期限付き例外の提案、Draft PR、版変更なし）
+
+- 基点main `6532174`。ブランチ`claude/issue-62-audit-picomatch`（PR #58とは独立。#58のコードは変更しない）。
+- picomatch GHSA-fc5q-39xc-vjpf（修正版なし）で`npm run audit:prod`が失敗。出荷物（wheel・PyInstaller・installer・`web-next`）にpicomatchが無いことを実測、
+  ビルド経路のglobパターンは全てリポジトリのリテラル。`tools/npm_audit_gate.py`＋**未承認**の例外ファイルを追加。**owner承認まで適用されない。**
+- 根拠: [program/npm-audit-exception-ghsa-fc5q-39xc-vjpf](docs/architecture/program/npm-audit-exception-ghsa-fc5q-39xc-vjpf.md)。数値とCIはPR本文。
+
 ## 現在地（2026-11-17、束A1/A2/C1/C2a/C2bをmain統合、0.1.56・未リリース）
 
 - **正本main**: `c5af76726f913e4044f6e73492fee851c2acdd8c`。PR [#49](https://github.com/zawa356/Utteran/pull/49) → [#50](https://github.com/zawa356/Utteran/pull/50) → [#51](https://github.com/zawa356/Utteran/pull/51) → [#52](https://github.com/zawa356/Utteran/pull/52) → [#53](https://github.com/zawa356/Utteran/pull/53)を依存順に通常merge commitで統合。全PR merged/closed。タグ・Releaseなし。mainの最終treeはPR #53受入HEAD `ad8c38e65975168b32b4daa021867555a03e0641` と完全一致。

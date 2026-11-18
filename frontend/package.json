@@ -14,7 +14,7 @@
     "lint": "eslint --max-warnings=0 .",
     "test": "vitest run",
     "e2e": "playwright test",
-    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "audit:prod": "uv run --no-project python ../tools/npm_audit_gate.py",
     "prototype": "vite --host 127.0.0.1 --port 5180 --strictPort",
     "e2e:prototype": "playwright test -c playwright.preview.config.ts"
   },

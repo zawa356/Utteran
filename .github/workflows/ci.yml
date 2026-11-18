@@ -396,11 +396,6 @@ jobs:
       - name: Install exactly the committed lockfile
         working-directory: frontend
         run: npm ci --no-fund
-      # Policy: production dependencies (shipped in the bundle) must have no high/critical
-      # advisory. A registry/network failure fails this step; it is never reported as clean.
-      - name: Audit production dependencies (blocking, high and above)
-        working-directory: frontend
-        run: npm run audit:prod
       - name: Lint
         working-directory: frontend
         run: npm run lint
@@ -436,3 +431,13 @@ jobs:
           rm -rf dist
           uv build --wheel
           uv run --no-project python tools/ui2/check_wheel_assets.py dist/utteran-*-py3-none-any.whl
+      # Policy: the production dependency graph (npm --omit=dev, which includes optional peers)
+      # must have no high/critical advisory. tools/npm_audit_gate.py prints every finding and fails
+      # on any high/critical one, except an advisory listed in frontend/audit-exceptions.json that
+      # the owner approved, that has not expired (<= 31 days) and whose range/severity/installed
+      # version are unchanged (Issue #62). A registry/network failure fails this step; it is never
+      # reported as clean. It runs last so that a red audit never hides the results of the steps
+      # above (no continue-on-error, no if: always()); the job still fails when it fails.
+      - name: Audit production dependencies (blocking, high and above)
+        working-directory: frontend
+        run: npm run audit:prod
