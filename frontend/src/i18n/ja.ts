@@ -865,7 +865,7 @@ export const ja = {
   "queue.empty": "待機中・実行中のジョブはありません。終了したジョブは文字起こし画面の履歴にあります。",
   "queue.noMatch": "条件に一致するジョブはありません（キューには{count}件あります）。",
   "queue.count": "表示 {shown}件 / キュー {total}件",
-  "queue.paused": "キューの実行は一時停止中です（再開は文字起こし画面③で行えます）。",
+  "queue.paused": "新規ジョブの開始を一時停止中です。この画面で再開できます。",
   "queue.tableLabel": "キューのジョブ一覧",
   "queue.col.order": "順序",
   "queue.col.name": "名前",

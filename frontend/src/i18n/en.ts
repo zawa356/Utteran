@@ -867,7 +867,7 @@ export const en: Record<MessageKey, string> = {
   "queue.empty": "No waiting or running job. Finished jobs are in the history on the transcription page.",
   "queue.noMatch": "No job matches (the queue has {count}).",
   "queue.count": "Showing {shown} of {total} in the queue",
-  "queue.paused": "Running the queue is paused (resume it on the transcription page ③).",
+  "queue.paused": "New job starts are paused. You can resume them on this page.",
   "queue.tableLabel": "Jobs in the queue",
   "queue.col.order": "Order",
   "queue.col.name": "Name",
