@@ -354,3 +354,21 @@ describe("D3-A finished history with mixed visibility", () => {
     expect(server.writes()).toEqual([]);
   });
 });
+
+it("D3A-09: unknown visibility PUT retains its CAS if another visibility revision intervenes", async () => {
+  const { server, board: b } = board();
+  const [id] = server.addJobs(1);
+  server.setStatus(id!, "succeeded");
+  await b.refresh();
+  server.inject.set(`PUT /api/v1/jobs/${id}/visibility`, { reply: new TypeError("network") });
+  await b.setHidden(id!, true);
+  expect(b.store.get().action?.phase).toBe("unknown");
+  if (server.visibility === false) throw new Error("expected visibility support");
+  server.visibility.set(id!, { hidden: false, revision: 2 });
+  await b.refresh();
+  expect(b.actionOpen()).toBe(true);
+  await b.recheck();
+  expect(server.writes().map(w => w.ifMatch)).toEqual(['"0"', '"0"']);
+  expect(b.store.get().action?.phase).toBe("conflict");
+  expect(b.actionOpen()).toBe(false);
+});

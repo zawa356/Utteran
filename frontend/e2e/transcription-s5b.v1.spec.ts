@@ -111,6 +111,11 @@ async function submitBatch(page: Page, seen: Request[]): Promise<string[]> {
   return body.jobs.map((j) => j.id);
 }
 
+async function openHistory(page: Page): Promise<void> {
+  await page.getByTestId("nav-results").click();
+  await page.getByTestId("results-tab-history").click();
+}
+
 const row = (page: Page, section: "queue" | "history" | "hidden", id: string) => page.getByTestId(`v1-board-${section}`).locator(`[data-testid="v1-board-row"][data-root="${id}"]`);
 
 test("setup: cancel the jobs earlier specs left waiting, so this spec's jobs are next in the single slot", async ({ request }) => {
@@ -148,13 +153,18 @@ test("atomic batch: two files → one check, one submit, two jobs; the board sho
   expect(legacyWrites(seen)).toEqual([]);
 
   await ensureQueueRunning(app);
+  await app.getByTestId("nav-results").click();
+  const resultsList = app.getByTestId("results-table-results");
+  for (const id of ids) await expect(resultsList.locator(`[data-root="${id}"]`)).toHaveAttribute("data-status", "succeeded");
+  await openHistory(app);
   for (const id of ids) await expect(row(app, "history", id)).toHaveAttribute("data-status", "succeeded", { timeout: 30_000 });
   // The row is labelled with the file of this page; the internal job id is shown for reference.
   await expect(row(app, "history", ids[0]!).getByTestId("v1-board-row-title")).toContainText("meeting.wav");
   await expect(row(app, "history", ids[1]!).getByTestId("v1-board-row-title")).toContainText("other.wav");
 
   // Read-only artifact view: format, size, integrity. No file name, no path.
-  const first = row(app, "history", ids[0]!);
+  await row(app, "history", ids[0]!).getByTestId("results-select").click();
+  const first = app.getByTestId("results-detail");
   await first.getByTestId("v1-artifacts-load").click();
   await expect(first.getByTestId("v1-artifacts")).toHaveAttribute("data-state", "available");
   await expect(first.locator('[data-format="srt"]')).toHaveAttribute("data-integrity", "verified");
@@ -172,16 +182,22 @@ test("hide and show: the row leaves and returns; the job, its state and its outp
   await expert(app, request, ["meeting.wav"]);
   const [id] = await submitBatch(app, seen);
   await ensureQueueRunning(app);
+  await openHistory(app);
   await expect(row(app, "history", id!)).toHaveAttribute("data-status", "succeeded", { timeout: 30_000 });
   const job = await api<{ revision: number; status: string }>(request, `/api/v1/jobs/${id}`);
   // The auxiliary list was read before the hide (Windows acceptance P3: it must not stay stale).
+  await app.getByTestId("nav-transcribe").click();
   await loadRecent(app);
   await expect(recentItem(app, id!)).toHaveCount(1);
 
-  await row(app, "history", id!).getByTestId("v1-board-hide").click();
+  await openHistory(app);
+  await row(app, "history", id!).getByTestId("results-select").click();
+  await app.getByTestId("v1-board-hide").click();
   await expect(app.getByTestId("v1-board-action")).toHaveAttribute("data-action-phase", "done");
   await expect(row(app, "history", id!)).toHaveCount(0);
+  await app.getByTestId("nav-transcribe").click();
   await expect(recentItem(app, id!)).toHaveCount(0);
+  await openHistory(app);
   const visible = await api<{ items: { id: string }[] }>(request, "/api/v1/jobs");
   expect(visible.items.map((j) => j.id)).not.toContain(id);
   // Still there by id, same state and revision; the output directory is still verified.
@@ -192,9 +208,14 @@ test("hide and show: the row leaves and returns; the job, its state and its outp
   await app.getByTestId("v1-board-action-close").click();
   await app.getByTestId("v1-board-show-hidden").locator("input").check();
   await expect(row(app, "hidden", id!)).toBeVisible();
-  await row(app, "hidden", id!).getByTestId("v1-board-show").click();
+  await row(app, "hidden", id!).getByTestId("results-select").click();
+  await app.getByTestId("v1-board-show").click();
+  await expect(row(app, "hidden", id!)).toHaveCount(0);
+  await expect(app.getByTestId("results-detail")).toHaveCount(0);
+  await app.getByTestId("v1-board-show-hidden").locator("input").uncheck();
   await expect(row(app, "history", id!)).toBeVisible();
   await expect(row(app, "hidden", id!)).toHaveCount(0);
+  await app.getByTestId("nav-transcribe").click();
   await expect(recentItem(app, id!)).toHaveCount(1);
   expect(await api(request, `/api/v1/jobs/${id}/visibility`)).toMatchObject({ hidden: false, revision: 2 });
   expect(await api(request, `/api/v1/jobs/${id}`)).toMatchObject({ revision: job.revision, status: "succeeded" });
@@ -228,14 +249,17 @@ test("retry is the same row: cancel a running job, retry it, the row returns to 
   await ensureQueueRunning(app);
   await expect(row(app, "queue", id!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
   await cancelFromQueue(app, id!);
+  await openHistory(app);
   await expect(row(app, "history", id!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await app.getByTestId("v1-board-action-close").click();
   const cancelled = await api<{ revision: number }>(request, `/api/v1/jobs/${id}`);
 
-  await row(app, "history", id!).getByTestId("v1-board-retry").click();
+  await row(app, "history", id!).getByTestId("results-select").click();
+  await app.getByTestId("v1-board-retry").click();
+  await expect(row(app, "history", id!)).toHaveCount(0);
+  await app.getByTestId("nav-transcribe").click();
   // Same row key (the first internal job), now with two attempts, back in the queue.
   await expect(row(app, "queue", id!)).toHaveAttribute("data-attempts", "2", { timeout: 20_000 });
-  await expect(row(app, "history", id!)).toHaveCount(0);
   // The newest internal job of the row is the retry, linked to the job it retries.
   const internal = ((await row(app, "queue", id!).textContent()) ?? "").match(/job_[0-9a-f]{32}/)![0];
   expect(internal).not.toBe(id);
@@ -249,6 +273,7 @@ test("retry is the same row: cancel a running job, retry it, the row returns to 
   await app.getByTestId("v1-board-action-close").click();
   await expect(row(app, "queue", id!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
   await cancelFromQueue(app, id!);
+  await openHistory(app);
   await expect(row(app, "history", id!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await expect(row(app, "history", id!)).toHaveAttribute("data-attempts", "2");
 
@@ -257,20 +282,30 @@ test("retry is the same row: cancel a running job, retry it, the row returns to 
   await app.getByTestId("v1-board-action-close").click();
   const chain = [id!, internal];
   const before = await Promise.all(chain.map((job) => api<{ revision: number; status: string }>(request, `/api/v1/jobs/${job}`)));
+  await app.getByTestId("nav-transcribe").click();
   await loadRecent(app);
   for (const job of chain) await expect(recentItem(app, job)).toHaveCount(1);
-  await row(app, "history", id!).getByTestId("v1-board-hide").click();
+  await openHistory(app);
+  await row(app, "history", id!).getByTestId("results-select").click();
+  await app.getByTestId("v1-board-hide").click();
   await expect(app.getByTestId("v1-board-action")).toHaveAttribute("data-action-phase", "done");
   await expect(row(app, "history", id!)).toHaveCount(0);
+  await app.getByTestId("nav-transcribe").click();
   for (const job of chain) await expect(recentItem(app, job)).toHaveCount(0);
+  await openHistory(app);
   const visible = await api<{ items: { id: string }[] }>(request, "/api/v1/jobs");
   for (const job of chain) expect(visible.items.map((j) => j.id)).not.toContain(job);
 
   await app.getByTestId("v1-board-action-close").click();
   await app.getByTestId("v1-board-show-hidden").locator("input").check();
-  await row(app, "hidden", id!).getByTestId("v1-board-show").click();
+  await row(app, "hidden", id!).getByTestId("results-select").click();
+  await app.getByTestId("v1-board-show").click();
+  await expect(row(app, "hidden", id!)).toHaveCount(0);
+  await expect(app.getByTestId("results-detail")).toHaveCount(0);
+  await app.getByTestId("v1-board-show-hidden").locator("input").uncheck();
   await expect(app.getByTestId("v1-board-action")).toHaveAttribute("data-action-phase", "done");
   await expect(row(app, "history", id!)).toHaveAttribute("data-attempts", "2");
+  await app.getByTestId("nav-transcribe").click();
   for (const job of chain) await expect(recentItem(app, job)).toHaveCount(1);
   // Same job records as before (state and revision), four visibility PUTs, no DELETE.
   for (const [index, job] of chain.entries()) expect(await api(request, `/api/v1/jobs/${job}`)).toMatchObject(before[index]!);
@@ -287,6 +322,7 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
   await ensureQueueRunning(app);
   await expect(row(app, "queue", a!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
   await cancelFromQueue(app, a!);
+  await openHistory(app);
   await expect(row(app, "history", a!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await app.getByTestId("v1-board-action-close").click();
 
@@ -297,6 +333,7 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
     data: { schema_version: 1, dispatch: "paused" },
   });
   expect(paused.status()).toBe(200);
+  await app.getByTestId("nav-transcribe").click();
   await app.getByTestId("tx-list-select-none").click();
   await addInput(app, input("meeting.wav"));
   await app.getByTestId("tx-list-check").last().locator("input").check();
@@ -304,8 +341,12 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
   const [b] = await submitBatch(app, seen);
   await expect(row(app, "queue", b!)).toHaveAttribute("data-status", "queued");
 
+  await openHistory(app);
   // Retry A: B7 queues the new internal job *behind* B. The row of A must not be shown before B.
-  await row(app, "history", a!).getByTestId("v1-board-retry").click();
+  await row(app, "history", a!).getByTestId("results-select").click();
+  await app.getByTestId("v1-board-retry").click();
+  await expect(row(app, "history", a!)).toHaveCount(0);
+  await app.getByTestId("nav-transcribe").click();
   await expect(row(app, "queue", a!)).toHaveAttribute("data-attempts", "2", { timeout: 20_000 });
   const order = await app.getByTestId("v1-board-queue").locator('[data-testid="v1-board-row"]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-root")));
   expect(order.indexOf(b!)).toBeGreaterThanOrEqual(0);
@@ -321,9 +362,11 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
   // Clean up: cancel both waiting jobs and resume dispatch for later specs.
   await app.getByTestId("v1-board-action-close").click();
   await cancelFromQueue(app, b!);
+  await openHistory(app);
   await expect(row(app, "history", b!)).toHaveAttribute("data-status", "cancelled", { timeout: 20_000 });
   await app.getByTestId("v1-board-action-close").click();
   await cancelFromQueue(app, a!);
+  await openHistory(app);
   await expect(row(app, "history", a!)).toHaveAttribute("data-status", "cancelled", { timeout: 20_000 });
   const again = await api<{ revision: number }>(request, "/api/v1/queue");
   const resumed = await request.patch("/api/v1/queue/control", {

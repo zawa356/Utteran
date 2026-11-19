@@ -843,3 +843,56 @@ test("D2B-15: a GET older than the mutation acknowledgement stays fail closed un
   await app.getByTestId("queue-reload").click(); await expect(page$(app)).toHaveAttribute("data-phase", "done");
   await expect(app.getByTestId("queue-dispatch")).toBeEnabled(); expect(writes).toBe(1);
 });
+
+test("D3A-03–07: finished branches, retry roots, rerun roots and artifact metadata in Results", async ({ app }) => {
+  const seen = recordApi(app);
+  const records = [
+    jobWire(1, "failed"),
+    jobWire(2, "succeeded", { retry_of: jid(1) }),
+    jobWire(3, "interrupted", { rerun_of: jid(1) }),
+    jobWire(4, "cancelled"),
+    jobWire(5, "failed"),
+    jobWire(6, "queued", { retry_of: jid(5) }),
+    jobWire(7, "succeeded", { retry_of: jid(5) }),
+  ];
+  const state: Crafted = { pages: onePage(records), queue: queueOf(9, null, [{ n: 6, position: 1 }]) };
+  await craft(app, state);
+  await app.getByTestId("mode-expert").click();
+  await app.getByTestId("nav-results").click();
+  const rows = app.getByTestId("v1-board-row");
+  const roots = () => rows.evaluateAll(elements => elements.map(el => el.getAttribute("data-root")));
+  await expect.poll(roots).toEqual([jid(1)]);
+  const first = rows.first();
+  await expect(first).toHaveAttribute("data-job", jid(2));
+  await first.getByTestId("results-select").click();
+  const detail = app.getByTestId("results-detail");
+  const artifacts = app.getByTestId("v1-artifacts");
+  const endpoint = `**/api/v1/jobs/${jid(2)}/artifacts`;
+  let artifactState = "available";
+  await app.route(endpoint, route => route.fulfill({ json: {
+    schema_version: 1, job_id: jid(2), state: artifactState, unexpected_count: artifactState === "available" ? 1 : 0,
+    items: artifactState === "available" ? [
+      { format: "srt", size: 50, integrity: "verified" },
+      { format: "vtt", size: 40, integrity: "changed" },
+      { format: "json", size: 30, integrity: "unverified" },
+    ] : [],
+  } }));
+  await app.getByTestId("v1-artifacts-load").click();
+  await expect(artifacts).toHaveAttribute("data-state", "available");
+  for (const integrity of ["verified", "changed", "unverified"]) await expect(artifacts.locator(`[data-integrity="${integrity}"]`)).toBeVisible();
+  for (const next of ["missing", "legacy", "none"]) {
+    artifactState = next;
+    await app.getByTestId("v1-artifacts-load").click();
+    await expect(artifacts).toHaveAttribute("data-state", next);
+  }
+  await app.getByTestId("results-tab-history").click();
+  await expect(detail).toHaveCount(0);
+  await expect.poll(roots).toEqual([jid(4), jid(3), jid(1)]);
+  await choose(app, "history-sort", "古い順");
+  await expect.poll(roots).toEqual([jid(1), jid(3), jid(4)]);
+  await choose(app, "history-filter", "中断");
+  await expect.poll(roots).toEqual([jid(3)]);
+  await rows.first().getByTestId("results-select").click();
+  await expect(detail).toContainText(jid(1));
+  expect(writes(seen)).toEqual([]);
+});

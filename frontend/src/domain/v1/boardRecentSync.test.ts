@@ -150,7 +150,7 @@ describe("v1 board hide/show keeps the auxiliary server job list in step", () =>
       const puts = visibilityPuts(s);
       const writing = s.board.setHidden(root, hidden);
       // Both PUTs succeeded, the message says so, and the re-read of the lists is still waiting.
-      await vi.waitFor(() => expect(s.gate.waiting).toBe(1));
+      await vi.waitFor(() => expect(s.gate.waiting).toBe(2));
       expect(s.board.store.get().action).toMatchObject({ kind: hidden ? "hide" : "show", phase: "done" });
       expect(visibilityPuts(s)).toBe(puts + 2);
       s.board.dismissAction();
@@ -176,8 +176,8 @@ describe("v1 board hide/show keeps the auxiliary server job list in step", () =>
     await s.board.setHidden(root, true);
     await settled(s);
     await Promise.resolve();
-    // One re-read of the board and one of the auxiliary list (each a single page here).
-    expect(listReads(s)).toBe(reads + 2);
+    // Board refresh reads visible and all once; the auxiliary list reads its own page once.
+    expect(listReads(s)).toBe(reads + 3);
 
     const d = setup();
     const chain = await finishedRetryChain(d);
@@ -186,7 +186,7 @@ describe("v1 board hide/show keeps the auxiliary server job list in step", () =>
     let release!: () => void;
     d.gate.hold = new Promise<void>((resolve) => (release = resolve));
     const writing = d.board.setHidden(chain.root, true);
-    await vi.waitFor(() => expect(d.gate.waiting).toBe(1));
+    await vi.waitFor(() => expect(d.gate.waiting).toBe(2));
     d.board.dispose();
     d.gate.hold = null;
     release();

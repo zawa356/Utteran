@@ -146,6 +146,9 @@ describe("C2c deletion controller: plan → explicit approval → execute", () =
     expect(controller.store.get().phase).toBe("unknown");
     expect(settled()).toBe(0);
     expect(controller.busy()).toBe(true);
+    controller.close();
+    expect(controller.gate.busy()).toBe(true);
+    expect(controller.store.get().phase).toBe("unknown");
     await controller.plan({ ...target(), jobId: OTHER }); // refused while the outcome is unknown
     expect(fetch.calls).toHaveLength(2);
     await controller.recheck();
