@@ -213,13 +213,21 @@ test("hide and show: the row leaves and returns; the job, its state and its outp
   await shot(app, "s5b-hidden-history");
 });
 
+async function cancelFromQueue(page: Page, root: string): Promise<void> {
+  await page.getByTestId("nav-queue").click();
+  await page.locator(`[data-testid="queue-row"][data-root="${root}"]`).click();
+  await page.getByTestId("queue-cancel").click();
+  await expect(page.getByTestId("queue-write-state")).toHaveAttribute("data-action-phase", "done");
+  await page.getByTestId("nav-transcribe").click();
+}
+
 test("retry is the same row: cancel a running job, retry it, the row returns to the queue with two attempts", async ({ app, request }) => {
   const seen = recordApi(app);
   await expert(app, request, ["slow-meeting.wav"]);
   const [id] = await submitBatch(app, seen);
   await ensureQueueRunning(app);
   await expect(row(app, "queue", id!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
-  await row(app, "queue", id!).getByTestId("v1-board-cancel").click();
+  await cancelFromQueue(app, id!);
   await expect(row(app, "history", id!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await app.getByTestId("v1-board-action-close").click();
   const cancelled = await api<{ revision: number }>(request, `/api/v1/jobs/${id}`);
@@ -240,7 +248,7 @@ test("retry is the same row: cancel a running job, retry it, the row returns to 
   // Clean up the slow job so the single slot is free for later specs.
   await app.getByTestId("v1-board-action-close").click();
   await expect(row(app, "queue", id!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
-  await row(app, "queue", id!).getByTestId("v1-board-cancel").click();
+  await cancelFromQueue(app, id!);
   await expect(row(app, "history", id!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await expect(row(app, "history", id!)).toHaveAttribute("data-attempts", "2");
 
@@ -278,7 +286,7 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
   const [a] = await submitBatch(app, seen);
   await ensureQueueRunning(app);
   await expect(row(app, "queue", a!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
-  await row(app, "queue", a!).getByTestId("v1-board-cancel").click();
+  await cancelFromQueue(app, a!);
   await expect(row(app, "history", a!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await app.getByTestId("v1-board-action-close").click();
 
@@ -312,10 +320,10 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
 
   // Clean up: cancel both waiting jobs and resume dispatch for later specs.
   await app.getByTestId("v1-board-action-close").click();
-  await row(app, "queue", b!).getByTestId("v1-board-cancel").click();
+  await cancelFromQueue(app, b!);
   await expect(row(app, "history", b!)).toHaveAttribute("data-status", "cancelled", { timeout: 20_000 });
   await app.getByTestId("v1-board-action-close").click();
-  await row(app, "queue", a!).getByTestId("v1-board-cancel").click();
+  await cancelFromQueue(app, a!);
   await expect(row(app, "history", a!)).toHaveAttribute("data-status", "cancelled", { timeout: 20_000 });
   const again = await api<{ revision: number }>(request, "/api/v1/queue");
   const resumed = await request.patch("/api/v1/queue/control", {

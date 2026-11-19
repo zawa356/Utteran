@@ -1,3 +1,4 @@
+import { QueueMutationGate } from "./queueGate";
 import { ApiError } from "../../api/errors";
 import { MutationIntent, type RandomSource } from "../../api/idempotency";
 import {
@@ -170,6 +171,7 @@ function listError(code: "job_list_inconsistent" | "job_list_too_long"): ApiErro
 const hasRowOverrides = (row: InputRow) => Object.values(row.overrides).some((v) => v !== undefined);
 
 export interface V1JobOptions {
+  gate?: QueueMutationGate;
   scheduler?: Scheduler;
   now?: () => number;
   random?: RandomSource;
@@ -178,6 +180,10 @@ export interface V1JobOptions {
 
 export class V1SingleJobController {
   readonly store = new Store<V1JobState>(initial);
+  readonly gate: QueueMutationGate;
+  private readonly controlOwner = Symbol("resume");
+  private readonly cancelOwner = Symbol("single cancel");
+  private readonly submitOwner = Symbol("single submit");
   private readonly fileIds = new Map<string, string>();
   private poller: SingleFlightPoller | null = null;
   private generation = 0;
@@ -198,6 +204,7 @@ export class V1SingleJobController {
     private readonly options: V1JobOptions = {},
   ) {
     this.scheduler = options.scheduler ?? browserScheduler;
+    this.gate = options.gate ?? new QueueMutationGate();
     this.now = options.now ?? (() => Date.now());
   }
 
@@ -281,7 +288,7 @@ export class V1SingleJobController {
    */
   canSubmit(): boolean {
     const s = this.store.get();
-    return s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired() && this.switchBlocked() === null;
+    return s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired() && this.switchBlocked() === null && !this.gate.busy();
   }
 
   /** Step 1: freeze, validate (B5), resolve (B7). One click = one attempt of each, never resent. */
@@ -329,6 +336,7 @@ export class V1SingleJobController {
   reset(): void {
     const s = this.store.get();
     if (s.step === "validating" || s.step === "resolving" || s.step === "submitting") return;
+    this.gate.release(this.submitOwner);
     // An unknown submission is acknowledged explicitly by the person (the server list may show it).
     this.store.patch({ step: "idle", failedAt: null, error: null, mismatch: false, prepared: null, pending: null });
   }
@@ -372,6 +380,7 @@ export class V1SingleJobController {
   }
 
   private async runSubmission(intent: MutationIntent<JsonObject>): Promise<void> {
+    if (!this.gate.owns(this.submitOwner) && !this.gate.acquire(this.submitOwner)) return;
     this.store.patch({ step: "submitting", failedAt: null, error: null, pending: intent });
     const prepared = this.store.get().prepared!;
     const fileId = (prepared.session.files as JsonObject[])[0]!.client_file_id;
@@ -389,6 +398,8 @@ export class V1SingleJobController {
       this.startTracking(job.id);
     } catch (error) {
       this.fail("submission", error, intent);
+    } finally {
+      if (this.store.get().step !== "unknown") this.gate.release(this.submitOwner);
     }
   }
 
@@ -516,7 +527,7 @@ export class V1SingleJobController {
   async resumeQueue(): Promise<void> {
     const s = this.store.get();
     const view = s.queue.view;
-    if (this.disposed || !view || view.dispatch !== "paused" || s.control.phase === "pending") return;
+    if (this.disposed || !view || s.queue.phase !== "done" || view.dispatch !== "paused" || this.gate.busy()) return;
     await this.runControl(new MutationIntent<JsonObject>({ schema_version: 1, dispatch: "running" }, this.options.random), view.revision);
   }
 
@@ -531,11 +542,13 @@ export class V1SingleJobController {
   private controlRevision: number | null = null;
 
   private async runControl(intent: MutationIntent<JsonObject>, revision: number): Promise<void> {
+    if (!this.gate.owns(this.controlOwner) && !this.gate.acquire(this.controlOwner)) return;
     this.controlRevision = revision;
     this.store.patch({ control: { phase: "pending", error: null, intent } });
     try {
       const view = await this.api.setDispatch(intent, revision);
       this.applyQueue(view);
+      await this.loadQueue();
       this.store.patch({ control: { phase: "done", error: null, intent: null } });
     } catch (error) {
       const apiError = toApiError(error);
@@ -547,6 +560,8 @@ export class V1SingleJobController {
       }
       const outcome = classifyStartFailure(apiError);
       this.store.patch({ control: { phase: outcome, error: apiError, intent: outcome === "unknown" ? intent : null } });
+    } finally {
+      if (this.store.get().control.phase !== "unknown") this.gate.release(this.controlOwner);
     }
   }
 
@@ -563,7 +578,7 @@ export class V1SingleJobController {
   /** A new cancel intent for the shown job (new key); refused while another one is open. */
   async cancel(): Promise<void> {
     const s = this.store.get();
-    if (this.disposed || !s.job || s.tracking === "final" || this.switchBlocked() !== null) return;
+    if (this.disposed || !s.job || s.tracking === "final" || this.switchBlocked() !== null || this.gate.busy()) return;
     const ctx: CancelContext = Object.freeze({
       jobId: s.job.id,
       revision: s.job.revision,
@@ -585,6 +600,7 @@ export class V1SingleJobController {
   discardCancel(): void {
     if (this.store.get().cancel.phase !== "unknown") return;
     this.cancelOp = null;
+    this.gate.release(this.cancelOwner);
     this.store.patch({ cancel: IDLE_CANCEL });
   }
 
@@ -604,6 +620,7 @@ export class V1SingleJobController {
   }
 
   private async runCancel(ctx: CancelContext): Promise<void> {
+    if (!this.gate.owns(this.cancelOwner) && !this.gate.acquire(this.cancelOwner)) return;
     // Set synchronously before the first await: a second click or re-check sees "pending" and stops.
     this.store.patch({ cancel: { phase: "pending", error: null, intent: ctx.intent, jobId: ctx.jobId } });
     try {
@@ -625,6 +642,8 @@ export class V1SingleJobController {
       const outcome = classifyStartFailure(apiError);
       if (outcome !== "unknown") this.cancelOp = null;
       this.store.patch({ cancel: { phase: outcome, error: apiError, intent: outcome === "unknown" ? ctx.intent : null, jobId: ctx.jobId } });
+    } finally {
+      if (this.store.get().cancel.phase !== "unknown") this.gate.release(this.cancelOwner);
     }
   }
 

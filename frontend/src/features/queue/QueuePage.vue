@@ -6,6 +6,7 @@ import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
 import { useCodeText } from "../../composables/v1";
+import type { MessageKey } from "../../i18n";
 import QueueDetail from "./QueueDetail.vue";
 import { buildQueueRows, QUEUE_FILTERS, QUEUE_SORTS, type QueueFilter, type QueueSort, reconcileSelection, viewRows } from "./queueRows";
 import QueueTable from "./QueueTable.vue";
@@ -14,13 +15,16 @@ import QueueTable from "./QueueTable.vue";
  * Bundle D2-A (`--next-ui-v1`, Expert): the queue page. It reads the one board controller
  * (`core.v1.board`; no other client, list or cache) and shows its queue as a table plus the
  * selected logical job's detail. Search, filter and sort are display-only and local; they never
- * change B7's order and never send anything. Operations stay in Expert ③ (D2-B moves them).
+ * change B7's order and never send anything. Operations use the shared board and app mutation gate.
  */
 const core = useCore();
 const board = core.v1!.board;
 const job = core.v1!.job;
 const s = useStore(board.store);
 const inputs = useStore(core.inputs.store);
+const gate = useStore(core.v1!.queueGate.store);
+const busy = computed(() => { void gate.value; return board.actionOpen(); });
+const dispatchReason = computed(() => { void [s.value, gate.value]; return board.queueReason(); });
 const { t } = useCodeText();
 
 // One lease on the board's polling while this page is shown (Expert ③ holds its own; one timer).
@@ -98,6 +102,22 @@ const openAction = computed(() => (s.value.action?.phase === "pending" || s.valu
         <v-btn variant="text" size="small" data-testid="queue-open-transcribe" @click="core.shell.navigate('transcribe')">{{ t("queue.openTranscribe") }}</v-btn>
       </template>
     </v-alert>
+    <v-alert v-if="s.action" :type="s.action.phase === 'done' ? 'info' : 'warning'" density="compact" role="status" data-testid="queue-write-state" :data-kind="s.action.kind" :data-action-phase="s.action.phase">
+      {{ t(`queue.write.${s.action.phase}` as MessageKey) }}
+      <span v-if="s.action.error?.code"> ({{ s.action.error.code }})</span>
+      <v-btn v-if="s.action.phase === 'unknown'" variant="text" size="small" data-testid="queue-recheck" @click="board.recheck()">{{ t("v1.unknown.recheck") }}</v-btn>
+    </v-alert>
+    <v-alert v-if="busy && !openAction" type="warning" density="compact" role="status" data-testid="queue-foreign-write">
+      {{ t("queue.disabled.busy") }}
+      <v-btn variant="text" size="small" @click="core.shell.navigate('transcribe')">{{ t("queue.openTranscribe") }}</v-btn>
+    </v-alert>
+    <div class="u-stack">
+      <p class="text-caption" data-testid="queue-pause-semantics">{{ t("queue.pauseSemantics") }}</p>
+      <v-btn variant="outlined" :disabled="dispatchReason !== null" data-testid="queue-dispatch" @click="board.setDispatch(s.queueView!.dispatch === 'paused' ? 'running' : 'paused')">
+        {{ t(s.queueView?.dispatch === 'paused' ? "queue.resume" : "queue.pause") }}
+      </v-btn>
+      <p v-if="dispatchReason" class="text-caption">{{ t(`queue.disabled.${dispatchReason}` as MessageKey) }}</p>
+    </div>
     <v-alert v-if="s.phase === 'done' && s.queueView?.dispatch === 'paused'" type="info" density="compact" data-testid="queue-dispatch-paused">{{ t("queue.paused") }}</v-alert>
 
     <div class="u-queue-toolbar" role="search">
@@ -134,7 +154,7 @@ const openAction = computed(() => (s.value.action?.phase === "pending" || s.valu
           <QueueTable :rows="shown" :selected="selected" @select="select" />
         </v-card>
       </div>
-      <QueueDetail :row="detailRow" :lost="lost" :filtered="filteredOut" />
+      <QueueDetail :row="detailRow" :lost="lost" :filtered="filteredOut" :display="{ query: draft, sort, filter }" />
     </div>
   </section>
 </template>

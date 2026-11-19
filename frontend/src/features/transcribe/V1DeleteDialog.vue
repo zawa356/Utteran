@@ -17,6 +17,7 @@ const props = defineProps<{ candidates: readonly JobV1[] }>();
 const core = useCore();
 const deletion = core.v1!.deletion;
 const s = useStore(deletion.store);
+const queueGate = useStore(deletion.gate.store);
 const { t, status, reason } = useCodeText();
 const cancelButton = ref<{ $el: HTMLElement } | null>(null);
 
@@ -36,6 +37,7 @@ function choose(jobId: string | null): void {
 
 const canConfirm = computed(() => {
   void s.value;
+  void queueGate.value;
   return deletion.canConfirm();
 });
 

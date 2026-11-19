@@ -22,14 +22,15 @@ import { classifyStartFailure } from "../admission";
 import { toApiError } from "../operation";
 import { Store } from "../store";
 import { groupLogicalJobs, isFinished, type LogicalJob } from "./logicalJobs";
-
+import { QueueMutationGate } from "./queueGate";
+import { adjacentOrder, waitingItems, type QueueDisabled, type QueueItem, type QueueDisplay } from "./queueOrder";
 export { isFinished };
 
 export const BOARD_MAX_PAGES = 100;
 export const BOARD_POLL_MS = 2000;
 const RETRYABLE = new Set<string>(["failed", "cancelled", "interrupted"]);
 
-export type BoardActionKind = "cancel" | "retry" | "hide" | "show";
+export type BoardActionKind = "cancel" | "retry" | "hide" | "show" | "dispatch" | "hold" | "order";
 export type BoardActionPhase = "pending" | "done" | "rejected" | "conflict" | "unknown";
 
 export interface BoardAction {
@@ -108,6 +109,7 @@ function listError(code: "job_list_inconsistent" | "job_list_too_long"): ApiErro
 }
 
 export interface BoardOptions {
+  gate?: QueueMutationGate;
   scheduler?: Scheduler;
   random?: RandomSource;
   pollMs?: number;
@@ -134,13 +136,18 @@ export class V1JobBoardController {
   private leases = 0;
   private disposed = false;
   private frozen: Frozen | null = null;
+  /** Highest queue revision confirmed by a GET or a mutation acknowledgement. */
+  private queueFloor = 0;
   private readonly scheduler: Scheduler;
+  readonly gate: QueueMutationGate;
+  private readonly owner = Symbol("board");
 
   constructor(
     private readonly api: V1ResourcesApi,
     private readonly options: BoardOptions = {},
   ) {
     this.scheduler = options.scheduler ?? browserScheduler;
+    this.gate = options.gate ?? new QueueMutationGate();
   }
 
   // ------------------------------------------------------------------ reads
@@ -196,6 +203,9 @@ export class V1JobBoardController {
       }
       const queueView = await this.api.getQueue(abort.signal);
       if (!current()) return;
+      const previous = this.store.get().queueView;
+      if (queueView.revision < Math.max(previous?.revision ?? 0, this.queueFloor)) throw listError("job_list_inconsistent");
+      this.queueFloor = queueView.revision;
       const groups = groupLogicalJobs(visible);
       const places = queuePlaces(queueView);
       // A row is finished only when *every* internal job is: a still-waiting branch keeps it in the
@@ -290,10 +300,9 @@ export class V1JobBoardController {
     return [...s.queue, ...s.history, ...s.hidden].find((g) => g.rootId === rootId) ?? null;
   }
 
-  /** Why no new write may start (an open one must be re-checked or dismissed first). */
+  /** App-wide pending/unknown ownership blocks every new queue write. */
   actionOpen(): boolean {
-    const phase = this.store.get().action?.phase;
-    return phase === "pending" || phase === "unknown";
+    return this.gate.busy();
   }
 
   /** The job a row shows and acts on now (see `currentJob`). */
@@ -309,7 +318,10 @@ export class V1JobBoardController {
   /** `jobId` = one specific unfinished job of the row (a branch); default = the row's current job. */
   canCancel(group: LogicalJob, jobId?: string): boolean {
     const target = jobId === undefined ? (group.open.length > 0 ? this.current(group) : null) : (group.open.find((job) => job.id === jobId) ?? null);
-    return !this.actionOpen() && target !== null && target.status !== "cancelling";
+    if (this.queueReason() !== null || target === null || target.status === "cancelling") return false;
+    if (jobId === undefined && group.open.length !== 1) return false;
+    const view = this.store.get().queueView!;
+    return view.items.some(item => item.resourceKind === "job" && item.resourceId === target.id && (item.id === view.activeItemId || item.position !== null));
   }
 
   canRetry(group: LogicalJob): boolean {
@@ -355,6 +367,59 @@ export class V1JobBoardController {
     await this.run({ kind: hidden ? "hide" : "show", rootId, remaining: [...group.jobIds], phase: "pending", error: null });
   }
 
+  queueReason(): QueueDisabled | null {
+    if (this.actionOpen()) return "busy";
+    const s = this.store.get();
+    if (s.phase !== "done" || !s.queueView) return "unread";
+    if (!waitingItems(s.queueView)) return "invalid";
+    return null;
+  }
+
+  private targetItem(rootId: string, jobId?: string): QueueItem | null {
+    const group = this.find(rootId);
+    if (!group || !jobId || !group.open.some(job => job.id === jobId)) return null;
+    return this.store.get().queueView?.items.find(item => item.resourceKind === "job" && item.resourceId === jobId) ?? null;
+  }
+
+  holdReason(rootId: string, jobId?: string): QueueDisabled | null {
+    const reason = this.queueReason();
+    if (reason) return reason;
+    if (!jobId) return "branch";
+    const item = this.targetItem(rootId, jobId);
+    const view = this.store.get().queueView!;
+    return !item || item.id === view.activeItemId || item.position === null ? "waiting" : null;
+  }
+
+  moveReason(rootId: string, jobId: string | undefined, direction: -1 | 1, display: QueueDisplay): QueueDisabled | null {
+    const reason = this.holdReason(rootId, jobId);
+    if (reason) return reason;
+    if (display.sort !== "queue" || display.query !== "" || display.filter !== "all") return "display";
+    return adjacentOrder(this.store.get().queueView!, this.targetItem(rootId, jobId)!.id, direction).reason;
+  }
+
+  async setDispatch(dispatch: QueueViewV1["dispatch"]): Promise<void> {
+    if (this.disposed || this.queueReason() || this.store.get().queueView!.dispatch === dispatch) return;
+    await this.queueWrite("dispatch", "", { schema_version: 1, dispatch });
+  }
+
+  async setHeld(rootId: string, jobId: string, held: boolean): Promise<void> {
+    if (this.disposed || this.holdReason(rootId, jobId)) return;
+    const item = this.targetItem(rootId, jobId)!;
+    if (item.held === held) return;
+    await this.queueWrite("hold", rootId, { schema_version: 1, held }, item.id);
+  }
+
+  async move(rootId: string, jobId: string, direction: -1 | 1, display: QueueDisplay): Promise<void> {
+    if (this.disposed || this.moveReason(rootId, jobId, direction, display)) return;
+    const order = adjacentOrder(this.store.get().queueView!, this.targetItem(rootId, jobId)!.id, direction);
+    await this.queueWrite("order", rootId, { schema_version: 1, waiting_item_ids: Object.freeze(order.ids!) });
+  }
+
+  private async queueWrite(kind: "dispatch" | "hold" | "order", rootId: string, body: JsonObject, itemId = ""): Promise<void> {
+    this.frozen = Object.freeze({ jobId: itemId, revision: this.store.get().queueView!.revision, intent: new MutationIntent<JsonObject>(Object.freeze(body), this.options.random) });
+    await this.run({ kind, rootId, remaining: [], phase: "pending", error: null });
+  }
+
   /** Explicit re-check of an unknown outcome: the same target and the same request, nothing else. */
   async recheck(): Promise<void> {
     const action = this.store.get().action;
@@ -362,21 +427,34 @@ export class V1JobBoardController {
     await this.run({ ...action, phase: "pending", error: null });
   }
 
-  /** Forget a settled or unknown action (the server state is whatever the next refresh shows). */
+  /** Only settled actions can be dismissed; unknown requests keep their frozen context. */
   dismissAction(): void {
-    if (this.store.get().action?.phase === "pending") return;
+    if (["pending", "unknown"].includes(this.store.get().action?.phase ?? "")) return;
     this.frozen = null;
     this.store.patch({ action: null });
   }
 
   private async run(action: BoardAction): Promise<void> {
+    if (this.gate.owns(this.owner)) {
+      if (this.store.get().action?.phase !== "unknown") return;
+    } else if (!this.gate.acquire(this.owner)) return;
     this.store.patch({ action });
     let remaining = [...action.remaining];
     // The outcome of *this* write. The shown `action` can be dismissed (or replaced) while the
     // lists are re-read below, so it is not what decides the notification.
     let visibilityDone = false;
     try {
-      if (action.kind === "cancel" || action.kind === "retry") {
+      if (action.kind === "dispatch" || action.kind === "hold" || action.kind === "order") {
+        const frozen = this.frozen!;
+        const acknowledged = action.kind === "dispatch"
+          ? await this.api.setDispatch(frozen.intent!, frozen.revision)
+          : action.kind === "hold"
+            ? await this.api.setHold(frozen.jobId, frozen.intent!, frozen.revision)
+            : await this.api.setOrder(frozen.intent!, frozen.revision);
+        // Do not display the response optimistically, but the next GET cannot be older than it.
+        this.queueFloor = Math.max(this.queueFloor, acknowledged.revision);
+        remaining = [];
+      } else if (action.kind === "cancel" || action.kind === "retry") {
         const frozen = this.frozen!;
         if (action.kind === "cancel") await this.api.cancel(frozen.jobId, frozen.revision, frozen.intent!);
         else await this.api.retry(frozen.jobId, frozen.revision, frozen.intent!);
@@ -406,6 +484,7 @@ export class V1JobBoardController {
     }
     // Whatever happened, the lists come from the server again.
     await this.refresh();
+    if (this.store.get().action?.phase !== "unknown") this.gate.release(this.owner);
     if (visibilityDone && !this.disposed) this.options.onVisibilitySettled?.();
   }
 

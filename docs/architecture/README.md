@@ -1,5 +1,7 @@
 # Architecture documents — where to start
 
+追補（2026-11-19、0.1.60未リリース）: [D2-B Expertキュー操作](ui3/d2b-queue-actions.md)。B7既存契約へ接続、単一mutation gate、Draft PR。Windows実機は未受入。
+
 更新: 2026-11-12 JST（UI-3 S5-A 新UIからv1単一ジョブ、開発版0.1.51・未リリース）
 
 このディレクトリには **「現在の実装の正本」** と **「各Phaseの提出・検証記録（歴史資料）」** が混在する。

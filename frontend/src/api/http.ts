@@ -74,7 +74,7 @@ export function parseErrorBody(raw: unknown): ErrorBody {
   if (typeof error === "object" && error !== null) {
     const e = error as Record<string, unknown>;
     return {
-      code: typeof e.code === "string" ? e.code : null,
+      code: typeof e.code === "string" && CODE.test(e.code) ? e.code : null,
       retryable: typeof e.retryable === "boolean" ? e.retryable : null,
       requestId: typeof e.request_id === "string" ? e.request_id : null,
       detail: null,

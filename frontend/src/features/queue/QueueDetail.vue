@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useCore } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
 import { useCodeText } from "../../composables/v1";
-import { isHeld, placeOfRow, type QueueRow } from "./queueRows";
+import QueueControls from "./QueueControls.vue";
+import { isHeld, type QueueViewOptions, placeOfRow, type QueueRow } from "./queueRows";
 
 /**
- * Bundle D2-A: read-only detail of the selected logical job. Every value comes from the board's
+ * Bundle D2-B: detail of the selected logical job. Every value comes from the board's
  * latest answer (the row object is rebuilt on each read, never kept). Only allowlisted DTO fields:
  * ids, state, B7's queue facts, model/profile, times and fixed codes. No path, prompt, token or
- * transcript exists in these DTOs, and nothing here starts an operation.
+ * transcript exists in these DTOs. Controls delegate to the shared board.
  */
-const props = defineProps<{ row: QueueRow | null; lost: boolean; filtered: boolean }>();
+const props = defineProps<{ row: QueueRow | null; lost: boolean; filtered: boolean; display: QueueViewOptions }>();
 const board = useCore().v1!.board;
 const s = useStore(board.store);
 const { t, status, reason } = useCodeText();
@@ -31,6 +32,13 @@ function placeOf(jobId: string): string | null {
   if (place.active) return t("queue.place.active");
   return place.position === null ? t("queue.place.unknown") : t("queue.place.waiting", { position: place.position });
 }
+const targetId = ref<string | undefined>();
+watch(() => props.row?.rootId, () => { targetId.value = undefined; });
+const target = computed(() => {
+  const open = props.row?.group.open ?? [];
+  return open.length === 1 ? open[0]!.id : open.some(job => job.id === targetId.value) ? targetId.value : undefined;
+});
+const branches = computed(() => props.row?.group.open.map(job => ({ value: job.id, title: `${status(job.status)} · ${placeOf(job.id) ?? t("queue.place.unknown")} · ${job.id}` })) ?? []);
 const spec = computed(() => props.row?.current.spec ?? null);
 </script>
 
@@ -81,6 +89,8 @@ const spec = computed(() => props.row?.current.spec ?? null);
           <dd class="u-break" data-testid="queue-detail-recovery">{{ reason(row.current.recoveryRequired) }}</dd>
         </template>
       </dl>
+      <v-select v-if="row.group.open.length > 1" v-model="targetId" :items="branches" :label="t('queue.chooseBranch')" density="compact" hide-details data-testid="queue-target" />
+      <QueueControls :root-id="row.rootId" :job-id="target" :display="display" />
       <p class="text-caption">{{ t("queue.detail.runs", { count: row.current.attempts }) }}</p>
 
       <v-alert v-if="row.group.open.length > 1" type="warning" density="compact" data-testid="queue-detail-branches">

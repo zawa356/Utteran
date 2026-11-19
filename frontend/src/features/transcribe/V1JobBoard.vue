@@ -46,9 +46,11 @@ function place(g: LogicalJob): string {
 }
 const deletion = core.v1!.deletion;
 const d = useStore(deletion.store);
+const queueGate = useStore(core.v1!.queueGate.store);
 const open = computed(() => {
   void s.value;
   void d.value;
+  void queueGate.value;
   return board.actionOpen() || deletion.isOpen();
 });
 // C2c: the internal jobs of the row the deletion dialog was opened from (the person picks one).
@@ -85,7 +87,7 @@ const sections = computed(() => [
       <span v-if="s.action.error?.code" class="text-caption"> ({{ reason(s.action.error.code) }})</span>
       <template #append>
         <v-btn v-if="s.action.phase === 'unknown'" variant="text" size="small" data-testid="v1-board-recheck" @click="board.recheck()">{{ t("v1.unknown.recheck") }}</v-btn>
-        <v-btn v-if="s.action.phase !== 'pending'" variant="text" size="small" data-testid="v1-board-action-close" @click="board.dismissAction()">{{ t("v1.board.action.close") }}</v-btn>
+        <v-btn v-if="s.action.phase !== 'pending' && s.action.phase !== 'unknown'" variant="text" size="small" data-testid="v1-board-action-close" @click="board.dismissAction()">{{ t("v1.board.action.close") }}</v-btn>
       </template>
     </v-alert>
 
@@ -134,7 +136,6 @@ const sections = computed(() => [
               <ul class="u-notes">
                 <li v-for="branch in g.open" :key="branch.id" class="u-break" data-testid="v1-board-branch" :data-job="branch.id" :data-status="branch.status">
                   {{ status(branch.status) }} · {{ branch.id }}
-                  <v-btn variant="text" color="error" size="small" :disabled="!board.canCancel(g, branch.id) || open" data-testid="v1-board-branch-cancel" @click="board.cancel(g.rootId, branch.id)">{{ t("v1.board.cancel") }}</v-btn>
                 </li>
               </ul>
             </v-alert>
@@ -142,7 +143,7 @@ const sections = computed(() => [
             <div v-if="g.rerunOfRootId" class="text-caption">{{ t("v1.board.rerunOf", { id: g.rerunOfRootId }) }}</div>
             <div v-if="g.incomplete" class="text-caption" data-testid="v1-board-row-incomplete">{{ t("v1.board.incomplete") }}</div>
             <div class="u-row mt-1">
-              <v-btn v-if="section.key === 'queue'" variant="outlined" color="error" size="small" :disabled="!board.canCancel(g) || open" data-testid="v1-board-cancel" @click="board.cancel(g.rootId)">{{ t("v1.board.cancel") }}</v-btn>
+              <v-btn v-if="section.key === 'queue'" variant="text" size="small" data-testid="v1-board-open-queue" @click="core.shell.navigate('queue')">{{ t("section.queue") }}</v-btn>
               <v-btn v-if="section.key === 'history'" variant="outlined" size="small" :disabled="!board.canRetry(g) || open" data-testid="v1-board-retry" @click="board.retry(g.rootId)">{{ t("v1.board.retry") }}</v-btn>
               <v-btn v-if="section.key === 'history' && s.visibilitySupported" variant="text" size="small" :disabled="!board.canHide(g) || open" data-testid="v1-board-hide" @click="board.setHidden(g.rootId, true)">{{ t("v1.board.hide") }}</v-btn>
               <v-btn v-if="section.key === 'hidden'" variant="text" size="small" :disabled="open" data-testid="v1-board-show" @click="board.setHidden(g.rootId, false)">{{ t("v1.board.show") }}</v-btn>

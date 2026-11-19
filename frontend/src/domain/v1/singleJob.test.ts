@@ -285,3 +285,53 @@ describe("legacy mode keeps the legacy client only", () => {
     expect(createCore({ fetch, host: createFakeHost(), apiMode: "V1-DEV" as never }).apiMode).toBe("legacy");
   });
 });
+
+describe("D2-B app-wide queue mutation gate", () => {
+  it("old resume unknown blocks board actions and submissions; same request alone reconciles", async () => {
+    const { core, job, v1 } = await ready();
+    const [id] = v1.addJobs(1);
+    await core.v1!.board.refresh();
+    v1.inject.set("PATCH /api/v1/queue/control", { reply: json(500, {}), apply: true });
+    await job.resumeQueue();
+    expect(job.store.get().control.phase).toBe("unknown");
+    await core.v1!.board.setDispatch("paused");
+    await core.v1!.board.cancel(id!);
+    await job.resumeQueue();
+    expect(v1.writes()).toHaveLength(1);
+    await job.loadQueue(); // GET is not an acknowledgement
+    expect(core.v1!.queueGate.busy()).toBe(true);
+    await job.recheckResume();
+    expect(v1.writes()).toHaveLength(2);
+    expect(v1.writes()[1]).toEqual(v1.writes()[0]);
+    expect(core.v1!.queueGate.busy()).toBe(false);
+    core.dispose();
+  });
+  it("board unknown blocks old resume and single cancellation even after navigation/read", async () => {
+    const { core, job, v1 } = await ready();
+    const [id] = v1.addJobs(1);
+    await job.loadRecent(); job.follow(id!);
+    const b = core.v1!.board; await b.refresh();
+    v1.inject.set("PATCH /api/v1/queue/control", { reply: json(500, {}) });
+    await b.setDispatch("running");
+    core.shell.navigate("queue"); core.shell.navigate("transcribe");
+    await job.loadQueue(); await job.resumeQueue(); await job.cancel();
+    expect(v1.writes()).toHaveLength(1);
+    b.dismissAction(); // unknown cannot be silently forgotten
+    expect(b.store.get().action?.phase).toBe("unknown");
+    await b.recheck(); expect(v1.writes()).toHaveLength(2);
+    expect(core.v1!.queueGate.busy()).toBe(false);
+    core.dispose();
+  });
+  it("a pending old resume and two queue clicks emit one write", async () => {
+    const { core, job, v1 } = await ready();
+    await core.v1!.board.refresh();
+    let finish!: () => void;
+    v1.inject.set("PATCH /api/v1/queue/control", { reply: () => new Promise<Response>(resolve => { finish = () => resolve(json(500, {})); }) });
+    const pending = job.resumeQueue();
+    await core.v1!.board.setDispatch("running"); await job.resumeQueue();
+    expect(v1.writes()).toHaveLength(1);
+    finish(); await pending;
+    expect(core.v1!.queueGate.busy()).toBe(true);
+    await job.recheckResume(); core.dispose();
+  });
+});

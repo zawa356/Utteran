@@ -19,6 +19,7 @@ import type { DeletionModeV1, JobDeletionPlanV1, JobDeletionV1, JsonObject, V1Re
 import { classifyStartFailure } from "../admission";
 import { toApiError } from "../operation";
 import { Store } from "../store";
+import { QueueMutationGate } from "./queueGate";
 
 export type DeletionPhase = "idle" | "planning" | "planned" | "plan_error" | "executing" | "done" | "incomplete" | "rejected" | "conflict" | "unknown";
 
@@ -43,6 +44,7 @@ export interface DeletionState {
 const initial: DeletionState = { phase: "idle", target: null, plan: null, result: null, error: null };
 
 export interface DeletionOptions {
+  gate?: QueueMutationGate;
   random?: RandomSource;
   /** Called after every settled execution (done / incomplete / rejected / conflict), not for unknown. */
   onSettled?: () => void;
@@ -53,11 +55,15 @@ export class V1DeletionController {
   private intent: MutationIntent<JsonObject> | null = null;
   private generation = 0;
   private disposed = false;
+  readonly gate: QueueMutationGate;
+  private readonly owner = Symbol("deletion");
 
   constructor(
     private readonly api: V1ResourcesApi,
     private readonly options: DeletionOptions = {},
-  ) {}
+  ) {
+    this.gate = options.gate ?? new QueueMutationGate();
+  }
 
   /** A dialog is open (planning, planned, executing or an outcome not yet dismissed). */
   isOpen(): boolean {
@@ -88,7 +94,7 @@ export class V1DeletionController {
 
   canConfirm(): boolean {
     const s = this.store.get();
-    return s.phase === "planned" && s.plan !== null && s.plan.allowed && s.plan.planToken !== null;
+    return !this.gate.busy() && s.phase === "planned" && s.plan !== null && s.plan.allowed && s.plan.planToken !== null;
   }
 
   /** The explicit approval: sends the frozen plan once. A second click while it is in flight is ignored. */
@@ -106,6 +112,7 @@ export class V1DeletionController {
   }
 
   private async send(): Promise<void> {
+    if (!this.gate.owns(this.owner) && !this.gate.acquire(this.owner)) return;
     const { target } = this.store.get();
     const intent = this.intent!;
     const generation = ++this.generation;
@@ -123,6 +130,7 @@ export class V1DeletionController {
       this.store.patch({ phase, error: apiError });
       if (phase === "unknown") return; // the server state is not known: do not re-read as if settled
     }
+    this.gate.release(this.owner);
     this.options.onSettled?.();
   }
 
@@ -131,6 +139,7 @@ export class V1DeletionController {
     if (this.store.get().phase === "executing") return;
     this.generation += 1;
     this.intent = null;
+    this.gate.release(this.owner);
     this.store.set(initial);
   }
 

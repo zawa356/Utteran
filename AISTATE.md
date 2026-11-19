@@ -1,5 +1,14 @@
 # AI 作業状態
 
+## 現在地（2026-11-19、束D2-B Expertキュー実操作、0.1.60・未リリース、Draft PR提出）
+
+- 基点main `036e13ea2d612aa21f8654e426e5040bcf664d13`（main CI run 44462491950、15/15 success）。独立ブランチ `feat/ui3-d2b-queue-actions`、作者 `zawa356`。
+- B7の既存契約と一致確認。API・schema・DB・CSPの変更なし。`core.v1.queueGate`を単一操作ゲートとしてboard、旧単件resume/cancel、単件/batch投入、C2c実行へ共有。未知の結果はGET・離脱で解除しない。
+- 新規dispatchのpause/resume、waiting Jobのhold/unhold、全waiting完全順列の隣接移動、個別協調取消をExpertキューに接続。③はキューへの案内と、D3までの再試行・履歴操作を維持。
+- 試験: Vitest590、pytest1728 passed（既存skip9/xfail1）、prototype96。初回全E2E122/125成功とfixture/時間超過の経緯、D2-B12件・polling再確認2件のPASSを記録。CIの最終数値は[Draft PR #67](https://github.com/zawa356/Utteran/pull/67)。
+- Red→Green・品質ゲート実測・受入条件は [D2-B実装記録](docs/architecture/ui3/d2b-queue-actions.md) とPR本文。Windows WebView2・DPI・native D&D・実GPUはNOT_RUN（D4/#22）。#59/#60を解消済みと扱わない。
+- Ready化・main merge・force-push・tag・releaseなし。次: ownerレビュー、D3/D4。
+
 ## 現在地（2026-11-19、束D2-A Expertキュー専用画面、0.1.59・未リリース、Draft PR）
 
 - 基点main `e9745dfb8ecd248319153eef8ca09c064538f8ed`（0.1.58、D1統合後のmain push CI run 44445796022 success）。セッション指定ブランチ`claude/funny-cray-4g3vrz`、作者`zawa356`。Ready化・merge・tag・releaseなし。
