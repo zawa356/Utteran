@@ -27,7 +27,8 @@ function recordApi(page: Page): Request[] {
 }
 const line = (r: Request) => `${r.method()} ${new URL(r.url()).pathname}`;
 const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET").map(line);
-const legacyCalls = (seen: Request[]) => seen.map(line).filter((l) => !l.includes(" /api/v1/") && !l.endsWith(" /api/settings") && !l.includes(" /api/environment") && !l.includes(" /api/token") && !l.includes(" /api/setup") && !l.includes(" /api/logs"));
+/** The legacy job routes (start, cancel, queue): v1-dev must never use them, by any path. */
+const legacyJobCalls = (seen: Request[]) => seen.map(line).filter((l) => / \/api\/(jobs|queue)(\/|$)/.test(l));
 
 async function api<T>(request: APIRequestContext, path: string): Promise<T> {
   const response = await request.get(path, { headers: AUTH });
@@ -108,7 +109,7 @@ test("D1-04: a checked job and an accepted job keep their state across every pag
   // No resend, no implicit cancel, no deletion, and nothing on the legacy start/cancel routes.
   expect(writes(seen)).toEqual(afterSubmit);
   expect(writes(seen).some((l) => l.startsWith("DELETE ") || l.includes("/cancel") || l.includes("/deletion"))).toBe(false);
-  expect(legacyCalls(seen)).toEqual([]);
+  expect(legacyJobCalls(seen)).toEqual([]);
   await shot(app, "d1-v1-normal-accepted");
 });
 

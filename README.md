@@ -6,7 +6,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.57`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.58`（未release）。API・設定は1.0まで変更されます。
 
 > バックエンド（Phase A〜B9）の現在の構成・提供状況・制約・試験範囲は
 > [docs/architecture/README.md](docs/architecture/README.md)を正本とします。B5〜B9のv1 APIはすべて
@@ -14,7 +14,8 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 > 開発者向けの暫定フラグ`utteran-gui --next-ui-v1`（0.1.49）は、専用の空ディレクトリを`UTTERAN_DATA_ROOT`に指定したときだけv1を起動する**開発専用モード**です。
 > **0.1.56（2026-11-17、PR #49〜#53をmain統合、未リリース）**: `--next-ui-v1`の通常モードは1ファイルずつのv1投入、Expertは複数ファイルを1リクエストで原子的に一括投入し、論理ジョブ（retry連鎖）のキュー/履歴・非表示/再表示と成果物の形式別照合を利用できます。
 > Windows 11の実WebView2とCPU実モデルで差分を受入済み（**CONDITIONAL**）。OS DPI 125/150/200%とExplorer複数WAVのネイティブD&Dは未受入（[#22](https://github.com/zawa356/Utteran/issues/22)）。Viewer、Design Freezeどおりの画面構成、既定UI切替は未実装/未承認です（[S5-B](docs/architecture/ui3/s5b-multi-job-board.md)）。
-> **0.1.57（Draft、未統合）**: 終了した内部ジョブ1件の「履歴のみ削除（墓標化）」を確認付きで行えます（`--next-ui-v1`のみ）。完全消去ではなく、backup等に残ります。**成果物ファイルの削除は、安全に削除できることを証明できないため全環境で無効**です。Windows実機は未受入です（[C2c設計](docs/architecture/program/c2c-deletion-design.md)、[#56](https://github.com/zawa356/Utteran/issues/56)）。
+> **0.1.57（PR #58でmain統合、未リリース）**: 終了した内部ジョブ1件の「履歴のみ削除（墓標化）」を確認付きで行えます（`--next-ui-v1`のみ）。完全消去ではなく、backup等に残ります。**成果物ファイルの削除は、安全に削除できることを証明できないため全環境で無効**です。Windows実機は未受入です（[C2c設計](docs/architecture/program/c2c-deletion-design.md)、[#56](https://github.com/zawa356/Utteran/issues/56)）。
+> **0.1.58（Draft、未統合）**: 新UIのシェルを、通常モード＝上部の3項目（文字起こし／セットアップ／設定）、Expert＝6項目の管理サイドバーに分けました。入力・設定・ジョブは両モードで共有し、切替で投入・取消・削除は起きません。キュー専用画面・結果と履歴・外観の仕上げは後続です（[束D1](docs/architecture/ui3/d1-shell-navigation.md)）。
 > `--next-ui`は従来の旧APIへの順次投入、引数なしは旧GUIのままです。v1は専用data rootでの明示opt-inに限ります。実機証拠とmain CIは[PR #53](https://github.com/zawa356/Utteran/pull/53#issuecomment-6940939036)に記録しています。
 > 0.1.50の開発用`python -m utteran_gui.capability_smoke`は、同じ専用rootでB4のready証拠を明示的に1回だけ作る**開発専用の入口**です。
 > 通常の起動・APIはsmokeを実行せず、Windows fw-cpu実モデルsmokeは専用VMで成功していますが、CUDA等のGPU実機検証は別課題です（[B4 smoke](docs/architecture/b4/smoke.md)）。

@@ -6,7 +6,7 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.57` (unreleased).
+> Current development version: `0.1.58` (unreleased).
 > APIs and configuration may change before 1.0.
 
 > The current backend (Phase A-B9) structure, feature status, limits and test coverage are maintained in
@@ -15,7 +15,8 @@ transcription API.
 > The temporary `utteran-gui --next-ui-v1` flag requires a dedicated marked `UTTERAN_DATA_ROOT` and remains development-only.
 > **0.1.56 (merged to main on 2026-11-17 via PRs #49–#53; unreleased):** Normal mode submits one file at a time using v1. Expert mode supports atomic multi-file submission in one request, logical retry-linked jobs in queue/history, hide/restore and per-format artifact integrity views.
 > The changed behavior passed Windows 11 WebView2 and real CPU-model acceptance **conditionally**. Native OS DPI 125/150/200% and Explorer multi-WAV drag-and-drop are still unverified ([#22](https://github.com/zawa356/Utteran/issues/22)). The full viewer, Design Freeze screen layout and default UI switch remain unimplemented or unapproved ([S5-B](docs/architecture/ui3/s5b-multi-job-board.md)).
-> **0.1.57 (Draft, not merged)**: in `--next-ui-v1` only, the history record of one finished internal job can be deleted ("history only", a tombstone) after a confirmation. This is not complete erasure (backups and other places keep data). **Deleting output files is disabled on every platform**, because a safe deletion cannot be proven. Windows hardware acceptance has not been done ([C2c design](docs/architecture/program/c2c-deletion-design.md), [#56](https://github.com/zawa356/Utteran/issues/56)).
+> **0.1.57 (merged to main via PR #58; unreleased)**: in `--next-ui-v1` only, the history record of one finished internal job can be deleted ("history only", a tombstone) after a confirmation. This is not complete erasure (backups and other places keep data). **Deleting output files is disabled on every platform**, because a safe deletion cannot be proven. Windows hardware acceptance has not been done ([C2c design](docs/architecture/program/c2c-deletion-design.md), [#56](https://github.com/zawa356/Utteran/issues/56)).
+> **0.1.58 (Draft, not merged)**: the new UI shell is split into Normal mode (three destinations in the top bar: Transcribe / Setup / Settings) and Expert mode (a six-item management sidebar). Inputs, settings and jobs are shared by both modes; switching never submits, cancels or deletes anything. The queue page, results & history and the final look come later ([bundle D1](docs/architecture/ui3/d1-shell-navigation.md)).
 > The older `--next-ui` still submits sequentially to the legacy API, and default GUI/CLI launch is unchanged. See the [PR #53 merge and acceptance record](https://github.com/zawa356/Utteran/pull/53#issuecomment-6940939036).
 > The 0.1.50 developer entry `python -m utteran_gui.capability_smoke` explicitly runs one B4 smoke in the same dedicated
 > root to record ready evidence. Normal startup and APIs never run a smoke; the real fw-cpu smoke succeeded in a dedicated Windows VM; GPU hardware acceptance is

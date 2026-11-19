@@ -169,7 +169,8 @@ test("keyboard: Tab reaches the sidebar, arrow keys move, Enter activates (Vueti
   let inSidebar = false;
   for (let i = 0; i < 40 && !inSidebar; i += 1) {
     await app.keyboard.press("Tab");
-    inSidebar = await app.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="sidebar"]')));
+    // D1: the collapse toggle is the sidebar's first stop (top, Design Freeze); the list follows it.
+    inSidebar = await app.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="sidebar-list"]')));
   }
   expect(inSidebar).toBe(true);
   let onSettings = false;
