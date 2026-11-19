@@ -216,3 +216,101 @@ body {
   justify-content: center;
   padding-inline: 0;
 }
+/* Bundle D2-A: Expert queue page — table + detail side by side when the page is wide enough,
+   stacked otherwise (container width, not the window). No page-level horizontal scroll. */
+.u-page--wide {
+  max-width: 1440px;
+}
+.u-queue {
+  container-type: inline-size;
+  min-width: 0;
+}
+.u-queue-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.u-queue-toolbar__search {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+.u-queue-toolbar__select {
+  flex: 0 1 12rem;
+  min-width: 10rem;
+}
+.u-queue-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--u-gap);
+  align-items: start;
+}
+@container (min-width: 900px) {
+  .u-queue-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 24rem);
+  }
+}
+.u-queue-grid__list {
+  min-width: 0;
+}
+.u-queue-table table {
+  table-layout: fixed;
+  width: 100%;
+}
+.u-queue-table .v-table__wrapper {
+  overflow-x: hidden;
+}
+.u-queue-table__order {
+  width: 8.5rem;
+}
+.u-queue-table__status {
+  width: 9.5rem;
+}
+.u-queue-table__stage {
+  width: 6rem;
+}
+.u-queue-table td,
+.u-queue-table th {
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.u-queue-table__name {
+  min-width: 0;
+}
+.u-queue-chip {
+  max-width: 100%;
+}
+.u-queue-chip .v-chip__content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.u-queue-row {
+  cursor: pointer;
+}
+.u-queue-row:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+}
+.u-queue-row--selected > td {
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+.u-queue-row--selected > td:first-child {
+  box-shadow: inset 3px 0 0 rgb(var(--v-theme-primary));
+}
+.u-queue-detail-card {
+  min-width: 0;
+}
+.u-queue-dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.875rem;
+}
+.u-queue-dl dt {
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+}
+.u-queue-dl dd {
+  margin: 0;
+  min-width: 0;
+}

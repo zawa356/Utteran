@@ -4,7 +4,7 @@ import { computed } from "vue";
 import { useDisplay } from "vuetify";
 import { useCore, useI18n } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
-import { EXPERT_SECTIONS, isRail, NARROW_WINDOW, SECTION_STATUS } from "../../domain/shell";
+import { EXPERT_SECTIONS, isRail, NARROW_WINDOW, sectionStatus } from "../../domain/shell";
 import { SECTION_ICONS } from "./navIcons";
 
 /**
@@ -13,7 +13,7 @@ import { SECTION_ICONS } from "./navIcons";
  * can always be expanded again, at any width. In the rail every item keeps its name (aria-label
  * and tooltip). Width dragging is bundle D4.
  */
-const { shell } = useCore();
+const { shell, apiMode } = useCore();
 const state = useStore(shell.store);
 const { t } = useI18n();
 const display = useDisplay();
@@ -22,7 +22,7 @@ const rail = computed(() => isRail(state.value, narrow.value));
 const items = computed(() =>
   EXPERT_SECTIONS.map((id) => {
     const title = t(`section.${id}`);
-    const status = SECTION_STATUS[id] === "partial" ? t("status.partial") : t("status.notMigrated");
+    const status = sectionStatus(id, apiMode) === "partial" ? t("status.partial") : t("status.notMigrated");
     return { id, title, status, icon: SECTION_ICONS[id], label: t("nav.itemWithStatus", { section: title, status }) };
   }),
 );

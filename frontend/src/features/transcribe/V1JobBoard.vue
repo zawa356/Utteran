@@ -23,8 +23,10 @@ const s = useStore(board.store);
 const inputs = useStore(core.inputs.store);
 const { t, status, reason } = useCodeText();
 
-onMounted(() => board.watch(true));
-onUnmounted(() => board.watch(false));
+// D2-A: the polling is held by a lease (the queue page holds one too); one timer, stopped when both are gone.
+let release: (() => void) | null = null;
+onMounted(() => (release = board.retainWatch()));
+onUnmounted(() => release?.());
 
 // File names are known only for rows of this page (the API carries no path).
 const names = computed(() => new Map(inputs.value.rows.map((row) => [job.fileIdFor(row.clientFileId), fileName(row.inputPath) ?? "?"])));

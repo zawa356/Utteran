@@ -3,7 +3,7 @@ import { createFakeHost } from "../host/fake";
 import { scriptedFetch } from "../test/fakeFetch";
 import { createCore } from "./core";
 import { translate } from "../i18n";
-import { EXPERT_SECTIONS, isRail, NORMAL_SECTIONS, previewNoticeKey, SECTION_STATUS, SECTIONS, sectionsFor, ShellController } from "./shell";
+import { EXPERT_SECTIONS, isRail, NORMAL_SECTIONS, previewNoticeKey, SECTION_STATUS, SECTIONS, sectionStatus, sectionsFor, ShellController } from "./shell";
 
 describe("shell state", () => {
   it("mode switches keep navigation and domain state (state lives outside views)", () => {
@@ -153,6 +153,17 @@ describe("shell state", () => {
   it("every section declares its migration status; only two are partial", () => {
     expect(Object.keys(SECTION_STATUS).sort()).toEqual([...SECTIONS].sort());
     expect(SECTIONS.filter((s) => SECTION_STATUS[s] === "partial").sort()).toEqual(["settings", "transcribe"]);
+  });
+
+  it("D2A-01: the queue page is partial only in v1-dev; legacy (`--next-ui`) keeps it not migrated", () => {
+    expect(sectionStatus("queue", "v1-dev")).toBe("partial");
+    expect(sectionStatus("queue", "legacy")).toBe("not_migrated");
+    // Nothing else changes with the API mode (results, models and setup stay not migrated).
+    for (const mode of ["legacy", "v1-dev"] as const) {
+      expect(SECTIONS.filter((s) => s !== "queue").map((s) => sectionStatus(s, mode))).toEqual(SECTIONS.filter((s) => s !== "queue").map((s) => SECTION_STATUS[s]));
+    }
+    // The static table (used for legacy) is not rewritten for every mode.
+    expect(SECTION_STATUS.queue).toBe("not_migrated");
   });
 
   it("the standing notice follows the server API mode: legacy text unchanged, v1 text only in v1-dev", () => {

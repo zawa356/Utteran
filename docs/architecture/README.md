@@ -32,6 +32,7 @@ DTOとAPIの機械可読な正本は、コード（`src/utteran_contracts/`）�
 
 ## UI刷新（UI-1 設計 → UI-2 基盤 → UI-3-0 画面設計）
 
+- **UI-3 束D2-A（2026-11-19、`0.1.59`未リリース、Draft PR）**: [ui3/d2a-queue-page](ui3/d2a-queue-page.md)。`--next-ui-v1`のExpert「キュー」を既存`core.v1.board`に接続した読み取り専用ページ（論理ジョブの表＋詳細、検索・絞り込み・表示ソート）。legacyは未移行のまま。キュー操作はD2-B。Windows実機未受入。
 - **UI-3 束D1（2026-11-19、`0.1.58`未リリース、Draft PR）**: [ui3/d1-shell-navigation](ui3/d1-shell-navigation.md)。`/next/`のシェルをNormal上部3導線／Expert管理sidebar 6項目に分離し、モード別に最後のページを保持。状態・API・3ペインは不変。D2〜D4は後続。Windows実機未受入。
 - **UI-3 S5-B／束C2b（2026-11-16、`0.1.56`未リリース、Draft PR）**: [ui3/s5b](ui3/s5b-multi-job-board.md)。`--next-ui-v1`で複数ファイルの原子的な一括投入、`retry_of`連鎖を1行にした論理ジョブのキュー/履歴、非表示/再表示、成果物の読み取りビュー。機能接続であり、Design Freezeの画面構成は未達（同文書§5）。削除機能なし。Windows実機未受入。
 - **UI-3 S5-A（2026-11-12、`0.1.51`未リリース、Draft PR）**: [ui3/s5a](ui3/s5a-v1-single-job.md)。`--next-ui-v1`に限り、Vueの単一入力を保存済みB5 Preset/Policy（revision凍結、初回は明示作成）→ B5 validation（画面と同じ有効設定のときだけ）→ B7 resolution → B7 durable job → `GET`の状態表示へ接続。サーバーが`/next/`に書く`utteran-api-mode` metaだけでモードを決め、v1では旧投入を呼ばない。結果不明は同key・同bodyの明示再照合のみ、queue `paused`は明示再開のみ、取消は協調的のみ。B5 storeの初回並行openの競合を修正。`--next-ui`・既定は不変。Windows WebView2実機・実モデルは未受入。

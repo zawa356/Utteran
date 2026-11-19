@@ -32,6 +32,7 @@
 - 折りたたみ／展開ボタン（`nav-toggle`、`aria-expanded`・`aria-controls`・`title`）は**最上部に常設**し、rail時も残る。窓幅1024px未満はrailで開始し、ボタンで展開できる。
 - rail時は各項目に`aria-label`（例「キュー（未移行）」）と`v-tooltip`。幅のドラッグはD4。
 - キュー（D2）・結果と履歴（D3）・モデル／セットアップは未移行表示のまま。v1のjob boardはExpert文字起こし③にあり、キュー専用ページではない。
+  **追補（0.1.59、束D2-A）**: `--next-ui-v1`ではキューが読み取り専用の専用ページ（[d2a-queue-page](d2a-queue-page.md)）になり、sidebarは「一部移行」。legacyは未移行のまま。
 
 ### 2.3 遷移と状態
 
