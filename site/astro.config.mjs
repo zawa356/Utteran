@@ -8,6 +8,15 @@ export default defineConfig({
     starlight({
       title: 'Utteran',
       description: 'Local audio and video transcription with speaker diarization.',
+      head: [
+        {
+          tag: 'meta',
+          attrs: {
+            name: 'google-site-verification',
+            content: '58893kAnr9_5C6gKmWdmq9taK_8na3rJao_DuXWhuAk',
+          },
+        },
+      ],
       defaultLocale: 'root',
       locales: {
         root: { label: '日本語', lang: 'ja' },
