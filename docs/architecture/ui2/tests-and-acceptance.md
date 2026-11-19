@@ -101,6 +101,10 @@ run URLを正本として記録する（この文書へ追記するcommitでCI�
 
 - **blocking**: 本番依存（`npm audit --omit=dev`）にhigh/critical。registry到達不可などでauditが実行できない場合も
   CI stepは失敗する（「安全」とは記録しない）。
+- 追補（2026-11-18、Issue #62）: 判定は`tools/npm_audit_gate.py`。全件を表示し、high/criticalは失敗。例外は`frontend/audit-exceptions.json`の
+  **ownerが承認し期限内（最大31日）で、勧告・range・severity・インストール版が記録と一致する1勧告**だけ。CIではUI-2ジョブの最後の手順。
+  npmの`--omit=dev`はoptional peer（`vuetify`→`vite-plugin-vuetify`→`vite`）を本番グラフに含める点に注意。根拠と承認手順は
+  [../program/npm-audit-exception-ghsa-fc5q-39xc-vjpf.md](../program/npm-audit-exception-ghsa-fc5q-39xc-vjpf.md)。
 - **非blocking（記録のみ）**: devDependencies（ESLint・Vitest・Playwright・Vite等はbundleに入らない）。2026-11-04時点で
   moderate 12件（ESLint系のtransitive `minimatch` ReDoS 1系統）。修正版の取り込みはlint toolchainの更新時に行う。
 
