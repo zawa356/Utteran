@@ -17,6 +17,7 @@ const core = useCore();
 const batch = core.v1!.batch;
 const board = core.v1!.board;
 const s = useStore(batch.store);
+const queueGate = useStore(core.v1!.queueGate.store);
 const inputs = useStore(core.inputs.store);
 const form = useStore(core.transcription.store);
 const library = useStore(core.v1!.library.store);
@@ -52,7 +53,7 @@ const expired = computed(() => {
   return batch.isExpired();
 });
 const canSubmit = computed(() => {
-  void [s.value, clock.value, evaluation.value];
+  void [s.value, clock.value, evaluation.value, queueGate.value];
   return batch.canSubmit();
 });
 const count = computed(() => s.value.prepared?.files.length ?? evaluation.value.count);

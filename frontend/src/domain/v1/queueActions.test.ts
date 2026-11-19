@@ -27,6 +27,7 @@ describe("D2-B typed queue clients", () => {
       expect(new Headers(calls[0]!.headers).get("Idempotency-Key")).toBe(intent.key);
       const bad = createV1ResourcesApi(createHttpClient({ fetch: async () => json(200, wire, { ETag: '\"9\"' }) }));
       await expect(kind === "hold" ? bad.setHold(qi(1), intent, 7) : bad.setOrder(intent, 7)).rejects.toMatchObject({ kind: "malformed" });
+      expect(intent.state).toBe("unknown");
     });
   }
 });

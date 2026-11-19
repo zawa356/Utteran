@@ -16,6 +16,7 @@ import { TokenController } from "./token";
 import { TranscriptionFormController } from "./transcription";
 import type { ApiMode } from "./v1/apiMode";
 import { V1BatchController } from "./v1/batchJobs";
+import { QueueMutationGate } from "./v1/queueGate";
 import { V1JobBoardController } from "./v1/jobBoard";
 import { V1DeletionController } from "./v1/jobDeletion";
 import { V1LibraryController } from "./v1/library";
@@ -25,6 +26,7 @@ import { WizardStatusController } from "./wizard";
 /** S5-A v1 single-job path; present only when the server rendered `v1-dev` (`--next-ui-v1`). */
 export interface V1Core {
   api: V1ResourcesApi;
+  queueGate: QueueMutationGate;
   library: V1LibraryController;
   job: V1SingleJobController;
   /** S5-B: the selected rows as one atomic B7 batch (same file ids as `job`). */
@@ -101,17 +103,19 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
   if (apiMode === "v1-dev") {
     const api = createV1ResourcesApi(http);
     const library = new V1LibraryController(api);
-    const job = new V1SingleJobController(api, library.store, inputs.store, transcription.store);
-    const batch = new V1BatchController(api, library.store, inputs.store, transcription.store, { fileIdFor: (rowId) => job.fileIdFor(rowId) });
-    const board = new V1JobBoardController(api, { onVisibilitySettled: () => job.refreshRecentIfLoaded() });
+    const queueGate = new QueueMutationGate();
+    const job = new V1SingleJobController(api, library.store, inputs.store, transcription.store, { gate: queueGate });
+    const batch = new V1BatchController(api, library.store, inputs.store, transcription.store, { gate: queueGate, fileIdFor: (rowId) => job.fileIdFor(rowId) });
+    const board = new V1JobBoardController(api, { gate: queueGate, onVisibilitySettled: () => job.refreshRecentIfLoaded() });
     // After a settled deletion every list is read from the server again (nothing is removed locally).
     const deletion = new V1DeletionController(api, {
+      gate: queueGate,
       onSettled: () => {
         void board.refresh();
         job.refreshRecentIfLoaded();
       },
     });
-    v1 = { api, library, job, batch, board, deletion };
+    v1 = { api, queueGate, library, job, batch, board, deletion };
   }
   return {
     host: deps.host,

@@ -13,6 +13,7 @@
  * never dropped. This controller does not poll: the queue/history view owns job status.
  */
 
+import { QueueMutationGate } from "./queueGate";
 import { MutationIntent, type RandomSource } from "../../api/idempotency";
 import type { JobV1, JsonObject, ResolutionV1, V1ResourcesApi, ValidationV1 } from "../../api/v1Resources";
 import type { ApiError } from "../../api/errors";
@@ -105,6 +106,7 @@ export function fileOverrides(common: JsonObject, row: InputRow): SettingOverrid
 }
 
 export interface V1BatchOptions {
+  gate?: QueueMutationGate;
   now?: () => number;
   random?: RandomSource;
   /** A stable random file id per row for this page (shared with the single-job controller). */
@@ -113,6 +115,8 @@ export interface V1BatchOptions {
 
 export class V1BatchController {
   readonly store = new Store<V1BatchState>(initial);
+  readonly gate: QueueMutationGate;
+  private readonly submitOwner = Symbol("batch submit");
   private disposed = false;
   private readonly now: () => number;
 
@@ -123,6 +127,7 @@ export class V1BatchController {
     private readonly form: ReadonlyStore<FormState>,
     private readonly options: V1BatchOptions,
   ) {
+    this.gate = options.gate ?? new QueueMutationGate();
     this.now = options.now ?? (() => Date.now());
   }
 
@@ -198,7 +203,7 @@ export class V1BatchController {
 
   canSubmit(): boolean {
     const s = this.store.get();
-    return !this.disposed && s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired();
+    return !this.disposed && !this.gate.busy() && s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired();
   }
 
   async prepare(): Promise<void> {
@@ -229,6 +234,7 @@ export class V1BatchController {
   /** Forget the prepared batch (not while a request is in flight). An unknown submission is given up explicitly. */
   reset(): void {
     if (this.busy()) return;
+    this.gate.release(this.submitOwner);
     this.store.set(initial);
   }
 
@@ -275,6 +281,7 @@ export class V1BatchController {
   }
 
   private async runSubmission(intent: MutationIntent<JsonObject>): Promise<void> {
+    if (!this.gate.owns(this.submitOwner) && !this.gate.acquire(this.submitOwner)) return;
     this.store.patch({ step: "submitting", failedAt: null, error: null, pending: intent });
     const prepared = this.store.get().prepared!;
     try {
@@ -291,6 +298,8 @@ export class V1BatchController {
       this.store.patch({ step: "accepted", pending: null, error: null, jobs });
     } catch (error) {
       this.fail("submission", error, intent);
+    } finally {
+      if (this.store.get().step !== "unknown") this.gate.release(this.submitOwner);
     }
   }
 

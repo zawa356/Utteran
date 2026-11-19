@@ -1,5 +1,7 @@
 # UI-3-0 — 第5案で設計確定した隔離プロトタイプ
 
+追補（2026-11-19、0.1.60未リリース）: [D2-B Expertキュー操作](d2b-queue-actions.md)。B7既存契約へ接続、単一mutation gate、Draft PR。Windows実機は未受入。
+
 ## 最新の実装進捗（2026-11-19、束D2-A、0.1.59未リリース・Draft PR）
 
 - [束D2-A Expertキュー専用画面](d2a-queue-page.md): `--next-ui-v1`のExpert「キュー」を`core.v1.board`に接続（表＋詳細、検索・絞り込み・表示ソート、読み取り専用）。legacyは未移行。D2-B（キュー操作）・D3・D4は未着手。Windows実機は未受入。

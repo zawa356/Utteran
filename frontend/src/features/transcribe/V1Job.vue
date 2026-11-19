@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from "vue";
 import { fileName } from "../../api/legacyJobs";
 import ErrorAlert from "../../components/ErrorAlert.vue";
+import { useStore } from "../../composables/useStore";
 import { useCodeText, useV1 } from "../../composables/v1";
 import V1Artifacts from "./V1Artifacts.vue";
 import { summarize } from "../../domain/v1/settings";
@@ -15,6 +16,8 @@ import type { MessageKey } from "../../i18n";
 const { v1, job: s, evaluation, block, stale } = useV1();
 const { t, reason, issue, status, formIssue } = useCodeText();
 
+const queueGate = useStore(v1.queueGate.store);
+const queueBusy = computed(() => queueGate.value.owner !== null);
 const prepared = computed(() => s.value.prepared);
 const resolution = computed(() => prepared.value?.resolution ?? null);
 const spec = computed(() => resolution.value?.files[0]?.spec ?? null);
@@ -38,7 +41,7 @@ const secondsLeft = computed(() => (resolution.value ? Math.max(0, Math.floor((D
 const expired = computed(() => !!resolution.value && secondsLeft.value <= 0);
 // The domain decides (resolved, fresh, unexpired, no open cancel); `s` and the clock make it re-evaluate.
 const canSubmit = computed(() => {
-  void [s.value, clock.value, evaluation.value];
+  void [s.value, clock.value, evaluation.value, queueGate.value];
   return v1.job.canSubmit();
 });
 
@@ -161,13 +164,14 @@ const switchBlocked = computed(() => {
       </v-alert>
       <ErrorAlert v-if="s.cancel.phase === 'rejected' && s.cancel.error" :error="s.cancel.error" testid="v1-cancel-error" />
       <div class="u-row">
-        <v-btn v-if="cancellable" variant="outlined" color="error" :loading="s.cancel.phase === 'pending'" :disabled="s.cancel.phase === 'pending' || s.cancel.phase === 'unknown'" data-testid="v1-cancel" @click="v1.job.cancel()">{{ t("v1.cancel.button") }}</v-btn>
+        <v-btn v-if="cancellable" variant="outlined" color="error" :loading="s.cancel.phase === 'pending'" :disabled="queueBusy" data-testid="v1-cancel" @click="v1.job.cancel()">{{ t("v1.cancel.button") }}</v-btn>
         <v-btn variant="text" size="small" data-testid="v1-refresh" @click="v1.job.refresh()">{{ t("v1.job.refresh") }}</v-btn>
         <v-btn v-if="s.tracking !== 'active'" variant="text" size="small" :disabled="switchBlocked !== null" data-testid="v1-dismiss" @click="v1.job.dismiss()">{{ t("tx.job.dismiss") }}</v-btn>
       </div>
       <p class="text-caption">{{ t("v1.job.leaveNote") }}</p>
     </v-card>
 
+    <v-alert v-if="queueBusy" type="info" density="compact">{{ t("queue.disabled.busy") }}</v-alert>
     <!-- The v1 queue (paused after first start / recovery; resumed only explicitly) -->
     <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-queue">
       <h3 class="u-subheading">{{ t("v1.queue.title") }}</h3>
@@ -190,7 +194,7 @@ const switchBlocked = computed(() => {
           v-if="queue?.dispatch === 'paused'"
           variant="outlined"
           :loading="s.control.phase === 'pending'"
-          :disabled="s.control.phase === 'pending' || s.control.phase === 'unknown'"
+          :disabled="queueBusy || s.queue.phase !== 'done'"
           data-testid="v1-queue-resume"
           @click="v1.job.resumeQueue()"
         >

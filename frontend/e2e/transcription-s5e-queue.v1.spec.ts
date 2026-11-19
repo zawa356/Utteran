@@ -4,8 +4,8 @@ import { choose, expect, SESSION, SESSION_HEADER, shot, test } from "./fixtures"
 /**
  * Bundle D2-A: the Expert queue page in the `--next-ui-v1` shape. It reads the one board
  * (`core.v1.board`: every page of `GET /api/v1/jobs` + `GET /api/v1/queue`) and shows it as a table
- * plus the selected logical job's detail. Read-only: no cancel, retry, reorder, hold or pause here,
- * and no search/filter/sort ever sends a write.
+ * plus the selected logical job's detail. D2-B adds explicit queue controls;
+ * no search/filter/sort ever sends a write.
  *
  * Two kinds of tests: real B7 data (real FastAPI, synthetic B4 evidence and runner,
  * tools/ui2/synthetic_v1.py) and the same page against crafted answers at the HTTP boundary
@@ -270,7 +270,7 @@ test("D2A-01/03/05/06: real B7 data as a table + detail; B7 order, places and na
   await expect(app.getByTestId("queue-stage-note")).toBeVisible();
   await expect(app.getByTestId("queue-ops-note")).toBeVisible();
   await expect(app.getByTestId("queue-detail-none")).toBeVisible();
-  // Read-only page: no operation buttons at all.
+  // History operations stay in ③; passive navigation sends no write.
   for (const testid of ["v1-board-cancel", "v1-board-retry", "v1-board-hide", "v1-queue-pause", "v1-queue-resume"]) await expect(page$(app).getByTestId(testid)).toHaveCount(0);
   await shot(app, "d2a-01-real-queue");
 
@@ -393,7 +393,7 @@ test("D2A-08: an unknown board write stays unknown on the queue page and is neve
   await expert(app, request, ["slow-meeting.wav"]);
   const [slow] = await submitBatch(app, seen);
   await ensureQueueRunning(app);
-  // A cancel from Expert ③ whose answer is lost (the server applied it) stays unknown.
+  // A cancel from the queue whose answer is lost (the server applied it) stays unknown.
   let first = true;
   await app.route("**/api/v1/jobs/*/cancel", async (route) => {
     if (!first) return route.continue();
@@ -402,7 +402,11 @@ test("D2A-08: an unknown board write stays unknown on the queue page and is neve
     await route.fulfill({ status: 500, body: "" });
   });
   const cancels = () => seen.filter((r) => r.method() === "POST" && new URL(r.url()).pathname.endsWith("/cancel"));
-  await app.locator(`[data-testid="v1-board-row"][data-root="${slow}"]`).getByTestId("v1-board-cancel").click();
+  await openQueue(app);
+  await rowOf(app, slow!).click();
+  await app.getByTestId("queue-cancel").click();
+  await expect(app.getByTestId("queue-write-state")).toHaveAttribute("data-action-phase", "unknown");
+  await app.getByTestId("nav-transcribe").click();
   await expect(app.getByTestId("v1-board-action")).toHaveAttribute("data-action-phase", "unknown");
   expect(cancels()).toHaveLength(1);
   // The queue page says so and points back; it neither resends nor hides the open state.
@@ -661,3 +665,144 @@ for (const width of [900, 1100, 1280]) {
     }
   }
 }
+
+// D2-B acceptance uses real FastAPI/B7 and crafted failures at the same UI boundary.
+async function waitingBatch(page: Page, request: APIRequestContext, seen: Request[]): Promise<string[]> {
+  await drain(request, "d2b-arrange");
+  const q = await api<QueueWire>(request, "/api/v1/queue");
+  expect((await request.patch("/api/v1/queue/control", { headers: { ...SESSION_HEADER, "If-Match": `"${q.revision}"`, "Idempotency-Key": `d2b-arrange-${q.revision}-paused` }, data: { schema_version: 1, dispatch: "paused" } })).status()).toBe(200);
+  await expert(page, request, ["slow-meeting.wav", "meeting.wav", "other.wav"]);
+  const ids = await submitBatch(page, seen); await openQueue(page); await expect(rows(page)).toHaveCount(3); return ids;
+}
+async function settled(page: Page): Promise<void> {
+  await expect(page.getByTestId("queue-write-state")).toHaveAttribute("data-action-phase", "done");
+  await expect(page.getByTestId("queue-dispatch")).toBeEnabled();
+}
+for (const operation of ["dispatch", "hold", "order", "cancel"] as const) test(`D2B real B7: ${operation} with revision and payload verification`, async ({ app, request }) => {
+  const seen = recordApi(app); const ids = await waitingBatch(app, request, seen);
+  const before = await api<QueueWire>(request, "/api/v1/queue");
+  if (operation === "dispatch") {
+    await app.getByTestId("queue-dispatch").click(); await settled(app);
+    await expect.poll(async () => (await api<QueueWire>(request, "/api/v1/queue")).active_item_id).not.toBeNull();
+    const running = await api<QueueWire>(request, "/api/v1/queue");
+    await app.getByTestId("queue-reload").click();
+    await expect(app.getByTestId("queue-dispatch")).toContainText("一時停止");
+    await app.getByTestId("queue-dispatch").click(); await settled(app);
+    const paused = await api<QueueWire & { dispatch: string }>(request, "/api/v1/queue");
+    expect(paused.dispatch).toBe("paused"); expect(paused.active_item_id).toBe(running.active_item_id);
+    expect(paused.revision).toBeGreaterThan(running.revision);
+    expect(await api(request, `/api/v1/jobs/${ids[0]}`)).toMatchObject({ status: "running" });
+    await expect(app.getByTestId("queue-pause-semantics")).toContainText("止まりません");
+  } else {
+    await rowOf(app, ids[1]!).click();
+    if (operation === "hold" || operation === "order") {
+      await app.getByTestId("queue-hold").click(); await settled(app);
+      const held = await api<QueueWire>(request, "/api/v1/queue");
+      const item = held.items.find(i => i.resource_id === ids[1])!; expect(item.held).toBe(true);
+      const patch = seen.find(r => r.method() === "PATCH" && r.url().endsWith(`/queue/items/${item.id}`))!;
+      expect(patch.postDataJSON()).toEqual({ schema_version: 1, held: true });
+      expect((await patch.allHeaders())["if-match"]).toBe(`"${before.revision}"`);
+      if (operation === "hold") {
+        await expect(app.getByTestId("queue-hold")).toContainText("解除");
+        await app.getByTestId("queue-hold").click(); await settled(app);
+        expect((await api<QueueWire>(request, "/api/v1/queue")).items.find(i => i.id === item.id)!.held).toBe(false);
+      } else {
+        const waiting = held.items.filter(i => i.id !== held.active_item_id).sort((a,b) => a.position! - b.position!);
+        const expected = [waiting[1]!.id, waiting[0]!.id, ...waiting.slice(2).map(i => i.id)];
+        await app.getByTestId("queue-up").focus(); await app.keyboard.press("Space"); await settled(app);
+        const put = seen.filter(r => r.method() === "PUT" && r.url().endsWith("/queue/order")).at(-1)!;
+        expect(put.postDataJSON()).toEqual({ schema_version: 1, waiting_item_ids: expected });
+        const after = await api<QueueWire>(request, "/api/v1/queue");
+        expect(after.items.filter(i => i.id !== after.active_item_id).sort((a,b) => a.position! - b.position!).map(i => i.id)).toEqual(expected);
+        const mark = writes(seen).length;
+        await app.getByTestId("queue-search").locator("input").fill(ids[1]!); await expect(app.getByTestId("queue-down")).toBeDisabled();
+        expect(writes(seen).length).toBe(mark); expect((await api<QueueWire>(request, "/api/v1/queue")).revision).toBe(after.revision);
+      }
+    } else {
+      await app.getByTestId("queue-cancel").focus(); await app.keyboard.press("Enter"); await settled(app);
+      const post = seen.find(r => r.method() === "POST" && r.url().endsWith(`/jobs/${ids[1]}/cancel`))!;
+      expect(post.postDataJSON()).toEqual({ schema_version: 1, mode: "cooperative" });
+      expect(await api(request, `/api/v1/jobs/${ids[1]}`)).toMatchObject({ status: "cancelled" });
+      expect((await api<QueueWire>(request, "/api/v1/queue")).items.some(i => i.resource_id === ids[1])).toBe(false);
+    }
+  }
+  expect((await api<QueueWire>(request, "/api/v1/queue")).revision).toBeGreaterThan(before.revision);
+  await drain(request, `d2b-${operation}`);
+});
+
+for (const failure of ["500", "network", "malformed", "etag"] as const) test(`D2B-08/09 ${failure}: no auto resend, frozen replay across modes and pages`, async ({ app }) => {
+  const state: Crafted = { pages: onePage([jobWire(1, "queued")]), queue: queueOf(8, null, [{ n: 1, position: 1 }]) };
+  await craft(app, state); await openQueue(app); const requests: Request[] = [];
+  await app.route("**/api/v1/queue/control", async route => {
+    requests.push(route.request()); state.queue.body!.revision = 9;
+    if (requests.length === 1) {
+      if (failure === "network") return route.abort("internetdisconnected");
+      if (failure === "malformed") return route.fulfill({ status: 200, body: "not-json" });
+      if (failure === "500") return route.fulfill({ status: 500, body: "" });
+    }
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...state.queue.body, dispatch: "paused" }), headers: { ETag: requests.length === 1 ? '"100"' : '"9"' } });
+  });
+  await app.getByTestId("queue-dispatch").evaluate(el => { (el as HTMLButtonElement).click(); (el as HTMLButtonElement).click(); });
+  await expect(app.getByTestId("queue-write-state")).toHaveAttribute("data-action-phase", "unknown");
+  await expect(app.getByTestId("queue-dispatch")).toBeDisabled(); await rowOf(app, jid(1)).click(); await expect(app.getByTestId("queue-cancel")).toBeDisabled();
+  await app.getByTestId("mode-normal").click(); await app.getByTestId("mode-expert").click();
+  await app.getByTestId("nav-transcribe").click(); await openQueue(app); await app.waitForTimeout(2400); expect(requests).toHaveLength(1);
+  await app.getByTestId("queue-recheck").click(); await settled(app); expect(requests).toHaveLength(2);
+  const [a,b] = await Promise.all(requests.map(r => r.allHeaders()));
+  expect(b!["idempotency-key"]).toBe(a!["idempotency-key"]); expect(b!["if-match"]).toBe('"8"'); expect(b!["if-match"]).toBe(a!["if-match"]);
+  expect(requests[1]!.postData()).toBe(requests[0]!.postData());
+});
+
+test("D2B-10/15: 412 refreshes without retry; failed GET disables stale writes", async ({ app }) => {
+  const state: Crafted = { pages: onePage([jobWire(1, "queued")]), queue: queueOf(8, null, [{ n: 1, position: 1 }]) };
+  await craft(app, state); await openQueue(app); let writes = 0;
+  await app.route("**/api/v1/queue/control", async route => { writes++; state.queue.body!.revision = 9; await route.fulfill({ status: 412, contentType: "application/json", body: JSON.stringify({ error: { code: "revision_conflict" } }) }); });
+  await app.getByTestId("queue-dispatch").click(); await expect(app.getByTestId("queue-write-state")).toHaveAttribute("data-action-phase", "conflict");
+  await expect(app.getByTestId("queue-recheck")).toHaveCount(0); await app.waitForTimeout(2200); expect(writes).toBe(1);
+  state.queue.status = 503; await app.getByTestId("queue-reload").click();
+  await expect(page$(app)).toHaveAttribute("data-phase", "error"); await expect(app.getByTestId("queue-dispatch")).toBeDisabled(); await expect(rows(app)).toHaveCount(0); expect(writes).toBe(1);
+});
+
+test("D2B-03/04/06: branch selection, held blockers, complete permutation protects setup", async ({ app }) => {
+  const state = branchedScenario(); const queue = state.queue.body!; const items = queue.items as Wire[];
+  items.splice(2, 0, { id: qid(10), resource_id: "setup_1", resource_kind: "setup_operation", position: 2, held: false, blockers: [] });
+  items[3]!.position = 3; items[4]!.position = 4; items[4]!.blockers = ["capability_unavailable"];
+  await craft(app, state); await openQueue(app); await rowOf(app, jid(1)).click();
+  await expect(app.getByTestId("queue-hold")).toBeDisabled(); await expect(app.getByTestId("queue-cancel")).toBeDisabled();
+  await choose(app, "queue-target", new RegExp(jid(2))); let hold: Request | null = null;
+  await app.route(`**/api/v1/queue/items/${qid(2)}`, async route => {
+    hold = route.request(); items[4]!.held = true; queue.revision = 10;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(queue), headers: { ETag: '"10"' } });
+  });
+  await app.getByTestId("queue-hold").click(); await settled(app); expect(hold!.postDataJSON()).toEqual({ schema_version: 1, held: true }); expect(items[4]!.blockers).toEqual(["capability_unavailable"]);
+  await expect(app.getByTestId("queue-hold")).toContainText("解除"); await rowOf(app, jid(6)).click();
+  await expect(app.getByTestId("queue-up")).toBeDisabled(); await expect(app.getByTestId("queue-up-reason")).toContainText("跨ぐ");
+  let put: Request | null = null;
+  await app.route("**/api/v1/queue/order", async route => { put = route.request(); await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(queue), headers: { ETag: '"10"' } }); });
+  await app.getByTestId("queue-down").click(); await settled(app);
+  expect(put!.postDataJSON()).toEqual({ schema_version: 1, waiting_item_ids: [qid(4), qid(10), qid(2), qid(6)] });
+  await rowOf(app, jid(1)).click(); await choose(app, "queue-target", new RegExp(jid(3))); await expect(app.getByTestId("queue-hold")).toBeDisabled();
+});
+
+test("D2B-08: old resume unknown owns the same gate as the queue page", async ({ app }) => {
+  const state: Crafted = { pages: onePage([jobWire(1, "queued")]), queue: queueOf(8, null, [{ n: 1, position: 1 }]) };
+  state.queue.body!.dispatch = "paused";
+  await craft(app, state); await app.getByTestId("mode-expert").click();
+  await app.getByTestId("v1-queue-reload").click(); await expect(app.getByTestId("v1-queue-resume")).toBeEnabled();
+  const requests: Request[] = [];
+  await app.route("**/api/v1/queue/control", async route => {
+    requests.push(route.request());
+    if (requests.length === 1) return route.fulfill({ status: 500, body: "" });
+    state.queue.body!.dispatch = "running"; state.queue.body!.revision = 9;
+    return route.fulfill({ status: 200, contentType: "application/json", headers: { ETag: '"9"' }, body: JSON.stringify(state.queue.body) });
+  });
+  await app.getByTestId("v1-queue-resume").click(); await expect(app.getByTestId("v1-queue-unknown")).toBeVisible();
+  await openQueue(app); await expect(app.getByTestId("queue-dispatch")).toBeDisabled();
+  await rowOf(app, jid(1)).click(); await expect(app.getByTestId("queue-cancel")).toBeDisabled();
+  await expect(app.getByTestId("queue-foreign-write")).toBeVisible(); await app.waitForTimeout(2200); expect(requests).toHaveLength(1);
+  await app.getByTestId("nav-transcribe").click(); await app.getByTestId("v1-queue-recheck").click();
+  await expect(app.getByTestId("v1-queue-dispatch")).toContainText("実行中");
+  expect(requests).toHaveLength(2); const [a,b] = await Promise.all(requests.map(r => r.allHeaders()));
+  expect(b!["idempotency-key"]).toBe(a!["idempotency-key"]); expect(b!["if-match"]).toBe(a!["if-match"]); expect(requests[1]!.postData()).toBe(requests[0]!.postData());
+  await openQueue(app); await expect(app.getByTestId("queue-dispatch")).toBeEnabled();
+});

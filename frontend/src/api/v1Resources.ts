@@ -578,6 +578,8 @@ export interface V1ResourcesApi {
   getArtifacts(jobId: string, signal?: AbortSignal): Promise<JobArtifactsV1>;
   getQueue(signal?: AbortSignal): Promise<QueueViewV1>;
   setDispatch(intent: MutationIntent<JsonObject>, expectedRevision: number): Promise<QueueViewV1>;
+  setHold(itemId: string, intent: MutationIntent<JsonObject>, expectedRevision: number): Promise<QueueViewV1>;
+  setOrder(intent: MutationIntent<JsonObject>, expectedRevision: number): Promise<QueueViewV1>;
   cancel(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; job: JobV1 }>;
   /** B7 retry: a *new* job with the same snapshot, `retry_of` = the job retried (Design Freeze §7). */
   retry(jobId: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; job: JobV1 }>;
@@ -605,7 +607,7 @@ function jobId(value: string): string {
 
 export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
   /** One send of one intent. State `sent` → `accepted` / `rejected` / `unknown` (never resent here). */
-  async function write<T>(path: string, method: "POST" | "PATCH", intent: MutationIntent<JsonObject>, parse: (raw: unknown) => T, extra: Record<string, string> = {}, timeoutMs = V1_WRITE_TIMEOUT_MS) {
+  async function write<T>(path: string, method: "POST" | "PATCH" | "PUT", intent: MutationIntent<JsonObject>, parse: (raw: unknown) => T, extra: Record<string, string> = {}, timeoutMs = V1_WRITE_TIMEOUT_MS) {
     if (!IDEMPOTENCY_KEY_PATTERN.test(intent.key)) throw new Error("idempotency key");
     intent.attempts += 1;
     intent.state = "sent";
@@ -616,6 +618,16 @@ export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
     } catch (error) {
       const e = error as { outcomeUnknown?: boolean; status?: number | null };
       intent.state = !e.outcomeUnknown && typeof e.status === "number" && e.status >= 400 && e.status < 500 ? "rejected" : "unknown";
+      throw error;
+    }
+  }
+  async function queueWrite(path: string, method: "PATCH" | "PUT", intent: MutationIntent<JsonObject>, revision: number): Promise<QueueViewV1> {
+    try {
+      const response = await write(path, method, intent, parseQueue, { "If-Match": ifMatch(revision) });
+      etagRevision(response.headers, response.data.revision, response.status);
+      return response.data;
+    } catch (error) {
+      if (intent.state === "accepted") intent.state = "unknown";
       throw error;
     }
   }
@@ -692,7 +704,19 @@ export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
       return response.data;
     },
     async setDispatch(intent, expectedRevision) {
-      return (await write("/api/v1/queue/control", "PATCH", intent, parseQueue, { "If-Match": ifMatch(expectedRevision) })).data;
+      const view = await queueWrite("/api/v1/queue/control", "PATCH", intent, expectedRevision);
+      if (view.dispatch !== intent.body.dispatch) {
+        intent.state = "unknown";
+        throw malformed(200);
+      }
+      return view;
+    },
+    async setHold(itemId, intent, expectedRevision) {
+      if (!/^qi_[0-9a-f]{32}$/.test(itemId)) throw new ShapeError("queue item id");
+      return queueWrite(`/api/v1/queue/items/${itemId}`, "PATCH", intent, expectedRevision);
+    },
+    async setOrder(intent, expectedRevision) {
+      return queueWrite("/api/v1/queue/order", "PUT", intent, expectedRevision);
     },
     async cancel(id, expectedRevision, intent) {
       const response = await write(`/api/v1/jobs/${jobId(id)}/cancel`, "POST", intent, parseJob, { "If-Match": ifMatch(expectedRevision) });
