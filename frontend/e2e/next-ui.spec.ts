@@ -33,7 +33,9 @@ test("the API rejects requests without the session", async ({ playwright, baseUR
   await fresh.dispose();
 });
 
-test("sidebar: un-migrated areas explain themselves and offer no fake actions", async ({ app }) => {
+test("Expert sidebar: un-migrated areas explain themselves and offer no fake actions", async ({ app }) => {
+  // Bundle D1: the six-item sidebar exists in Expert only (Normal has three app-bar destinations).
+  await app.getByTestId("mode-expert").click();
   for (const id of ["results", "models", "queue", "setup"]) {
     await app.getByTestId(`nav-${id}`).click();
     const section = app.getByTestId(`section-${id}`);
@@ -138,6 +140,14 @@ test("mode switch keeps navigation, environment and an unsaved settings draft", 
 test("narrow window: no horizontal scroll, one Expert pane at a time, rail sidebar", async ({ app }) => {
   await app.setViewportSize({ width: 900, height: 660 }); // pywebview min_size in app.py
   await app.getByTestId("mode-expert").click();
+  // Bundle D1: the narrow window starts as a rail, and the toggle stays usable (it was disabled before).
+  await expect(app.getByTestId("sidebar")).toHaveAttribute("data-rail", "true");
+  await expect(app.getByTestId("nav-toggle")).toBeEnabled();
+  await app.getByTestId("nav-toggle").click();
+  await expect(app.getByTestId("sidebar")).toHaveAttribute("data-rail", "false");
+  expect(await app.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await app.getByTestId("nav-toggle").click();
+  await expect(app.getByTestId("sidebar")).toHaveAttribute("data-rail", "true");
   await expect(app.getByTestId("expert-pane-switch")).toBeVisible();
   await expect(app.getByTestId("pane-inspector")).toBeVisible();
   await expect(app.getByTestId("pane-inputs")).toBeHidden();
@@ -153,6 +163,8 @@ test("narrow window: no horizontal scroll, one Expert pane at a time, rail sideb
 });
 
 test("keyboard: Tab reaches the sidebar, arrow keys move, Enter activates (Vuetify list model)", async ({ app }) => {
+  // Bundle D1: the sidebar is the Expert navigation (Normal's app-bar keyboard path: shell-d1.spec.ts).
+  await app.getByTestId("mode-expert").click();
   await app.locator("body").click({ position: { x: 600, y: 790 } });
   let inSidebar = false;
   for (let i = 0; i < 40 && !inSidebar; i += 1) {

@@ -438,6 +438,8 @@ test("draft, picker answer and token state survive navigation, mode switch and a
   await expect(app.getByTestId("expert-workspace")).toBeVisible();
   await app.getByTestId("mode-normal").click();
   await app.setViewportSize({ width: 900, height: 660 });
+  // Bundle D1: below 1000 px the three Normal destinations fold into one menu naming the current page.
+  await app.getByTestId("top-nav-menu").click();
   await app.getByTestId("nav-settings").click();
   await expect(app.getByTestId("settings-profile")).toContainText("CPU");
   await expect(folderInput(app, "input")).toHaveValue("synthetic-narrow");
