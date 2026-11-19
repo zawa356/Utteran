@@ -47,6 +47,13 @@ class ErrorCode(StrEnum):
     APPROVAL_EXPIRED = "approval_expired"
     APPROVAL_CONSUMED = "approval_consumed"
     REAPPROVAL_REQUIRED = "reapproval_required"
+    # C2c history / artifact deletion (layout v8)
+    JOB_DELETED = "job_deleted"
+    DELETION_IN_PROGRESS = "deletion_in_progress"
+    DELETION_PLAN_STALE = "deletion_plan_stale"
+    DELETION_PLAN_EXPIRED = "deletion_plan_expired"
+    # ④ (history + output files) is refused on every platform (PR #58 owner review).
+    ARTIFACT_DELETION_DISABLED = "artifact_deletion_disabled"
 
 
 # Intended HTTP mapping for B9; B6 itself serves no HTTP.
@@ -83,6 +90,11 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.APPROVAL_EXPIRED: 409,
     ErrorCode.APPROVAL_CONSUMED: 409,
     ErrorCode.REAPPROVAL_REQUIRED: 409,
+    ErrorCode.JOB_DELETED: 410,
+    ErrorCode.DELETION_IN_PROGRESS: 409,
+    ErrorCode.DELETION_PLAN_STALE: 409,
+    ErrorCode.DELETION_PLAN_EXPIRED: 409,
+    ErrorCode.ARTIFACT_DELETION_DISABLED: 409,
 }
 
 

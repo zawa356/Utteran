@@ -1,5 +1,14 @@
 # Persistence, migration, recovery and privacy
 
+## 2026-11-17 追補（0.1.57、束C2c、Draft PR）
+
+- **layout v8**（`DeletionControlStore`）= v7 ＋ `job_deletions`（削除journal、行は消さない）＋ `job_deletion_gate`（削除トランザクション内だけで開閉、開くときに空でなければ`store_corrupt`）＋ `deletion_replays`。
+  `job_snapshots`/`job_results`の`BEFORE UPDATE`だけを墓標定数に限る条件付きトリガーへ置換。一方向、v7のpre-open backupは0.1.56で開ける（試験で復元ドリル）。
+- **成果物削除（④）は全環境で無効**（2026-11-18、PR #58レビュー）。`artifacts_pending`行を新たに作る経路は無い。
+- **削除の残留**: DB本体は`secure_delete`で対象Jobの値が消えることを実測。**backup・rollback journalの解放済み領域・retry連鎖の他Job・公開projectionのreplay・core作業キャッシュには残る**。
+  WALは使っていない（`journal_mode=delete`を試験で固定）。詳細と表は[../program/c2c-deletion-design.md §1・§6](../program/c2c-deletion-design.md)。
+- 下の「Privacy」表の「完全消去手段なし」は引き続き正しい（C2cは完全消去を提供しない）。保持期間・暗号化・ACL・backup保持方針はowner判断待ちのまま。
+
 ## 2026-11-17 追補（0.1.56、現行main）
 
 束C2a/#52のlayout v7（v6＋`job_visibility`）はmainへ統合済み（最終main `c5af76726f913e4044f6e73492fee851c2acdd8c`）。Windows 11専用VMでは旧HEAD `1c76453` においてv6→v7通常移行、旧版の`store_schema_unsupported`拒否、backupからの復元を確認し、差分HEAD `ad8c38e` では非表示/再表示時のDB各表・Outbox全行ハッシュ不変を確認した。[PR #53 Windows受入レビュー](https://github.com/zawa356/Utteran/pull/53#pullrequestreview-5934044093)。**移行中の強制killはNOT_RUN**（[#55](https://github.com/zawa356/Utteran/issues/55)）。実ユーザーデータのrestore・Windows ACL・完全消去を保証するものではない。
@@ -33,6 +42,8 @@ POSIXではディレクトリ0700・ファイル0600に揃える。**Windows ACL
 | 4 | `SetupControlStore` | `setup_plans` `setup_approvals` `setup_operations` `setup_steps` `setup_step_journal` `setup_state` `setup_inventory` `setup_replays` | B8 |
 | 5 | `EventsControlStore` | `outbox_compaction`、guarded outbox delete trigger | B9 |
 | 6 | **`ManagedControlStore`**（`JobRuntime`が使う現行class） | `operation_history_attempts`（不変なdiagnostics attempt sidecar） | PR #33 review（B9-P2-2） |
+| 7 | `HistoryControlStore` | `job_visibility`（非表示） | 0.1.55（C2a） |
+| 8 | **`DeletionControlStore`**（0.1.57以降に`JobRuntime`が使う） | `job_deletions` `job_deletion_gate` `deletion_replays`、2つの条件付きUPDATEトリガー | 0.1.57（C2c） |
 
 規則（`ControlStore._migrate`）:
 

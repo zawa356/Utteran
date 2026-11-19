@@ -205,6 +205,43 @@ def register_job_routes(app: FastAPI, runtime: JobRuntime) -> None:
         view = await call(read)
         return json(200, view.to_wire(), {"Cache-Control": "no-store"})
 
+    def deletion() -> Any:
+        # Layout v8 only (DeletionControlStore). Older layouts refuse, never pretend.
+        parts()
+        if runtime.deletion is None:
+            raise JobApiError("history_deletion_unavailable", 409)
+        return runtime.deletion
+
+    @app.post("/jobs/{job_id}/deletion-plans")
+    async def plan_deletion(job_id: str, request: Request) -> Response:
+        identifier = job_id_of(job_id)
+
+        async def handler() -> Response:
+            body = await _body(request)
+            # Read-only preflight: no Idempotency-Key, no If-Match, nothing is written.
+            plan = await call(lambda: deletion().plan(identifier, body, session=_session(request)))
+            return json(200, plan.to_wire(), {"Cache-Control": "no-store"})
+
+        return await guarded(request, handler)
+
+    @app.post("/jobs/{job_id}/deletions")
+    async def delete_job(job_id: str, request: Request) -> Response:
+        identifier = job_id_of(job_id)
+
+        async def handler() -> Response:
+            key = _key(request)
+            expected = _match(request)  # the job revision the plan was made for
+            body = await _body(request)
+            scope = IdempotencyScope(f"/api/v1/jobs/{identifier}/deletions", key)
+            accepted = await call(
+                lambda: deletion().execute(
+                    identifier, expected, scope, body, session=_session(request)
+                )
+            )
+            return json(accepted.status, accepted.deletion.to_wire(), accepted.headers)
+
+        return await guarded(request, handler)
+
     @app.post("/jobs/{job_id}/{action}")
     async def job_action(job_id: str, action: str, request: Request) -> Response:
         if action not in {"cancel", "retry", "rerun", "revalidate"}:

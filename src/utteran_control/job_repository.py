@@ -181,6 +181,11 @@ class _ListSnapshots:
                 self._entries.popitem(last=False)  # its cursors become cursor_expired
             self._entries[snapshot.id] = (now, snapshot)
 
+    def clear(self) -> None:
+        """Drop every listing (their cursors become ``cursor_expired``)."""
+        with self._lock:
+            self._entries.clear()
+
     def get(self, snapshot_id: str, scope: str) -> _ListSnapshot:
         with self._lock:
             now = self.clock()

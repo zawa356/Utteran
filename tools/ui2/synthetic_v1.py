@@ -37,7 +37,7 @@ from utteran_contracts.worker import (
     WorkerErrorCode,
     WorkerRequest,
 )
-from utteran_control.history_repository import HistoryControlStore
+from utteran_control.deletion_repository import DeletionControlStore
 from utteran_gui.job_admission import ProviderResult
 from utteran_gui.job_runtime import JobRuntime
 from utteran_gui.operation_queue import OperationQueue
@@ -191,7 +191,7 @@ def synthetic_v1_runtime(root: Path, legacy_queue: OperationQueue) -> tuple[JobR
         runner=SyntheticRunner(layout["output"]),
         job_dir=root / "jobs",
         poll_interval=0.2,
-        # Layout v7 (history visibility) like the real --next-ui-v1 runtime.
-        store_type=HistoryControlStore,
+        # Layout v8 (history visibility + C2c deletion) like the real --next-ui-v1 runtime.
+        store_type=DeletionControlStore,
     )
     return runtime, settings_path

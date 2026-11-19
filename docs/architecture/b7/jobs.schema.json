@@ -24,6 +24,34 @@
       "title": "CancelRequest",
       "type": "object"
     },
+    "DeletionTarget": {
+      "additionalProperties": false,
+      "description": "One file a plan would delete: format and size only (no name, no path).",
+      "properties": {
+        "format": {
+          "enum": [
+            "srt",
+            "vtt",
+            "json",
+            "txt",
+            "md"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "format",
+        "size"
+      ],
+      "title": "DeletionTarget",
+      "type": "object"
+    },
     "EditingSession": {
       "additionalProperties": false,
       "properties": {
@@ -456,6 +484,259 @@
         "queue_revision"
       ],
       "title": "JobBatch",
+      "type": "object"
+    },
+    "JobDeletion": {
+      "additionalProperties": false,
+      "description": "Outcome of one deletion request.\n\nWhile ④ is disabled only ``history`` deletions complete: ``outcome`` is ``completed`` and\nboth artifact counts are 0. ``incomplete`` is kept in the vocabulary for a future,\nproven artifact deletion and is never produced by this build.",
+      "properties": {
+        "artifacts_remaining": {
+          "maximum": 6,
+          "minimum": 0,
+          "title": "Artifacts Remaining",
+          "type": "integer"
+        },
+        "artifacts_removed": {
+          "maximum": 6,
+          "minimum": 0,
+          "title": "Artifacts Removed",
+          "type": "integer"
+        },
+        "deleted_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Deleted At"
+        },
+        "job_id": {
+          "pattern": "^job_[0-9a-f]{32}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "history",
+            "history_and_artifacts"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "completed",
+            "incomplete"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "retained": {
+          "items": {
+            "enum": [
+              "backups",
+              "related_jobs",
+              "replay_public_views",
+              "event_skeleton",
+              "core_cache",
+              "output_files"
+            ],
+            "type": "string"
+          },
+          "title": "Retained",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "mode",
+        "outcome",
+        "deleted_at",
+        "artifacts_removed",
+        "artifacts_remaining",
+        "retained"
+      ],
+      "title": "JobDeletion",
+      "type": "object"
+    },
+    "JobDeletionPlan": {
+      "additionalProperties": false,
+      "description": "Read-only preflight of one deletion. ``allowed`` iff a token is offered.",
+      "properties": {
+        "allowed": {
+          "title": "Allowed",
+          "type": "boolean"
+        },
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/DeletionTarget"
+          },
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expires At"
+        },
+        "job_id": {
+          "pattern": "^job_[0-9a-f]{32}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "history",
+            "history_and_artifacts"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "plan_token": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "pattern": "^dp1\\.[0-9]{13}\\.[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Plan Token"
+        },
+        "refusal": {
+          "anyOf": [
+            {
+              "enum": [
+                "not_finished",
+                "deletion_in_progress",
+                "artifact_deletion_disabled"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Refusal"
+        },
+        "related_jobs": {
+          "minimum": 0,
+          "title": "Related Jobs",
+          "type": "integer"
+        },
+        "resume": {
+          "title": "Resume",
+          "type": "boolean"
+        },
+        "retained": {
+          "items": {
+            "enum": [
+              "backups",
+              "related_jobs",
+              "replay_public_views",
+              "event_skeleton",
+              "core_cache",
+              "output_files"
+            ],
+            "type": "string"
+          },
+          "title": "Retained",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "mode",
+        "allowed",
+        "refusal",
+        "plan_token",
+        "expires_at",
+        "resume",
+        "artifacts",
+        "related_jobs",
+        "retained"
+      ],
+      "title": "JobDeletionPlan",
+      "type": "object"
+    },
+    "JobDeletionPlanRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "history",
+            "history_and_artifacts"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "mode"
+      ],
+      "title": "JobDeletionPlanRequest",
+      "type": "object"
+    },
+    "JobDeletionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "history",
+            "history_and_artifacts"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "plan_token": {
+          "maxLength": 128,
+          "pattern": "^dp1\\.[0-9]{13}\\.[0-9a-f]{64}$",
+          "title": "Plan Token",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "mode",
+        "plan_token"
+      ],
+      "title": "JobDeletionRequest",
       "type": "object"
     },
     "JobErrorView": {
@@ -1364,6 +1645,21 @@
     },
     {
       "$ref": "#/$defs/JobArtifacts"
+    },
+    {
+      "$ref": "#/$defs/JobDeletionPlanRequest"
+    },
+    {
+      "$ref": "#/$defs/DeletionTarget"
+    },
+    {
+      "$ref": "#/$defs/JobDeletionPlan"
+    },
+    {
+      "$ref": "#/$defs/JobDeletionRequest"
+    },
+    {
+      "$ref": "#/$defs/JobDeletion"
     }
   ],
   "title": "Utteran B7 v1 job and queue wire contracts (opt-in, experimental)"

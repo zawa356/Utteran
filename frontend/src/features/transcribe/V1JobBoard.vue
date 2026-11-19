@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import type { DeletionModeV1, JobV1 } from "../../api/v1Resources";
 import { fileName } from "../../api/legacyJobs";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore } from "../../composables/core";
@@ -8,6 +9,7 @@ import { useCodeText } from "../../composables/v1";
 import type { LogicalJob } from "../../domain/v1/logicalJobs";
 import type { MessageKey } from "../../i18n";
 import V1Artifacts from "./V1Artifacts.vue";
+import V1DeleteDialog from "./V1DeleteDialog.vue";
 
 /**
  * Bundle C2b (`--next-ui-v1`): every durable job as one row per logical job (a `retry_of` chain,
@@ -40,10 +42,21 @@ function place(g: LogicalJob): string {
   const base = p.position === null ? t("v1.board.place.unknown") : t("v1.board.place.waiting", { position: p.position });
   return p.held ? `${base} · ${t("v1.board.place.held")}` : base;
 }
+const deletion = core.v1!.deletion;
+const d = useStore(deletion.store);
 const open = computed(() => {
   void s.value;
-  return board.actionOpen();
+  void d.value;
+  return board.actionOpen() || deletion.isOpen();
 });
+// C2c: the internal jobs of the row the deletion dialog was opened from (the person picks one).
+const candidates = ref<readonly JobV1[]>([]);
+function openDeletion(g: LogicalJob, mode: DeletionModeV1): void {
+  if (!board.canDelete(g) || deletion.isOpen()) return;
+  const target = shown(g);
+  candidates.value = [...g.attempts];
+  void deletion.plan({ rootId: g.rootId, jobId: target.id, revision: target.revision, mode });
+}
 const sections = computed(() => [
   { key: "queue" as const, title: t("v1.board.queue"), empty: t("v1.board.emptyQueue"), rows: s.value.queue, show: true },
   { key: "history" as const, title: t("v1.board.history"), empty: t("v1.board.emptyHistory"), rows: s.value.history, show: true },
@@ -131,11 +144,16 @@ const sections = computed(() => [
               <v-btn v-if="section.key === 'history'" variant="outlined" size="small" :disabled="!board.canRetry(g) || open" data-testid="v1-board-retry" @click="board.retry(g.rootId)">{{ t("v1.board.retry") }}</v-btn>
               <v-btn v-if="section.key === 'history' && s.visibilitySupported" variant="text" size="small" :disabled="!board.canHide(g) || open" data-testid="v1-board-hide" @click="board.setHidden(g.rootId, true)">{{ t("v1.board.hide") }}</v-btn>
               <v-btn v-if="section.key === 'hidden'" variant="text" size="small" :disabled="open" data-testid="v1-board-show" @click="board.setHidden(g.rootId, false)">{{ t("v1.board.show") }}</v-btn>
+              <template v-if="section.key !== 'queue'">
+                <v-btn variant="text" color="error" size="small" :disabled="!board.canDelete(g) || open" data-testid="v1-board-delete-history" @click="openDeletion(g, 'history')">{{ t("v1.board.deleteHistory") }}</v-btn>
+                <v-btn variant="text" color="error" size="small" :disabled="!board.canDelete(g) || open" data-testid="v1-board-delete-artifacts" @click="openDeletion(g, 'history_and_artifacts')">{{ t("v1.board.deleteArtifacts") }}</v-btn>
+              </template>
             </div>
             <V1Artifacts v-if="section.key !== 'queue'" :job-id="shown(g).id" />
           </v-list-item>
         </v-list>
       </v-card>
     </template>
+    <V1DeleteDialog :candidates="candidates" />
   </section>
 </template>

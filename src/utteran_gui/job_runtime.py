@@ -90,6 +90,8 @@ class JobRuntime:
         self.store: JobControlStore | None = None
         self.admission: JobAdmission | None = None
         self.dispatcher: JobDispatcher | None = None
+        # C2c: deletion plans/executions, only on a layout v8 store (None otherwise).
+        self.deletion: Any = None
         self.last_backup: Path | None = None
         self._lock = threading.Lock()
         # Unpredictable, per-runtime ownership of the legacy queue; never shared.
@@ -131,9 +133,11 @@ class JobRuntime:
                     # outbox compaction, v6 diagnostics attempt sidecar). One-way migration.
                     # 0.1.55: HistoryControlStore = layout v7 (v6 + job_visibility). The
                     # pre-open backup above keeps the v6 file for a rollback of the build.
-                    from utteran_control.history_repository import HistoryControlStore
+                    # 0.1.57: DeletionControlStore = layout v8 (v7 + deletion journal/gate,
+                    # bundle C2c). The pre-open backup keeps the v7 file in the same way.
+                    from utteran_control.deletion_repository import DeletionControlStore
 
-                    store_type = HistoryControlStore
+                    store_type = DeletionControlStore
                 if self.store_type is not None:
                     store_type = self.store_type
                 store = store_type(self.store_path, clock=self.clock)
@@ -172,6 +176,11 @@ class JobRuntime:
                     poll_interval=self.poll_interval,
                     setup=executor,
                 )
+                deletion = None
+                if hasattr(store, "complete_deletion"):
+                    from utteran_gui.job_deletion import JobDeletionService
+
+                    deletion = JobDeletionService(store)  # type: ignore[arg-type]
                 if self.autostart_dispatcher:
                     dispatcher.start()
             except BaseException:
@@ -182,6 +191,7 @@ class JobRuntime:
             self._queue_token = token
             self.store, self.admission, self.dispatcher = store, admission, dispatcher
             self.setup_executor = executor
+            self.deletion = deletion
             self.state = "active"
             return report
 
@@ -199,7 +209,7 @@ class JobRuntime:
             self._queue_token = None
             self.state = "inactive"
             self.store = self.admission = self.dispatcher = None
-            self.setup_executor = None
+            self.setup_executor = self.deletion = None
             return backup
 
     def shutdown(self, timeout: float = 30.0) -> str:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import AwareDatetime, Field, StrictBool, StrictInt, StrictStr
+from pydantic import AwareDatetime, Field, StrictBool, StrictInt, StrictStr, model_validator
 
 from utteran_contracts.base import Contract, VersionedContract
 from utteran_contracts.capabilities import RequestedRoute
@@ -349,6 +349,104 @@ class JobArtifacts(VersionedContract):
     unexpected_count: Annotated[StrictInt, Field(ge=0)]
 
 
+# --------------------------------------------------------------------------- C2c deletion
+
+# history: tombstone the job's private record only (files stay). history_and_artifacts:
+# first delete the job's own, verified output directory, then tombstone.
+DeletionMode = Literal["history", "history_and_artifacts"]
+# Fixed refusal vocabulary of a deletion plan. Never a path, a name or a value.
+DeletionRefusal = Literal[
+    "not_finished",
+    "deletion_in_progress",
+    # ④ (history + output files) is refused on every platform: a removal of exactly the
+    # verified inode cannot be proven on POSIX (names are resolved again), and the
+    # Windows handle-based path is not implemented (PR #58 review, #59).
+    "artifact_deletion_disabled",
+]
+# What stays after a deletion (shown to the user; "complete erasure" is never claimed).
+RetainedCode = Literal[
+    "backups",
+    "related_jobs",
+    "replay_public_views",
+    "event_skeleton",
+    "core_cache",
+    "output_files",
+]
+# dp1.<expiry ms>.<hmac hex>: opaque, carries no path or value; recomputed by the server.
+DELETION_TOKEN_PATTERN = r"^dp1\.[0-9]{13}\.[0-9a-f]{64}$"
+DeletionToken = Annotated[StrictStr, Field(pattern=DELETION_TOKEN_PATTERN, max_length=128)]
+
+
+class JobDeletionPlanRequest(VersionedContract):
+    mode: DeletionMode
+
+
+class DeletionTarget(Contract):
+    """One file a plan would delete: format and size only (no name, no path)."""
+
+    format: Literal["srt", "vtt", "json", "txt", "md"]
+    size: Annotated[StrictInt, Field(ge=0)]
+
+
+class JobDeletionPlan(VersionedContract):
+    """Read-only preflight of one deletion. ``allowed`` iff a token is offered."""
+
+    job_id: JobId
+    mode: DeletionMode
+    allowed: StrictBool
+    refusal: DeletionRefusal | None
+    plan_token: DeletionToken | None
+    expires_at: AwareDatetime | None
+    # Reserved for a future artifact deletion; always false while ④ is disabled.
+    resume: StrictBool
+    artifacts: tuple[DeletionTarget, ...]
+    # Other jobs holding a copy of the same snapshot (retry chain, rerun links).
+    related_jobs: Annotated[StrictInt, Field(ge=0)]
+    retained: tuple[RetainedCode, ...]
+
+    @model_validator(mode="after")
+    def check_consistency(self) -> JobDeletionPlan:
+        offered = self.plan_token is not None
+        if (
+            self.allowed != offered
+            or offered != (self.expires_at is not None)
+            or self.allowed == (self.refusal is not None)
+            or (self.mode == "history" and self.artifacts)
+        ):
+            raise ValueError("inconsistent deletion plan")
+        return self
+
+
+class JobDeletionRequest(VersionedContract):
+    mode: DeletionMode
+    plan_token: DeletionToken
+
+
+class JobDeletion(VersionedContract):
+    """Outcome of one deletion request.
+
+    While ④ is disabled only ``history`` deletions complete: ``outcome`` is ``completed`` and
+    both artifact counts are 0. ``incomplete`` is kept in the vocabulary for a future,
+    proven artifact deletion and is never produced by this build.
+    """
+
+    job_id: JobId
+    mode: DeletionMode
+    outcome: Literal["completed", "incomplete"]
+    deleted_at: AwareDatetime | None
+    artifacts_removed: Annotated[StrictInt, Field(ge=0, le=6)]
+    artifacts_remaining: Annotated[StrictInt, Field(ge=0, le=6)]
+    retained: tuple[RetainedCode, ...]
+
+    @model_validator(mode="after")
+    def check_consistency(self) -> JobDeletion:
+        if (self.outcome == "completed") != (self.deleted_at is not None) or (
+            self.outcome == "completed" and self.artifacts_remaining
+        ):
+            raise ValueError("inconsistent deletion outcome")
+        return self
+
+
 def spec_view(spec: ResolvedSpec) -> ResolvedSpecView:
     """Allowlist projection; settings, model directory and fingerprints stay private."""
     return ResolvedSpecView(
@@ -396,4 +494,9 @@ PUBLIC_MODELS: tuple[type[Contract], ...] = (
     JobVisibilityWrite,
     JobArtifact,
     JobArtifacts,
+    JobDeletionPlanRequest,
+    DeletionTarget,
+    JobDeletionPlan,
+    JobDeletionRequest,
+    JobDeletion,
 )

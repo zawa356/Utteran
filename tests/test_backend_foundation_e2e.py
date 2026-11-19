@@ -470,7 +470,8 @@ def test_opt_in_migrates_v3_to_v6_with_restorable_pre_cutover_backup(
 
     s = stack_factory(before=seed_v3)
     live = s.store.path
-    assert user_version(live) == 7  # 0.1.55: the runtime target is layout v7
+    # 0.1.55: the runtime target was layout v7; 0.1.57 (C2c): layout v8 (v7 + deletion).
+    assert user_version(live) == 8
     backup = s.runtime.last_backup
     assert backup is not None and backup.is_file()
     # The pre-cutover backup keeps the pre-migration layout (taken before the v6 open).
