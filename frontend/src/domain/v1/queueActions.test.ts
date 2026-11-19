@@ -127,3 +127,15 @@ for (const kind of ["hold", "order"] as const) it(`${kind} unknown freezes endpo
   await board.refresh(); await board.recheck();
   expect(calls).toHaveLength(2); expect(calls[1]).toEqual(calls[0]);
 });
+
+it("a GET older than the acknowledged queue revision cannot re-enable writes", async () => {
+  const { api, board } = setup(); await board.refresh();
+  const initial = board.store.get().queueView!;
+  api.setDispatch = async () => ({ ...initial, revision: initial.revision + 2, dispatch: "running" });
+  api.getQueue = async () => ({ ...initial, revision: initial.revision + 1 });
+  await board.setDispatch("running");
+  expect(board.store.get().action?.phase).toBe("done"); // response acknowledged, GET is stale
+  expect(board.store.get().phase).toBe("error");
+  expect(board.queueReason()).toBe("unread");
+  expect(board.store.get().queue).toEqual([]);
+});

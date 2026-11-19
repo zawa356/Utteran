@@ -70,7 +70,8 @@ board unknownのdismissは無効。旧単件cancelと投入/C2cで既に存在�
 - held・setup_operationを含む全waiting itemをサーバーpositionで整列し、activeを除外。
   対象と隣接が両方Jobの場合のみ一段入替。setupを跨がず、末端で要求を送らない。
 - 表示中のqueueIndex、検索結果の添字、論理行の番号からqueue IDや要求配列を生成しない。
-- boardの最新GET revisionを古い応答で巻き戻さない。GETの失敗時は部分一覧・古い操作を出さない。
+- boardはGETとmutation ackで確認した最大queue revisionを下限として保持する。
+  先取り表示をせず、ackより古いGETも拒否する。GETの失敗時は部分一覧・古い操作を出さない。
 - retainWatch leaseと既存単一timerを保持。ゲートはtimerとは独立。
 
 ## 検証記録
@@ -80,11 +81,13 @@ board unknownのdismissは無効。旧単件cancelと投入/C2cで既に存在�
 最初の試験ではjson fixture引数順の誤りも見つかったため修正し、別のmain worktreeで再実行して
 10件すべてが未実装methodで失敗することを確認した。Redを合格扱いしていない。
 順序のpure testsはmodule未存在でRed。追加試験は削除・skip・timeout延長でGreen化していない。
+追加のack下限試験は、古いGETでもphase=doneとなることを **1 failed / 17 passed** で検出。
+確認済みrevisionの下限をboardで保持する修正後にGreen、HTTP境界でも操作無効を検証した。
 
-Green後: Vitest **589 passed / 54 files**。lint、vue-tsc、production audit（全severity 0）、
+Green後: Vitest **590 passed / 54 files**。lint、vue-tsc、production audit（全severity 0）、
 Ruff、Linux/win32 mypy、8 schema、PowerShell BOMがPASS。
 全E2E・privacy・CIの最終数値とD2B-01〜16の判定はPR本文に記録する。
-prototypeは **96 passed**。D2-Bは **11 passed**（分岐個別取消のHTTP/CASとcancelling表示を含む）。
+prototypeは **96 passed**。D2-Bは **12 passed**（分岐個別取消のHTTP/CASとcancelling表示を含む）。
 ローカルNodeは22.23.5、npm 11.21.1へ揃えた（初期unit baselineだけ既設Node24/npm11.9）。
 キャッシュは書込可能な一時領域を使用。
 
@@ -97,13 +100,16 @@ Pythonの最初の実行は31 failed / 1696 passed / 10 skipped / 1 xfailed。
 **1728 passed / 9 skipped / 1 xfailed（既存）**。skip/xfailは追加していない。
 
 ローカル全125件の初回は **122 passed / 3 failed**。prototype全体との同時実行中に既存D1/D2Aの
-polling往復2件が30秒試験時間を超過（traceを保存、最後の待機中）。新規旧resume試験の1件は
+polling往復2件が30秒試験時間を超過（traceを保存、固定待機中）。新規旧resume試験の1件は
 起動時の実revisionより小さい固定crafted revisionが巻戻し防止で拒否されるfixture不備だった。
 crafted revisionを実GETより先にし、11件のD2-Bは全件PASS。
 pollingの単独再確認ではD1がPASS、D2Aは準備中の明示resumeを「無操作の画面遷移」のwriteに
 数えていた既存fixtureの不備を検出。明示準備完了後を観測区間にして、遷移からのwrite 0という
 元の条件を維持した。修正後の2件は **2 passed（45.3秒）**。timeoutは変更していない。
-最終HEAD全体の125件はpush/PR CIで別途確認し、初回ローカル失敗を成功件数に置き換えない。
+後続のローカル全125件は **124 passed / 1 failed**（D2Aの30秒timeout再発）。
+単独のpolling2件はPASSだが、
+全suiteの時間予算は残留リスクとして扱う。timeout延長・skipは行わない。
+最終HEAD全体の126件はpush/PR CIで別途確認し、ローカル失敗を成功件数に置き換えない。
 
 隔離コピーで安全条件を意図的に壊すmutation検証も実施。
 setup横断防止を除くと1 failed、共有ゲートを無効にすると4 failed、再照合CASを最新値に

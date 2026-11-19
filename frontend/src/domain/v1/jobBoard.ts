@@ -136,6 +136,8 @@ export class V1JobBoardController {
   private leases = 0;
   private disposed = false;
   private frozen: Frozen | null = null;
+  /** Highest queue revision confirmed by a GET or a mutation acknowledgement. */
+  private queueFloor = 0;
   private readonly scheduler: Scheduler;
   readonly gate: QueueMutationGate;
   private readonly owner = Symbol("board");
@@ -202,7 +204,8 @@ export class V1JobBoardController {
       const queueView = await this.api.getQueue(abort.signal);
       if (!current()) return;
       const previous = this.store.get().queueView;
-      if (previous && queueView.revision < previous.revision) throw listError("job_list_inconsistent");
+      if (queueView.revision < Math.max(previous?.revision ?? 0, this.queueFloor)) throw listError("job_list_inconsistent");
+      this.queueFloor = queueView.revision;
       const groups = groupLogicalJobs(visible);
       const places = queuePlaces(queueView);
       // A row is finished only when *every* internal job is: a still-waiting branch keeps it in the
@@ -443,9 +446,13 @@ export class V1JobBoardController {
     try {
       if (action.kind === "dispatch" || action.kind === "hold" || action.kind === "order") {
         const frozen = this.frozen!;
-        if (action.kind === "dispatch") await this.api.setDispatch(frozen.intent!, frozen.revision);
-        else if (action.kind === "hold") await this.api.setHold(frozen.jobId, frozen.intent!, frozen.revision);
-        else await this.api.setOrder(frozen.intent!, frozen.revision);
+        const acknowledged = action.kind === "dispatch"
+          ? await this.api.setDispatch(frozen.intent!, frozen.revision)
+          : action.kind === "hold"
+            ? await this.api.setHold(frozen.jobId, frozen.intent!, frozen.revision)
+            : await this.api.setOrder(frozen.intent!, frozen.revision);
+        // Do not display the response optimistically, but the next GET cannot be older than it.
+        this.queueFloor = Math.max(this.queueFloor, acknowledged.revision);
         remaining = [];
       } else if (action.kind === "cancel" || action.kind === "retry") {
         const frozen = this.frozen!;

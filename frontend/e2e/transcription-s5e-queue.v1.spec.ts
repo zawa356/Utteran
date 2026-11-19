@@ -826,3 +826,20 @@ test("D2B-08: old resume unknown owns the same gate as the queue page", async ({
   expect(b!["idempotency-key"]).toBe(a!["idempotency-key"]); expect(b!["if-match"]).toBe(a!["if-match"]); expect(requests[1]!.postData()).toBe(requests[0]!.postData());
   await openQueue(app); await expect(app.getByTestId("queue-dispatch")).toBeEnabled();
 });
+
+test("D2B-15: a GET older than the mutation acknowledgement stays fail closed until a fresh read", async ({ app }) => {
+  const state: Crafted = { pages: onePage([jobWire(1, "queued")]), queue: queueOf(8, null, [{ n: 1, position: 1 }]) };
+  await craft(app, state); await openQueue(app); let writes = 0;
+  await app.route("**/api/v1/queue/control", async route => {
+    writes++; state.queue.body!.revision = 9;
+    await route.fulfill({ status: 200, contentType: "application/json", headers: { ETag: '\"10\"' }, body: JSON.stringify({ ...state.queue.body, revision: 10, dispatch: "paused" }) });
+  });
+  await app.getByTestId("queue-dispatch").click();
+  await expect(app.getByTestId("queue-write-state")).toHaveAttribute("data-action-phase", "done");
+  await expect(page$(app)).toHaveAttribute("data-phase", "error");
+  await expect(app.getByTestId("queue-dispatch")).toBeDisabled(); await expect(rows(app)).toHaveCount(0);
+  expect(writes).toBe(1);
+  state.queue.body!.revision = 10; state.queue.body!.dispatch = "paused";
+  await app.getByTestId("queue-reload").click(); await expect(page$(app)).toHaveAttribute("data-phase", "done");
+  await expect(app.getByTestId("queue-dispatch")).toBeEnabled(); expect(writes).toBe(1);
+});
