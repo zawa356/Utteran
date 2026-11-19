@@ -132,7 +132,7 @@ async function read(showHidden?: boolean): Promise<void> {
         </div>
       </v-alert>
       <p v-if="loading" role="status">{{ t("results.loading") }}</p>
-      <ErrorAlert v-else-if="state.error" :error="state.error" testid="v1-board-error" @retry="read()" />
+      <ErrorAlert v-else-if="state.error" :error="state.error" testid="v1-board-error" :data-error-kind="state.error.kind" @retry="read()" />
       <div v-else class="results-columns">
         <div :data-testid="listId">
           <v-table density="compact" class="results-table" data-testid="results-table">
