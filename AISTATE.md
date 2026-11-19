@@ -1,5 +1,11 @@
 # AI 作業状態
 
+## 現在地（2026-11-19、GHSA撤回によるstale例外の解除、PR #58結合CI修正）
+
+- PR #58結合HEAD `f725434`のpush/PR CIは14/15。GHSA-fc5q-39xc-vjpfが**2026-11-18にWithdrawn**（修正版はNoneのまま、コード修正ではない）となり、`npm audit --omit=dev`がhigh 0・critical 0になったため、
+  適用先を失った例外がゲートの規則どおり`stale`で失敗した。owner方針に従い`frontend/audit-exceptions.json`を`exceptions: []`へ。**監査ゲート・blocking判定・対象固定は維持**。
+- 回帰: 例外なしで clean→PASS、他のhigh/critical→FAIL、撤回勧告の再公開→FAIL。CIの数値はPR #58のコメント。Ready化・mergeはしない。
+
 ## 現在地（2026-11-19、PR #58とmainの統合検証）
 
 - PR #64の期限付きpicomatch例外をmainへ統合（`bd58dbc`、push/PR CI各15/15）。PR #58はmainの内容を取り込んで結合試験中。C2cの前回Windows受入6/6 PASSと旧HEADのP1/P2解消を維持するが、**結合後HEADのCIと最終マージは未確認**。

@@ -308,18 +308,53 @@ def test_a_malformed_exceptions_file_fails_closed(tmp_path: Path, broken: dict[s
     assert code == 1 and "cannot decide" in text
 
 
-def test_the_committed_exceptions_file_is_well_formed_and_awaits_the_owner() -> None:
+def test_the_committed_exceptions_file_is_empty_after_the_advisory_was_withdrawn() -> None:
+    """GHSA-fc5q-39xc-vjpf was withdrawn on 2026-11-18 (Issue #62): its entry was removed.
+
+    The gate, its blocking levels and its fixed scope stay; with no entry nothing is excepted.
+    """
     path = Path(__file__).parents[1] / "frontend" / "audit-exceptions.json"
-    entries, problems = gate.load_exceptions(path, gate.date(2026, 11, 18))
-    assert [e.advisory for e in entries] == [GHSA]
-    assert entries[0].package == "picomatch" and entries[0].vulnerable_range == "<=4.0.7"
-    assert (entries[0].expires - entries[0].created).days <= gate.MAX_DAYS
-    # The owner approves by filling approved_by/approval_url; until then nothing is applied.
-    data = json.loads(path.read_text(encoding="utf-8"))["exceptions"][0]
-    if data["approved_by"] is None:
-        assert not entries[0].approved and problems
-    else:
-        assert data["approved_by"] == gate.OWNER and entries[0].approved
+    assert json.loads(path.read_text(encoding="utf-8")) == {"schema_version": 1, "exceptions": []}
+    assert gate.load_exceptions(path, gate.date(2026, 11, 19)) == ([], [])
+
+
+def test_with_no_exception_a_clean_report_passes(tmp_path: Path) -> None:
+    clean = {"auditReportVersion": 2, "vulnerabilities": {}, "metadata": {"vulnerabilities": {}}}
+    code, text = run(tmp_path, clean, [])
+    assert code == 0 and "PASS" in text and "high 0, critical 0" in text
+
+
+@pytest.mark.parametrize("severity", ["high", "critical"])
+def test_with_no_exception_any_high_or_critical_advisory_fails(
+    tmp_path: Path, severity: str
+) -> None:
+    other = finding(
+        "lodash-like",
+        [
+            advisory(
+                url="https://github.com/advisories/GHSA-5555-6666-7777",
+                source=2,
+                name="lodash-like",
+                severity=severity,
+                range="<2",
+            )
+        ],
+        severity,
+    )
+    audit = {
+        "auditReportVersion": 2,
+        "vulnerabilities": {"lodash-like": other},
+        "metadata": {"vulnerabilities": {severity: 1}},
+    }
+    code, text = run(tmp_path, audit, [])
+    assert code == 1 and f"FAIL: lodash-like: {severity} GHSA-5555-6666-7777" in text
+
+
+def test_with_no_exception_the_withdrawn_advisory_blocks_again_if_reinstated(
+    tmp_path: Path,
+) -> None:
+    code, text = run(tmp_path, report(), [])
+    assert code == 1 and text.count("BLOCKING") == 4 and "EXCEPTED" not in text
 
 
 # ------------------------------------------- owner review of PR #64 (P2-1 scope, P2-2 dates)

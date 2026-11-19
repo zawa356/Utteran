@@ -1,7 +1,14 @@
 # npm audit 例外の根拠 — GHSA-fc5q-39xc-vjpf（picomatch ReDoS、Issue #62）
 
 作成: 2026-11-18 JST。対象: `frontend/`の本番依存監査（CI `UI-2 frontend`の`npm run audit:prod`）。
-状態: **owner限定承認済み（2026-11-18〜2026-12-18）**。承認根拠: [PR #64のオーナーリスク受容コメント](https://github.com/zawa356/Utteran/pull/64#issuecomment-6981408931)。承認情報は`frontend/audit-exceptions.json`に記録済み。監査ゲートは該当GHSAだけを例外とし、他のHigh/Criticalを引き続き阻止する。
+> **2026-11-19 追記: 勧告の撤回により例外を解除。** GitHub Advisory DatabaseでGHSA-fc5q-39xc-vjpfは**2026-11-18にWithdrawn**
+> （ページ表示「This advisory was withdrawn on Nov 18, 2026」。Patched versionsは"None"のまま）。**picomatchのコードが修正されたことは意味しない**。
+> `npm audit --omit=dev`は high 0・critical 0 を返すようになり、適用先のない例外はゲートの規則どおり`stale`で失敗した（PR #58結合HEAD `f725434`のCI 14/15）。
+> owner方針（[PR #58コメント](https://github.com/zawa356/Utteran/pull/58#issuecomment-6995775179)）に従い、`frontend/audit-exceptions.json`のエントリを削除して`exceptions: []`とした。
+> `tools/npm_audit_gate.py`（全件表示、high/criticalで失敗、対象固定`ALLOWED_SCOPE`、最大1件、期限・承認の規則）は維持する。勧告が再公開された場合は例外なしで再び失敗し、新しいowner判断が必要（試験`test_with_no_exception_the_withdrawn_advisory_blocks_again_if_reinstated`）。
+> 以下は承認時（2026-11-18）の記録として残す。
+
+状態（2026-11-18時点の記録）: **owner限定承認済み（2026-11-18〜2026-12-18）**。2026-11-19に撤回により解除（上記）。承認根拠: [PR #64のオーナーリスク受容コメント](https://github.com/zawa356/Utteran/pull/64#issuecomment-6981408931)。承認情報は`frontend/audit-exceptions.json`に記録済み。監査ゲートは該当GHSAだけを例外とし、他のHigh/Criticalを引き続き阻止する。
 
 ## 1. 事実
 
