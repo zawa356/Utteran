@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createHttpClient } from "../../api/http";
 import { createV1ResourcesApi } from "../../api/v1Resources";
 import { json } from "../../test/fakeFetch";
@@ -370,5 +370,43 @@ it("D3A-09: unknown visibility PUT retains its CAS if another visibility revisio
   await b.recheck();
   expect(server.writes().map(w => w.ifMatch)).toEqual(['"0"', '"0"']);
   expect(b.store.get().action?.phase).toBe("conflict");
+  expect(b.actionOpen()).toBe(false);
+});
+
+it("D3A-12: the previous refresh cannot release the gate while explicit recheck is pending", async () => {
+  const { server, api, board: b } = board();
+  const [id] = server.addJobs(1);
+  server.setStatus(id!, "failed");
+  await b.refresh();
+  server.inject.set(`POST /api/v1/jobs/${id}/retry`, { reply: new TypeError("network") });
+  const queue = api.getQueue;
+  let finishRead!: () => void;
+  const holdRead = new Promise<void>(resolve => { finishRead = resolve; });
+  vi.spyOn(api, "getQueue").mockImplementationOnce(async signal => {
+    await holdRead;
+    return queue(signal);
+  });
+  const initial = b.retry(id!);
+  await vi.waitFor(() => expect(api.getQueue).toHaveBeenCalledOnce());
+  expect(b.store.get().action?.phase).toBe("unknown");
+
+  const retry = api.retry;
+  let finishReplay!: () => void;
+  const holdReplay = new Promise<void>(resolve => { finishReplay = resolve; });
+  vi.spyOn(api, "retry").mockImplementationOnce(async (...args) => {
+    await holdReplay;
+    return retry(...args);
+  });
+  const recheck = b.recheck();
+  finishRead();
+  await initial;
+  try {
+    expect(b.store.get().action?.phase).toBe("pending");
+    expect(b.actionOpen()).toBe(true);
+  } finally {
+    finishReplay();
+    await recheck;
+  }
+  expect(b.store.get().action?.phase).toBe("done");
   expect(b.actionOpen()).toBe(false);
 });

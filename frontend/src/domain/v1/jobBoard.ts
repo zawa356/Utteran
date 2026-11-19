@@ -162,7 +162,7 @@ export class V1JobBoardController {
     let revision: number | null = null;
     for (let page = 0; ; page += 1) {
       if (page >= BOARD_MAX_PAGES) throw listError("job_list_too_long");
-      const list = page === 0 && first ? first : await this.api.listJobs(cursor, signal, visibility);
+      const list: JobListV1 = page === 0 && first ? first : await this.api.listJobs(cursor, signal, visibility);
       if (revision === null) revision = list.revision;
       else if (list.revision !== revision) throw listError("job_list_inconsistent");
       for (const item of list.items) {
@@ -170,7 +170,7 @@ export class V1JobBoardController {
         ids.add(item.id);
         items.push(item);
       }
-      if (list.nextCursor === null) return { items, revision };
+      if (list.nextCursor === null) return { items, revision: list.revision };
       if (cursors.has(list.nextCursor)) throw listError("job_list_inconsistent");
       cursors.add(list.nextCursor);
       cursor = list.nextCursor;
@@ -475,6 +475,7 @@ export class V1JobBoardController {
     // The outcome of *this* write. The shown `action` can be dismissed (or replaced) while the
     // lists are re-read below, so it is not what decides the notification.
     let visibilityDone = false;
+    let outcomeUnknown = false;
     try {
       if (action.kind === "dispatch" || action.kind === "hold" || action.kind === "order") {
         const frozen = this.frozen!;
@@ -516,7 +517,8 @@ export class V1JobBoardController {
       if (this.disposed) return;
       const apiError = toApiError(error);
       const phase: BoardActionPhase = apiError.kind === "precondition" ? "conflict" : classifyStartFailure(apiError);
-      if (phase !== "unknown") {
+      outcomeUnknown = phase === "unknown";
+      if (!outcomeUnknown) {
         this.frozen = null;
         this.visibilityRevision = null;
       }
@@ -524,7 +526,8 @@ export class V1JobBoardController {
     }
     // Whatever happened, the lists come from the server again.
     await this.refresh();
-    if (this.store.get().action?.phase !== "unknown") this.gate.release(this.owner);
+    // A recheck can start during this refresh. Only the settled write may release the gate.
+    if (!outcomeUnknown) this.gate.release(this.owner);
     if (visibilityDone && !this.disposed) this.options.onVisibilitySettled?.();
   }
 
