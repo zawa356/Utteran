@@ -1,5 +1,9 @@
 # UI-3-0 — 第5案で設計確定した隔離プロトタイプ
 
+## 最新の実装進捗（2026-11-19、束D1、0.1.58未リリース・Draft PR）
+
+- [束D1 共通シェル・画面遷移](d1-shell-navigation.md): Normal＝アプリバー3導線（狭幅はメニューへ折りたたみ）、Expert＝6項目の管理sidebar（上部の折りたたみ、全幅で展開可能）、モード別に最後のページを保持。既存のAppShell/ShellController/3ペインを再利用。D2（キュー）・D3（結果と履歴）・D4（外観・3ペイン精密化・実機DPI）は未着手。Windows実機は未受入。
+
 ## 最新の実装進捗（2026-11-17、0.1.56未リリース）
 
 - [PR #49〜#53](https://github.com/zawa356/Utteran/pull/53)（A1/A2/C1/C2a/C2b）をmainへ依存順に統合し、main `c5af76726f913e4044f6e73492fee851c2acdd8c` の[CI](https://github.com/zawa356/Utteran/actions/runs/44033681672)は初回success。

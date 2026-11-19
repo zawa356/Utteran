@@ -172,3 +172,47 @@ body {
   max-height: 60vh;
   overflow-y: auto;
 }
+/* Bundle D1 shell: brand, Normal app-bar navigation, Expert sidebar head. */
+.u-brand {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding-inline: 16px 8px;
+}
+.u-appbar-sep {
+  flex: none;
+  width: 1px;
+  height: 24px;
+  margin-inline: 4px 8px;
+  background: rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.u-topnav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  min-width: 0;
+}
+.u-topnav__item--active {
+  box-shadow: inset 0 -2px 0 currentColor;
+}
+.u-no-shrink {
+  flex: none;
+}
+.u-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.u-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 48px;
+  padding-inline: 12px 4px;
+}
+.v-navigation-drawer--rail .u-sidebar-head {
+  justify-content: center;
+  padding-inline: 0;
+}

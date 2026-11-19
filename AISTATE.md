@@ -1,5 +1,14 @@
 # AI 作業状態
 
+## 現在地（2026-11-19、束D1 共通シェル・画面遷移、0.1.58・未リリース、Draft PR）
+
+- 基点main `dd961fc26fcd37377c1ecc38c1266b970092bef7`（0.1.57、統合後CI run 44433404772 success）。セッション指定ブランチ`claude/cool-sagan-85t5ab`、作者`zawa356`。Ready化・merge・tag・releaseなし。
+- 内容: 既存`AppShell`/`ShellController`を改訂し、Normal＝アプリバー3導線（1000px未満はメニューへ折りたたみ）、Expert＝6項目の管理sidebar（上部の折りたたみボタン、1024px未満でも展開可能、rail時aria-label/tooltip）。
+  モード別に最後のページを保持（`normalSection`/`expertSection`）、Normalに無いページは`navigate()`が拒否。Expert 3ペイン・AppCore・API・CSP・DBは無変更。正本: [ui3/d1-shell-navigation](docs/architecture/ui3/d1-shell-navigation.md)。
+- 試験（Cloud Linux）: Red先行コミット`3de110d`（Vitest 8 failed、Playwright 22 failed）。Green後、Vitest 542、Playwright 92（legacy＋v1）、prototype 96、audit PASS、pytest 1726 passed（版上げ後のREADME更新漏れ2件を修正し再実行で13/13）。CIはPR本文。
+- **未検証**: Windows WebView2実機・OS DPI 125/150/200%（D4/#22）。D2（キュー専用画面）・D3（結果と履歴）・D4（外観・3ペイン精密化）・#59・#60は未着手。
+- **次の一手**: ownerレビュー → D2/D3。
+
 ## 現在地（2026-11-19、GHSA撤回によるstale例外の解除、PR #58結合CI修正）
 
 - PR #58結合HEAD `f725434`のpush/PR CIは14/15。GHSA-fc5q-39xc-vjpfが**2026-11-18にWithdrawn**（修正版はNoneのまま、コード修正ではない）となり、`npm audit --omit=dev`がhigh 0・critical 0になったため、

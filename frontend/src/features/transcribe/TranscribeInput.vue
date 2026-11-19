@@ -62,7 +62,7 @@ const batchCounts = computed(() => (batchRun.value ? countItems(batchRun.value.i
       </p>
       <p v-if="batchRunning && batchCounts" class="text-body-2" role="status" data-testid="tx-input-batch">{{ t("tx.input.batchRunning", { accepted: batchCounts.accepted, total: batchRun!.items.length }) }}</p>
       <div class="u-row">
-        <v-btn variant="text" size="small" data-testid="tx-input-to-expert" @click="core.shell.setMode('expert')">{{ t("tx.input.toExpert") }}</v-btn>
+        <v-btn variant="text" size="small" data-testid="tx-input-to-expert" @click="core.shell.openExpertTranscribe()">{{ t("tx.input.toExpert") }}</v-btn>
       </div>
     </div>
   </section>
