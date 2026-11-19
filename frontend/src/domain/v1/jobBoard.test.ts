@@ -315,3 +315,42 @@ describe("PR #53 review P2-2: a branched retry chain never loses an unfinished j
     expect(server.writes().filter((w) => w.line.endsWith("/cancel"))).toHaveLength(1);
   });
 });
+
+describe("D3-A finished history with mixed visibility", () => {
+  it("keeps the same logical root in each view and re-shows every surviving attempt", async () => {
+    const { server, board: b } = board();
+    const [root, child] = server.addJobs(2);
+    server.setStatus(root!, "failed");
+    server.setStatus(child!, "succeeded");
+    server.jobs[1]!.retry_of = root!;
+    if (server.visibility === false) throw new Error("expected visibility support");
+    server.visibility.set(root!, { hidden: true, revision: 3 });
+
+    await b.refresh();
+    expect(b.store.get().history).toMatchObject([{ rootId: root, jobIds: [child], latest: { id: child } }]);
+    expect(b.store.get().hidden).toEqual([]);
+    b.setShowHidden(true);
+    await b.refresh();
+    expect(b.store.get().hidden).toMatchObject([{ rootId: root, jobIds: [root], latest: { id: root } }]);
+    await b.setHidden(root!, false);
+    expect(b.store.get().history).toMatchObject([{ rootId: root, jobIds: [root, child] }]);
+    expect(b.store.get().hidden).toEqual([]);
+    expect(server.writes().map(w => [w.line, w.ifMatch])).toEqual([[`PUT /api/v1/jobs/${root}/visibility`, '"3"']]);
+  });
+
+  it("excludes a hidden ancestor from finished history while any visible branch is open", async () => {
+    const { server, board: b } = board();
+    const [root, waiting, success] = server.addJobs(3);
+    server.setStatus(root!, "failed");
+    server.setStatus(success!, "succeeded");
+    server.jobs[1]!.retry_of = root!;
+    server.jobs[2]!.retry_of = root!;
+    if (server.visibility === false) throw new Error("expected visibility support");
+    server.visibility.set(root!, { hidden: true, revision: 1 });
+
+    b.setShowHidden(true);
+    await b.refresh();
+    expect(b.store.get()).toMatchObject({ queue: [{ rootId: root, open: [{ id: waiting }] }], history: [], hidden: [] });
+    expect(server.writes()).toEqual([]);
+  });
+});

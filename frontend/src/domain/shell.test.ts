@@ -194,3 +194,8 @@ describe("shell state", () => {
     expect(translate("en", "app.previewNoticeV1")).toContain("not here yet");
   });
 });
+
+it("D3A-01: only explicit v1 opts in to the Expert results page", () => {
+  expect(sectionStatus("results", "v1-dev")).toBe("partial");
+  expect(sectionStatus("results", "legacy")).toBe("not_migrated");
+});

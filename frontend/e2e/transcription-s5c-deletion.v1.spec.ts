@@ -242,3 +242,25 @@ test("a retry chain: the person picks one internal job; the other attempt is not
   expect(await api(request, `/api/v1/jobs/${child}`)).toMatchObject({ id: child, status: "cancelled", retry_of: root });
   await expect(app.getByTestId("v1-board-history").locator(`[data-testid="v1-board-row"][data-job="${child}"]`)).toHaveCount(1);
 });
+
+test("D3-A: results and history use one board, and filtering and mode changes only read", async ({ app, request }) => {
+  const seen = recordApi(app);
+  await app.getByTestId("mode-expert").click();
+  await app.getByTestId("nav-results").click();
+  const results = app.getByTestId("section-results");
+  await expect(results.getByTestId("results-table")).toBeVisible();
+  const before = await api<{ items: unknown[] }>(request, "/api/v1/queue");
+  await results.getByTestId("results-tab-history").click();
+  await results.getByTestId("history-search").locator("input").fill("absent-synthetic-job");
+  await expect(results.getByTestId("results-empty")).toBeVisible();
+  await results.getByTestId("results-tab-results").click();
+  await expect(results.getByTestId("history-search")).toHaveCount(0);
+  await results.getByTestId("results-tab-history").click();
+  await expect(results.getByTestId("history-search").locator("input")).toHaveValue("absent-synthetic-job");
+  await app.getByTestId("mode-normal").click();
+  await expect(app.getByTestId("nav-results")).toHaveCount(0);
+  await app.getByTestId("mode-expert").click();
+  await expect(results).toBeVisible();
+  expect((await api<{ items: unknown[] }>(request, "/api/v1/queue")).items).toEqual(before.items);
+  expect(seen.filter(r => !["GET", "HEAD"].includes(r.method())).map(line)).toEqual([]);
+});
