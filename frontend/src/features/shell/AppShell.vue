@@ -8,6 +8,7 @@ import { type Mode, previewNoticeKey, type SectionId } from "../../domain/shell"
 import ExpertWorkspace from "../expert/ExpertWorkspace.vue";
 import SettingsPage from "../settings/SettingsPage.vue";
 import NormalWorkspace from "../workspace/NormalWorkspace.vue";
+import QueuePage from "../queue/QueuePage.vue";
 import ExpertSidebar from "./ExpertSidebar.vue";
 import NormalTopNav from "./NormalTopNav.vue";
 
@@ -23,7 +24,7 @@ const notice = previewNoticeKey(apiMode);
 const state = useStore(shell.store);
 const { t } = useI18n();
 
-// Where each un-migrated area is planned (queue: bundle D2, results: D3; docs/architecture/ui3/d1-shell-navigation.md).
+// Where each un-migrated area is planned (queue: bundle D2 — v1 has the D2-A page, legacy keeps this notice; results: D3).
 const STAGE: Partial<Record<SectionId, string>> = { results: "UI-3 D3", models: "UI-3 S4", queue: "UI-3 D2", setup: "UI-3 S4 / S5" };
 const currentTitle = computed(() => t(`section.${state.value.section}`));
 </script>
@@ -64,6 +65,8 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
         <NormalWorkspace v-else />
       </template>
       <SettingsPage v-else-if="state.section === 'settings'" />
+      <!-- D2-A: the queue page exists only in the v1 shape (`--next-ui-v1`); legacy keeps the notice. -->
+      <QueuePage v-else-if="state.section === 'queue' && apiMode === 'v1-dev'" />
       <section v-else class="u-page u-stack" :data-testid="`section-${state.section}`">
         <h1 class="u-heading">{{ currentTitle }}</h1>
         <NotMigrated :section="currentTitle" :stage="STAGE[state.section]" />

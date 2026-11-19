@@ -1,5 +1,14 @@
 # AI 作業状態
 
+## 現在地（2026-11-19、束D2-A Expertキュー専用画面、0.1.59・未リリース、Draft PR）
+
+- 基点main `e9745dfb8ecd248319153eef8ca09c064538f8ed`（0.1.58、D1統合後のmain push CI run 44445796022 success）。セッション指定ブランチ`claude/funny-cray-4g3vrz`、作者`zawa356`。Ready化・merge・tag・releaseなし。
+- 内容: `--next-ui-v1`のExpert「キュー」を`core.v1.board`に接続した読み取り専用ページ（表＋詳細、検索・絞り込み・表示ソート）。legacyは未移行案内のまま。pollingはlease（`retainWatch`）で③と共有。
+  API・DTO・DB・③の操作は無変更。正本: [ui3/d2a-queue-page](docs/architecture/ui3/d2a-queue-page.md)。
+- 試験（Cloud Linux）: Red先行コミット`4542dbb`（Vitest 5 failed＋module未存在、Playwright 18 failed）。Green後の件数・CIはPR本文。
+- **未検証**: Windows WebView2実機・OS DPI（D4/#22）。D2-B（キュー操作）・D3・D4・#59・#60は未着手。
+- **次の一手**: ownerレビュー → D2-B（操作の実接続、1操作ずつ）。
+
 ## 現在地（2026-11-19、束D1 共通シェル・画面遷移、0.1.58・未リリース、Draft PR）
 
 - 基点main `dd961fc26fcd37377c1ecc38c1266b970092bef7`（0.1.57、統合後CI run 44433404772 success）。セッション指定ブランチ`claude/cool-sagan-85t5ab`、作者`zawa356`。Ready化・merge・tag・releaseなし。

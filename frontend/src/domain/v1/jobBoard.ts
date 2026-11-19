@@ -131,6 +131,7 @@ export class V1JobBoardController {
   private abort: AbortController | null = null;
   private timer: unknown = null;
   private watching = false;
+  private leases = 0;
   private disposed = false;
   private frozen: Frozen | null = null;
   private readonly scheduler: Scheduler;
@@ -231,6 +232,25 @@ export class V1JobBoardController {
       return;
     }
     void this.refresh();
+  }
+
+  /**
+   * Bundle D2-A: a view that shows the board (Expert ③ `V1JobBoard`, the queue page) holds the
+   * polling with a lease instead of calling `watch()` itself. Taking a lease reads the board now;
+   * the polling (one timer) runs while any lease is held and stops when the last one is released,
+   * whatever order the views are mounted and unmounted in. Releasing twice is a no-op.
+   */
+  retainWatch(): () => void {
+    if (this.disposed) return () => {};
+    this.leases += 1;
+    this.watch(true);
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      this.leases -= 1;
+      if (this.leases === 0) this.watch(false);
+    };
   }
 
   private schedule(): void {

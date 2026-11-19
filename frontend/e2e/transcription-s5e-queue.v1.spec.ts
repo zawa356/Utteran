@@ -349,7 +349,7 @@ test("D2A-01/03/05/06: real B7 data as a table + detail; B7 order, places and na
   expect(writes(seen).slice(mark)).toEqual([]);
 });
 
-test("D2A-08: one board poller for both views; leaving stops it; an unknown board write is never replayed by the queue page", async ({ app, request }) => {
+test("D2A-08: one board poller for both views (Expert ③ and the queue page); leaving both stops it", async ({ app, request }) => {
   const seen = recordApi(app);
   const queueReads = () => seen.filter((r) => line(r) === "GET /api/v1/queue").length;
   await expert(app, request, ["slow-meeting.wav"]);
@@ -357,9 +357,9 @@ test("D2A-08: one board poller for both views; leaving stops it; an unknown boar
   await ensureQueueRunning(app);
   await openQueue(app);
   await expect(rowOf(app, slow!)).toBeVisible();
-  await app.waitForTimeout(1500);
+  await app.waitForTimeout(1000);
   let mark = queueReads();
-  await app.waitForTimeout(6000);
+  await app.waitForTimeout(4000);
   const baseline = queueReads() - mark;
   expect(baseline).toBeGreaterThan(0); // something is unfinished: the board polls
   // Ten unmount/mount cycles between Expert ③ (V1JobBoard), the queue page and Normal.
@@ -372,21 +372,28 @@ test("D2A-08: one board poller for both views; leaving stops it; an unknown boar
     await app.getByTestId("mode-expert").click();
     await expect(page$(app)).toBeVisible();
   }
-  await app.waitForTimeout(1500);
+  await app.waitForTimeout(1000);
   mark = queueReads();
-  await app.waitForTimeout(6000);
-  expect(queueReads() - mark).toBeLessThanOrEqual(Math.max(baseline, 3) + 1);
+  await app.waitForTimeout(4000);
+  // One watcher polls at most every 2 s (BOARD_POLL_MS): leaked watchers would multiply this.
+  expect(queueReads() - mark).toBeLessThanOrEqual(Math.max(baseline, 2) + 1);
   // Leaving both views stops the polling.
   await app.getByTestId("mode-normal").click();
   await app.getByTestId("nav-settings").click();
   await app.waitForTimeout(1000);
   mark = queueReads();
-  await app.waitForTimeout(4500);
+  await app.waitForTimeout(4000);
   expect(queueReads() - mark).toBe(0);
+  expect(writes(seen).filter((l) => l.includes("/cancel") || l.startsWith("DELETE ") || l.startsWith("PUT ") || l.startsWith("PATCH /api/v1/queue"))).toEqual([]);
+  await drain(request, "poll");
+});
 
+test("D2A-08: an unknown board write stays unknown on the queue page and is never replayed by it", async ({ app, request }) => {
+  const seen = recordApi(app);
+  await expert(app, request, ["slow-meeting.wav"]);
+  const [slow] = await submitBatch(app, seen);
+  await ensureQueueRunning(app);
   // A cancel from Expert ③ whose answer is lost (the server applied it) stays unknown.
-  await app.getByTestId("mode-expert").click();
-  await app.getByTestId("nav-transcribe").click();
   let first = true;
   await app.route("**/api/v1/jobs/*/cancel", async (route) => {
     if (!first) return route.continue();
@@ -400,19 +407,20 @@ test("D2A-08: one board poller for both views; leaving stops it; an unknown boar
   expect(cancels()).toHaveLength(1);
   // The queue page says so and points back; it neither resends nor hides the open state.
   await app.getByTestId("nav-queue").click();
-  await expect(app.getByTestId("queue-action-open")).toBeVisible();
+  await expect(app.getByTestId("queue-action-open")).toHaveAttribute("data-action-phase", "unknown");
   await expect(page$(app).getByTestId("v1-board-recheck")).toHaveCount(0);
   await app.waitForTimeout(3000);
   expect(cancels()).toHaveLength(1);
   await app.getByTestId("queue-action-open").getByTestId("queue-open-transcribe").click();
   await expect(app.getByTestId("content")).toHaveAttribute("data-section", "transcribe");
   await expect(app.getByTestId("v1-board-action")).toHaveAttribute("data-action-phase", "unknown");
+  // Only the explicit re-check resends, with the same key.
   await app.getByTestId("v1-board-recheck").click();
   await expect(app.getByTestId("v1-board-action")).not.toHaveAttribute("data-action-phase", "unknown");
   expect(cancels()).toHaveLength(2);
   const [a, b] = await Promise.all(cancels().map((r) => r.allHeaders()));
   expect(b!["idempotency-key"]).toBe(a!["idempotency-key"]);
-  await drain(request, "poll");
+  await drain(request, "unknown");
 });
 
 test("D2A-02/03/06: crafted B7 answers: one row per retry chain with every open branch, held, unknown place last, no invented name", async ({ app }) => {
@@ -453,7 +461,8 @@ test("D2A-02/03/06: crafted B7 answers: one row per retry chain with every open 
   await unknown.click();
   await expect(detail).toContainText("some_future_reason");
   // No progress, no stage chips: the API does not publish them.
-  await expect(page$(app).locator(".v-progress-linear, [role='progressbar']")).toHaveCount(0);
+  // (Vuetify cards and fields always render an *inactive* loader; only an active one would be a progress display.)
+  await expect(page$(app).locator(".v-progress-linear--active, .v-progress-circular")).toHaveCount(0);
   await expect(page$(app)).not.toContainText("%");
   expect(writes(seen)).toEqual([]);
   await shot(app, "d2a-03-crafted-branches");

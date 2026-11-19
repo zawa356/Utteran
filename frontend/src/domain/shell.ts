@@ -34,10 +34,19 @@ export const SECTION_STATUS: Record<SectionId, MigrationStatus> = {
   transcribe: "partial", // S3-A/S3-B1 (legacy) or S5-A/S5-B (v1-dev): no diarization
   results: "not_migrated", // bundle D3
   models: "not_migrated",
-  queue: "not_migrated", // bundle D2 (v1: the job board in Expert ③ is not a queue page)
+  queue: "not_migrated", // legacy `--next-ui`; v1-dev: partial (bundle D2-A, see `sectionStatus`)
   setup: "not_migrated",
   settings: "partial", // S1: display, defaults, folders, token, logs; setup and Expert categories later
 };
+
+/**
+ * The migration status shown for a page in this API mode (bundle D2-A). Only the v1 shape
+ * (`--next-ui-v1`) has the queue page; the legacy `--next-ui` keeps it not migrated.
+ */
+export function sectionStatus(section: SectionId, apiMode: ApiMode): MigrationStatus {
+  if (section === "queue" && apiMode === "v1-dev") return "partial";
+  return SECTION_STATUS[section];
+}
 
 export function isNormalSection(section: SectionId): section is NormalSection {
   return (NORMAL_SECTIONS as readonly string[]).includes(section);
