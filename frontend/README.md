@@ -83,5 +83,7 @@ npm run e2e:prototype
 
 - Views (`features/`, `components/`) use only `domain/` actions/stores and `host/`; ESLint rejects `window.pywebview`
   and direct `fetch` there.
-- No CDN, remote fonts or license-key packages. Production dependencies must pass `npm run audit:prod`.
+- No CDN, remote fonts or license-key packages. Production dependencies must pass `npm run audit:prod`
+  (`tools/npm_audit_gate.py`: every high/critical fails, except a single advisory the owner approved in
+  `audit-exceptions.json`, for at most 31 days, at the recorded range/severity/installed version; Issue #62).
 - Never commit `node_modules/`, the build output, screenshots, real paths, tokens, recordings or transcripts.
