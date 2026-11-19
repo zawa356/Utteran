@@ -1,5 +1,11 @@
 # AI 作業状態
 
+## 現在地（2026-11-19、D3-A Expert結果・履歴、0.1.61・未リリース）
+
+- 基点main `5ade41ad59f488eb7004759a69dc4a7100cd0ebd`。ブランチ `feat/ui3-d3a-results-history`。
+- Expertの結果・履歴を共有boardに接続し、再試行、非表示／再表示、個別履歴削除を移設。③は投入と簡易キュー。
+- Windows実機とGPUは未受入。残留課題と試験は [D3-A実装記録](docs/architecture/ui3/d3a-results-history.md)。
+
 ## 現在地（2026-11-19、束D2-B Expertキュー実操作、0.1.60・未リリース、Draft PR提出）
 
 - 基点main `036e13ea2d612aa21f8654e426e5040bcf664d13`（main CI run 44462491950、15/15 success）。独立ブランチ `feat/ui3-d2b-queue-actions`、作者 `zawa356`。
