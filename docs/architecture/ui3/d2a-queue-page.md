@@ -48,7 +48,7 @@ D2全体ではない。D2-B（キュー操作）・D3（結果と履歴）・D4�
 ### 2.4 検索・絞り込み・並べ替え（表示のみ）
 
 - 対象は完全に取得できた`board.store.queue`だけ（エラー時は何も無い）。サーバー検索APIなし。
-- 検索: 既知のbasename・連鎖の全内部Job ID・モデルID・profile。NFKC＋小文字、空白のみは無検索。IME変換中は確定まで適用しない。Enterは何もしない。
+- 検索: 既知のbasename・連鎖の全内部Job ID・モデルID・profile。NFKC＋小文字、空白のみは無検索。IME変換中は確定（compositionend）まで適用せず、確定後に1回だけ適用する。Enterは`preventDefault`しない（IMEの確定操作を妨げない。検索はform送信ではなく入力で反映）。
 - 絞り込み: すべて／実行中（running・cancelling・active）／待機中（queuedかつ非保留）／保留中／要確認（blocked・waiting_user・recovery・block reason・未完了枝2以上・不完全連鎖）。推論ステージ別は作らない。
 - 並べ替え: キューの順（既定）／作成日時（連鎖の最初の内部Job）／状態（実行中→…→待機）／名前（既知名を先、Intl.Collator、不明は末尾）。同順位は常にB7順へfallback。
   「表示の並べ替えでは実行順は変わらない」を常設文言と並べ替え中の注記で示す。読み取り操作はPOST/PUT/PATCH/DELETEを送らない（試験で0件）。
@@ -78,7 +78,7 @@ Red試験を先にコミット（`4542dbb`）。基点mainのコードに対し�
 | D2A-02 | 同「crafted B7 answers…」（1→2, 1→3の分岐が1行、currentは実行中枝、詳細に全枝）、Vitest queueRows D2A-02×2 |
 | D2A-03 | 実データでactive/position（`GET /queue`と照合）、craftedで保留・位置null／itemなし→「順位不明」末尾、Vitest D2A-03×2 |
 | D2A-04 | 実データ（クリック・↓・Enter、`aria-selected`、終了で選択解除）、crafted「a selected row keeps its root…」（polling更新で値置換、完了で解除）、Vitest D2A-04 |
-| D2A-05 | 実データ（名前/ID/パス片の検索、状態フィルタ、名前ソート、queue revision・item順不変、書込0件）、Vitest D2A-05×6 |
+| D2A-05 | 実データ（名前/ID/パス片の検索、状態フィルタ、名前ソート、queue revision・item順不変、書込0件）、crafted「D2A-05 (IME)」（変換中は未適用、変換確定Enter・keyCode 229を抑止しない、確定後1回だけ適用）、Vitest D2A-05×6 |
 | D2A-06 | 実データ（DOMにdata root・`/in/`なし、basenameのみ）、crafted（「ファイル名不明」＋ID）、Vitest D2A-06 |
 | D2A-07 | crafted「multi-page…」（2ページ・cursor循環・ページ間revision不一致・重複ID・2ページ目500・queue 503・不正status→エラー、行0件、polling停止、再読込で復帰、選択維持）、「network loss…」 |
 | D2A-08 | 「one board poller…」（③⇔キュー⇔Normal 10往復で読取頻度が増えない、両画面離脱で0件）、「an unknown board write…」（結果不明の取消をキュー画面は再送しない、明示再照合は同key）、Vitest `jobBoard.watch.test.ts`×4 |

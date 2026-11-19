@@ -113,7 +113,6 @@ const openAction = computed(() => (s.value.action?.phase === "pending" || s.valu
         @update:model-value="onSearch"
         @compositionstart="composing = true"
         @compositionend="onCompositionEnd"
-        @keydown.enter.prevent
       />
       <v-select v-model="filter" :items="filters" :label="t('queue.filterLabel')" density="compact" hide-details class="u-queue-toolbar__select" data-testid="queue-filter" />
       <v-select v-model="sort" :items="sorts" :label="t('queue.sortLabel')" density="compact" hide-details class="u-queue-toolbar__select" data-testid="queue-sort" />

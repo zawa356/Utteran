@@ -468,6 +468,57 @@ test("D2A-02/03/06: crafted B7 answers: one row per retry chain with every open 
   await shot(app, "d2a-03-crafted-branches");
 });
 
+test("D2A-05 (IME): composing text is not applied; the confirming Enter is not prevented; the confirmed text is applied once", async ({ app }) => {
+  const seen = recordApi(app);
+  await craft(app, branchedScenario());
+  await openQueue(app);
+  await expect(rows(app)).toHaveCount(4);
+  const search = app.getByTestId("queue-search").locator("input");
+  // Count how often the shown rows change (each application of a query re-renders the count).
+  await page$(app).evaluate((el) => {
+    const w = window as unknown as { __shownChanges: string[] };
+    w.__shownChanges = [];
+    new MutationObserver(() => w.__shownChanges.push(el.getAttribute("data-shown") ?? "")).observe(el, { attributes: true, attributeFilter: ["data-shown"] });
+  });
+  // compositionstart → composing input (full-width, not final) → Enter that confirms the candidate → compositionend.
+  const result = await search.evaluate((input: HTMLInputElement) => {
+    const setValue = (value: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true, data: value }));
+    };
+    input.focus();
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
+    setValue("０");
+    setValue("０００４");
+    const enter = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true, isComposing: true });
+    input.dispatchEvent(enter);
+    // keyCode 229 (Process) is what Windows IMEs report for keys the IME consumes.
+    const process = new KeyboardEvent("keydown", { key: "Process", keyCode: 229, bubbles: true, cancelable: true, isComposing: true } as KeyboardEventInit);
+    input.dispatchEvent(process);
+    return { enterPrevented: enter.defaultPrevented, processPrevented: process.defaultPrevented };
+  });
+  expect(result).toEqual({ enterPrevented: false, processPrevented: false });
+  // While composing, nothing was applied.
+  await app.waitForTimeout(300);
+  await expect(rows(app)).toHaveCount(4);
+  expect(await app.evaluate(() => (window as unknown as { __shownChanges: string[] }).__shownChanges)).toEqual([]);
+  // compositionend: the confirmed text is applied once (NFKC: "０００４" → "0004" = job 4 only).
+  await search.evaluate((input: HTMLInputElement) => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "０００４" })));
+  await expect.poll(() => rowRoots(app)).toEqual([jid(4)]);
+  await app.waitForTimeout(300);
+  expect(await app.evaluate(() => (window as unknown as { __shownChanges: string[] }).__shownChanges)).toEqual(["1"]);
+  // An ordinary Enter after that is not prevented either, and changes nothing.
+  const plainPrevented = await search.evaluate((input: HTMLInputElement) => {
+    const enter = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true });
+    input.dispatchEvent(enter);
+    return enter.defaultPrevented;
+  });
+  expect(plainPrevented).toBe(false);
+  await search.press("Enter");
+  await expect.poll(() => rowRoots(app)).toEqual([jid(4)]);
+  expect(writes(seen)).toEqual([]);
+});
+
 test("D2A-04: a selected row keeps its root across polls and shows the newest values; the stale object is never kept", async ({ app }) => {
   const state = branchedScenario();
   await craft(app, state);
