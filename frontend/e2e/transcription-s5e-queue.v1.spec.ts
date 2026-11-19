@@ -355,6 +355,7 @@ test("D2A-08: one board poller for both views (Expert ③ and the queue page); l
   await expert(app, request, ["slow-meeting.wav"]);
   const [slow] = await submitBatch(app, seen);
   await ensureQueueRunning(app);
+  const writeMark = writes(seen).length; // explicit setup resume is not a navigation write
   await openQueue(app);
   await expect(rowOf(app, slow!)).toBeVisible();
   await app.waitForTimeout(1000);
@@ -384,7 +385,7 @@ test("D2A-08: one board poller for both views (Expert ③ and the queue page); l
   mark = queueReads();
   await app.waitForTimeout(4000);
   expect(queueReads() - mark).toBe(0);
-  expect(writes(seen).filter((l) => l.includes("/cancel") || l.startsWith("DELETE ") || l.startsWith("PUT ") || l.startsWith("PATCH /api/v1/queue"))).toEqual([]);
+  expect(writes(seen).slice(writeMark).filter((l) => l.includes("/cancel") || l.startsWith("DELETE ") || l.startsWith("PUT ") || l.startsWith("PATCH /api/v1/queue"))).toEqual([]);
   await drain(request, "poll");
 });
 
@@ -764,7 +765,10 @@ test("D2B-10/15: 412 refreshes without retry; failed GET disables stale writes",
 });
 
 test("D2B-03/04/06: branch selection, held blockers, complete permutation protects setup", async ({ app }) => {
-  const state = branchedScenario(); const queue = state.queue.body!; const items = queue.items as Wire[];
+  const state = branchedScenario();
+  const list = state.pages.get("")!.body!;
+  list.items = (list.items as Wire[]).map(job => job.id === jid(2) ? jobWire(2, "blocked", { retry_of: jid(1), blockers: ["capability_unavailable"] }) : job);
+  const queue = state.queue.body!; const items = queue.items as Wire[];
   items.splice(2, 0, { id: qid(10), resource_id: "setup_1", resource_kind: "setup_operation", position: 2, held: false, blockers: [] });
   items[3]!.position = 3; items[4]!.position = 4; items[4]!.blockers = ["capability_unavailable"];
   await craft(app, state); await openQueue(app); await rowOf(app, jid(1)).click();
@@ -782,10 +786,26 @@ test("D2B-03/04/06: branch selection, held blockers, complete permutation protec
   await app.getByTestId("queue-down").click(); await settled(app);
   expect(put!.postDataJSON()).toEqual({ schema_version: 1, waiting_item_ids: [qid(4), qid(10), qid(2), qid(6)] });
   await rowOf(app, jid(1)).click(); await choose(app, "queue-target", new RegExp(jid(3))); await expect(app.getByTestId("queue-hold")).toBeDisabled();
+  let cancel: Request | null = null;
+  await app.route(`**/api/v1/jobs/${jid(3)}/cancel`, async route => {
+    cancel = route.request();
+    const cancelling = jobWire(3, "cancelling", { revision: 2, retry_of: jid(1), attempts: [{ state: "active" }] });
+    list.items = (list.items as Wire[]).map(job => job.id === jid(3) ? cancelling : job);
+    await route.fulfill({ status: 202, contentType: "application/json", headers: { ETag: '\"2\"' }, body: JSON.stringify(cancelling) });
+  });
+  await app.getByTestId("queue-cancel").click(); await settled(app);
+  expect(cancel!.postDataJSON()).toEqual({ schema_version: 1, mode: "cooperative" });
+  expect((await cancel!.allHeaders())["if-match"]).toBe('\"1\"');
+  await expect(app.getByTestId("queue-detail")).toHaveAttribute("data-status", "cancelling");
+  await expect(app.getByTestId("queue-cancel")).toBeDisabled();
+  expect((list.items as Wire[]).find(job => job.id === jid(2))!.status).toBe("blocked");
+  expect(items[4]!.blockers).toEqual(["capability_unavailable"]);
 });
 
-test("D2B-08: old resume unknown owns the same gate as the queue page", async ({ app }) => {
-  const state: Crafted = { pages: onePage([jobWire(1, "queued")]), queue: queueOf(8, null, [{ n: 1, position: 1 }]) };
+test("D2B-08: old resume unknown owns the same gate as the queue page", async ({ app, request }) => {
+  // App startup already read the real queue. Crafted revisions must not go backwards in that epoch.
+  const revision = (await api<QueueWire>(request, "/api/v1/queue")).revision + 1;
+  const state: Crafted = { pages: onePage([jobWire(1, "queued")]), queue: queueOf(revision, null, [{ n: 1, position: 1 }]) };
   state.queue.body!.dispatch = "paused";
   await craft(app, state); await app.getByTestId("mode-expert").click();
   await app.getByTestId("v1-queue-reload").click(); await expect(app.getByTestId("v1-queue-resume")).toBeEnabled();
@@ -793,8 +813,8 @@ test("D2B-08: old resume unknown owns the same gate as the queue page", async ({
   await app.route("**/api/v1/queue/control", async route => {
     requests.push(route.request());
     if (requests.length === 1) return route.fulfill({ status: 500, body: "" });
-    state.queue.body!.dispatch = "running"; state.queue.body!.revision = 9;
-    return route.fulfill({ status: 200, contentType: "application/json", headers: { ETag: '"9"' }, body: JSON.stringify(state.queue.body) });
+    state.queue.body!.dispatch = "running"; state.queue.body!.revision = revision + 1;
+    return route.fulfill({ status: 200, contentType: "application/json", headers: { ETag: `"${revision + 1}"` }, body: JSON.stringify(state.queue.body) });
   });
   await app.getByTestId("v1-queue-resume").click(); await expect(app.getByTestId("v1-queue-unknown")).toBeVisible();
   await openQueue(app); await expect(app.getByTestId("queue-dispatch")).toBeDisabled();

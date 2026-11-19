@@ -3,7 +3,7 @@
 2026-11-19 JST、開発版 **0.1.60（未リリース）**。基点main
 `036e13ea2d612aa21f8654e426e5040bcf664d13`、main CI
 [44462491950](https://github.com/zawa356/Utteran/actions/runs/44462491950) は15/15 success。
-ブランチ `feat/ui3-d2b-queue-actions`。Draft PRでownerレビュー待ち。
+ブランチ `feat/ui3-d2b-queue-actions`。[Draft PR #67](https://github.com/zawa356/Utteran/pull/67)でownerレビュー待ち。
 
 ## 契約・基点照合
 
@@ -83,7 +83,8 @@ board unknownのdismissは無効。旧単件cancelと投入/C2cで既に存在�
 
 Green後: Vitest **589 passed / 54 files**。lint、vue-tsc、production audit（全severity 0）、
 Ruff、Linux/win32 mypy、8 schema、PowerShell BOMがPASS。
-全E2E・prototype・privacy・CIの最終数値とD2B-01〜16の判定はPR本文に記録する。
+全E2E・privacy・CIの最終数値とD2B-01〜16の判定はPR本文に記録する。
+prototypeは **96 passed**。D2-Bは **11 passed**（分岐個別取消のHTTP/CASとcancelling表示を含む）。
 ローカルNodeは22.23.5、npm 11.21.1へ揃えた（初期unit baselineだけ既設Node24/npm11.9）。
 キャッシュは書込可能な一時領域を使用。
 
@@ -95,9 +96,24 @@ Pythonの最初の実行は31 failed / 1696 passed / 10 skipped / 1 xfailed。
 孤児回収（waitpid）を補うと単独でPASS。製品と試験を変えず、同じ構成で全試験を再実行して
 **1728 passed / 9 skipped / 1 xfailed（既存）**。skip/xfailは追加していない。
 
+ローカル全125件の初回は **122 passed / 3 failed**。prototype全体との同時実行中に既存D1/D2Aの
+polling往復2件が30秒試験時間を超過（traceを保存、最後の待機中）。新規旧resume試験の1件は
+起動時の実revisionより小さい固定crafted revisionが巻戻し防止で拒否されるfixture不備だった。
+crafted revisionを実GETより先にし、11件のD2-Bは全件PASS。
+pollingの単独再確認ではD1がPASS、D2Aは準備中の明示resumeを「無操作の画面遷移」のwriteに
+数えていた既存fixtureの不備を検出。明示準備完了後を観測区間にして、遷移からのwrite 0という
+元の条件を維持した。修正後の2件は **2 passed（45.3秒）**。timeoutは変更していない。
+最終HEAD全体の125件はpush/PR CIで別途確認し、初回ローカル失敗を成功件数に置き換えない。
+
+隔離コピーで安全条件を意図的に壊すmutation検証も実施。
+setup横断防止を除くと1 failed、共有ゲートを無効にすると4 failed、再照合CASを最新値に
+差し替えると1 failedとなり、3種とも検出した。実装worktreeには変更を残していない。
+
 D2-Aの21件のE2E（3幅×ja/en×light/dark、長いID、IME、表のキーボード、polling lease）と、
 D2-Bの実B7操作・500/network/malformed/ETag不一致・412・branch/setup安全拒否を検証。
-スクリーンショット比較はDesign Freezeの採用方向（表＋詳細、操作理由の明示）を維持する差分確認。
+第5案のqueue-before-cleanupと本番のreal-selected画像を目視比較。表＋右詳細、選択の強調、
+検索・filter・表示ソートの構成は維持。本番は未完了行だけ、実APIの制約説明と長いIDにより
+縦密度が高く、未提供stage/progressは追加しない。全12組合せで横overflowと表/詳細の重なりを検査。
 D4の精密な外観一致は未達。Windows native IMEを合格とする証拠にはしない。
 
 ## 制約・次束
