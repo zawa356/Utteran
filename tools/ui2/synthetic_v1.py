@@ -18,6 +18,7 @@ import hashlib
 import subprocess
 import sys
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -126,8 +127,9 @@ class SyntheticProvider:
 
 
 class SyntheticRunner:
-    def __init__(self, output: Path) -> None:
+    def __init__(self, output: Path, launch_release: Path | None = None) -> None:
         self.output = output
+        self.launch_release = launch_release
 
     def execute(
         self,
@@ -137,11 +139,20 @@ class SyntheticRunner:
         on_event: Any = None,
         on_spawn: Any = None,
     ) -> WorkerCompleted:
+        slow = Path(request.input_path).name.startswith("slow-")
+        if slow and self.launch_release is not None:
+            # The dispatcher has committed dispatch_started; leave launch_confirmed to on_spawn.
+            deadline = time.monotonic() + 20
+            while not self.launch_release.exists():
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("synthetic launch barrier not released")
+                if cancel is not None and cancel.wait(0.02):
+                    raise WorkerClientError(WorkerErrorCode.CANCELLED)
         child = subprocess.Popen([sys.executable, "-c", "pass"])
         if on_spawn is not None:
             on_spawn(child)
         child.wait()
-        if Path(request.input_path).name.startswith("slow-"):
+        if slow:
             if cancel is not None and cancel.wait(60):
                 raise WorkerClientError(WorkerErrorCode.CANCELLED)
         elif cancel is not None and cancel.wait(1.0):
@@ -180,7 +191,9 @@ def prepare_root(root: Path) -> dict[str, Path]:
     return layout
 
 
-def synthetic_v1_runtime(root: Path, legacy_queue: OperationQueue) -> tuple[JobRuntime, Path]:
+def synthetic_v1_runtime(
+    root: Path, legacy_queue: OperationQueue, *, hold_slow_launch: bool = False
+) -> tuple[JobRuntime, Path]:
     layout = prepare_root(root)
     settings_path = root / "settings" / "resources.sqlite3"
     runtime = JobRuntime(
@@ -188,7 +201,9 @@ def synthetic_v1_runtime(root: Path, legacy_queue: OperationQueue) -> tuple[JobR
         settings_path=settings_path,
         legacy_queue=legacy_queue,
         provider=SyntheticProvider(layout["model"]),
-        runner=SyntheticRunner(layout["output"]),
+        runner=SyntheticRunner(
+            layout["output"], root / "release-slow-launch" if hold_slow_launch else None
+        ),
         job_dir=root / "jobs",
         poll_interval=0.2,
         # Layout v8 (history visibility + C2c deletion) like the real --next-ui-v1 runtime.

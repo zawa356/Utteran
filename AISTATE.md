@@ -1,5 +1,10 @@
 # AI 作業状態
 
+## 現在地（2026-11-20、Issue #60、0.1.62・未リリース）
+
+- 最新mainの `c1fad682be4ed85cac20365771b444c2bb82a167` から独立した `fix/ui3-issue60-retry-cas-e2e`。S5-Bの起動確定と協調取消の競合を実APIで再現し、試験ごとの合成バックエンドで試験間干渉を防ぐ。
+- [原因と試験設計](docs/architecture/ui3/s5b-cancel-cas-e2e.md)。Windows WebView2・実GPU・ネイティブpickerは未受入。D3-B1はBLOCKED。
+
 ## 現在地（2026-11-19、D3-A Expert結果・履歴、0.1.61・未リリース）
 
 - 基点main `5ade41ad59f488eb7004759a69dc4a7100cd0ebd`。ブランチ `feat/ui3-d3a-results-history`。

@@ -13,7 +13,9 @@ import { choose, expect, SESSION, shot, test } from "./fixtures";
  * sees the empty store and the first-start paused queue.
  */
 
-const ROOT = process.env.UI2_V1_ROOT!;
+test.use({ baseURL: process.env.UI2_S5A_BASE });
+
+const ROOT = process.env.UI2_S5A_ROOT!;
 const input = (name: string) => `${ROOT}/in/${name}`;
 const OUT = `${ROOT}/out`;
 const AUTH = { Cookie: `utteran_gui_session=${SESSION}` };
