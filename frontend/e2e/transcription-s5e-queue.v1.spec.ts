@@ -910,3 +910,16 @@ test("D3A-03–07: finished branches, retry roots, rerun roots and artifact meta
   await expect(detail).toContainText(jid(1));
   expect(writes(seen)).toEqual([]);
 });
+
+isolatedTest("D4-C the mini queue limits the display while the queue page reads every row", async ({ app }) => {
+  const jobs = Array.from({ length: 7 }, (_, index) => jobWire(index + 1, "queued"));
+  const items = jobs.map((_, index) => ({ n: index + 1, position: index + 1 }));
+  const state: Crafted = { pages: onePage(jobs), queue: queueOf(9, null, items) };
+  await craft(app, state);
+  await app.getByTestId("mode-expert").click();
+  const summary = app.getByTestId("v1-board-queue");
+  await expect(summary).toHaveAttribute("data-count", "7");
+  await expect(summary.getByTestId("v1-board-row")).toHaveCount(5);
+  await app.getByTestId("v1-board-open-queue").click();
+  await expect(rows(app)).toHaveCount(7);
+});

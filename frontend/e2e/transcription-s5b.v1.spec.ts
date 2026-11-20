@@ -539,6 +539,15 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await app.getByTestId("rerun-close").click();
   await app.getByTestId("mode-normal").click();
   await expect(app.getByTestId("result-rerun")).toHaveCount(0);
+  expect(seen.filter(r => line(r) === path)).toHaveLength(2);
+  expect(legacyWrites(seen)).toEqual([]);
+});
+
+test("D3-B English rerun confirmation returns keyboard focus without submitting", async ({ app, request, backend: { root } }) => {
+  const seen = recordApi(app);
+  await expert(app, request, ["meeting.wav"], root);
+  const [id] = await submitBatch(app, seen);
+  await ensureQueueRunning(app);
   const settings = await request.patch("/api/settings", {
     headers: { "x-utteran-session": SESSION }, data: { language: "en" },
   });
@@ -547,16 +556,18 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await expect(app.getByTestId("app-ready")).toBeVisible();
   await app.getByTestId("mode-expert").click();
   await openHistory(app);
+  await expect(row(app, "history", id!)).toHaveAttribute("data-status", "succeeded");
   await row(app, "history", id!).getByTestId("results-select").press("Enter");
   const rerun = app.getByTestId("result-rerun");
   await expect(rerun).toHaveText("Run again with current settings");
   await rerun.press("Enter");
+  const dialog = app.getByTestId("rerun-dialog");
   await expect(dialog).toContainText("This creates a separate job using the current settings.");
   const close = app.getByTestId("rerun-close");
   await expect(close).toBeFocused();
   await close.press("Enter");
   await expect(dialog).toBeHidden();
   await expect(rerun).toBeFocused();
-  expect(seen.filter(r => line(r) === path)).toHaveLength(2);
+  expect(seen.filter(r => line(r) === `POST /api/v1/jobs/${id}/rerun`)).toHaveLength(0);
   expect(legacyWrites(seen)).toEqual([]);
 });
