@@ -44,6 +44,8 @@ export const en: Record<MessageKey, string> = {
   "tx.input.picking": "The file dialog is open…",
   "tx.input.clear": "Remove from list",
   "tx.input.pathLabel": "Input file path (on this PC)",
+  "tx.input.pathHintV1": "Enter an absolute path on this PC.",
+  "tx.input.dropHintV1": "You can also drop files onto the app window.",
   "tx.input.pathHint": "This is not an upload. Give the absolute path of a file on the PC that runs Utteran.",
   "tx.input.dropHint": "In the app you can drop several files onto this window to add them (folders are not taken). In a plain browser dropping does not work; choose a file or type its path.",
   "tx.input.source.picker": "Chosen in the file dialog",
