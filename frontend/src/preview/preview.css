@@ -95,7 +95,7 @@
   justify-content: center;
   padding: 0;
 }
-.u-resize.p-sidebar__resize {
+.p-resize.p-sidebar__resize {
   position: absolute;
   top: 0;
   right: 0;
@@ -115,7 +115,7 @@
 .p-app {
   --p-handle-opacity: 0.6;
 }
-.u-resize {
+.p-resize {
   position: relative;
   width: 8px;
   cursor: col-resize;
@@ -124,12 +124,12 @@
   touch-action: none;
   z-index: 2;
 }
-.u-resize__track {
+.p-resize__track {
   width: 1px;
   height: 100%;
   background: rgba(var(--v-theme-on-surface), 0.28);
 }
-.u-resize__grip {
+.p-resize__grip {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -139,24 +139,24 @@
   border-radius: 2px;
   background: rgba(var(--v-theme-on-surface), var(--p-handle-opacity));
 }
-.u-resize:hover .u-resize__track,
-.u-resize--active .u-resize__track,
-.u-resize:focus-visible .u-resize__track {
+.p-resize:hover .p-resize__track,
+.p-resize--active .p-resize__track,
+.p-resize:focus-visible .p-resize__track {
   width: 2px;
   background: rgb(var(--v-theme-primary));
 }
-.u-resize:hover .u-resize__grip,
-.u-resize--active .u-resize__grip,
-.u-resize:focus-visible .u-resize__grip {
+.p-resize:hover .p-resize__grip,
+.p-resize--active .p-resize__grip,
+.p-resize:focus-visible .p-resize__grip {
   width: 6px;
   background: rgb(var(--v-theme-primary));
 }
-.u-resize:focus-visible {
+.p-resize:focus-visible {
   outline: 2px solid rgb(var(--v-theme-primary));
   outline-offset: -1px;
 }
-html.u-resizing,
-html.u-resizing * {
+html.p-resizing,
+html.p-resizing * {
   cursor: col-resize !important;
   user-select: none !important;
 }

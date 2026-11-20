@@ -37,7 +37,7 @@ function stop(event?: PointerEvent) {
     if (pointerId !== null && node.hasPointerCapture(pointerId)) node.releasePointerCapture(pointerId);
   }
   if (dragging.value) emit("dragging", false);
-  document.documentElement.classList.remove("u-resizing");
+  document.documentElement.classList.remove(props.prototype ? "p-resizing" : "u-resizing");
   dragging.value = false;
   pointerId = null;
 }
@@ -53,7 +53,7 @@ function onDown(e: PointerEvent) {
   el.value.addEventListener("pointerup", stop);
   el.value.addEventListener("pointercancel", stop);
   el.value.addEventListener("lostpointercapture", stop);
-  document.documentElement.classList.add("u-resizing");
+  document.documentElement.classList.add(props.prototype ? "p-resizing" : "u-resizing");
   dragging.value = true;
   emit("dragging", true);
   el.value.focus();
@@ -84,8 +84,7 @@ onBeforeUnmount(stop);
 <template>
   <div
     ref="el"
-    class="u-resize"
-    :class="{ 'u-resize--active': dragging, 'u-resize--product': !prototype }"
+    :class="prototype ? ['p-resize', { 'p-resize--active': dragging }] : ['u-resize--product', { 'u-resize--active': dragging }]"
     role="separator"
     aria-orientation="vertical"
     tabindex="0"
@@ -100,8 +99,8 @@ onBeforeUnmount(stop);
     @dblclick="emit('reset')"
     @keydown="onKey"
   >
-    <span class="u-resize__track" aria-hidden="true"></span>
-    <span class="u-resize__grip" aria-hidden="true"></span>
+    <span :class="prototype ? 'p-resize__track' : 'u-resize__track'" aria-hidden="true"></span>
+    <span :class="prototype ? 'p-resize__grip' : 'u-resize__grip'" aria-hidden="true"></span>
   </div>
 </template>
 
