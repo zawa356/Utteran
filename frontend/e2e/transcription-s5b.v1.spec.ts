@@ -119,8 +119,7 @@ async function openHistory(page: Page): Promise<void> {
 
 const row = (page: Page, section: "queue" | "history" | "hidden", id: string) => page.getByTestId(`v1-board-${section}`).locator(`[data-testid="v1-board-row"][data-root="${id}"]`);
 
-test("setup: cancel the jobs earlier specs left waiting, so this spec's jobs are next in the single slot", async ({ request }) => {
-  // The S5-A paging test leaves about a hundred queued jobs; each would take the slot for a second.
+async function drainQueue(request: APIRequestContext, scope: "setup" | "rerun"): Promise<void> {
   const headers = { "x-utteran-session": SESSION };
   for (let round = 0; round < 5; round += 1) {
     const queue = await api<{ items: { resource_id: string; resource_kind: string }[] }>(request, "/api/v1/queue");
@@ -129,13 +128,18 @@ test("setup: cancel the jobs earlier specs left waiting, so this spec's jobs are
     for (const item of waiting) {
       const job = await api<{ revision: number }>(request, `/api/v1/jobs/${item.resource_id}`);
       const response = await request.post(`/api/v1/jobs/${item.resource_id}/cancel`, {
-        headers: { ...headers, "If-Match": `"${job.revision}"`, "Idempotency-Key": `s5b-drain-${item.resource_id.slice(4, 20)}-${round}` },
+        headers: { ...headers, "If-Match": `"${job.revision}"`, "Idempotency-Key": `s5b-drain-${scope}-${item.resource_id.slice(4, 20)}-${round}` },
         data: { schema_version: 1, mode: "cooperative" },
       });
       expect([200, 202, 412]).toContain(response.status());
     }
   }
   await expect.poll(async () => (await api<{ items: unknown[] }>(request, "/api/v1/queue")).items.length, { timeout: 30_000 }).toBe(0);
+}
+
+test("setup: cancel the jobs earlier specs left waiting, so this spec's jobs are next in the single slot", async ({ request }) => {
+  // The S5-A paging test leaves about a hundred queued jobs; each would take the slot for a second.
+  await drainQueue(request, "setup");
 });
 
 test("atomic batch: two files → one check, one submit, two jobs; the board shows them and their verified outputs", async ({ app, request }) => {
@@ -379,6 +383,16 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
 });
 
 test("D3-B Expert results and history share explicit rerun and verified artifact status", async ({ app, request }) => {
+  // A failed earlier scenario can leave work queued ahead of the rerun fixture.
+  await drainQueue(request, "rerun");
+  const queue = await api<{ revision: number; dispatch: string }>(request, "/api/v1/queue");
+  if (queue.dispatch === "paused") {
+    const response = await request.patch("/api/v1/queue/control", {
+      headers: { "x-utteran-session": SESSION, "If-Match": `"${queue.revision}"`, "Idempotency-Key": "d3b-rerun-fixture-resume" },
+      data: { schema_version: 1, dispatch: "running" },
+    });
+    expect(response.status()).toBe(200);
+  }
   const relocated = input("rerun-relocated.wav");
   const customOutput = `${OUT}/rerun-source`;
   copyFileSync(input("meeting.wav"), relocated);
@@ -397,7 +411,6 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await app.getByTestId("tx-ov-output-custom").click();
   await app.getByTestId("tx-ov-output-path").locator("input").fill(customOutput);
   await app.getByTestId("tx-ov-apply").click();
-  await ensureQueueRunning(app);
   await app.getByTestId("nav-results").click();
   const result = app.getByTestId("results-table-results").locator(`[data-root="${id}"]`);
   await expect(result).toHaveAttribute("data-status", "succeeded", { timeout: 30_000 });
