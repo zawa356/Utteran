@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useDisplay } from "vuetify";
 import LegacyLink from "../../components/LegacyLink.vue";
 import NotMigrated from "../../components/NotMigrated.vue";
 import { useCore, useI18n } from "../../composables/core";
@@ -23,6 +24,8 @@ import NormalTopNav from "./NormalTopNav.vue";
  */
 const { shell, apiMode } = useCore();
 // Server-rendered API mode only (S5-A): the legacy text stays as it is for `--next-ui`.
+const display = useDisplay();
+const narrowBar = computed(() => apiMode === "v1-dev" && display.width.value < 540);
 const notice = previewNoticeKey(apiMode);
 const state = useStore(shell.store);
 const { t } = useI18n();
@@ -34,7 +37,7 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
 
 <template>
   <v-layout class="fill-height" :data-mode="state.mode">
-    <v-app-bar density="compact" flat border="b" data-testid="app-bar">
+    <v-app-bar density="compact" :height="narrowBar ? 96 : undefined" :class="{ 'u-narrow-bar': narrowBar }" flat border="b" data-testid="app-bar">
       <div class="u-brand">
         <span class="u-subheading">{{ t("app.title") }}</span>
         <v-chip size="x-small" label class="ml-2" color="warning" variant="outlined" data-testid="preview-chip">{{ t("app.preview") }}</v-chip>
@@ -51,21 +54,21 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
         variant="outlined"
         divided
         :aria-label="t('mode.label')"
-        class="mr-2 u-no-shrink"
+        class="mr-2 u-no-shrink u-shell-mode"
         data-testid="mode-toggle"
         @update:model-value="(m: Mode) => shell.setMode(m)"
       >
         <v-btn value="normal" size="small" data-testid="mode-normal">{{ t("mode.normal") }}</v-btn>
         <v-btn value="expert" size="small" data-testid="mode-expert">{{ t("mode.expert") }}</v-btn>
       </v-btn-toggle>
-      <LegacyLink :label="t('app.openLegacy')" size="small" testid="open-legacy" class="mr-2 u-no-shrink" />
+      <LegacyLink :label="t('app.openLegacy')" size="small" testid="open-legacy" class="mr-2 u-no-shrink u-shell-legacy" />
     </v-app-bar>
     <ExpertSidebar v-if="state.mode === 'expert'" />
     <v-main
       :class="{ 'u-expert-main': apiMode === 'v1-dev' && state.mode === 'expert' && state.section === 'transcribe' }"
       data-testid="content" :data-section="state.section"
     >
-      <v-alert type="warning" density="compact" class="ma-2" data-testid="preview-notice" :data-notice="notice">{{ t(notice) }}</v-alert>
+      <v-alert type="warning" density="compact" class="ma-2" :class="{ 'u-dev-notice': apiMode === 'v1-dev' }" data-testid="preview-notice" :data-notice="notice">{{ t(notice) }}</v-alert>
       <KeepAlive :include="apiMode === 'v1-dev' ? undefined : []">
         <component
           :is="state.mode === 'expert' ? ExpertWorkspace : NormalWorkspace"
@@ -96,4 +99,21 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
 .u-expert-main > .v-alert {
   flex: none;
 }
+.u-dev-notice {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+.u-narrow-bar :deep(.v-toolbar__content) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  row-gap: 3px;
+}
+.u-narrow-bar .u-brand { grid-area: 1 / 1; padding-inline-start: 8px; flex-wrap: wrap; }
+.u-narrow-bar .u-shell-mode { grid-area: 1 / 2; justify-self: end; }
+.u-narrow-bar :deep(.u-topnav) { grid-area: 2 / 1; padding-inline-start: 4px; }
+.u-narrow-bar :deep(.u-shell-legacy) { grid-area: 2 / 2; justify-self: end; }
+.u-narrow-bar .u-appbar-sep,
+.u-narrow-bar :deep(.v-spacer) { display: none; }
 </style>

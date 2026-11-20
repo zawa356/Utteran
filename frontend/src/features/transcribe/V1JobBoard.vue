@@ -14,6 +14,7 @@ const board = core.v1!.board;
 const job = core.v1!.job;
 const s = useStore(board.store);
 const inputs = useStore(core.inputs.store);
+const summary = computed(() => s.value.queue.slice(0, 5));
 const { t, status, reason } = useCodeText();
 
 // Share the board timer with the queue and results pages.
@@ -76,12 +77,13 @@ function place(g: LogicalJob): string {
       <v-btn variant="text" size="small" data-testid="v1-board-open-results" @click="core.shell.navigate('results')">{{ t("results.open") }}</v-btn>
     </div>
 
-    <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-board-queue" :data-count="s.queue.length">
-      <h3 class="u-subheading">{{ t("v1.board.queue") }}（{{ s.queue.length }}）</h3>
+    <div data-testid="v1-board-queue" :data-count="s.queue.length">
+      <p v-if="summary.length < s.queue.length" class="text-caption">{{ t("v1.board.summaryCount", { shown: summary.length, total: s.queue.length }) }}</p>
+      <p v-if="s.phase === 'idle' || s.phase === 'pending'" role="status" class="text-body-2">{{ t("queue.loading") }}</p>
       <p v-if="s.phase === 'done' && s.queue.length === 0" class="text-body-2">{{ t("v1.board.emptyQueue") }}</p>
       <v-list v-if="s.queue.length > 0" density="compact" lines="three">
         <v-list-item
-          v-for="g in s.queue"
+          v-for="g in summary"
           :key="g.rootId"
           data-testid="v1-board-row"
           :data-root="g.rootId"
@@ -112,6 +114,6 @@ function place(g: LogicalJob): string {
           <div v-if="g.incomplete" class="text-caption" data-testid="v1-board-row-incomplete">{{ t("v1.board.incomplete") }}</div>
         </v-list-item>
       </v-list>
-    </v-card>
+    </div>
   </section>
 </template>

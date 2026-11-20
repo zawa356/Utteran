@@ -14,6 +14,7 @@ export const EXPERT_SECTIONS = ["transcribe", "queue", "results", "models", "set
 export const SECTIONS = EXPERT_SECTIONS;
 export type SectionId = (typeof EXPERT_SECTIONS)[number];
 export type NormalSection = (typeof NORMAL_SECTIONS)[number];
+export type Accent = "blue" | "green";
 export type Mode = "normal" | "expert";
 export type { ExpertPane } from "./paneLayout";
 
@@ -72,6 +73,7 @@ export interface ShellState {
   navExpandedNarrow: boolean;
   sidebarWidth: number;
   paneRatios: PaneRatios | null;
+  accent: Accent;
 }
 
 const INITIAL: ShellState = {
@@ -85,6 +87,7 @@ const INITIAL: ShellState = {
   navExpandedNarrow: false,
   sidebarWidth: SIDEBAR.default,
   paneRatios: null,
+  accent: "blue",
 };
 
 /** Whether the Expert sidebar is drawn as an icon rail for this window. */
@@ -126,6 +129,10 @@ export class ShellController {
 
   showPane(expertPane: ExpertPane): void {
     this.store.patch(expertPane === "inputs" ? { expertPane } : { expertPane, expertRightPane: expertPane });
+  }
+
+  setAccent(accent: Accent): void {
+    this.store.patch({ accent });
   }
 
   resizeSidebar(width: number): void {

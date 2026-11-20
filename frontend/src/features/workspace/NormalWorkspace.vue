@@ -18,7 +18,7 @@ const v1 = useCore().apiMode === "v1-dev";
 <template>
   <section class="u-page u-stack" :class="{ 'u-normal-layout': v1 }" aria-labelledby="transcribe-heading" data-testid="normal-workspace">
     <h1 id="transcribe-heading" class="u-heading">{{ t("transcribe.title") }}</h1>
-    <v-alert v-if="v1" type="warning" density="compact" data-testid="v1-mode-notice">{{ t("v1.mode.notice") }}</v-alert>
+    <p v-if="v1" class="text-body-2 text-medium-emphasis" data-testid="v1-mode-notice">{{ t("v1.mode.notice") }}</p>
     <v-alert v-else type="info" density="compact" data-testid="transcribe-not-migrated">{{ t("transcribe.notMigrated") }}</v-alert>
     <div v-if="v1" class="u-normal-grid">
       <div class="u-stack">

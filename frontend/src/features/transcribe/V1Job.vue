@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from "vue";
 import { fileName } from "../../api/legacyJobs";
 import ErrorAlert from "../../components/ErrorAlert.vue";
+import V1StatusChip from "../../components/V1StatusChip.vue";
 import { useStore } from "../../composables/useStore";
 import { useCodeText, useV1 } from "../../composables/v1";
 import V1Artifacts from "./V1Artifacts.vue";
@@ -13,7 +14,7 @@ import type { MessageKey } from "../../i18n";
  * Two steps: "check" (B5 validation + B7 resolution) → "submit" (B7 job, the same frozen request).
  * The status is the last `GET /api/v1/jobs/{id}`; "accepted" is never "started" or "done".
  */
-const { v1, job: s, evaluation, block, stale } = useV1();
+const { v1, job: s, inputs, evaluation, block, stale } = useV1();
 const { t, reason, issue, status, formIssue } = useCodeText();
 
 const queueGate = useStore(v1.queueGate.store);
@@ -48,6 +49,12 @@ const canSubmit = computed(() => {
 const effective = computed(() => (prepared.value ? summarize(prepared.value.effective) : null));
 const stageTitle = computed(() => (s.value.failedAt ? t(`v1.stage.${s.value.failedAt}` as MessageKey) : ""));
 const view = computed(() => s.value.job);
+const trackedRow = computed(() => view.value
+  ? inputs.value.rows.find(row => v1.job.fileIdFor(row.clientFileId) === view.value?.clientFileId)
+  : undefined);
+const trackedName = computed(() => fileName(trackedRow.value?.inputPath ?? "") ?? t("v1.board.unknownFile"));
+const previousInput = computed(() => !!trackedRow.value && trackedRow.value.clientFileId !== inputs.value.primaryId);
+
 const queue = computed(() => s.value.queue.view);
 const cancellable = computed(() => !!view.value && s.value.tracking !== "final" && view.value.status !== "cancelling");
 // An open (pending/unknown) cancel intent pins the shown job: no follow/dismiss until it is settled (PR #48 P1).
@@ -139,9 +146,12 @@ const switchBlocked = computed(() => {
       <p v-if="s.origin === 'submitted'" class="text-caption" data-testid="v1-accepted-note">{{ t("v1.job.acceptedNote") }}</p>
       <p v-else-if="s.origin === 'followed'" class="text-caption" data-testid="v1-followed-note">{{ t("v1.job.followedNote") }}</p>
       <template v-if="view">
-        <p class="text-body-1" role="status" aria-live="polite" data-testid="v1-status">{{ status(view.status) }}</p>
-        <p class="text-caption" data-testid="v1-job-id">{{ t("v1.job.id", { id: view.id, revision: view.revision }) }}</p>
-        <p class="text-caption" data-testid="v1-job-reason">{{ t("v1.job.reason", { reason: reason(view.reasonCode) }) }}</p>
+        <p class="text-body-2 u-break" data-testid="v1-tracked-input">
+          {{ t(previousInput ? "v1.job.previousInput" : "v1.job.trackedInput", { file: trackedName }) }}
+        </p>
+        <p class="text-body-1" role="status" aria-live="polite" data-testid="v1-status"><V1StatusChip :value="view.status" /></p>
+        <p class="text-caption u-break" data-testid="v1-job-id">{{ t("v1.job.id", { id: view.id, revision: view.revision }) }}</p>
+        <p class="text-caption u-break" data-testid="v1-job-reason">{{ t("v1.job.reason", { reason: reason(view.reasonCode) }) }}</p>
         <p v-if="view.held" class="text-caption">{{ t("v1.job.held") }}</p>
         <p v-if="view.blockReason" class="text-body-2" data-testid="v1-job-block">{{ t("v1.job.blocked", { reason: reason(view.blockReason) }) }}</p>
         <p v-if="view.recoveryRequired" class="text-body-2" data-testid="v1-job-recovery">{{ t("v1.job.recovery", { reason: reason(view.recoveryRequired) }) }}</p>

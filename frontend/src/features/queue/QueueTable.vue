@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
 import { useCodeText } from "../../composables/v1";
-import type { JobStatusV1 } from "../../api/v1Resources";
+import V1StatusChip from "../../components/V1StatusChip.vue";
 import { isHeld, placeOfRow, type QueueRow } from "./queueRows";
 
 /**
@@ -12,7 +12,7 @@ import { isHeld, placeOfRow, type QueueRow } from "./queueRows";
  */
 const props = defineProps<{ rows: readonly QueueRow[]; selected: string | null }>();
 const emit = defineEmits<{ select: [rootId: string] }>();
-const { t, status } = useCodeText();
+const { t } = useCodeText();
 
 const body = ref<HTMLElement | null>(null);
 const focused = ref<string | null>(null);
@@ -38,11 +38,10 @@ function placeText(row: QueueRow): string {
   return t("queue.place.unknown");
 }
 
-const TONE: Partial<Record<JobStatusV1, string>> = { running: "primary", cancelling: "warning", held: "warning", waiting_user: "warning", blocked: "error" };
 </script>
 
 <template>
-  <v-table density="compact" class="u-queue-table" role="grid" :aria-label="t('queue.tableLabel')" aria-readonly="true" data-testid="queue-table">
+  <v-table density="compact" fixed-header class="u-queue-table" role="grid" :aria-label="t('queue.tableLabel')" aria-readonly="true" data-testid="queue-table">
     <colgroup>
       <col class="u-queue-table__order" />
       <col />
@@ -94,7 +93,7 @@ const TONE: Partial<Record<JobStatusV1, string>> = { running: "primary", cancell
           </div>
         </td>
         <td data-testid="queue-row-status">
-          <v-chip size="small" label variant="tonal" :color="TONE[row.current.status]" class="u-queue-chip" :title="status(row.current.status)">{{ status(row.current.status) }}</v-chip>
+          <V1StatusChip :value="row.current.status" />
         </td>
         <td class="text-caption text-medium-emphasis" data-testid="queue-row-stage">{{ t("queue.stageUnavailable") }}</td>
       </tr>

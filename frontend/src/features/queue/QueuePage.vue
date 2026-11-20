@@ -25,7 +25,7 @@ const inputs = useStore(core.inputs.store);
 const gate = useStore(core.v1!.queueGate.store);
 const busy = computed(() => { void gate.value; return board.actionOpen(); });
 const dispatchReason = computed(() => { void [s.value, gate.value]; return board.queueReason(); });
-const { t } = useCodeText();
+const { t, reason } = useCodeText();
 
 // One lease on the board's polling while this page is shown (Expert ③ holds its own; one timer).
 let release: (() => void) | null = null;
@@ -89,8 +89,8 @@ const openAction = computed(() => (s.value.action?.phase === "pending" || s.valu
 <template>
   <section class="u-page u-page--wide u-stack u-queue" aria-labelledby="queue-heading" data-testid="section-queue" :data-phase="s.phase" :data-count="all.length" :data-shown="shown.length">
     <h1 id="queue-heading" class="u-heading">{{ t("section.queue") }}</h1>
-    <p class="text-body-2">{{ t("queue.explain") }}</p>
-    <ul class="u-notes text-caption">
+    <p class="text-body-2 text-medium-emphasis">{{ t("queue.explain") }}</p>
+    <ul class="u-notes text-caption queue-notes">
       <li data-testid="queue-order-note">{{ t("queue.orderNote") }}</li>
       <li data-testid="queue-stage-note">{{ t("queue.stageNote") }}</li>
       <li data-testid="queue-ops-note">{{ t("queue.opsNote") }}</li>
@@ -104,18 +104,18 @@ const openAction = computed(() => (s.value.action?.phase === "pending" || s.valu
     </v-alert>
     <v-alert v-if="s.action" :type="s.action.phase === 'done' ? 'info' : 'warning'" density="compact" role="status" data-testid="queue-write-state" :data-kind="s.action.kind" :data-action-phase="s.action.phase">
       {{ t(`queue.write.${s.action.phase}` as MessageKey) }}
-      <span v-if="s.action.error?.code"> ({{ s.action.error.code }})</span>
+      <span v-if="s.action.error?.code" class="u-break"> ({{ reason(s.action.error.code) }})</span>
       <v-btn v-if="s.action.phase === 'unknown'" variant="text" size="small" data-testid="queue-recheck" @click="board.recheck()">{{ t("v1.unknown.recheck") }}</v-btn>
     </v-alert>
     <v-alert v-if="busy && !openAction" type="warning" density="compact" role="status" data-testid="queue-foreign-write">
       {{ t("queue.disabled.busy") }}
       <v-btn variant="text" size="small" @click="core.shell.navigate('transcribe')">{{ t("queue.openTranscribe") }}</v-btn>
     </v-alert>
-    <div class="u-stack">
-      <p class="text-caption" data-testid="queue-pause-semantics">{{ t("queue.pauseSemantics") }}</p>
+    <div class="u-row queue-dispatch-bar">
       <v-btn variant="outlined" :disabled="dispatchReason !== null" data-testid="queue-dispatch" @click="board.setDispatch(s.queueView!.dispatch === 'paused' ? 'running' : 'paused')">
         {{ t(s.queueView?.dispatch === 'paused' ? "queue.resume" : "queue.pause") }}
       </v-btn>
+      <p class="text-caption" data-testid="queue-pause-semantics">{{ t("queue.pauseSemantics") }}</p>
       <p v-if="dispatchReason" class="text-caption">{{ t(`queue.disabled.${dispatchReason}` as MessageKey) }}</p>
     </div>
     <v-alert v-if="s.phase === 'done' && s.queueView?.dispatch === 'paused'" type="info" density="compact" data-testid="queue-dispatch-paused">{{ t("queue.paused") }}</v-alert>
@@ -158,3 +158,24 @@ const openAction = computed(() => (s.value.action?.phase === "pending" || s.valu
     </div>
   </section>
 </template>
+
+<style scoped>
+.queue-notes { color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity)); }
+.queue-dispatch-bar {
+  padding: 8px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 4px;
+}
+.u-queue-toolbar__search,
+.u-queue-toolbar__select { min-width: min(100%, 10rem); }
+.u-queue-grid :deep(.v-table__wrapper) {
+  max-height: 50dvh;
+}
+@container (max-width: 560px) {
+  .u-queue-grid :deep(th),
+  .u-queue-grid :deep(td) { padding-inline: 6px; }
+  .u-queue-grid :deep(.u-queue-table__order) { width: 22%; }
+  .u-queue-grid :deep(.u-queue-table__status) { width: 29%; }
+  .u-queue-grid :deep(.u-queue-table__stage) { width: 16%; }
+}
+</style>

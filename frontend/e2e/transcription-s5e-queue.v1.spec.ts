@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page, Request, Route } from "@playwright/test";
-import { choose, expect, SESSION, SESSION_HEADER, shot, test } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, SESSION_HEADER, shot, test } from "./fixtures";
 import { test as isolatedTest } from "./isolatedV1";
 
 /**
@@ -94,6 +94,7 @@ async function submitBatch(page: Page, seen: Request[]): Promise<string[]> {
 }
 
 async function ensureQueueRunning(page: Page): Promise<void> {
+  await openSingleJobTools(page);
   const dispatch = page.getByTestId("v1-queue-dispatch");
   await expect(dispatch).toBeVisible();
   if (/停止中/.test((await dispatch.textContent()) ?? "")) {
@@ -820,6 +821,7 @@ test("D2B-08: old resume unknown owns the same gate as the queue page", async ({
   const state: Crafted = { pages: onePage([jobWire(1, "queued")]), queue: queueOf(revision, null, [{ n: 1, position: 1 }]) };
   state.queue.body!.dispatch = "paused";
   await craft(app, state); await app.getByTestId("mode-expert").click();
+  await openSingleJobTools(app);
   await app.getByTestId("v1-queue-reload").click(); await expect(app.getByTestId("v1-queue-resume")).toBeEnabled();
   const requests: Request[] = [];
   await app.route("**/api/v1/queue/control", async route => {

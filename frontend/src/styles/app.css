@@ -278,13 +278,6 @@ body {
 .u-queue-table__name {
   min-width: 0;
 }
-.u-queue-chip {
-  max-width: 100%;
-}
-.u-queue-chip .v-chip__content {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .u-queue-row {
   cursor: pointer;
 }

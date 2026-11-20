@@ -41,3 +41,10 @@ export const componentDefaults = {
   VList: { density: "compact" },
   VTextField: { variant: "outlined", density: "compact" },
 } as const;
+
+export const v1Defaults = {
+  ...componentDefaults,
+  VBtn: { ...componentDefaults.VBtn, density: "default" },
+  VChip: { density: "default" },
+  VTabs: { density: "default" },
+} as const;
