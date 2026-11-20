@@ -23,7 +23,9 @@ No real profile, model, path or token is read or shown.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import socket
 import sys
 import tempfile
 import threading
@@ -85,6 +87,7 @@ def build_app(
     *,
     v1_root: Path | None = None,
     port: int | None = None,
+    hold_slow_launch: bool = False,
 ) -> Any:
     # Fix the log location inside the temporary directory so the harness never reads the real
     # core config (``config.toml``) or user log folders. Fallback/raw-log variants are tested by
@@ -101,7 +104,9 @@ def build_app(
     if v1_root is not None:
         from synthetic_v1 import synthetic_v1_runtime
 
-        runtime, settings_path = synthetic_v1_runtime(v1_root, jobs.queue)
+        runtime, settings_path = synthetic_v1_runtime(
+            v1_root, jobs.queue, hold_slow_launch=hold_slow_launch
+        )
         v1 = dict(
             operation_queue=jobs.queue,
             enable_v1_settings=True,
@@ -129,6 +134,10 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8791)
     parser.add_argument("--v1", action="store_true", help="S5-A: serve the --next-ui-v1 shape")
     parser.add_argument("--data-root", type=Path, help="empty or absent folder for the v1 data")
+    parser.add_argument(
+        "--hold-slow-launch", action="store_true", help="gate synthetic slow launch"
+    )
+    parser.add_argument("--exit-on-stdin-close", action="store_true")
     args = parser.parse_args()
     import uvicorn
 
@@ -140,10 +149,27 @@ def main() -> None:
         if v1_root.exists() and any(v1_root.iterdir()):
             parser.error("--data-root must be empty or absent")
         v1_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="utteran-ui2-") as temp:
-        app = build_app(Path(temp), v1_root=v1_root, port=args.port)
-        print(f"http://127.0.0.1:{args.port}/launch?session={SESSION}", flush=True)
-        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
+    with (
+        tempfile.TemporaryDirectory(prefix="utteran-ui2-") as temp,
+        socket.socket() as listener,
+    ):
+        if os.name != "nt":
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", args.port))
+        port = listener.getsockname()[1]
+        app = build_app(
+            Path(temp), v1_root=v1_root, port=port, hold_slow_launch=args.hold_slow_launch
+        )
+        print(f"http://127.0.0.1:{port}/launch?session={SESSION}", flush=True)
+        server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+        if args.exit_on_stdin_close:
+
+            def stop_on_eof() -> None:
+                sys.stdin.buffer.read()
+                server.should_exit = True
+
+            threading.Thread(target=stop_on_eof, daemon=True).start()
+        server.run(sockets=[listener])
 
 
 if __name__ == "__main__":

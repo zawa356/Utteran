@@ -1,11 +1,16 @@
 # AI 作業状態
 
-## 現在地（2026-11-20、D3-B Expert 成果物と現在設定での再実行、0.1.62・未リリース）
+## 現在地（2026-11-20、D3-B Expert 成果物と現在設定での再実行、0.1.63・未リリース）
 
-- 基点 main `c1fad682be4ed85cac20365771b444c2bb82a167`（[#68](https://github.com/zawa356/Utteran/pull/68) 統合）。[main CI](https://github.com/zawa356/Utteran/actions/runs/44644947134) は 14/15 ジョブ成功。既存の retry 2 件、削除 2 件の E2E 失敗を含む。
+- Issue #60修正を含むmain `1d8ef03acbe360fc43fa61d091bb947f8ca689e5` を通常mergeで取り込んだ。[統合後main CI](https://github.com/zawa356/Utteran/actions/runs/44665710689)は15/15。
 - 作業ブランチ `feat/ui3-d3b-artifacts-rerun`、作者 `zawa356`。Expert の結果・履歴から既存 B5/B7 で、SHA-256 一致を条件に現在設定の新規論理 Job を投入する。元 Job の CAS と retry 連鎖の確認は受理と同一トランザクション。結果不明は同じ要求だけを再照合する。
 - OS 既定アプリ起動と Explorer 選択表示は BLOCKED。内蔵 Viewer は対象外。ASR なしの再出力を束 E へ移管。Windows 実機・GPU は NOT_RUN。[D3-B 実装記録](docs/architecture/ui3/d3b-artifacts-rerun.md)。
 - Cloud Linux で pytest の既定一時領域とホーム書き込みに環境由来の失敗を確認。Git に無視される試験用出力配下と別の XDG 領域を指定し、対象の application 8 件は PASS。結果の全件数、Draft PR の push/PR CI は PR 本文を参照。
+
+## Issue #60 統合記録（2026-11-20、Issue #60、0.1.62・未リリース）
+
+- 最新mainの `c1fad682be4ed85cac20365771b444c2bb82a167` から独立した `fix/ui3-issue60-retry-cas-e2e`。S5-Bの起動確定と協調取消の競合を実APIで再現し、試験ごとの合成バックエンドで試験間干渉を防いだ。PR #72を `1d8ef03acbe360fc43fa61d091bb947f8ca689e5` で統合し、main CI 15/15とIssueクローズを確認。
+- [原因と試験設計](docs/architecture/ui3/s5b-cancel-cas-e2e.md)。Windows WebView2・実GPU・ネイティブpickerは未受入。D3-B1はBLOCKED。
 
 ## 現在地（2026-11-19、D3-A Expert結果・履歴、0.1.61・未リリース）
 

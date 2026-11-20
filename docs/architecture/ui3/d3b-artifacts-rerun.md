@@ -22,4 +22,8 @@ Expert の結果・履歴で、終了済みの一本の retry 連鎖の最新 Jo
 
 DB 書き込みトランザクションの中で元 Job の `If-Match`、終了状態、retry 連鎖の最新性と分岐の有無を確認する。競合、削除済み、分岐はそれぞれ 412、410、409。受理時は既存 B7 の新規 snapshot、出力ディレクトリ命名と上書き防止が適用される。元 Job の状態、snapshot、履歴の可視性は維持する。412 の後は一覧を更新し、対象の再選択を求める。結果不明時は共有 mutation gate を保持し、明示操作で同じ ID・revision・Idempotency-Key・body だけを再送する。リロードをまたぐ再照合はページメモリに限定される。
 
-入力内容の照合は時点の検証で、ファイルは実行まで固定されない。B7 の既存の開始直前再確認は変更された入力を拒否する。共有 board に出ない非表示の retry 枝もサーバーの判定には含む。Windows WebView2 のネイティブ picker、DPI、実 GPU は NOT_RUN。内蔵 Viewer は対象外、ASR なしの再出力は束 E。#59、#60、#70 は継続。D3-B は [Issue #21](https://github.com/zawa356/Utteran/issues/21) の UI-3 実装で、[Epic #18](https://github.com/zawa356/Utteran/issues/18) に属する。
+入力内容の照合は時点の検証で、ファイルは実行まで固定されない。B7 の既存の開始直前再確認は変更された入力を拒否する。共有 board に出ない非表示の retry 枝もサーバーの判定には含む。Windows WebView2 のネイティブ picker、DPI、実 GPU は NOT_RUN。内蔵 Viewer は対象外、ASR なしの再出力は束 E。#59、#70 は継続。#60 は PR #72 で是正し、main CI の全件成功を確認済み。D3-B は [Issue #21](https://github.com/zawa356/Utteran/issues/21) の UI-3 実装で、[Epic #18](https://github.com/zawa356/Utteran/issues/18) に属する。
+
+### 統合時の回帰
+
+D3-B2の製品E2EをS5-Bの試験専用バックエンドで実行する。英語・日本語のダイアログに加え、キーボードで開く、取消ボタンに初期フォーカスを置く、閉じると起点のボタンに戻ることを確認する。初期フォーカスはVuetifyの入場完了時に設定する。

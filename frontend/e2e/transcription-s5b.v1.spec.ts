@@ -1,6 +1,7 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, SESSION, shot, test } from "./fixtures";
+import { choose, expect, SESSION, shot } from "./fixtures";
+import { test } from "./isolatedV1";
 
 /**
  * Bundle C2b against the real FastAPI app in the `--next-ui-v1` shape (tools/ui2/serve_next_ui.py
@@ -9,13 +10,10 @@ import { choose, expect, SESSION, shot, test } from "./fixtures";
  * runner that loads no model and writes one synthetic .srt into the job's own directory
  * (tools/ui2/synthetic_v1.py). Headless Chromium — NOT a WebView2 acceptance.
  *
- * Runs after transcription-s5a.v1.spec.ts on the same data root (workers: 1, file order), so the
- * store already holds jobs; every assertion here is scoped to the jobs this spec creates.
+ * Each test owns its synthetic store, queue, server and dispatcher.
  */
 
-const ROOT = process.env.UI2_V1_ROOT!;
-const input = (name: string) => `${ROOT}/in/${name}`;
-const OUT = `${ROOT}/out`;
+const input = (root: string, name: string) => `${root}/in/${name}`;
 const AUTH = { Cookie: `utteran_gui_session=${SESSION}` };
 const PRESET = "S5-B 合成";
 const POLICY = "S5-B CPU";
@@ -83,11 +81,11 @@ async function addInput(page: Page, path: string): Promise<void> {
   await page.getByTestId("tx-input-add-typed").click();
 }
 
-async function expert(page: Page, request: APIRequestContext, files: string[]): Promise<void> {
+async function expert(page: Page, request: APIRequestContext, files: string[], root: string): Promise<void> {
   await page.getByTestId("mode-expert").click();
   await library(page, request);
-  await page.getByTestId("v1-output-path").locator("input").fill(OUT);
-  for (const name of files) await addInput(page, input(name));
+  await page.getByTestId("v1-output-path").locator("input").fill(`${root}/out`);
+  for (const name of files) await addInput(page, input(root, name));
   await page.getByTestId("tx-list-select-all").click();
   await expect(page.getByTestId("v1-batch-count")).toContainText(String(files.length));
 }
@@ -119,32 +117,94 @@ async function openHistory(page: Page): Promise<void> {
 
 const row = (page: Page, section: "queue" | "history" | "hidden", id: string) => page.getByTestId(`v1-board-${section}`).locator(`[data-testid="v1-board-row"][data-root="${id}"]`);
 
-async function drainQueue(request: APIRequestContext, scope: "setup" | "rerun"): Promise<void> {
-  const headers = { "x-utteran-session": SESSION };
-  for (let round = 0; round < 5; round += 1) {
-    const queue = await api<{ items: { resource_id: string; resource_kind: string }[] }>(request, "/api/v1/queue");
-    const waiting = queue.items.filter((item) => item.resource_kind === "job");
-    if (waiting.length === 0) break;
-    for (const item of waiting) {
-      const job = await api<{ revision: number }>(request, `/api/v1/jobs/${item.resource_id}`);
-      const response = await request.post(`/api/v1/jobs/${item.resource_id}/cancel`, {
-        headers: { ...headers, "If-Match": `"${job.revision}"`, "Idempotency-Key": `s5b-drain-${scope}-${item.resource_id.slice(4, 20)}-${round}` },
-        data: { schema_version: 1, mode: "cooperative" },
-      });
-      expect([200, 202, 412]).toContain(response.status());
-    }
-  }
-  await expect.poll(async () => (await api<{ items: unknown[] }>(request, "/api/v1/queue")).items.length, { timeout: 30_000 }).toBe(0);
-}
-
-test("setup: cancel the jobs earlier specs left waiting, so this spec's jobs are next in the single slot", async ({ request }) => {
-  // The S5-A paging test leaves about a hundred queued jobs; each would take the slot for a second.
-  await drainQueue(request, "setup");
+test.beforeEach(async ({ request }) => {
+  expect(await api(request, "/api/v1/queue")).toMatchObject({
+    active_item_id: null, dispatch: "paused", items: [],
+  });
 });
 
-test("atomic batch: two files → one check, one submit, two jobs; the board shows them and their verified outputs", async ({ app, request }) => {
+test.describe("launch confirmation CAS", () => {
+  test.use({ holdSlowLaunch: true });
+
+  test("rejects a stale cancel and only cancels after a new explicit action", async ({ app, request, backend }) => {
+    type Job = { status: string; revision: number; reason_code: string; updated_at: string };
+    type Queue = { dispatch: string; active_item_id: string | null; items: { id: string; resource_id: string; position: number | null }[] };
+    const seen = recordApi(app);
+    await expert(app, request, ["slow-meeting.wav", "meeting.wav"], backend.root);
+    const [id, follower] = await submitBatch(app, seen);
+    await ensureQueueRunning(app);
+    const path = `/api/v1/jobs/${id}`;
+    const cancelPath = `${path}/cancel`;
+    const read = () => api<Job>(request, path);
+    const queue = () => api<Queue>(request, "/api/v1/queue");
+    await app.getByTestId("nav-queue").click();
+    await app.locator(`[data-testid="queue-row"][data-root="${id}"]`).click();
+    const detail = app.getByTestId("queue-detail");
+    await expect(detail).toHaveAttribute("data-status", "running");
+    const before = await read();
+    expect(before).toMatchObject({ revision: 2, reason_code: "dispatch_started" });
+    const active = await queue();
+    expect(active.active_item_id).toBe(active.items.find((item) => item.resource_id === id)?.id);
+    expect(active.items.find((item) => item.resource_id === follower)?.position).toBe(1);
+
+    // Release the real dispatcher only after the browser has frozen If-Match for its first click.
+    await app.route(`**${cancelPath}`, async (route) => {
+      await backend.releaseSlowLaunch();
+      await expect.poll(read).toMatchObject({ status: "running", revision: 3, reason_code: "launch_confirmed" });
+      await route.continue();
+    }, { times: 1 });
+    const first = app.waitForResponse((response) => line(response.request()) === `POST ${cancelPath}`);
+    const cancel = app.getByTestId("queue-cancel");
+    await cancel.click();
+    const conflict = await first;
+    expect(conflict.status()).toBe(412);
+    expect(await conflict.json()).toMatchObject({ error: { code: "revision_conflict" } });
+    expect((await conflict.request().allHeaders())["if-match"]).toBe('"2"');
+    await expect(app.getByTestId("queue-write-state")).toHaveAttribute("data-action-phase", "conflict");
+    await expect(detail).toContainText("起動を確認");
+    await expect(detail).toHaveAttribute("data-status", "running");
+    await expect(cancel).toBeEnabled();
+    const confirmed = await read();
+    expect(confirmed).toMatchObject({ status: "running", revision: 3 });
+    expect((await queue()).active_item_id).toBe(active.active_item_id);
+    expect(await api(request, `/api/v1/jobs/${follower}`)).toMatchObject({ status: "queued" });
+    const cancels = () => writes(seen).filter((entry) => entry === `POST ${cancelPath}`);
+    expect(cancels()).toHaveLength(1);
+    const event = ({ status, revision, reason_code, updated_at }: Job) => ({ status, revision, reason_code, updated_at });
+    console.info(JSON.stringify({
+      job: id, before: event(before), confirmed: event(confirmed),
+      firstIfMatch: 2, firstStatus: 412, code: "revision_conflict",
+      dispatch: active.dispatch, active: active.active_item_id, follower, followerPosition: 1,
+    }));
+
+    const second = app.waitForResponse((response) => line(response.request()) === `POST ${cancelPath}`);
+    await cancel.click();
+    const accepted = await second;
+    expect(accepted.status()).toBe(202);
+    expect((await accepted.request().allHeaders())["if-match"]).toBe('"3"');
+    await expect.poll(read).toMatchObject({ status: "cancelled" });
+    await expect.poll(() => api(request, `/api/v1/jobs/${follower}`)).toMatchObject({ status: "succeeded" });
+    await expect.poll(queue).toMatchObject({ active_item_id: null, items: [] });
+    expect(cancels()).toHaveLength(2);
+  });
+});
+
+test("isolated teardown reaps a server even while a slow job occupies its slot", async ({ app, request, backend }) => {
   const seen = recordApi(app);
-  await expert(app, request, ["meeting.wav", "other.wav"]);
+  await expert(app, request, ["slow-meeting.wav"], backend.root);
+  const [id] = await submitBatch(app, seen);
+  await ensureQueueRunning(app);
+  await expect.poll(() => api(request, `/api/v1/jobs/${id}`)).toMatchObject({
+    status: "running", reason_code: "launch_confirmed",
+  });
+  expect(await api(request, "/api/v1/queue")).toMatchObject({ active_item_id: expect.any(String) });
+  // Leave the slot occupied, as it would be after an assertion failure. Fixture teardown
+  // waits for process-tree exit, and beforeEach verifies the next test sees an empty queue.
+});
+
+test("atomic batch: two files → one check, one submit, two jobs; the board shows them and their verified outputs", async ({ app, request, backend: { root } }) => {
+  const seen = recordApi(app);
+  await expert(app, request, ["meeting.wav", "other.wav"], root);
   // Nothing is sent before the explicit check; submit is impossible before it.
   await expect(app.getByTestId("v1-batch-submit")).toBeDisabled();
   const ids = await submitBatch(app, seen);
@@ -153,8 +213,8 @@ test("atomic batch: two files → one check, one submit, two jobs; the board sho
   const v1Writes = writes(seen).filter((l) => l.includes("/api/v1/") && !l.includes("/presets") && !l.includes("/execution-policies"));
   expect(v1Writes).toEqual(["POST /api/v1/validations", "POST /api/v1/execution-resolutions", "POST /api/v1/jobs"]);
   const submitted = JSON.parse(seen.find((r) => line(r) === "POST /api/v1/jobs")!.postData()!) as { editing_session: { files: { input_path: string; output_dir: string }[] } };
-  expect(submitted.editing_session.files.map((f) => f.input_path)).toEqual([input("meeting.wav"), input("other.wav")]);
-  expect(submitted.editing_session.files.every((f) => f.output_dir === OUT)).toBe(true);
+  expect(submitted.editing_session.files.map((f) => f.input_path)).toEqual([input(root, "meeting.wav"), input(root, "other.wav")]);
+  expect(submitted.editing_session.files.every((f) => f.output_dir === `${root}/out`)).toBe(true);
   expect(legacyWrites(seen)).toEqual([]);
 
   await ensureQueueRunning(app);
@@ -174,17 +234,17 @@ test("atomic batch: two files → one check, one submit, two jobs; the board sho
   await expect(first.getByTestId("v1-artifacts")).toHaveAttribute("data-state", "available");
   await expect(first.locator('[data-format="srt"]')).toHaveAttribute("data-integrity", "verified");
   const text = (await first.textContent()) ?? "";
-  expect(text).not.toContain(ROOT);
+  expect(text).not.toContain(root);
   expect(text).not.toContain(".srt");
   const artifacts = await api<{ state: string; items: { format: string; integrity: string }[]; unexpected_count: number }>(request, `/api/v1/jobs/${ids[0]}/artifacts`);
   expect(artifacts).toMatchObject({ state: "available", unexpected_count: 0, items: [{ format: "srt", integrity: "verified" }] });
-  expect(JSON.stringify(artifacts)).not.toContain(ROOT);
+  expect(JSON.stringify(artifacts)).not.toContain(root);
   await shot(app, "s5b-batch-board");
 });
 
-test("hide and show: the row leaves and returns; the job, its state and its outputs are untouched; nothing is deleted", async ({ app, request }) => {
+test("hide and show: the row leaves and returns; the job, its state and its outputs are untouched; nothing is deleted", async ({ app, request, backend: { root } }) => {
   const seen = recordApi(app);
-  await expert(app, request, ["meeting.wav"]);
+  await expert(app, request, ["meeting.wav"], root);
   const [id] = await submitBatch(app, seen);
   await ensureQueueRunning(app);
   await openHistory(app);
@@ -239,21 +299,24 @@ test("hide and show: the row leaves and returns; the job, its state and its outp
   await shot(app, "s5b-hidden-history");
 });
 
-async function cancelFromQueue(page: Page, root: string): Promise<void> {
+async function cancelFromQueue(page: Page, root: string, running = false): Promise<void> {
   await page.getByTestId("nav-queue").click();
   await page.locator(`[data-testid="queue-row"][data-root="${root}"]`).click();
+  if (running) {
+    await expect(page.getByTestId("queue-detail")).toContainText("起動を確認");
+  }
   await page.getByTestId("queue-cancel").click();
   await expect(page.getByTestId("queue-write-state")).toHaveAttribute("data-action-phase", "done");
   await page.getByTestId("nav-transcribe").click();
 }
 
-test("retry is the same row: cancel a running job, retry it, the row returns to the queue with two attempts", async ({ app, request }) => {
+test("retry is the same row: cancel a running job, retry it, the row returns to the queue with two attempts", async ({ app, request, backend: { root } }) => {
   const seen = recordApi(app);
-  await expert(app, request, ["slow-meeting.wav"]);
+  await expert(app, request, ["slow-meeting.wav"], root);
   const [id] = await submitBatch(app, seen);
   await ensureQueueRunning(app);
   await expect(row(app, "queue", id!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
-  await cancelFromQueue(app, id!);
+  await cancelFromQueue(app, id!, true);
   await openHistory(app);
   await expect(row(app, "history", id!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await app.getByTestId("v1-board-action-close").click();
@@ -274,10 +337,10 @@ test("retry is the same row: cancel a running job, retry it, the row returns to 
   const retryPost = seen.find((r) => line(r) === `POST /api/v1/jobs/${id}/retry`)!;
   expect((await retryPost.allHeaders())["if-match"]).toBe(`"${cancelled.revision}"`);
 
-  // Clean up the slow job so the single slot is free for later specs.
+  // Finish the retry so the entire chain can be hidden and shown.
   await app.getByTestId("v1-board-action-close").click();
   await expect(row(app, "queue", id!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
-  await cancelFromQueue(app, id!);
+  await cancelFromQueue(app, id!, true);
   await openHistory(app);
   await expect(row(app, "history", id!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await expect(row(app, "history", id!)).toHaveAttribute("data-attempts", "2");
@@ -319,14 +382,14 @@ test("retry is the same row: cancel a running job, retry it, the row returns to 
   expect(legacyWrites(seen)).toEqual([]);
 });
 
-test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after the job that was already waiting", async ({ app, request }) => {
+test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after the job that was already waiting", async ({ app, request, backend: { root } }) => {
   const seen = recordApi(app);
-  // slow-meeting occupies the slot; cancel it (A = cancelled), keep meeting.wav (B) waiting behind a second slow job.
-  await expert(app, request, ["slow-meeting.wav"]);
+  // Cancel slow-meeting (A), then pause dispatch so B is queued before A is retried.
+  await expert(app, request, ["slow-meeting.wav"], root);
   const [a] = await submitBatch(app, seen);
   await ensureQueueRunning(app);
   await expect(row(app, "queue", a!)).toHaveAttribute("data-status", "running", { timeout: 30_000 });
-  await cancelFromQueue(app, a!);
+  await cancelFromQueue(app, a!, true);
   await openHistory(app);
   await expect(row(app, "history", a!)).toHaveAttribute("data-status", "cancelled", { timeout: 30_000 });
   await app.getByTestId("v1-board-action-close").click();
@@ -340,7 +403,7 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
   expect(paused.status()).toBe(200);
   await app.getByTestId("nav-transcribe").click();
   await app.getByTestId("tx-list-select-none").click();
-  await addInput(app, input("meeting.wav"));
+  await addInput(app, input(root, "meeting.wav"));
   await app.getByTestId("tx-list-check").last().locator("input").check();
   await expect(app.getByTestId("v1-batch-count")).toContainText("1");
   const [b] = await submitBatch(app, seen);
@@ -382,22 +445,12 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
   expect(legacyWrites(seen)).toEqual([]);
 });
 
-test("D3-B Expert results and history share explicit rerun and verified artifact status", async ({ app, request }) => {
-  // A failed earlier scenario can leave work queued ahead of the rerun fixture.
-  await drainQueue(request, "rerun");
-  const queue = await api<{ revision: number; dispatch: string }>(request, "/api/v1/queue");
-  if (queue.dispatch === "paused") {
-    const response = await request.patch("/api/v1/queue/control", {
-      headers: { "x-utteran-session": SESSION, "If-Match": `"${queue.revision}"`, "Idempotency-Key": "d3b-rerun-fixture-resume" },
-      data: { schema_version: 1, dispatch: "running" },
-    });
-    expect(response.status()).toBe(200);
-  }
-  const relocated = input("rerun-relocated.wav");
-  const customOutput = `${OUT}/rerun-source`;
-  copyFileSync(input("meeting.wav"), relocated);
+test("D3-B Expert results and history share explicit rerun and verified artifact status", async ({ app, request, backend: { root } }) => {
+  const relocated = input(root, "rerun-relocated.wav");
+  const customOutput = `${root}/out/rerun-source`;
+  copyFileSync(input(root, "meeting.wav"), relocated);
   mkdirSync(customOutput, { recursive: true });
-  const other = input("rerun-different.wav");
+  const other = input(root, "rerun-different.wav");
   writeFileSync(other, "RIFF a different synthetic input");
   await app.addInitScript(() => {
     const native = window as Window & { pywebview?: unknown; rerunPick?: string };
@@ -406,8 +459,9 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await app.goto(`/launch?session=${SESSION}`);
   await expect(app.getByTestId("app-ready")).toBeVisible();
   const seen = recordApi(app);
-  await expert(app, request, ["meeting.wav"]);
+  await expert(app, request, ["meeting.wav"], root);
   const [id] = await submitBatch(app, seen);
+  await ensureQueueRunning(app);
   await app.getByTestId("tx-ov-output-custom").click();
   await app.getByTestId("tx-ov-output-path").locator("input").fill(customOutput);
   await app.getByTestId("tx-ov-apply").click();
@@ -483,5 +537,24 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await app.getByTestId("rerun-close").click();
   await app.getByTestId("mode-normal").click();
   await expect(app.getByTestId("result-rerun")).toHaveCount(0);
+  const settings = await request.patch("/api/settings", {
+    headers: { "x-utteran-session": SESSION }, data: { language: "en" },
+  });
+  expect(settings.status()).toBe(200);
+  await app.reload();
+  await expect(app.getByTestId("app-ready")).toBeVisible();
+  await app.getByTestId("mode-expert").click();
+  await openHistory(app);
+  await row(app, "history", id!).getByTestId("results-select").press("Enter");
+  const rerun = app.getByTestId("result-rerun");
+  await expect(rerun).toHaveText("Run again with current settings");
+  await rerun.press("Enter");
+  await expect(dialog).toContainText("This creates a separate job using the current settings.");
+  const close = app.getByTestId("rerun-close");
+  await expect(close).toBeFocused();
+  await close.press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(rerun).toBeFocused();
+  expect(seen.filter(r => line(r) === path)).toHaveLength(2);
   expect(legacyWrites(seen)).toEqual([]);
 });

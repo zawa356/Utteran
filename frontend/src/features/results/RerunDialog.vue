@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useCore } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
 import { useCodeText } from "../../composables/v1";
@@ -46,13 +46,15 @@ const canPrepare = computed(() => {
   return rerun.canPrepare();
 });
 
-watch(() => target.value !== null, async (open) => {
+watch(() => target.value !== null, (open) => {
   if (!open) return;
   returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   pickerError.value = false;
-  await nextTick();
-  cancelButton.value?.$el.focus();
 }, { flush: "sync" });
+
+function focusCancel(): void {
+  cancelButton.value?.$el.focus({ preventScroll: true });
+}
 
 async function pick(): Promise<void> {
   const selection = target.value;
@@ -79,7 +81,7 @@ function restoreFocus(): void {
 <template>
   <v-dialog
     :model-value="target !== null" max-width="560" :persistent="busy || picking || unknown"
-    :aria-label="t('results.rerun')" @update:model-value="open => { if (!open) rerun.closeRerun(); }" @after-leave="restoreFocus"
+    :aria-label="t('results.rerun')" @update:model-value="open => { if (!open) rerun.closeRerun(); }" @after-enter="focusCancel" @after-leave="restoreFocus"
   >
     <v-card v-if="target" variant="flat" color="surface" elevation="8" :title="t('results.rerun')" data-testid="rerun-dialog" :data-step="state.step">
       <v-card-text class="u-stack u-break">
