@@ -447,19 +447,21 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
   expect(legacyWrites(seen)).toEqual([]);
 });
 
-test("D3-B Expert results and history share explicit rerun and verified artifact status", async ({ app, request, backend: { root } }) => {
-  const relocated = input(root, "rerun-relocated.wav");
-  const customOutput = `${root}/out/rerun-source`;
-  copyFileSync(input(root, "meeting.wav"), relocated);
-  mkdirSync(customOutput, { recursive: true });
-  const other = input(root, "rerun-different.wav");
-  writeFileSync(other, "RIFF a different synthetic input");
+async function enableRerunPicker(app: Page): Promise<void> {
   await app.addInitScript(() => {
     const native = window as Window & { pywebview?: unknown; rerunPick?: string };
     native.pywebview = { api: { choose_path: async () => native.rerunPick ?? null } };
   });
   await app.goto(`/launch?session=${SESSION}`);
   await expect(app.getByTestId("app-ready")).toBeVisible();
+}
+
+test("D3-B Expert results and history share explicit rerun and verified artifact status", async ({ app, request, backend: { root } }) => {
+  const relocated = input(root, "rerun-relocated.wav");
+  const customOutput = `${root}/out/rerun-source`;
+  copyFileSync(input(root, "meeting.wav"), relocated);
+  mkdirSync(customOutput, { recursive: true });
+  await enableRerunPicker(app);
   const seen = recordApi(app);
   await expert(app, request, ["meeting.wav"], root);
   const [id] = await submitBatch(app, seen);
@@ -518,13 +520,26 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await row(app, "history", created!.id).getByTestId("results-select").click();
   await expect(app.getByTestId("results-detail")).toContainText(id!);
   expect(await api(request, `/api/v1/jobs/${id}`)).toEqual(source);
-  await app.setViewportSize({ width: 1280, height: 820 });
-  await app.getByTestId("nav-transcribe").click();
+  expect(seen.filter(r => line(r) === path)).toHaveLength(1);
+  expect(legacyWrites(seen)).toEqual([]);
+});
+
+test("D3-B rejects a different file and uses common settings when the source row is absent", async ({ app, request, backend: { root } }) => {
+  const other = input(root, "rerun-different.wav");
+  writeFileSync(other, "RIFF a different synthetic input");
+  await enableRerunPicker(app);
+  const seen = recordApi(app);
+  await expert(app, request, ["meeting.wav"], root);
+  const [id] = await submitBatch(app, seen);
+  await ensureQueueRunning(app);
   await app.getByTestId("tx-list-remove").click();
   await app.getByTestId("tx-list-remove-yes").click();
   await openHistory(app);
+  await expect(row(app, "history", id!)).toHaveAttribute("data-status", "succeeded");
   await row(app, "history", id!).getByTestId("results-select").click();
   await app.getByTestId("result-rerun").click();
+  const path = `POST /api/v1/jobs/${id}/rerun`;
+  const dialog = app.getByTestId("rerun-dialog");
   await app.evaluate(path => {
     (window as Window & { rerunPick?: string }).rerunPick = path;
   }, other);
@@ -539,7 +554,7 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await app.getByTestId("rerun-close").click();
   await app.getByTestId("mode-normal").click();
   await expect(app.getByTestId("result-rerun")).toHaveCount(0);
-  expect(seen.filter(r => line(r) === path)).toHaveLength(2);
+  expect(seen.filter(r => line(r) === path)).toHaveLength(1);
   expect(legacyWrites(seen)).toEqual([]);
 });
 

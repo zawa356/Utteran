@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
-import { choose, expect, SESSION_HEADER } from "./fixtures";
+import { choose, expect, SESSION, SESSION_HEADER } from "./fixtures";
 import { test } from "./isolatedV1";
 import { THREE_COLUMNS_AT, TWO_COLUMNS_AT } from "../src/domain/paneLayout";
 
@@ -90,7 +91,7 @@ for (const [i, { width, height, dpr }] of modes.entries()) {
   });
 }
 
-test("D4-C shows the real B5/B7 lifecycle and safe confirmation dialogs", async ({ app, backend }) => {
+test("D4-C shows the real B5/B7 lifecycle from submission to results", async ({ app, backend }) => {
   const call = (id: string) => app.getByTestId(id);
   const writes: string[] = [];
   app.on("request", request => {
@@ -143,6 +144,49 @@ test("D4-C shows the real B5/B7 lifecycle and safe confirmation dialogs", async 
   await call("v1-artifacts-load").click();
   await expect(call("v1-artifacts-external-blocked")).toBeVisible();
   await capture(app, "product-results-ja-light-blue-1280");
+});
+
+test("D4-C confirmations and connection failures preserve the actual job state", async ({ app, backend, request }) => {
+  const auth = { Cookie: `utteran_gui_session=${SESSION}` };
+  const post = async (endpoint: string, data: object, status: number) => {
+    const response = await request.post(`/api/v1/${endpoint}`, {
+      headers: { ...auth, Origin: backend.url, "Idempotency-Key": `d4-review-fixture-${endpoint}` },
+      data,
+    });
+    expect(response.status()).toBe(status);
+    return response.json();
+  };
+  // Seed the one job through the real backend. The separate lifecycle test drives submission via the UI.
+  const settings = JSON.parse(readFileSync(new URL("../src/domain/v1/presetTemplate.json", import.meta.url), "utf8"));
+  const preset = await post("presets", { schema_version: 1, name: "Synthetic review", settings }, 201);
+  const policy = await post("execution-policies", {
+    schema_version: 1, name: "Synthetic CPU", mode: "auto", fixed_candidate_id: null,
+    allowed_profile_ids: ["cpu"], objective: "balanced", max_memory_bytes: null,
+    fallback: "none", execution_deadline_seconds: null,
+  }, 201);
+  const editing = {
+    schema_version: 1,
+    preset_ref: { id: preset.id, revision: preset.revision },
+    policy_ref: { id: policy.id, revision: policy.revision },
+    common_overrides: [],
+    files: [{ client_file_id: "f-d4review000000000000000000", input_path: `${backend.root}/in/meeting.wav`, output_dir: `${backend.root}/out`, overrides: [] }],
+  };
+  const resolution = await post("execution-resolutions", editing, 201);
+  await post("jobs", { schema_version: 1, editing_session: editing, resolution_token: resolution.token, resume_mode: "resume" }, 202);
+  const call = (id: string) => app.getByTestId(id);
+  await call("mode-expert").click();
+  await call("nav-queue").click();
+  const dispatch = call("queue-dispatch");
+  await expect(dispatch).toBeEnabled();
+  if (await call("queue-dispatch-paused").isVisible()) await dispatch.click();
+  await call("nav-results").click();
+  await expect(call("results-select")).toHaveCount(1);
+  await call("results-select").click();
+  const writes: string[] = [];
+  app.on("request", request => {
+    const { pathname } = new URL(request.url());
+    if (pathname.startsWith("/api/") && request.method() !== "GET") writes.push(`${request.method()} ${pathname}`);
+  });
   await call("result-rerun").click();
   await expect(call("rerun-close")).toBeFocused();
   await capture(app, "product-rerun-ja-light-blue-1280");
@@ -151,14 +195,13 @@ test("D4-C shows the real B5/B7 lifecycle and safe confirmation dialogs", async 
   await call("results-tab-history").click();
   await call("results-select").first().click();
   await capture(app, "product-history-ja-light-blue-1280");
-  const beforePlan = writes.length;
   await call("v1-board-delete-history").click();
   await expect(call("v1-delete-card")).toHaveAttribute("data-phase", "planned");
   await expect(call("v1-delete-cancel")).toBeFocused();
   await capture(app, "product-history-dialog-ja-light-blue-1280");
   await app.keyboard.press("Escape");
   await expect(call("v1-board-delete-history")).toBeFocused();
-  expect(writes.slice(beforePlan)).toEqual([expect.stringMatching(/^POST \/api\/v1\/jobs\/[^/]+\/deletion-plans$/)]);
+  expect(writes).toEqual([expect.stringMatching(/^POST \/api\/v1\/jobs\/[^/]+\/deletion-plans$/)]);
   await call("nav-queue").click();
   await app.route(/\/api\/v1\/(jobs|queue)(\?.*)?$/, route => route.abort("internetdisconnected"));
   await call("queue-reload").click();
