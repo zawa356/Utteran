@@ -123,9 +123,9 @@ onBeforeUnmount(stop);
   height: 24px;
   border-radius: 4px;
   background: rgb(var(--v-theme-on-surface));
-  opacity: 0.38;
+  opacity: 0.58;
 }
-.u-resize--product:is(:hover, :focus-visible, .u-resize--active) .u-resize--product .u-resize__grip {
+.u-resize--product:is(:hover, :focus-visible, .u-resize--active) .u-resize__grip {
   background: rgb(var(--v-theme-primary));
   opacity: 1;
 }
