@@ -1,15 +1,17 @@
 import { createApp } from "vue";
-import { createVuetify } from "vuetify";
+import { createVuetify, type ThemeDefinition } from "vuetify";
 import { aliases, mdi } from "vuetify/iconsets/mdi-svg";
 import "vuetify/styles";
 import "./styles/app.css";
+import "./styles/v1.css";
 import App from "./App.vue";
 import { CORE } from "./composables/core";
 import { createCore } from "./domain/core";
 import { browserEventSource } from "./domain/job";
 import { readApiMode } from "./domain/v1/apiMode";
 import { createPywebviewHost } from "./host/pywebview";
-import { componentDefaults, darkTheme, lightTheme } from "./styles/theme";
+import { componentDefaults, darkTheme, lightTheme, v1Defaults } from "./styles/theme";
+import { blueDark, blueLight, greenDark, greenLight } from "./styles/palette";
 
 // The server writes a fresh nonce per response (utteran_gui.next_ui). A leftover placeholder
 // means the page was not served by Utteran: then no nonce is used and CSP blocks inline styles.
@@ -29,10 +31,12 @@ window.addEventListener("unhandledrejection", (event) => {
   host.reportError({ kind: "unhandledrejection", message: String(event.reason) });
 });
 
+const v1 = core.apiMode === "v1-dev";
+const themes: Record<string, ThemeDefinition> = v1 ? { light: blueLight, dark: blueDark, greenLight, greenDark } : { light: lightTheme, dark: darkTheme };
 const vuetify = createVuetify({
-  theme: { defaultTheme: "system", themes: { light: lightTheme, dark: darkTheme }, cspNonce },
+  theme: { defaultTheme: "system", themes, cspNonce },
   icons: { defaultSet: "mdi", aliases, sets: { mdi } },
-  defaults: componentDefaults,
+  defaults: v1 ? v1Defaults : componentDefaults,
 });
 
 const app = createApp(App);

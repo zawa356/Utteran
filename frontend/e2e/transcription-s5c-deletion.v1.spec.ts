@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, SESSION, shot, test } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot, test } from "./fixtures";
 
 /**
  * Bundle C2c against the real FastAPI app in the `--next-ui-v1` shape (layout v8): the history-only
@@ -72,6 +72,7 @@ async function library(page: Page, request: APIRequestContext): Promise<void> {
 }
 
 async function ensureQueueRunning(page: Page): Promise<void> {
+  await openSingleJobTools(page);
   const dispatch = page.getByTestId("v1-queue-dispatch");
   await expect(dispatch).toBeVisible();
   if (/停止中/.test((await dispatch.textContent()) ?? "")) {

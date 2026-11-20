@@ -83,7 +83,7 @@ function restoreFocus(): void {
     :model-value="target !== null" max-width="560" :persistent="busy || picking || unknown"
     :aria-label="t('results.rerun')" @update:model-value="open => { if (!open) rerun.closeRerun(); }" @after-enter="focusCancel" @after-leave="restoreFocus"
   >
-    <v-card v-if="target" variant="flat" color="surface" elevation="8" :title="t('results.rerun')" data-testid="rerun-dialog" :data-step="state.step">
+    <v-card v-if="target" class="u-v1-dialog" variant="flat" color="surface" elevation="8" :title="t('results.rerun')" data-testid="rerun-dialog" :data-step="state.step">
       <v-card-text class="u-stack u-break">
         <p>{{ t("results.rerunCreatesJob") }}</p>
         <p>{{ t("results.rerunOf") }} {{ target.jobId }}</p>

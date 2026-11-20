@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import type { JobV1 } from "../../api/v1Resources";
 import { fileName } from "../../api/legacyJobs";
 import ErrorAlert from "../../components/ErrorAlert.vue";
+import V1StatusChip from "../../components/V1StatusChip.vue";
 import { useCore } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
 import { useCodeText } from "../../composables/v1";
@@ -135,7 +136,7 @@ async function read(showHidden?: boolean): Promise<void> {
       <ErrorAlert v-else-if="state.error" :error="state.error" testid="v1-board-error" :data-error-kind="state.error.kind" @retry="read()" />
       <div v-else class="results-columns">
         <div :data-testid="listId">
-          <v-table density="compact" class="results-table" data-testid="results-table">
+          <v-table density="compact" fixed-header class="results-table" data-testid="results-table">
             <thead><tr><th scope="col">{{ t("results.job") }}</th><th scope="col">{{ t("results.status") }}</th></tr></thead>
             <tbody>
               <tr v-if="rows.length === 0">
@@ -156,7 +157,7 @@ async function read(showHidden?: boolean): Promise<void> {
                     </span>
                   </v-btn>
                 </td>
-                <td class="u-break">{{ status(group.latest.status) }}</td>
+                <td class="u-break"><V1StatusChip :value="group.latest.status" /></td>
               </tr>
             </tbody>
           </v-table>
@@ -172,6 +173,7 @@ async function read(showHidden?: boolean): Promise<void> {
 .results-page { container-type: inline-size; }
 .results-columns { display: grid; align-items: start; gap: 16px; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); }
 .results-filters :deep(.v-input) { flex: 1 1 155px; min-width: 0; }
+.results-table :deep(.v-table__wrapper) { max-height: 50dvh; }
 .results-table :deep(table) { table-layout: fixed; }
 .results-table th:first-child { width: 72%; }
 .results-select { justify-content: start; height: auto; padding: 6px 8px; text-transform: none; letter-spacing: normal; }

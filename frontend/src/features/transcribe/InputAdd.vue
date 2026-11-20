@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { mdiFilePlusOutline } from "@mdi/js";
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted } from "vue";
 import { useI18n } from "../../composables/core";
 import { useTranscription } from "../../composables/transcription";
@@ -70,7 +71,12 @@ function add(event?: KeyboardEvent) {
 <template>
   <div class="u-stack" data-testid="tx-input-add" @dragover="refuseBrowserDrop" @drop="refuseBrowserDrop">
     <div class="u-row">
-      <v-btn variant="outlined" :loading="list.picking" :disabled="list.picking || full" data-testid="tx-input-pick" @click="core.inputs.pick(core.host)">
+      <v-btn
+        :variant="core.apiMode === 'v1-dev' ? 'tonal' : 'outlined'"
+        :color="core.apiMode === 'v1-dev' ? 'primary' : undefined"
+        :prepend-icon="core.apiMode === 'v1-dev' ? mdiFilePlusOutline : undefined"
+        :loading="list.picking" :disabled="list.picking || full" data-testid="tx-input-pick" @click="core.inputs.pick(core.host)"
+      >
         {{ t("tx.input.pick") }}
       </v-btn>
     </div>
