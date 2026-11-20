@@ -1,5 +1,6 @@
 import { choose, expect } from "./fixtures";
 import { test } from "./isolatedV1";
+import { expectSplitterFeedback } from "./splitterStyle";
 
 test("D4-B uses the chosen accent with the saved appearance and keeps narrow navigation reachable", async ({ app }) => {
   await app.setViewportSize({ width: 420, height: 660 });
@@ -22,3 +23,17 @@ test("D4-B uses the chosen accent with the saved appearance and keeps narrow nav
   await expect(app.getByTestId("open-legacy")).toBeInViewport();
   await expect(app.getByTestId("pane-switch-queue")).toBeInViewport();
 });
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`D4-B splitter grip feedback in green ${scheme}`, async ({ app }) => {
+    await app.emulateMedia({ colorScheme: scheme });
+    await app.getByTestId("nav-settings").click();
+    await choose(app, "settings-accent", "緑");
+    await expect(app.getByTestId("app-ready")).toHaveClass(new RegExp(`v-theme--green-${scheme}\\b`));
+    await app.getByTestId("mode-expert").click();
+    await expect(app.getByTestId("expert-workspace")).toHaveAttribute("data-columns", "3");
+    for (const id of ["resize-sidebar", "resize-inputs", "resize-queue"]) {
+      await expectSplitterFeedback(app, id);
+    }
+  });
+}
