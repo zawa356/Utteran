@@ -1,5 +1,11 @@
 # AI 作業状態
 
+## 現在地（2026-11-20、D4 製品画面、0.1.66・未リリース）
+
+- main 基点 `08e594fad42ed7f721ee56cb00652013db36a5d2`。D4-A [#73](https://github.com/zawa356/Utteran/pull/73)、D4-B [#74](https://github.com/zawa356/Utteran/pull/74)、D4-C の順に Draft PR でレビューする。
+- 開発専用 v1 で Normal 2カラム、Expert 可変3/2/1ペイン、配色・文言・キュー／結果／履歴の表示を整えた。同じ AppCore と B5/B7 の操作を使う。
+- [画面対照・試験手順](docs/architecture/ui3/d4-acceptance.md)。Windows 11 実 WebView2／OS DPI／IME／native picker・D&D／GPU／配布は #22 へ。D3-B1、束 E/F、既定 UI 切替、成果物削除は後続の条件を引き継ぐ。
+
 ## 現在地（2026-11-20、D3-B Expert 成果物と現在設定での再実行、0.1.63・未リリース）
 
 - Issue #60修正を含むmain `1d8ef03acbe360fc43fa61d091bb947f8ca689e5` を通常mergeで取り込んだ。[統合後main CI](https://github.com/zawa356/Utteran/actions/runs/44665710689)は15/15。
