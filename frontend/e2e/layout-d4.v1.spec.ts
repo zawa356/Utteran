@@ -1,0 +1,120 @@
+import { expect } from "./fixtures";
+import { test } from "./isolatedV1";
+import { expectSplitterFeedback } from "./splitterStyle";
+
+test("D4-A Normal arranges input and execution by available width", async ({ app }) => {
+  const input = app.getByTestId("tx-input-path");
+  const run = app.getByTestId("v1-job");
+  if (process.env.UI2_SCREENSHOTS) {
+    await app.screenshot({ path: "test-results/d4/normal-1280-ja.png" });
+    await app.getByTestId("mode-expert").click();
+    await app.screenshot({ path: "test-results/d4/expert-1280-ja.png" });
+    await app.setViewportSize({ width: 1100, height: 760 });
+    await app.screenshot({ path: "test-results/d4/expert-1100-ja.png" });
+    await app.setViewportSize({ width: 1280, height: 820 });
+    await app.getByTestId("mode-normal").click();
+  }
+  await expect.poll(async () => (await run.boundingBox())!.x - (await input.boundingBox())!.x).toBeGreaterThan(200);
+  await app.setViewportSize({ width: 900, height: 660 });
+  await expect.poll(async () => Math.abs((await run.boundingBox())!.x - (await input.boundingBox())!.x)).toBeLessThan(32);
+});
+
+test("D4-A Expert switches by measured area without stacking panes", async ({ app }) => {
+  await app.setViewportSize({ width: 1100, height: 760 });
+  await app.getByTestId("mode-expert").click();
+  const layout = app.getByTestId("expert-workspace");
+  const inputs = app.getByTestId("pane-inputs");
+  const inspector = app.getByTestId("pane-inspector");
+  const queue = app.getByTestId("pane-queue");
+  await expect(layout).toHaveAttribute("data-columns", "2");
+  await expect(inputs).toBeVisible();
+  await expect(inspector).toBeVisible();
+  await expect(queue).toBeHidden();
+  await app.getByTestId("pane-switch-queue").click();
+  await expect(queue).toBeVisible();
+  await expect(inspector).toBeHidden();
+  expect((await inputs.boundingBox())!.y).toBe((await queue.boundingBox())!.y);
+  await app.getByTestId("nav-toggle").click();
+  await expect(layout).toHaveAttribute("data-columns", "3");
+  await app.setViewportSize({ width: 640, height: 660 });
+  await expect(layout).toHaveAttribute("data-columns", "1");
+  await expect(queue).toBeVisible();
+  await queue.focus();
+  await app.keyboard.press("F6");
+  await expect(inputs).toBeFocused();
+  await expect(queue).toBeHidden();
+  await app.keyboard.press("Shift+F6");
+  await expect(queue).toBeFocused();
+  await app.setViewportSize({ width: 420, height: 660 });
+  const nav = app.getByTestId("nav-toggle");
+  await nav.click();
+  await expect(nav).toHaveAttribute("aria-expanded", "true");
+  await nav.press("Escape");
+  await expect(nav).toHaveAttribute("aria-expanded", "false");
+});
+
+test("D4-A keeps drafts and bounded separator widths through switches", async ({ app }) => {
+  const writes: string[] = [];
+  app.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/") && request.method() !== "GET") writes.push(path);
+  });
+  await app.setViewportSize({ width: 1440, height: 900 });
+  const typed = app.getByTestId("tx-input-path").locator("input");
+  await typed.fill("/synthetic/draft.wav");
+  await typed.evaluate((el) => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, cancelable: true, bubbles: true })));
+  await expect(typed).toHaveValue("/synthetic/draft.wav");
+  await app.getByTestId("mode-expert").click();
+  await expect(typed).toHaveValue("/synthetic/draft.wav");
+  const handle = app.getByTestId("resize-inputs");
+  await expect(handle).toBeVisible();
+  await handle.press("Home");
+  await expect(handle).toHaveAttribute("aria-valuenow", "260");
+  await handle.press("ArrowRight");
+  await expect(handle).toHaveAttribute("aria-valuenow", "276");
+  await handle.press("Shift+ArrowRight");
+  await expect(handle).toHaveAttribute("aria-valuenow", "340");
+  const left = (await handle.boundingBox())!;
+  await app.mouse.move(left.x + 4, left.y + 80);
+  await app.mouse.down();
+  await app.mouse.move(left.x + 28, left.y + 80);
+  await app.mouse.up();
+  await expect(handle).toHaveAttribute("aria-valuenow", "364");
+  const sidebar = app.getByTestId("resize-sidebar");
+  await sidebar.press("End");
+  await expect(sidebar).toHaveAttribute("aria-valuenow", "360");
+  await app.getByTestId("v1-policy-create-open").click();
+  const name = app.getByTestId("v1-policy-name").locator("input");
+  await name.fill("Synthetic draft");
+  await app.getByTestId("v1-policy-check").click();
+  await expect(app.getByTestId("v1-policy-confirm")).toBeVisible();
+  await app.setViewportSize({ width: 640, height: 660 });
+  await app.getByTestId("pane-switch-queue").click();
+  await expect(name).toBeHidden();
+  await app.getByTestId("mode-normal").click();
+  await expect(typed).toHaveValue("/synthetic/draft.wav");
+  await app.getByTestId("mode-expert").click();
+  await app.getByTestId("pane-switch-inspector").click();
+  await expect(name).toHaveValue("Synthetic draft");
+  await expect(app.getByTestId("v1-policy-confirm")).toBeVisible();
+  await app.setViewportSize({ width: 1440, height: 900 });
+  await expect(sidebar).toHaveAttribute("aria-valuenow", "360");
+  await sidebar.press("Enter");
+  await expect(sidebar).toHaveAttribute("aria-valuenow", "200");
+  await expect(handle).toHaveAttribute("aria-valuenow", "364");
+  await handle.press("Enter");
+  await expect(handle).not.toHaveAttribute("aria-valuenow", "364");
+  expect(writes).toEqual([]);
+});
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`D4-A splitter grip feedback in blue ${scheme}`, async ({ app }) => {
+    await app.emulateMedia({ colorScheme: scheme });
+    await expect(app.getByTestId("app-ready")).toHaveClass(new RegExp(`v-theme--${scheme}\\b`));
+    await app.getByTestId("mode-expert").click();
+    await expect(app.getByTestId("expert-workspace")).toHaveAttribute("data-columns", "3");
+    for (const id of ["resize-sidebar", "resize-inputs", "resize-queue"]) {
+      await expectSplitterFeedback(app, id);
+    }
+  });
+}

@@ -1,3 +1,4 @@
+import { type ExpertPane, type PaneRatios, clamp, HANDLE_PX, paneRange, ratiosFor, resolvePanes, SIDEBAR } from "./paneLayout";
 import { Store } from "./store";
 import type { ApiMode } from "./v1/apiMode";
 
@@ -14,7 +15,7 @@ export const SECTIONS = EXPERT_SECTIONS;
 export type SectionId = (typeof EXPERT_SECTIONS)[number];
 export type NormalSection = (typeof NORMAL_SECTIONS)[number];
 export type Mode = "normal" | "expert";
-export type ExpertPane = "inputs" | "inspector" | "queue";
+export type { ExpertPane } from "./paneLayout";
 
 /**
  * Below this window width the three Normal destinations fold into one menu that names the current
@@ -64,10 +65,13 @@ export interface ShellState {
   expertSection: SectionId;
   /** Which Expert pane is shown when the window is too narrow for three columns. */
   expertPane: ExpertPane;
+  expertRightPane: Exclude<ExpertPane, "inputs">;
   /** Expert sidebar: the person's choice for wide windows (rail when true). */
   navCollapsed: boolean;
   /** Expert sidebar: the person's choice for narrow windows (they start as a rail). */
   navExpandedNarrow: boolean;
+  sidebarWidth: number;
+  paneRatios: PaneRatios | null;
 }
 
 const INITIAL: ShellState = {
@@ -76,8 +80,11 @@ const INITIAL: ShellState = {
   normalSection: "transcribe",
   expertSection: "transcribe",
   expertPane: "inspector",
+  expertRightPane: "inspector",
   navCollapsed: false,
   navExpandedNarrow: false,
+  sidebarWidth: SIDEBAR.default,
+  paneRatios: null,
 };
 
 /** Whether the Expert sidebar is drawn as an icon rail for this window. */
@@ -118,7 +125,27 @@ export class ShellController {
   }
 
   showPane(expertPane: ExpertPane): void {
-    this.store.patch({ expertPane });
+    this.store.patch(expertPane === "inputs" ? { expertPane } : { expertPane, expertRightPane: expertPane });
+  }
+
+  resizeSidebar(width: number): void {
+    this.store.patch({ sidebarWidth: clamp(Math.round(width), SIDEBAR.min, SIDEBAR.max) });
+  }
+
+  resizePane(pane: "inputs" | "queue", width: number, areaWidth: number): void {
+    const { paneRatios } = this.store.get();
+    const widths = resolvePanes(areaWidth, paneRatios);
+    if (widths.columns === 1 || (pane === "queue" && widths.columns === 2)) return;
+    const { min, max } = paneRange(areaWidth, paneRatios, pane);
+    const content = Math.floor(areaWidth) - (widths.columns - 1) * HANDLE_PX;
+    const ratios = widths.columns === 3
+      ? { inputs: widths.inputs / content, queue: widths.queue / content }
+      : ratiosFor(areaWidth, paneRatios);
+    this.store.patch({ paneRatios: { ...ratios, [pane]: clamp(Math.round(width), min, max) / content } });
+  }
+
+  resetPanes(): void {
+    this.store.patch({ paneRatios: null });
   }
 
   /** Toggles the Expert sidebar for the current window class; wide and narrow choices are kept apart. */
