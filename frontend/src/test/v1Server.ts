@@ -304,15 +304,23 @@ export function fakeV1Server(options: { presets?: Json[]; policies?: Json[]; que
       const files = (body!.files as Json[]).map((f) => ({ client_file_id: f.client_file_id, input_identity: `in_${"a".repeat(32)}`, spec: SPEC }));
       return remember(201, { schema_version: 1, id: `res_${hex(32)}`, token, expires_at: "2099-01-01T00:00:00Z", files });
     }
-    if (path === "/api/v1/jobs") {
-      const record = tokens.get(body!.resolution_token as string);
+    const rerun = /^\/api\/v1\/jobs\/(job_[0-9a-f]{32})\/rerun$/.exec(path);
+    if (path === "/api/v1/jobs" || rerun) {
+      const submission = rerun ? body!.submission as Json : body!;
+      const source = rerun ? state.jobs.find(x => x.id === rerun[1]) : undefined;
+      if (rerun) {
+        if (!source) return error(404, "resource_not_found");
+        if (headers["If-Match"] !== `"${source.revision as number}"`) return error(412, "revision_conflict");
+        if (!["succeeded", "failed", "cancelled", "interrupted"].includes(source.status as string)) return error(409, "invalid_transition");
+      }
+      const record = tokens.get(submission.resolution_token as string);
       if (!record) return error(409, "resolution_invalid");
       if (record.used) return error(409, "resolution_consumed");
-      if (record.session !== canonical(body!.editing_session)) return error(409, "resolution_stale");
+      if (record.session !== canonical(submission.editing_session)) return error(409, "resolution_stale");
       record.used = true;
       // B7: one job per file, all or none in one transaction.
-      const session = body!.editing_session as Json;
-      const created = (session.files as Json[]).map((_, index) => job(session, index));
+      const session = submission.editing_session as Json;
+      const created = (session.files as Json[]).map((_, index) => ({ ...job(session, index), rerun_of: source?.id ?? null }));
       state.jobs.push(...created);
       state.queue.revision += 1;
       return remember(202, { schema_version: 1, jobs: created, queue_revision: state.queue.revision });

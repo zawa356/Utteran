@@ -1,5 +1,12 @@
 # AI 作業状態
 
+## 現在地（2026-11-20、D3-B Expert 成果物と現在設定での再実行、0.1.62・未リリース）
+
+- 基点 main `c1fad682be4ed85cac20365771b444c2bb82a167`（[#68](https://github.com/zawa356/Utteran/pull/68) 統合）。[main CI](https://github.com/zawa356/Utteran/actions/runs/44644947134) は 14/15 ジョブ成功。既存の retry 2 件、削除 2 件の E2E 失敗を含む。
+- 作業ブランチ `feat/ui3-d3b-artifacts-rerun`、作者 `zawa356`。Expert の結果・履歴から既存 B5/B7 で、SHA-256 一致を条件に現在設定の新規論理 Job を投入する。元 Job の CAS と retry 連鎖の確認は受理と同一トランザクション。結果不明は同じ要求だけを再照合する。
+- OS 既定アプリ起動と Explorer 選択表示は BLOCKED。内蔵 Viewer は対象外。ASR なしの再出力を束 E へ移管。Windows 実機・GPU は NOT_RUN。[D3-B 実装記録](docs/architecture/ui3/d3b-artifacts-rerun.md)。
+- Cloud Linux で pytest の既定一時領域とホーム書き込みに環境由来の失敗を確認。Git に無視される試験用出力配下と別の XDG 領域を指定し、対象の application 8 件は PASS。結果の全件数、Draft PR の push/PR CI は PR 本文を参照。
+
 ## 現在地（2026-11-19、D3-A Expert結果・履歴、0.1.61・未リリース）
 
 - 基点main `5ade41ad59f488eb7004759a69dc4a7100cd0ebd`。ブランチ `feat/ui3-d3a-results-history`。

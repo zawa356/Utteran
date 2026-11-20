@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
 import { choose, expect, SESSION, shot, test } from "./fixtures";
 
@@ -374,5 +375,77 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
     data: { schema_version: 1, dispatch: "running" },
   });
   expect(resumed.status()).toBe(200);
+  expect(legacyWrites(seen)).toEqual([]);
+});
+
+test("D3-B Expert results and history share explicit rerun and verified artifact status", async ({ app, request }) => {
+  const other = input("rerun-different.wav");
+  writeFileSync(other, "RIFF a different synthetic input");
+  await app.addInitScript(() => {
+    const native = window as Window & { pywebview?: unknown; rerunPick?: string };
+    native.pywebview = { api: { choose_path: async () => native.rerunPick ?? null } };
+  });
+  await app.goto(`/launch?session=${SESSION}`);
+  await expect(app.getByTestId("app-ready")).toBeVisible();
+  const seen = recordApi(app);
+  await expert(app, request, ["meeting.wav"]);
+  const [id] = await submitBatch(app, seen);
+  await ensureQueueRunning(app);
+  await app.getByTestId("nav-results").click();
+  const result = app.getByTestId("results-table-results").locator(`[data-root="${id}"]`);
+  await expect(result).toHaveAttribute("data-status", "succeeded", { timeout: 30_000 });
+  await result.getByTestId("results-select").click();
+  const source = await api<{ revision: number }>(request, `/api/v1/jobs/${id}`);
+  const before = writes(seen);
+  await app.getByTestId("v1-artifacts-load").click();
+  await expect(app.getByTestId("v1-artifacts-external-blocked")).toBeVisible();
+  await app.getByTestId("result-rerun").focus();
+  await app.keyboard.press("Enter");
+  await expect(app.getByTestId("rerun-dialog")).toContainText("現在の設定で再実行");
+  await expect(app.getByTestId("rerun-dialog")).toContainText("meeting.wav");
+  await app.getByTestId("rerun-pick").click();
+  await expect(app.getByTestId("rerun-close")).toBeEnabled();
+  await expect(app.getByTestId("rerun-dialog")).toContainText("meeting.wav");
+  await app.getByTestId("rerun-close").click();
+  expect(writes(seen)).toEqual(before);
+
+  await openHistory(app);
+  await row(app, "history", id!).getByTestId("results-select").click();
+  await app.setViewportSize({ width: 900, height: 660 });
+  await app.getByTestId("result-rerun").click();
+  const dialog = app.getByTestId("rerun-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(app.getByTestId("rerun-submit")).toBeDisabled();
+  await app.getByTestId("rerun-check").click();
+  await expect(dialog).toHaveAttribute("data-step", "resolved");
+  await app.getByTestId("rerun-submit").click();
+  await expect(dialog).toHaveAttribute("data-step", "accepted");
+  const path = `POST /api/v1/jobs/${id}/rerun`;
+  const posts = seen.filter(r => line(r) === path);
+  expect(posts).toHaveLength(1);
+  expect(await posts[0]!.headerValue("If-Match")).toBe(`"${source.revision}"`);
+  const { jobs: [created] } = (await (await posts[0]!.response())!.json()) as { jobs: { id: string; rerun_of: string; retry_of: null }[] };
+  expect(created).toMatchObject({ rerun_of: id, retry_of: null });
+  expect(created!.id).not.toBe(id);
+  await app.getByTestId("rerun-close").click();
+  await expect(row(app, "history", created!.id)).toHaveAttribute("data-status", "succeeded", { timeout: 30_000 });
+  await row(app, "history", created!.id).getByTestId("results-select").click();
+  await expect(app.getByTestId("results-detail")).toContainText(id!);
+  expect(await api(request, `/api/v1/jobs/${id}`)).toEqual(source);
+  await row(app, "history", id!).getByTestId("results-select").click();
+  await app.getByTestId("result-rerun").click();
+  await app.evaluate(path => {
+    (window as Window & { rerunPick?: string }).rerunPick = path;
+  }, other);
+  await app.getByTestId("rerun-pick").click();
+  await expect(dialog).toContainText("rerun-different.wav");
+  await app.getByTestId("rerun-check").click();
+  await expect(dialog).toHaveAttribute("data-step", "resolved");
+  await app.getByTestId("rerun-submit").click();
+  await expect(dialog).toHaveAttribute("data-step", "rejected");
+  expect((await seen.filter(r => line(r) === path).at(-1)!.response())!.status()).toBe(409);
+  await app.getByTestId("rerun-close").click();
+  await app.getByTestId("mode-normal").click();
+  await expect(app.getByTestId("result-rerun")).toHaveCount(0);
   expect(legacyWrites(seen)).toEqual([]);
 });

@@ -6,7 +6,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.61`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.62`（未release）。API・設定は1.0まで変更されます。
 
 > バックエンド（Phase A〜B9）の現在の構成・提供状況・制約・試験範囲は
 > [docs/architecture/README.md](docs/architecture/README.md)を正本とします。B5〜B9のv1 APIはすべて
@@ -16,7 +16,7 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 > Windows 11の実WebView2とCPU実モデルで差分を受入済み（**CONDITIONAL**）。OS DPI 125/150/200%とExplorer複数WAVのネイティブD&Dは未受入（[#22](https://github.com/zawa356/Utteran/issues/22)）。Viewer、Design Freezeどおりの画面構成、既定UI切替は未実装/未承認です（[S5-B](docs/architecture/ui3/s5b-multi-job-board.md)）。
 > **0.1.57（PR #58でmain統合、未リリース）**: 終了した内部ジョブ1件の「履歴のみ削除（墓標化）」を確認付きで行えます（`--next-ui-v1`のみ）。完全消去ではなく、backup等に残ります。**成果物ファイルの削除は、安全に削除できることを証明できないため全環境で無効**です。C2cの機能はWindows 11・実WebView2で固定HEADにおいて受入6/6 PASS（[#56の記録](https://github.com/zawa356/Utteran/issues/56#issuecomment-6996368194)）。ただしその後の監査・文書のみの差分はWindowsで再受入していません（[C2c設計](docs/architecture/program/c2c-deletion-design.md)）。
 > **0.1.58（Draft、未統合）**: 新UIのシェルを、通常モード＝上部の3項目（文字起こし／セットアップ／設定）、Expert＝6項目の管理サイドバーに分けました。入力・設定・ジョブは両モードで共有し、切替で投入・取消・削除は起きません。キュー専用画面・結果と履歴・外観の仕上げは後続です（[束D1](docs/architecture/ui3/d1-shell-navigation.md)）。
-> **0.1.61（D3-A・未リリース）**。開発専用のExpertに「結果」「履歴」を専用画面として追加しました。内部Jobごとの成果物メタデータ、再試行、非表示／再表示、履歴レコードの個別削除を扱います。本文Viewer・再出力・現在設定での再実行はD3-Bです。[D3-A実装記録](docs/architecture/ui3/d3a-results-history.md)。
+> **0.1.62（D3-B・未リリース）**。Expert の結果・履歴から現在の設定で再実行できます。成果物の外部閲覧は安全性を確認できるまで保留し、再出力は束Eへ移しました。 [D3-B](docs/architecture/ui3/d3b-artifacts-rerun.md)
 > `--next-ui`は従来の旧APIへの順次投入、引数なしは旧GUIのままです。v1は専用data rootでの明示opt-inに限ります。実機証拠とmain CIは[PR #53](https://github.com/zawa356/Utteran/pull/53#issuecomment-6940939036)に記録しています。
 > 0.1.50の開発用`python -m utteran_gui.capability_smoke`は、同じ専用rootでB4のready証拠を明示的に1回だけ作る**開発専用の入口**です。
 > 通常の起動・APIはsmokeを実行せず、Windows fw-cpu実モデルsmokeは専用VMで成功していますが、CUDA等のGPU実機検証は別課題です（[B4 smoke](docs/architecture/b4/smoke.md)）。

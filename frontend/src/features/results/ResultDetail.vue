@@ -3,10 +3,11 @@ import { useCore } from "../../composables/core";
 import { useCodeText } from "../../composables/v1";
 import type { JobV1 } from "../../api/v1Resources";
 import type { LogicalJob } from "../../domain/v1/logicalJobs";
+import { canRerun } from "../../domain/v1/batchJobs";
 import V1Artifacts from "../transcribe/V1Artifacts.vue";
 
 const props = defineProps<{ group: LogicalJob; label: string; history: boolean; hidden: boolean; busy: boolean }>();
-const { board, deletion } = useCore().v1!;
+const { board, deletion, rerun } = useCore().v1!;
 const { t, status, reason } = useCodeText();
 
 function plan(attempt: JobV1): void {
@@ -45,6 +46,9 @@ function plan(attempt: JobV1): void {
       <v-btn v-else variant="text" size="small" :disabled="busy" data-testid="v1-board-show" @click="board.setHidden(group.rootId, false)">
         {{ t("v1.board.show") }}
       </v-btn>
+    </div>
+    <div v-if="canRerun(group)" class="u-row">
+      <v-btn size="small" variant="outlined" :disabled="busy" data-testid="result-rerun" @click="rerun.openRerun(group)">{{ t("results.rerun") }}</v-btn>
     </div>
     <h3 class="u-subheading">{{ t("results.attempts") }}</h3>
     <p v-if="group.branched" class="text-caption">{{ t("v1.board.branched") }}</p>

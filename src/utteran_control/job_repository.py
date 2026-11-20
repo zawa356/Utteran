@@ -610,13 +610,37 @@ class JobControlStore(ControlStore):
         _check_private(wire)
         return canonical(wire)
 
+    def _check_rerun_source(self, db: sqlite3.Connection, source: str, expected: int) -> None:
+        # A rerun starts from the leaf of a single, finished retry chain. Test the
+        # entire chain under the same write lock as insertion, including hidden jobs.
+        current: str | None = source
+        child: str | None = None
+        seen: set[str] = set()
+        while current is not None:
+            if current in seen:
+                raise ControlError(E.INVALID_TRANSITION)
+            seen.add(current)
+            kind, status, revision, _ = self._row(db, current)
+            if child is None and revision != expected:
+                raise ControlError(E.REVISION_CONFLICT)
+            if kind != "job" or status not in transitions.TERMINAL | {S.INTERRUPTED}:
+                raise ControlError(E.INVALID_TRANSITION)
+            _, _, parent, _ = self._snapshot_row(db, current)
+            children = db.execute(
+                "SELECT operation_id FROM job_snapshots WHERE retry_of = ? LIMIT 2",
+                (current,),
+            ).fetchall()
+            if [row[0] for row in children] != ([] if child is None else [child]):
+                raise ControlError(E.INVALID_TRANSITION)
+            child, current = current, parent
+
     def accept_batch(
         self,
         scope: IdempotencyScope,
         digest: str,
         snapshots: Sequence[JobSnapshot],
         *,
-        rerun_of: str | None = None,
+        rerun: tuple[str, int] | None = None,
     ) -> AcceptedBatch:
         """Commit every job of one submission, or none of them.
 
@@ -631,11 +655,10 @@ class JobControlStore(ControlStore):
             replay = self._batch_replay(db, scope, digest)
             if replay is not None:
                 return replay
-            if rerun_of is not None:
-                kind, status, _, _ = self._row(db, rerun_of)
-                self._snapshot_row(db, rerun_of)
-                if kind != "job" or status not in transitions.TERMINAL | {S.INTERRUPTED}:
-                    raise ControlError(E.INVALID_TRANSITION)
+            rerun_of = None
+            if rerun is not None:
+                rerun_of, expected = rerun
+                self._check_rerun_source(db, rerun_of, expected)
             batch_id = _new_id("bat_")
             ids = [self._insert_job(db, body, batch_id, rerun_of=rerun_of) for body in bodies]
             self._queue_changed(db, R.SUBMITTED)

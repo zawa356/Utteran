@@ -5,3 +5,13 @@
 既定アプリ起動と Explorer での選択表示は **BLOCKED**。同一ユーザーの別プロセスによるファイル・親ディレクトリの差替えを競合モデルに含める。所有者マーカー、reparse point、サイズ、digest の再検査をしても、関連付けアプリや Explorer が後からパスを解決する時点の対象を証明できない。入力名に空白や Unicode を含む場合も、この問題は引数の引用方法では解消しない。Linux のデスクトップ起動にも同じ制約があり、Explorer 相当操作は対応外。
 
 共有の成果物メタデータ表示を継続し、Expert の確認済み成果物に利用不可を表示する。GET 契約は従来どおり。OS 起動用の POST とランチャーは公開しない。UI-4 で、対象の固定を証明できる実装が成立した場合に Windows WebView2、既定アプリと Explorer の実機受入を行う。現時点では **NOT_RUN**。
+
+## D3-B2 現在設定での再実行
+
+Expert の結果・履歴で、終了済みの一本の retry 連鎖の最新 Job ID と revision を固定する。現在の入力一覧に候補があれば表示し、ネイティブ picker でも一時選択できる。選択は既存入力一覧に書き戻さない。B5 validation と B7 execution-resolution の共通 batch 処理で、現在の Preset/Policy の revision、共通設定、入力別 override と出力先を含む1件の EditingSession を検証する。明示的な実行で新しい論理 Job が作られ、共有 board に `rerun_of` が表示される。
+
+公開ルートと wire schema は既存の `POST /api/v1/jobs/{id}/rerun`、`RerunRequest` と 202 `JobBatch` を使用する。以前の成功応答の replay を最初に確認する。新規受理では、凍結した入力の stat 情報と SHA-256 を登録直前に読み直し、元の private snapshot に保存した SHA-256 と比較する。元の場所にファイルが無くても、全バイトが同じ選択ファイルは受理できる。ハッシュ不一致または最終再確認不能は 409 `input_changed`。解決後に候補が消失・変更した場合は既存の 409 `resolution_stale` でも拒否する。新規処理が必要な別内容の入力は通常の新規投入を使う。
+
+DB 書き込みトランザクションの中で元 Job の `If-Match`、終了状態、retry 連鎖の最新性と分岐の有無を確認する。競合、削除済み、分岐はそれぞれ 412、410、409。受理時は既存 B7 の新規 snapshot、出力ディレクトリ命名と上書き防止が適用される。元 Job の状態、snapshot、履歴の可視性は維持する。412 の後は一覧を更新し、対象の再選択を求める。結果不明時は共有 mutation gate を保持し、明示操作で同じ ID・revision・Idempotency-Key・body だけを再送する。リロードをまたぐ再照合はページメモリに限定される。
+
+入力内容の照合は時点の検証で、ファイルは実行まで固定されない。B7 の既存の開始直前再確認は変更された入力を拒否する。共有 board に出ない非表示の retry 枝もサーバーの判定には含む。Windows WebView2 のネイティブ picker、DPI、実 GPU は NOT_RUN。内蔵 Viewer は対象外、ASR なしの再出力は束 E。#59、#60、#70 は継続。D3-B は [Issue #21](https://github.com/zawa356/Utteran/issues/21) の UI-3 実装で、[Epic #18](https://github.com/zawa356/Utteran/issues/18) に属する。

@@ -6,7 +6,7 @@ utteran is a local desktop app and CLI that creates speaker-aware transcripts fr
 It exports SRT, VTT, JSON, plain text, and Markdown without sending the recording to a cloud
 transcription API.
 
-> Current development version: `0.1.61` (unreleased).
+> Current development version: `0.1.62` (unreleased).
 > APIs and configuration may change before 1.0.
 
 > The current backend (Phase A-B9) structure, feature status, limits and test coverage are maintained in
@@ -17,7 +17,7 @@ transcription API.
 > The changed behavior passed Windows 11 WebView2 and real CPU-model acceptance **conditionally**. Native OS DPI 125/150/200% and Explorer multi-WAV drag-and-drop are still unverified ([#22](https://github.com/zawa356/Utteran/issues/22)). The full viewer, Design Freeze screen layout and default UI switch remain unimplemented or unapproved ([S5-B](docs/architecture/ui3/s5b-multi-job-board.md)).
 > **0.1.57 (merged to main via PR #58; unreleased)**: in `--next-ui-v1` only, the history record of one finished internal job can be deleted ("history only", a tombstone) after a confirmation. This is not complete erasure (backups and other places keep data). **Deleting output files is disabled on every platform**, because a safe deletion cannot be proven. The C2c feature passed Windows 11 / real WebView2 acceptance 6/6 on a fixed HEAD ([#56 record](https://github.com/zawa356/Utteran/issues/56#issuecomment-6996368194)); the later audit- and docs-only changes were not re-accepted on Windows ([C2c design](docs/architecture/program/c2c-deletion-design.md)).
 > **0.1.58 (Draft, not merged)**: the new UI shell is split into Normal mode (three destinations in the top bar: Transcribe / Setup / Settings) and Expert mode (a six-item management sidebar). Inputs, settings and jobs are shared by both modes; switching never submits, cancels or deletes anything. The queue page, results & history and the final look come later ([bundle D1](docs/architecture/ui3/d1-shell-navigation.md)).
-> **0.1.61 (D3-A, unreleased)**. Expert mode in `--next-ui-v1` has a dedicated Results and History page for finished logical jobs, output metadata, retries, hide/restore, and individual history-record deletion. D3-B covers the viewer, re-export, and rerun with current settings. [D3-A implementation record](docs/architecture/ui3/d3a-results-history.md).
+> **0.1.62 (D3-B, unreleased)**. Expert Results and History can rerun a job with current settings. External artifact actions are blocked pending a safe design. Re-export moved to bundle E. [D3-B](docs/architecture/ui3/d3b-artifacts-rerun.md)
 > The older `--next-ui` still submits sequentially to the legacy API, and default GUI/CLI launch is unchanged. See the [PR #53 merge and acceptance record](https://github.com/zawa356/Utteran/pull/53#issuecomment-6940939036).
 > The 0.1.50 developer entry `python -m utteran_gui.capability_smoke` explicitly runs one B4 smoke in the same dedicated
 > root to record ready evidence. Normal startup and APIs never run a smoke; the real fw-cpu smoke succeeded in a dedicated Windows VM; GPU hardware acceptance is

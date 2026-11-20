@@ -9,6 +9,7 @@ import ExpertWorkspace from "../expert/ExpertWorkspace.vue";
 import SettingsPage from "../settings/SettingsPage.vue";
 import NormalWorkspace from "../workspace/NormalWorkspace.vue";
 import QueuePage from "../queue/QueuePage.vue";
+import RerunDialog from "../results/RerunDialog.vue";
 import ResultsPage from "../results/ResultsPage.vue";
 import V1DeleteDialog from "../transcribe/V1DeleteDialog.vue";
 import ExpertSidebar from "./ExpertSidebar.vue";
@@ -74,6 +75,7 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
         <h1 class="u-heading">{{ currentTitle }}</h1>
         <NotMigrated :section="currentTitle" :stage="STAGE[state.section]" />
       </section>
+      <RerunDialog v-if="apiMode === 'v1-dev'" />
       <V1DeleteDialog v-if="apiMode === 'v1-dev'" />
     </v-main>
   </v-layout>

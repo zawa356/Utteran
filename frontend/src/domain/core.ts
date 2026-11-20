@@ -31,6 +31,7 @@ export interface V1Core {
   job: V1SingleJobController;
   /** S5-B: the selected rows as one atomic B7 batch (same file ids as `job`). */
   batch: V1BatchController;
+  rerun: V1BatchController;
   /** Every durable job as logical jobs: queue, history, hide/show, artifact view. */
   board: V1JobBoardController;
   /** C2c: history-only / history-and-outputs deletion of one internal job (plan → approval → execute). */
@@ -115,7 +116,16 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
         job.refreshRecentIfLoaded();
       },
     });
-    v1 = { api, queueGate, library, job, batch, board, deletion };
+    const rerun = new V1BatchController(api, library.store, inputs.store, transcription.store, {
+      gate: queueGate,
+      fileIdFor: (rowId) => job.fileIdFor(rowId),
+      onRerunSettled: () => {
+        void board.refresh();
+        void job.loadQueue();
+        job.refreshRecentIfLoaded();
+      },
+    });
+    v1 = { api, queueGate, library, job, batch, rerun, board, deletion };
   }
   return {
     host: deps.host,
@@ -130,6 +140,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     dispose() {
       v1?.job.dispose();
       v1?.batch.dispose();
+      v1?.rerun.dispose();
       v1?.board.dispose();
       v1?.deletion.dispose();
       batch.dispose();
