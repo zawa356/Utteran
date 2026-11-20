@@ -23,6 +23,7 @@ import { toApiError } from "../operation";
 import { checkPath, type PathProblem } from "../paths";
 import { type ReadonlyStore, Store } from "../store";
 import type { FormState } from "../transcription";
+import { isFinished, type LogicalJob } from "./logicalJobs";
 import type { LibraryState } from "./library";
 import { canonical, clone, commonOverrides, effectiveSettings, type SettingOverride } from "./settings";
 
@@ -105,7 +106,20 @@ export function fileOverrides(common: JsonObject, row: InputRow): SettingOverrid
   return out;
 }
 
+interface RerunSelection {
+  readonly jobId: string;
+  readonly revision: number;
+  readonly sourceRowId: string | null;
+  readonly path: string | null;
+}
+
+export function canRerun(group: LogicalJob): boolean {
+  return !group.branched && !group.incomplete && group.open.length === 0 && isFinished(group.latest);
+}
+
 export interface V1BatchOptions {
+  /** Refresh shared reads after an accepted rerun or a stale source revision. */
+  onRerunSettled?: () => void;
   gate?: QueueMutationGate;
   now?: () => number;
   random?: RandomSource;
@@ -116,6 +130,7 @@ export interface V1BatchOptions {
 export class V1BatchController {
   readonly store = new Store<V1BatchState>(initial);
   readonly gate: QueueMutationGate;
+  readonly rerunSelection = new Store<RerunSelection | null>(null);
   private readonly submitOwner = Symbol("batch submit");
   private disposed = false;
   private readonly now: () => number;
@@ -131,10 +146,43 @@ export class V1BatchController {
     this.now = options.now ?? (() => Date.now());
   }
 
+  openRerun(group: LogicalJob): void {
+    if (!this.options.onRerunSettled || this.gate.busy() || this.rerunSelection.get() || !canRerun(group)) return;
+    const source = group.latest;
+    const candidate = this.inputs.get().rows.find(row => this.options.fileIdFor(row.clientFileId) === source.clientFileId);
+    this.rerunSelection.set({ jobId: source.id, revision: source.revision, sourceRowId: candidate?.clientFileId ?? null, path: candidate?.inputPath ?? null });
+  }
+
+  selectRerunInput(path: string): void {
+    const target = this.rerunSelection.get();
+    if (!target || this.busy() || this.store.get().step === "unknown") return;
+    this.reset();
+    this.rerunSelection.set({ ...target, path });
+  }
+
+  closeRerun(): void {
+    if (this.busy() || this.store.get().step === "unknown") return;
+    this.reset();
+    this.rerunSelection.set(null);
+  }
+
   /** Pure view of what `prepare()` would freeze now: the selected rows, in list order. */
   evaluate(): BatchEvaluation {
     const lib = this.library.get();
-    const rows = this.inputs.get().rows.filter((row) => row.selected);
+    const inputs = this.inputs.get().rows;
+    const target = this.rerunSelection.get();
+    let rows = inputs.filter(row => row.selected);
+    if (this.options.onRerunSettled) {
+      rows = [];
+      if (target?.path) {
+        // A picker replaces the input path. Settings come from the job's original row.
+        const sourceRow = inputs.find(row => row.clientFileId === target.sourceRowId);
+        rows = [sourceRow ? { ...sourceRow, inputPath: target.path } : {
+          clientFileId: target.jobId, inputPath: target.path, source: "picker", selected: true,
+          overrides: {}, output: { kind: "inherit" }, attemptFloor: 0,
+        }];
+      }
+    }
     const issues: BatchIssue[] = [];
     for (const field of ["preset", "policy"] as const) {
       const s = lib[field];
@@ -197,8 +245,10 @@ export class V1BatchController {
   }
 
   canPrepare(): boolean {
-    const step = this.store.get().step;
-    return !this.disposed && !this.busy() && step !== "unknown" && this.evaluate().session !== null;
+    const { step, failedAt, error } = this.store.get();
+    return !this.disposed && !this.busy() && step !== "unknown"
+      && !(this.rerunSelection.get() && failedAt === "submission" && [404, 410, 412].includes(error?.status ?? 0))
+      && this.evaluate().session !== null;
   }
 
   canSubmit(): boolean {
@@ -219,7 +269,8 @@ export class V1BatchController {
     if (!this.canSubmit()) return;
     const prepared = this.store.get().prepared!;
     const body = deepFreeze({ schema_version: 1, resolution_token: prepared.resolution!.token, editing_session: prepared.session, resume_mode: RESUME_MODE });
-    await this.runSubmission(new MutationIntent<JsonObject>(body, this.options.random));
+    const request = this.rerunSelection.get() ? deepFreeze({ schema_version: 1, submission: body }) : body;
+    await this.runSubmission(new MutationIntent<JsonObject>(request, this.options.random));
   }
 
   /** Explicit re-check of an unknown answer: the same key and frozen body, once. */
@@ -282,10 +333,13 @@ export class V1BatchController {
 
   private async runSubmission(intent: MutationIntent<JsonObject>): Promise<void> {
     if (!this.gate.owns(this.submitOwner) && !this.gate.acquire(this.submitOwner)) return;
+    const target = this.rerunSelection.get();
     this.store.patch({ step: "submitting", failedAt: null, error: null, pending: intent });
     const prepared = this.store.get().prepared!;
     try {
-      const { batch } = await this.api.submit(intent);
+      const { batch } = target
+        ? await this.api.rerun(target.jobId, target.revision, intent)
+        : await this.api.submit(intent);
       if (this.disposed) return;
       const expected = prepared.files.map((f) => f.fileId);
       const got = batch.jobs.map((job) => job.clientFileId);
@@ -296,8 +350,10 @@ export class V1BatchController {
       }
       const jobs = expected.map((fileId) => batch.jobs.find((job) => job.clientFileId === fileId)!);
       this.store.patch({ step: "accepted", pending: null, error: null, jobs });
+      if (target) this.options.onRerunSettled?.();
     } catch (error) {
       this.fail("submission", error, intent);
+      if (target && this.store.get().error?.status === 412) this.options.onRerunSettled?.();
     } finally {
       if (this.store.get().step !== "unknown") this.gate.release(this.submitOwner);
     }

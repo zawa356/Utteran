@@ -565,6 +565,7 @@ export interface V1ResourcesApi {
   validate(intent: MutationIntent<JsonObject>): Promise<ValidationV1>;
   resolve(intent: MutationIntent<JsonObject>): Promise<ResolutionV1>;
   submit(intent: MutationIntent<JsonObject>): Promise<{ status: number; batch: JobBatchV1 }>;
+  rerun(id: string, expectedRevision: number, intent: MutationIntent<JsonObject>): Promise<{ status: number; batch: JobBatchV1 }>;
   getJob(jobId: string, signal?: AbortSignal): Promise<JobV1>;
   /** One page of `GET /api/v1/jobs` (B7: oldest first, 100 per page, opaque `next_cursor`). */
   listJobs(cursor?: string | null, signal?: AbortSignal, visibility?: JobVisibilityFilter): Promise<JobListV1>;
@@ -665,6 +666,14 @@ export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
     },
     async submit(intent) {
       const response = await write("/api/v1/jobs", "POST", intent, parseJobBatchV1, {}, V1_RESOLVE_TIMEOUT_MS);
+      return { status: response.status, batch: response.data };
+    },
+    async rerun(id, expectedRevision, intent) {
+      const response = await write(`/api/v1/jobs/${jobId(id)}/rerun`, "POST", intent, parseJobBatchV1, { "If-Match": ifMatch(expectedRevision) }, V1_RESOLVE_TIMEOUT_MS);
+      if (response.status !== 202 || response.data.jobs.length !== 1 || response.data.jobs.some(job => job.rerunOf !== id || job.id === id || job.retryOf !== null)) {
+        intent.state = "unknown";
+        throw malformed(response.status);
+      }
       return { status: response.status, batch: response.data };
     },
     async getJob(id, signal) {

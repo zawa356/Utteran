@@ -804,11 +804,24 @@ class JobAdmission:
         holder: str,
         scope: IdempotencyScope,
         digest: str,
-        rerun_of: str | None = None,
+        rerun: tuple[str, int] | None = None,
     ) -> AcceptedBatch:
         snapshots, record = self._freeze(submit, session, holder)
         try:
-            accepted = self.store.accept_batch(scope, digest, snapshots, rerun_of=rerun_of)
+            if rerun is not None:
+                original = self.store.get_snapshot(rerun[0]).input_identity
+                selected = snapshots[0].input_identity
+                try:
+                    current = capture_input(selected.path)
+                except AdmissionError:
+                    raise AdmissionError(
+                        "input_changed", 409, [_issue("/input_path", "input_unavailable")]
+                    ) from None
+                if current != selected or current.sha256 != original.sha256:
+                    raise AdmissionError(
+                        "input_changed", 409, [_issue("/input_path", "input_changed")]
+                    )
+            accepted = self.store.accept_batch(scope, digest, snapshots, rerun=rerun)
         except BaseException:
             self.tokens.release(record)  # rolled back (or unknown): never consumed
             raise
@@ -858,7 +871,14 @@ class JobAdmission:
                     422,
                     [_issue("/submission/editing_session/files", "rerun_single_file")],
                 )
-            return self._commit(request.submission, session, holder, scope, digest, rerun_of=job_id)
+            return self._commit(
+                request.submission,
+                session,
+                holder,
+                scope,
+                digest,
+                rerun=(job_id, expected_revision),
+            )
 
         return self._single_flight(scope, digest, attempt)
 

@@ -1,5 +1,6 @@
 import type { APIRequestContext, Page, Request, Route } from "@playwright/test";
 import { choose, expect, SESSION, SESSION_HEADER, shot, test } from "./fixtures";
+import { test as isolatedTest } from "./isolatedV1";
 
 /**
  * Bundle D2-A: the Expert queue page in the `--next-ui-v1` shape. It reads the one board
@@ -15,8 +16,7 @@ import { choose, expect, SESSION, SESSION_HEADER, shot, test } from "./fixtures"
  */
 
 const ROOT = process.env.UI2_V1_ROOT!;
-const input = (name: string) => `${ROOT}/in/${name}`;
-const OUT = `${ROOT}/out`;
+const input = (name: string, root = ROOT) => `${root}/in/${name}`;
 const AUTH = { Cookie: `utteran_gui_session=${SESSION}` };
 const PRESET = "S5-B 合成";
 const POLICY = "S5-B CPU";
@@ -71,12 +71,12 @@ async function library(page: Page, request: APIRequestContext): Promise<void> {
   await expect(page.getByTestId("v1-policy-frozen")).toContainText(POLICY);
 }
 
-async function expert(page: Page, request: APIRequestContext, files: string[]): Promise<void> {
+async function expert(page: Page, request: APIRequestContext, files: string[], root = ROOT): Promise<void> {
   await page.getByTestId("mode-expert").click();
   await library(page, request);
-  await page.getByTestId("v1-output-path").locator("input").fill(OUT);
+  await page.getByTestId("v1-output-path").locator("input").fill(`${root}/out`);
   for (const name of files) {
-    await page.getByTestId("tx-input-path").locator("input").fill(input(name));
+    await page.getByTestId("tx-input-path").locator("input").fill(input(name, root));
     await page.getByTestId("tx-input-add-typed").click();
   }
   await page.getByTestId("tx-list-select-all").click();
@@ -238,9 +238,10 @@ test("setup: cancel the jobs earlier specs left waiting", async ({ request }) =>
   await drain(request, "setup");
 });
 
-test("D2A-01/03/05/06: real B7 data as a table + detail; B7 order, places and names; search/filter/sort only read", async ({ app, request }) => {
+isolatedTest("D2A-01/03/05/06: real B7 data as a table + detail; B7 order, places and names; search/filter/sort only read", async ({ app, request, backend: { root } }) => {
   const seen = recordApi(app);
-  await expert(app, request, ["slow-meeting.wav", "meeting.wav", "other.wav"]);
+  expect(await api<QueueWire>(request, "/api/v1/queue")).toMatchObject({ active_item_id: null, items: [] });
+  await expert(app, request, ["slow-meeting.wav", "meeting.wav", "other.wav"], root);
   const ids = await submitBatch(app, seen);
   expect(ids).toHaveLength(3);
   await ensureQueueRunning(app);
@@ -314,11 +315,22 @@ test("D2A-01/03/05/06: real B7 data as a table + detail; B7 order, places and na
   await expect.poll(() => rowRoots(app)).toEqual([ids[0]]);
   await choose(app, "queue-filter", "待機中");
   await expect.poll(() => rowRoots(app)).toEqual(ids.slice(1));
+  const filter = app.getByTestId("queue-filter").locator("input[role=combobox]");
+  const filterMenu = app.locator(`[id="${await filter.getAttribute("aria-controls")}"]`);
   await choose(app, "queue-filter", "すべて");
+  await expect(filter).toHaveValue("すべて");
+  await expect(filterMenu.locator(".v-overlay__content")).toBeHidden();
+  await expect.poll(() => rowRoots(app)).toEqual(ids);
 
-  // Display sort: names; B7's order and the queue revision are untouched.
+  // Select from the sort control's own menu after the filter closes.
+  // Display sorting must leave B7's order and the queue revision untouched.
   await expect(app.getByTestId("queue-order-note")).toBeVisible();
-  await choose(app, "queue-sort", "名前");
+  const sort = app.getByTestId("queue-sort").locator("input[role=combobox]");
+  const sortMenu = app.locator(`[id="${await sort.getAttribute("aria-controls")}"]`);
+  await app.getByTestId("queue-sort").click();
+  await expect(sort).toHaveAttribute("aria-expanded", "true");
+  await sortMenu.getByRole("option", { name: "名前", exact: true }).click();
+  await expect(sort).toHaveValue("名前");
   await expect.poll(() => rowRoots(app)).toEqual([ids[1], ids[2], ids[0]]);
   await expect(app.getByTestId("queue-sort-note")).toBeVisible();
   // The selection follows the row, not the screen position.
@@ -332,9 +344,9 @@ test("D2A-01/03/05/06: real B7 data as a table + detail; B7 order, places and na
 
   // Privacy: no path anywhere on the page.
   const text = (await page$(app).textContent()) ?? "";
-  expect(text).not.toContain(ROOT);
+  expect(text).not.toContain(root);
   expect(text).not.toContain("/in/");
-  expect(await page$(app).innerHTML()).not.toContain(ROOT);
+  expect(await page$(app).innerHTML()).not.toContain(root);
   // No write and nothing on the legacy job routes while the page was used.
   expect(writes(seen).slice(mark)).toEqual([]);
   expect(seen.map(line).filter((l) => / \/api\/(jobs|queue)(\/|$)/.test(l))).toEqual([]);

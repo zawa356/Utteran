@@ -10,7 +10,7 @@ import type { MessageKey } from "../../i18n";
  * whether the bytes still match the record made at completion. No file name and no path are shown
  * (the API returns none). Read on request only; nothing here writes or deletes.
  */
-const props = defineProps<{ jobId: string }>();
+const props = defineProps<{ jobId: string; showExternalStatus?: boolean }>();
 const core = useCore();
 const board = core.v1!.board;
 const state = useStore(board.store);
@@ -33,6 +33,9 @@ const view = computed(() => entry.value?.view ?? null);
         </li>
       </ul>
       <v-alert v-if="view.unexpectedCount > 0" type="warning" density="compact" data-testid="v1-artifacts-unexpected">{{ t("v1.artifacts.unexpected", { count: view.unexpectedCount }) }}</v-alert>
+      <p v-if="showExternalStatus && view.state === 'available' && view.items.some(item => item.integrity === 'verified')" class="text-caption" data-testid="v1-artifacts-external-blocked">
+        {{ t("results.externalBlocked") }}
+      </p>
       <p class="text-caption">{{ t("v1.artifacts.note") }}</p>
     </template>
   </div>

@@ -3,10 +3,11 @@ import { useCore } from "../../composables/core";
 import { useCodeText } from "../../composables/v1";
 import type { JobV1 } from "../../api/v1Resources";
 import type { LogicalJob } from "../../domain/v1/logicalJobs";
+import { canRerun } from "../../domain/v1/batchJobs";
 import V1Artifacts from "../transcribe/V1Artifacts.vue";
 
 const props = defineProps<{ group: LogicalJob; label: string; history: boolean; hidden: boolean; busy: boolean }>();
-const { board, deletion } = useCore().v1!;
+const { board, deletion, rerun } = useCore().v1!;
 const { t, status, reason } = useCodeText();
 
 function plan(attempt: JobV1): void {
@@ -46,6 +47,9 @@ function plan(attempt: JobV1): void {
         {{ t("v1.board.show") }}
       </v-btn>
     </div>
+    <div v-if="canRerun(group)" class="u-row">
+      <v-btn size="small" variant="outlined" :disabled="busy" data-testid="result-rerun" @click="rerun.openRerun(group)">{{ t("results.rerun") }}</v-btn>
+    </div>
     <h3 class="u-subheading">{{ t("results.attempts") }}</h3>
     <p v-if="group.branched" class="text-caption">{{ t("v1.board.branched") }}</p>
     <p v-if="group.incomplete" class="text-caption">{{ t("v1.board.incomplete") }}</p>
@@ -67,8 +71,7 @@ function plan(attempt: JobV1): void {
       {{ t("v1.delete.refusal.artifact_deletion_disabled") }}
     </p>
     <v-divider />
-    <V1Artifacts :key="group.latest.id" :job-id="group.latest.id" />
-    <p class="text-caption">{{ t("results.future") }}</p>
+    <V1Artifacts :key="group.latest.id" :job-id="group.latest.id" show-external-status />
   </v-card>
 </template>
 

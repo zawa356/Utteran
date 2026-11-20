@@ -4,6 +4,7 @@ import { createFakeHost } from "../../host/fake";
 import { json } from "../../test/fakeFetch";
 import { fakeV1Server, V1_POLICY, V1_PRESET } from "../../test/v1Server";
 import { createCore } from "../core";
+import { groupLogicalJobs } from "./logicalJobs";
 import { V1_MAX_BATCH } from "./batchJobs";
 
 const OUT = ["", "synthetic", "out"].join("/");
@@ -167,5 +168,117 @@ describe("S5-B v1 atomic batch (selected rows -> one B7 batch)", () => {
     await batch.submit();
     expect(batch.store.get().step).toBe("unknown");
     expect(batch.store.get().jobs).toEqual([]);
+  });
+});
+
+describe("rerun", () => {
+  it.each(["moved.wav", "other.wav"])("uses the source row's current settings when the picker returns %s", async (filename) => {
+    const { core, v1, rows } = await ready(["a.wav", "other.wav"]);
+    const { api, job, rerun } = core.v1!;
+    const [original, other] = rows();
+    v1.addJobs(1);
+    const [wire] = v1.jobs;
+    wire!.status = "succeeded";
+    (wire!.snapshot as { client_file_id: string }).client_file_id = job.fileIdFor(original!.clientFileId);
+    const source = await api.getJob(wire!.id as string);
+
+    core.inputs.clearSelection();
+    core.inputs.toggle(other!.clientFileId, true);
+    core.inputs.stage({ language: "ja", output: { kind: "custom", path: `${OUT}/other` } });
+    core.inputs.applyStaged();
+    core.inputs.clearSelection();
+    core.inputs.toggle(original!.clientFileId, true);
+    core.inputs.stage({ asrModel: "large-v3", language: "en", output: { kind: "custom", path: `${OUT}/source` } });
+    core.inputs.stageFormat("vtt", true);
+    core.inputs.applyStaged();
+    const before = rows();
+
+    rerun.openRerun(groupLogicalJobs([source])[0]!);
+    rerun.selectRerunInput(media(filename));
+    await rerun.prepare();
+    expect(rerun.store.get().step).toBe("resolved");
+    const expected = {
+      client_file_id: source.clientFileId,
+      input_path: media(filename),
+      output_dir: `${OUT}/source`,
+      overrides: [
+        { path: "/asr/model", value: "large-v3" },
+        { path: "/asr/language", value: "en" },
+        { path: "/output/formats", value: expect.arrayContaining(["vtt"]) },
+      ],
+    };
+    for (const endpoint of ["/api/v1/validations", "/api/v1/execution-resolutions"]) {
+      expect(JSON.parse(writes(v1, endpoint)[0]!.body!).files).toEqual([expected]);
+    }
+    await rerun.submit();
+    const path = `/api/v1/jobs/${source.id}/rerun`;
+    expect(JSON.parse(writes(v1, path)[0]!.body!).submission.editing_session.files).toEqual([expected]);
+    expect(rows()).toBe(before);
+
+    rerun.closeRerun();
+    rerun.openRerun(groupLogicalJobs([source])[0]!);
+    rerun.selectRerunInput(media("other.wav"));
+    await rerun.prepare();
+    core.inputs.remove([original!.clientFileId]);
+    expect(rerun.isStale()).toBe(true);
+    expect(rerun.canSubmit()).toBe(false);
+    await rerun.prepare();
+    expect(JSON.parse(writes(v1, "/api/v1/validations").at(-1)!.body!).files).toEqual([
+      expect.objectContaining({ input_path: media("other.wav"), output_dir: OUT, overrides: [] }),
+    ]);
+    core.dispose();
+  });
+
+  it("keeps the target and shared gate across a lost response, then replays exactly once", async () => {
+    const { core, v1, rows } = await ready(["a.wav"]);
+    const { api, rerun, board, queueGate } = core.v1!;
+    v1.addJobs(1);
+    const [wire] = v1.jobs;
+    wire!.status = "succeeded";
+    const source = await api.getJob(wire!.id as string);
+    const [group] = groupLogicalJobs([source]);
+    rerun.openRerun(group!);
+    expect(rerun.canPrepare()).toBe(false);
+    const originalRows = rows();
+    rerun.selectRerunInput(media("moved.wav"));
+    await rerun.prepare();
+    expect(rerun.store.get().prepared?.files).toHaveLength(1);
+    expect(rows()).toBe(originalRows);
+    const path = `/api/v1/jobs/${source.id}/rerun`;
+    v1.inject.set(`POST ${path}`, { reply: new TypeError("network"), apply: true });
+    await Promise.all([rerun.submit(), rerun.submit()]);
+    expect(rerun.store.get().step).toBe("unknown");
+    await board.refresh();
+    rerun.closeRerun();
+    rerun.selectRerunInput(media("ignored.wav"));
+    expect(queueGate.busy()).toBe(true);
+    expect(rerun.rerunSelection.get()).toMatchObject({ jobId: source.id, revision: source.revision, path: media("moved.wav") });
+    await rerun.recheck();
+    expect(writes(v1, path)).toHaveLength(2);
+    expect(writes(v1, path)[0]).toEqual(writes(v1, path)[1]);
+    expect(v1.jobs).toHaveLength(2);
+    expect(rerun.store.get()).toMatchObject({ step: "accepted", jobs: [{ rerunOf: source.id, retryOf: null }] });
+    expect(queueGate.busy()).toBe(false);
+    expect(await api.getJob(source.id)).toEqual(source);
+    core.dispose();
+  });
+
+  it("refuses to prepare the same target again after an obsolete source revision", async () => {
+    const { core, v1 } = await ready();
+    const { api, rerun, queueGate } = core.v1!;
+    v1.addJobs(1);
+    const [wire] = v1.jobs;
+    wire!.status = "cancelled";
+    const source = await api.getJob(wire!.id as string);
+    rerun.openRerun(groupLogicalJobs([source])[0]!);
+    rerun.selectRerunInput(media("a.wav"));
+    await rerun.prepare();
+    wire!.revision = source.revision + 1;
+    await rerun.submit();
+    expect(rerun.store.get()).toMatchObject({ step: "rejected", error: { status: 412 } });
+    expect(rerun.canPrepare()).toBe(false);
+    expect(queueGate.busy()).toBe(false);
+    expect(v1.jobs).toHaveLength(1);
+    core.dispose();
   });
 });

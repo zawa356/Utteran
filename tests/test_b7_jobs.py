@@ -1536,3 +1536,102 @@ def test_gui_bridge_resolve_rechecks_scope(env: Env, tmp_path: Path, monkeypatch
     payload["selection"] = None
     payload["reason_code"] = "probe_error"
     assert provider.resolve(settings, policy, revision=7).selection is None
+
+
+@pytest.mark.parametrize("same_content", [True, False])
+def test_rerun_requires_original_digest_even_for_different_path(
+    env: Env, same_content: bool
+) -> None:
+    original = env.file("original.wav", b"RIFF original")
+    source = env.submit(original).batch.jobs[0]
+    dispatcher(env, FakeRunner(env)).run_once()
+    done = env.store.get_job(source.id)
+    snapshot = env.store.get_snapshot(source.id)
+    candidate = env.file("relocated.wav", b"RIFF original" if same_content else b"RIFF modified")
+    original.unlink()
+    session = env.session(candidate)
+    new_output = env.output / "current"
+    new_output.mkdir()
+    session["files"][0]["output_dir"] = str(new_output)
+    body = {"schema_version": 1, "submission": env.submit_body(session)}
+    request = scope(f"/api/v1/jobs/{source.id}/rerun", env.key())
+    if same_content:
+        accepted = env.admission.rerun(source.id, done.revision, request, body, session=SESSION)
+        created = accepted.batch.jobs[0]
+        assert (
+            created.id != source.id and created.rerun_of == source.id and created.retry_of is None
+        )
+        new = env.store.get_snapshot(created.id)
+        assert new.input_identity.path == str(candidate)
+        assert new.file.output_dir == str(new_output)
+        assert env.admission.rerun(
+            source.id, done.revision, request, body, session=SESSION
+        ).replayed
+    else:
+        with pytest.raises(AdmissionError) as exc:
+            env.admission.rerun(source.id, done.revision, request, body, session=SESSION)
+        assert exc.value.code == "input_changed"
+        assert env.count("operations") == 1
+    assert env.store.get_job(source.id) == done
+    assert env.store.get_snapshot(source.id) == snapshot
+
+
+def test_rerun_rechecks_input_after_freeze(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    original = env.file()
+    source = env.submit(original).batch.jobs[0]
+    dispatcher(env, FakeRunner(env)).run_once()
+    done = env.store.get_job(source.id)
+    body = {"schema_version": 1, "submission": env.submit_body(env.session(original))}
+    freeze = env.admission._freeze
+
+    def replace_after_freeze(*args: Any):
+        result = freeze(*args)
+        original.write_bytes(b"RIFF changed")
+        return result
+
+    monkeypatch.setattr(env.admission, "_freeze", replace_after_freeze)
+    with pytest.raises(AdmissionError) as exc:
+        env.admission.rerun(
+            source.id,
+            done.revision,
+            scope(f"/api/v1/jobs/{source.id}/rerun", env.key()),
+            body,
+            session=SESSION,
+        )
+    assert exc.value.code == "input_changed"
+    assert env.count("operations") == 1
+
+
+def test_rerun_refuses_source_if_retry_is_added_during_admission(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = env.file()
+    source = env.submit(original).batch.jobs[0]
+    runner = FakeRunner(env)
+    runner.mode = "crash"
+    dispatcher(env, runner).run_once()
+    failed = env.store.get_job(source.id)
+    body = {"schema_version": 1, "submission": env.submit_body(env.session(original))}
+    freeze = env.admission._freeze
+
+    def retry_after_freeze(*args: Any):
+        result = freeze(*args)
+        env.admission.retry(
+            source.id,
+            failed.revision,
+            scope(f"/api/v1/jobs/{source.id}/retry", env.key()),
+        )
+        return result
+
+    monkeypatch.setattr(env.admission, "_freeze", retry_after_freeze)
+    with pytest.raises(ControlError) as exc:
+        env.admission.rerun(
+            source.id,
+            failed.revision,
+            scope(f"/api/v1/jobs/{source.id}/rerun", env.key()),
+            body,
+            session=SESSION,
+        )
+    assert code(exc) == "invalid_transition"
+    assert env.count("operations") == 2
+    assert env.store.get_job(source.id) == failed
