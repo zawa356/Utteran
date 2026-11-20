@@ -69,8 +69,8 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
       <KeepAlive :include="apiMode === 'v1-dev' ? undefined : []">
         <component
           :is="state.mode === 'expert' ? ExpertWorkspace : NormalWorkspace"
-          :key="state.mode"
           v-if="state.section === 'transcribe'"
+          :key="state.mode"
         />
       </KeepAlive>
       <SettingsPage v-if="state.section === 'settings'" />
