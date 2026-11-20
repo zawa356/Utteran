@@ -896,7 +896,7 @@ export const en: Record<MessageKey, string> = {
   "queue.write.conflict": "The server order changed and was reloaded. Make a new explicit choice from the latest view.",
   "queue.write.rejected": "The request was refused. Check the current state.",
   "queue.explain": "Unfinished jobs from the server queue (B7), one row per logical job, in execution order.",
-  "queue.opsNote": "Control dispatch, hold, order and cooperative cancellation here. Retry and history remain on transcription ③.",
+  "queue.opsNote": "Control dispatch, hold, order and cooperative cancellation here. Retry jobs and manage history from the History tab in Results.",
   "queue.openTranscribe": "Open the transcription page",
   "queue.stageNote": "The processing stage (voice activity detection, transcription, speaker diarization, …) and progress are not published by the API, so they are not shown.",
   "queue.orderNote": "The default order is the server queue’s run order. Search, filters and sorting change only this display, never the run order.",
