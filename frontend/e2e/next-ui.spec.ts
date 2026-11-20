@@ -26,6 +26,30 @@ test("launch cookie opens the next UI from local assets with a per-response nonc
   await shot(app, "01-normal-transcribe");
 });
 
+test("the next UI applies the server nonce when it starts with two underscores", async ({ app }) => {
+  const nonce = `__${"A".repeat(20)}`;
+  await app.route("**/next/", async (route) => {
+    const response = await route.fetch();
+    const headers = response.headers();
+    const body = await response.text();
+    const policy = headers["content-security-policy"]!;
+    const issuedNonce = /style-src 'self' 'nonce-([A-Za-z0-9_-]{22})';/.exec(policy)?.[1];
+    expect(issuedNonce).toBeDefined();
+    await route.fulfill({
+      response,
+      headers: { ...headers, "content-security-policy": policy.replace(issuedNonce!, nonce) },
+      body: body.replace(issuedNonce!, nonce),
+    });
+  });
+
+  await app.reload();
+  await expect(app.getByTestId("app-ready")).toBeVisible();
+  await expect(app.locator('meta[name="csp-nonce"]')).toHaveAttribute("content", nonce);
+  const style = app.locator("style[nonce]").first();
+  await expect(style).toBeAttached();
+  expect(await style.evaluate((element: HTMLStyleElement) => element.nonce)).toBe(nonce);
+});
+
 test("the API rejects requests without the session", async ({ playwright, baseURL }) => {
   const fresh = await playwright.request.newContext({ baseURL });
   expect((await fresh.get("/api/settings")).status()).toBe(401);
