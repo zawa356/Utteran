@@ -1,5 +1,6 @@
 import { expect } from "./fixtures";
 import { test } from "./isolatedV1";
+import { expectSplitterFeedback } from "./splitterStyle";
 
 test("D4-A Normal arranges input and execution by available width", async ({ app }) => {
   const input = app.getByTestId("tx-input-path");
@@ -105,3 +106,15 @@ test("D4-A keeps drafts and bounded separator widths through switches", async ({
   await expect(handle).not.toHaveAttribute("aria-valuenow", "364");
   expect(writes).toEqual([]);
 });
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`D4-A splitter grip feedback in blue ${scheme}`, async ({ app }) => {
+    await app.emulateMedia({ colorScheme: scheme });
+    await expect(app.getByTestId("app-ready")).toHaveClass(new RegExp(`v-theme--${scheme}\\b`));
+    await app.getByTestId("mode-expert").click();
+    await expect(app.getByTestId("expert-workspace")).toHaveAttribute("data-columns", "3");
+    for (const id of ["resize-sidebar", "resize-inputs", "resize-queue"]) {
+      await expectSplitterFeedback(app, id);
+    }
+  });
+}
