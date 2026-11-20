@@ -17,7 +17,6 @@ import { test as isolatedTest } from "./isolatedV1";
 
 const ROOT = process.env.UI2_V1_ROOT!;
 const input = (name: string, root = ROOT) => `${root}/in/${name}`;
-const OUT = `${ROOT}/out`;
 const AUTH = { Cookie: `utteran_gui_session=${SESSION}` };
 const PRESET = "S5-B 合成";
 const POLICY = "S5-B CPU";
