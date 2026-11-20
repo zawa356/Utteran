@@ -25,7 +25,7 @@ if (v1) {
 const themeName = computed(() => {
   const appearance = settings.value.saved?.theme ?? "system";
   if (!v1 || shell.value.accent === "blue") return appearance;
-  return appearance === "dark" || (appearance === "system" && systemDark.value) ? "greenDark" : "greenLight";
+  return appearance === "dark" || (appearance === "system" && systemDark.value) ? "green-dark" : "green-light";
 });
 watch(themeName, (name) => void theme.change(name), { immediate: true });
 watch(language, (value) => document.documentElement.setAttribute("lang", value), { immediate: true });

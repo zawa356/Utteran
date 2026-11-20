@@ -57,7 +57,7 @@ for (const [i, { width, height, dpr }] of modes.entries()) {
         await app.getByTestId("nav-settings").click();
         await choose(app, "settings-accent", accent === "green" ? /^(Green|緑)$/ : /^(Blue|青)$/);
         await expect(mode).toHaveAttribute("data-accent", accent);
-        await expect(mode).toHaveClass(new RegExp(accent === "green" ? `v-theme--green${theme === "dark" ? "Dark" : "Light"}` : `v-theme--${theme}`));
+        await expect(mode).toHaveClass(new RegExp(accent === "green" ? `v-theme--green-${theme}` : `v-theme--${theme}`));
         await expect(app.locator("html")).toHaveAttribute("lang", language);
         await capture(app, `product-settings-${width}-${language}-${theme}-${accent}`);
         if (width < 1000) await app.getByTestId("top-nav-menu").click();
