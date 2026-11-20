@@ -8,10 +8,10 @@ test("D4-B uses the chosen accent with the saved appearance and keeps narrow nav
   await app.getByTestId("nav-settings").click();
   await choose(app, "settings-accent", "緑");
   await expect(surface).toHaveAttribute("data-accent", "green");
-  await expect(surface).toHaveClass(/v-theme--greenLight/);
+  await expect(surface).toHaveClass(/v-theme--green-light/);
   await expect(app.getByTestId("settings-save")).toBeDisabled();
   await app.emulateMedia({ colorScheme: "dark" });
-  await expect(surface).toHaveClass(/v-theme--greenDark/);
+  await expect(surface).toHaveClass(/v-theme--green-dark/);
   await app.getByTestId("mode-expert").click();
   const nav = app.getByTestId("nav-toggle");
   await nav.click();

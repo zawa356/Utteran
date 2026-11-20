@@ -32,7 +32,7 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 const v1 = core.apiMode === "v1-dev";
-const themes: Record<string, ThemeDefinition> = v1 ? { light: blueLight, dark: blueDark, greenLight, greenDark } : { light: lightTheme, dark: darkTheme };
+const themes: Record<string, ThemeDefinition> = v1 ? { light: blueLight, dark: blueDark, "green-light": greenLight, "green-dark": greenDark } : { light: lightTheme, dark: darkTheme };
 const vuetify = createVuetify({
   theme: { defaultTheme: "system", themes, cspNonce },
   icons: { defaultSet: "mdi", aliases, sets: { mdi } },
