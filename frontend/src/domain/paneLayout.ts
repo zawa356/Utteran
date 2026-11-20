@@ -92,4 +92,3 @@ export function paneRange(areaWidth: number, ratios: PaneRatios | null, pane: "i
   const max = Math.max(min, Math.min(Math.floor(content * PANE_MAX_FRACTION), content - PANE_MIN.inspector - other));
   return { min, max };
 }
-
