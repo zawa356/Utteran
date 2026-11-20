@@ -756,7 +756,7 @@ export const en: Record<MessageKey, string> = {
   "results.retryOf": "Retried from",
   "results.rerunOf": "Rerun from",
   "results.deleteAttempt": "Delete history for {id}",
-  "results.future": "Viewing output text, opening folders, exporting again, and rerunning with current settings are planned for D3-B.",
+  "results.externalBlocked": "Opening in the default app and selecting the file in Explorer are currently unavailable.",
   "results.tabs": "Results and history",
   "v1.board.title": "Queue summary",
   "v1.board.explain": "A retry stays on the same row (internally a new attempt is created). “Hide” only hides the row; the history and the outputs are not deleted.",

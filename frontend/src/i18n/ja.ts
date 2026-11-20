@@ -754,7 +754,7 @@ export const ja = {
   "results.retryOf": "再試行元",
   "results.rerunOf": "再実行元",
   "results.deleteAttempt": "{id} の履歴レコードを削除",
-  "results.future": "本文表示・フォルダーを開く・再出力・現在の設定での再実行は D3-B で扱います。",
+  "results.externalBlocked": "既定アプリで開く操作と Explorer での選択表示は現在利用できません。",
   "results.tabs": "結果と履歴",
   "v1.board.title": "簡易キュー",
   "v1.board.explain": "再試行は同じ行のジョブとして表示します（内部では新しい試行が作られます）。「非表示」は一覧から隠すだけで、履歴・成果物は削除しません。",

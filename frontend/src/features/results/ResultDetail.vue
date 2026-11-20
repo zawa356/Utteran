@@ -67,8 +67,7 @@ function plan(attempt: JobV1): void {
       {{ t("v1.delete.refusal.artifact_deletion_disabled") }}
     </p>
     <v-divider />
-    <V1Artifacts :key="group.latest.id" :job-id="group.latest.id" />
-    <p class="text-caption">{{ t("results.future") }}</p>
+    <V1Artifacts :key="group.latest.id" :job-id="group.latest.id" show-external-status />
   </v-card>
 </template>
 
