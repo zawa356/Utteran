@@ -22,6 +22,7 @@ const evaluation = computed(() => {
   void [target.value, settings.value, inputs.value, form.value];
   return rerun.evaluate();
 });
+const hasSourceRow = computed(() => inputs.value.rows.some(row => row.clientFileId === target.value?.sourceRowId));
 const busy = computed(() => {
   void state.value;
   return rerun.busy();
@@ -90,6 +91,10 @@ function restoreFocus(): void {
           <p v-if="pickerError" role="status">{{ t("tx.pick.failed") }}</p>
           <p>{{ t("v1.field.preset") }} · {{ settings.preset.item?.name ?? '—' }}</p>
           <p>{{ t("v1.field.policy") }} · {{ settings.policy.item?.name ?? '—' }}</p>
+          <p v-if="hasSourceRow" data-testid="rerun-settings-source">{{ t("results.rerunSourceRowSettings") }}</p>
+          <v-alert v-else type="info" density="compact" role="status" data-testid="rerun-settings-default">
+            {{ t("results.rerunCommonSettings") }}
+          </v-alert>
           <p v-if="evaluation.files[0]">{{ t("results.rerunOutput", { path: evaluation.files[0].outputDir }) }}</p>
           <p v-else-if="target.path && !busy" role="status">{{ t("results.rerunSettings") }}</p>
           <p v-if="busy" role="status">{{ t("results.rerunPending") }}</p>

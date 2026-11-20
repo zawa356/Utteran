@@ -759,6 +759,8 @@ export const en: Record<MessageKey, string> = {
   "results.rerunInput": "Selected input {path}",
   "results.rerunPick": "Choose the original input file",
   "results.rerunOutput": "Output folder {path}",
+  "results.rerunSourceRowSettings": "Uses the current per-file settings and output choice from the original input row.",
+  "results.rerunCommonSettings": "The original input row is unavailable. Review the shared settings and default output folder before running again.",
   "results.rerunSettings": "Check the current settings and output folder on the transcription page.",
   "results.rerunPending": "The check or request is in progress.",
   "results.rerunSourceChanged": "The source job changed. Review the history and select the source again.",

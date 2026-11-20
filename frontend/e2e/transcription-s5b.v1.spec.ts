@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
 import { choose, expect, SESSION, shot, test } from "./fixtures";
 
@@ -379,6 +379,10 @@ test("PR #53 P2-1: a retried row is placed where B7 queued its new job, after th
 });
 
 test("D3-B Expert results and history share explicit rerun and verified artifact status", async ({ app, request }) => {
+  const relocated = input("rerun-relocated.wav");
+  const customOutput = `${OUT}/rerun-source`;
+  copyFileSync(input("meeting.wav"), relocated);
+  mkdirSync(customOutput, { recursive: true });
   const other = input("rerun-different.wav");
   writeFileSync(other, "RIFF a different synthetic input");
   await app.addInitScript(() => {
@@ -390,6 +394,9 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   const seen = recordApi(app);
   await expert(app, request, ["meeting.wav"]);
   const [id] = await submitBatch(app, seen);
+  await app.getByTestId("tx-ov-output-custom").click();
+  await app.getByTestId("tx-ov-output-path").locator("input").fill(customOutput);
+  await app.getByTestId("tx-ov-apply").click();
   await ensureQueueRunning(app);
   await app.getByTestId("nav-results").click();
   const result = app.getByTestId("results-table-results").locator(`[data-root="${id}"]`);
@@ -415,6 +422,13 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await app.getByTestId("result-rerun").click();
   const dialog = app.getByTestId("rerun-dialog");
   await expect(dialog).toBeVisible();
+  await app.evaluate(path => {
+    (window as Window & { rerunPick?: string }).rerunPick = path;
+  }, relocated);
+  await app.getByTestId("rerun-pick").click();
+  await expect(dialog).toContainText("rerun-relocated.wav");
+  await expect(app.getByTestId("rerun-settings-source")).toBeVisible();
+  await expect(dialog).toContainText(customOutput);
   await expect(app.getByTestId("rerun-submit")).toBeDisabled();
   await app.getByTestId("rerun-check").click();
   await expect(dialog).toHaveAttribute("data-step", "resolved");
@@ -423,6 +437,9 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   const path = `POST /api/v1/jobs/${id}/rerun`;
   const posts = seen.filter(r => line(r) === path);
   expect(posts).toHaveLength(1);
+  expect(posts[0]!.postDataJSON().submission.editing_session.files).toEqual([
+    expect.objectContaining({ input_path: relocated, output_dir: customOutput, overrides: [] }),
+  ]);
   expect(await posts[0]!.headerValue("If-Match")).toBe(`"${source.revision}"`);
   const { jobs: [created] } = (await (await posts[0]!.response())!.json()) as { jobs: { id: string; rerun_of: string; retry_of: null }[] };
   expect(created).toMatchObject({ rerun_of: id, retry_of: null });
@@ -432,6 +449,11 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await row(app, "history", created!.id).getByTestId("results-select").click();
   await expect(app.getByTestId("results-detail")).toContainText(id!);
   expect(await api(request, `/api/v1/jobs/${id}`)).toEqual(source);
+  await app.setViewportSize({ width: 1280, height: 820 });
+  await app.getByTestId("nav-transcribe").click();
+  await app.getByTestId("tx-list-remove").click();
+  await app.getByTestId("tx-list-remove-yes").click();
+  await openHistory(app);
   await row(app, "history", id!).getByTestId("results-select").click();
   await app.getByTestId("result-rerun").click();
   await app.evaluate(path => {
@@ -439,6 +461,7 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   }, other);
   await app.getByTestId("rerun-pick").click();
   await expect(dialog).toContainText("rerun-different.wav");
+  await expect(app.getByTestId("rerun-settings-default")).toBeVisible();
   await app.getByTestId("rerun-check").click();
   await expect(dialog).toHaveAttribute("data-step", "resolved");
   await app.getByTestId("rerun-submit").click();

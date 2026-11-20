@@ -757,6 +757,8 @@ export const ja = {
   "results.rerunInput": "使用する入力候補 {path}",
   "results.rerunPick": "元の入力ファイルを選択",
   "results.rerunOutput": "出力先 {path}",
+  "results.rerunSourceRowSettings": "元の入力行の現在の個別設定と出力先の指定を使います。",
+  "results.rerunCommonSettings": "元の入力行がないため、共通設定と既定の出力先を使います。",
   "results.rerunSettings": "現在の設定と出力先を入力画面で確認してください。",
   "results.rerunPending": "確認または要求の処理中です。",
   "results.rerunSourceChanged": "元のジョブが変わりました。履歴を確認し、対象を選び直してください。",

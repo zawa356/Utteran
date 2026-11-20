@@ -109,6 +109,7 @@ export function fileOverrides(common: JsonObject, row: InputRow): SettingOverrid
 interface RerunSelection {
   readonly jobId: string;
   readonly revision: number;
+  readonly sourceRowId: string | null;
   readonly path: string | null;
 }
 
@@ -149,7 +150,7 @@ export class V1BatchController {
     if (!this.options.onRerunSettled || this.gate.busy() || this.rerunSelection.get() || !canRerun(group)) return;
     const source = group.latest;
     const candidate = this.inputs.get().rows.find(row => this.options.fileIdFor(row.clientFileId) === source.clientFileId);
-    this.rerunSelection.set({ jobId: source.id, revision: source.revision, path: candidate?.inputPath ?? null });
+    this.rerunSelection.set({ jobId: source.id, revision: source.revision, sourceRowId: candidate?.clientFileId ?? null, path: candidate?.inputPath ?? null });
   }
 
   selectRerunInput(path: string): void {
@@ -174,8 +175,9 @@ export class V1BatchController {
     if (this.options.onRerunSettled) {
       rows = [];
       if (target?.path) {
-        const match = inputs.find(row => row.inputPath === target.path);
-        rows = [match ?? {
+        // A picker replaces the input path. Settings come from the job's original row.
+        const sourceRow = inputs.find(row => row.clientFileId === target.sourceRowId);
+        rows = [sourceRow ? { ...sourceRow, inputPath: target.path } : {
           clientFileId: target.jobId, inputPath: target.path, source: "picker", selected: true,
           overrides: {}, output: { kind: "inherit" }, attemptFloor: 0,
         }];

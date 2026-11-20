@@ -172,6 +172,63 @@ describe("S5-B v1 atomic batch (selected rows -> one B7 batch)", () => {
 });
 
 describe("rerun", () => {
+  it.each(["moved.wav", "other.wav"])("uses the source row's current settings when the picker returns %s", async (filename) => {
+    const { core, v1, rows } = await ready(["a.wav", "other.wav"]);
+    const { api, job, rerun } = core.v1!;
+    const [original, other] = rows();
+    v1.addJobs(1);
+    const [wire] = v1.jobs;
+    wire!.status = "succeeded";
+    (wire!.snapshot as { client_file_id: string }).client_file_id = job.fileIdFor(original!.clientFileId);
+    const source = await api.getJob(wire!.id as string);
+
+    core.inputs.clearSelection();
+    core.inputs.toggle(other!.clientFileId, true);
+    core.inputs.stage({ language: "ja", output: { kind: "custom", path: `${OUT}/other` } });
+    core.inputs.applyStaged();
+    core.inputs.clearSelection();
+    core.inputs.toggle(original!.clientFileId, true);
+    core.inputs.stage({ asrModel: "large-v3", language: "en", output: { kind: "custom", path: `${OUT}/source` } });
+    core.inputs.stageFormat("vtt", true);
+    core.inputs.applyStaged();
+    const before = rows();
+
+    rerun.openRerun(groupLogicalJobs([source])[0]!);
+    rerun.selectRerunInput(media(filename));
+    await rerun.prepare();
+    expect(rerun.store.get().step).toBe("resolved");
+    const expected = {
+      client_file_id: source.clientFileId,
+      input_path: media(filename),
+      output_dir: `${OUT}/source`,
+      overrides: [
+        { path: "/asr/model", value: "large-v3" },
+        { path: "/asr/language", value: "en" },
+        { path: "/output/formats", value: expect.arrayContaining(["vtt"]) },
+      ],
+    };
+    for (const endpoint of ["/api/v1/validations", "/api/v1/execution-resolutions"]) {
+      expect(JSON.parse(writes(v1, endpoint)[0]!.body!).files).toEqual([expected]);
+    }
+    await rerun.submit();
+    const path = `/api/v1/jobs/${source.id}/rerun`;
+    expect(JSON.parse(writes(v1, path)[0]!.body!).submission.editing_session.files).toEqual([expected]);
+    expect(rows()).toBe(before);
+
+    rerun.closeRerun();
+    rerun.openRerun(groupLogicalJobs([source])[0]!);
+    rerun.selectRerunInput(media("other.wav"));
+    await rerun.prepare();
+    core.inputs.remove([original!.clientFileId]);
+    expect(rerun.isStale()).toBe(true);
+    expect(rerun.canSubmit()).toBe(false);
+    await rerun.prepare();
+    expect(JSON.parse(writes(v1, "/api/v1/validations").at(-1)!.body!).files).toEqual([
+      expect.objectContaining({ input_path: media("other.wav"), output_dir: OUT, overrides: [] }),
+    ]);
+    core.dispose();
+  });
+
   it("keeps the target and shared gate across a lost response, then replays exactly once", async () => {
     const { core, v1, rows } = await ready(["a.wav"]);
     const { api, rerun, board, queueGate } = core.v1!;
@@ -195,7 +252,7 @@ describe("rerun", () => {
     rerun.closeRerun();
     rerun.selectRerunInput(media("ignored.wav"));
     expect(queueGate.busy()).toBe(true);
-    expect(rerun.rerunSelection.get()).toEqual({ jobId: source.id, revision: source.revision, path: media("moved.wav") });
+    expect(rerun.rerunSelection.get()).toMatchObject({ jobId: source.id, revision: source.revision, path: media("moved.wav") });
     await rerun.recheck();
     expect(writes(v1, path)).toHaveLength(2);
     expect(writes(v1, path)[0]).toEqual(writes(v1, path)[1]);
