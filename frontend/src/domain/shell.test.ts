@@ -158,9 +158,9 @@ describe("shell state", () => {
   it("D2A-01: the queue page is partial only in v1-dev; legacy (`--next-ui`) keeps it not migrated", () => {
     expect(sectionStatus("queue", "v1-dev")).toBe("partial");
     expect(sectionStatus("queue", "legacy")).toBe("not_migrated");
-    // Nothing else changes with the API mode (results, models and setup stay not migrated).
+    // The other sections retain their migration status.
     for (const mode of ["legacy", "v1-dev"] as const) {
-      expect(SECTIONS.filter((s) => s !== "queue").map((s) => sectionStatus(s, mode))).toEqual(SECTIONS.filter((s) => s !== "queue").map((s) => SECTION_STATUS[s]));
+      expect(SECTIONS.filter((s) => s !== "queue" && s !== "results").map((s) => sectionStatus(s, mode))).toEqual(SECTIONS.filter((s) => s !== "queue" && s !== "results").map((s) => SECTION_STATUS[s]));
     }
     // The static table (used for legacy) is not rewritten for every mode.
     expect(SECTION_STATUS.queue).toBe("not_migrated");
@@ -190,7 +190,12 @@ describe("shell state", () => {
       expect(ja).toContain("履歴");
       expect(en).toContain("history");
     }
-    expect(translate("ja", "app.previewNoticeV1")).toContain("まだありません");
-    expect(translate("en", "app.previewNoticeV1")).toContain("not here yet");
+    expect(translate("ja", "app.previewNoticeV1")).toContain("結果と履歴");
+    expect(translate("en", "app.previewNoticeV1")).toContain("results and history");
   });
+});
+
+it("D3A-01: only explicit v1 opts in to the Expert results page", () => {
+  expect(sectionStatus("results", "v1-dev")).toBe("partial");
+  expect(sectionStatus("results", "legacy")).toBe("not_migrated");
 });

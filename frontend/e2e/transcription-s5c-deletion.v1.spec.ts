@@ -99,8 +99,14 @@ async function finishedJob(page: Page, request: APIRequestContext, seen: Request
   const post = seen.filter((r) => line(r) === "POST /api/v1/jobs").at(-1)!;
   const [id] = ((await (await post.response())!.json()) as { jobs: { id: string }[] }).jobs.map((j) => j.id);
   await ensureQueueRunning(page);
+  await openHistory(page);
   await expect(row(page, id!)).toHaveAttribute("data-status", "succeeded", { timeout: 30_000 });
   return id!;
+}
+
+async function openHistory(page: Page): Promise<void> {
+  await page.getByTestId("nav-results").click();
+  await page.getByTestId("results-tab-history").click();
 }
 
 const row = (page: Page, id: string) => page.getByTestId("v1-board-history").locator(`[data-testid="v1-board-row"][data-root="${id}"]`);
@@ -113,8 +119,9 @@ test("history only: two-step confirmation, cancel is the default, the files stay
   expect(directory).not.toBeNull();
   const before = readdirSync(directory!).sort();
 
+  await row(app, id).getByTestId("results-select").click();
   // Open the history-only dialog: a read-only plan, cancel focused, no deletion sent.
-  await row(app, id).getByTestId("v1-board-delete-history").click();
+  await app.getByTestId("v1-board-delete-history").click();
   await expect(dialog(app)).toHaveAttribute("data-mode", "history");
   await expect(dialog(app)).toHaveAttribute("data-phase", "planned");
   await expect(app.getByTestId("v1-delete-cancel")).toBeFocused();
@@ -130,7 +137,7 @@ test("history only: two-step confirmation, cancel is the default, the files stay
   expect(await api(request, `/api/v1/jobs/${id}`)).toMatchObject({ id, status: "succeeded" });
 
   // Explicit approval: exactly one deletion request with If-Match and a key; then the job is gone.
-  await row(app, id).getByTestId("v1-board-delete-history").click();
+  await app.getByTestId("v1-board-delete-history").click();
   await expect(dialog(app)).toHaveAttribute("data-phase", "planned");
   await app.getByTestId("v1-delete-confirm").click();
   await expect(app.getByTestId("v1-delete-outcome")).toHaveAttribute("data-outcome", "done");
@@ -158,16 +165,17 @@ test("history and outputs is disabled on every platform: the plan is refused, ap
   writeFileSync(join(directory, "notes-by-user.txt"), "mine"); // any file state: the same refusal
   const before = readdirSync(directory).sort().map((name) => [name, readFileSync(join(directory, name), "utf8")]);
 
-  await row(app, id).getByTestId("v1-board-delete-artifacts").click();
-  await expect(dialog(app)).toHaveAttribute("data-mode", "history_and_artifacts");
-  await expect(dialog(app)).toHaveAttribute("data-phase", "planned");
-  await expect(app.getByTestId("v1-delete-cancel")).toBeFocused();
+  await row(app, id).getByTestId("results-select").click();
   await expect(app.getByTestId("v1-delete-refusal")).toHaveAttribute("data-refusal", "artifact_deletion_disabled");
-  await expect(app.getByTestId("v1-delete-confirm")).toBeDisabled();
-  await expect(app.getByTestId("v1-delete-files")).toHaveCount(0);
-  await expect(app.getByTestId("v1-delete-retained")).toHaveCount(0); // a refused plan deletes nothing
+  await expect(app.getByTestId("v1-board-delete-artifacts")).toHaveCount(0);
+  await expect(app.getByTestId("v1-delete-confirm")).toHaveCount(0);
+  const deniedPlan = await request.post(`/api/v1/jobs/${id}/deletion-plans`, {
+    headers: HEADERS,
+    data: { schema_version: 1, mode: "history_and_artifacts" },
+  });
+  expect(deniedPlan.status()).toBe(200);
+  expect(await deniedPlan.json()).toMatchObject({ allowed: false, refusal: "artifact_deletion_disabled" });
   await shot(app, "s5c-artifacts-disabled");
-  await app.getByTestId("v1-delete-cancel").click();
   expect(deletions(seen)).toEqual([]);
   // The server refuses an execution too (409, fixed code), whatever token is sent.
   const job = await api<{ revision: number }>(request, `/api/v1/jobs/${id}`);
@@ -182,7 +190,7 @@ test("history and outputs is disabled on every platform: the plan is refused, ap
   expect(await api(request, `/api/v1/jobs/${id}`)).toMatchObject({ status: "succeeded", revision: job.revision });
 
   // History-only stays possible for the same job.
-  await row(app, id).getByTestId("v1-board-delete-history").click();
+  await app.getByTestId("v1-board-delete-history").click();
   await expect(dialog(app)).toHaveAttribute("data-phase", "planned");
   await expect(app.getByTestId("v1-delete-confirm")).toBeEnabled();
   await app.getByTestId("v1-delete-cancel").click();
@@ -224,12 +232,25 @@ test("a retry chain: the person picks one internal job; the other attempt is not
   const again = await api<{ revision: number }>(request, "/api/v1/queue");
   await request.patch("/api/v1/queue/control", { headers: { ...HEADERS, "If-Match": `"${again.revision}"`, "Idempotency-Key": `s5c-resume-${Date.now()}-key` }, data: { schema_version: 1, dispatch: "running" } });
 
-  await app.getByTestId("v1-board-refresh").click();
+  const hidden = await request.put(`/api/v1/jobs/${root}/visibility`, {
+    headers: { ...HEADERS, "If-Match": '"0"' },
+    data: { schema_version: 1, hidden: true },
+  });
+  expect(hidden.status()).toBe(200);
+  await app.getByTestId("nav-results").click();
+  await expect(app.getByTestId("results-table-results").locator(`[data-root="${root}"]`)).toHaveCount(0);
+  await openHistory(app);
+  await expect(row(app, root!)).toHaveAttribute("data-attempts", "1");
+  await app.getByTestId("v1-board-show-hidden").locator("input").check();
+  const hiddenRow = app.getByTestId("v1-board-hidden").locator(`[data-root="${root}"]`);
+  await expect(hiddenRow).toHaveAttribute("data-job", root!);
+  await hiddenRow.getByTestId("results-select").click();
+  await app.getByTestId("v1-board-show").click();
+  await expect(hiddenRow).toHaveCount(0);
+  await app.getByTestId("v1-board-show-hidden").locator("input").uncheck();
   await expect(row(app, root!)).toHaveAttribute("data-attempts", "2", { timeout: 20_000 });
-  await row(app, root!).getByTestId("v1-board-delete-history").click();
-  // Default target = the job the row shows (the newest); the person explicitly picks the first one.
-  await expect(dialog(app)).toHaveAttribute("data-job", child);
-  await app.locator(`[data-testid="v1-delete-option"][data-job="${root}"] input`).check();
+  await row(app, root!).getByTestId("results-select").click();
+  await app.locator(`[data-testid="results-attempt"][data-job="${root}"]`).getByTestId("v1-board-delete-history").click();
   await expect(dialog(app)).toHaveAttribute("data-job", root!);
   await expect(dialog(app)).toHaveAttribute("data-phase", "planned");
   await expect(app.getByTestId("v1-delete-related")).toBeVisible();
@@ -242,3 +263,106 @@ test("a retry chain: the person picks one internal job; the other attempt is not
   expect(await api(request, `/api/v1/jobs/${child}`)).toMatchObject({ id: child, status: "cancelled", retry_of: root });
   await expect(app.getByTestId("v1-board-history").locator(`[data-testid="v1-board-row"][data-job="${child}"]`)).toHaveCount(1);
 });
+
+test("D3-A: results and history use one board, and filtering and mode changes only read", async ({ app, request }) => {
+  const seen = recordApi(app);
+  await app.getByTestId("mode-expert").click();
+  await app.getByTestId("nav-results").click();
+  const results = app.getByTestId("section-results");
+  await expect(results.getByTestId("results-table")).toBeVisible();
+  const before = await api<{ items: unknown[] }>(request, "/api/v1/queue");
+  await results.getByTestId("results-tab-history").click();
+  await results.getByTestId("history-search").locator("input").fill("absent-synthetic-job");
+  await expect(results.getByTestId("results-empty")).toBeVisible();
+  await results.getByTestId("results-tab-results").click();
+  await expect(results.getByTestId("history-search")).toHaveCount(0);
+  await results.getByTestId("results-tab-history").click();
+  await expect(results.getByTestId("history-search").locator("input")).toHaveValue("absent-synthetic-job");
+  await app.getByTestId("mode-normal").click();
+  await expect(app.getByTestId("nav-results")).toHaveCount(0);
+  await app.getByTestId("mode-expert").click();
+  await expect(results).toBeVisible();
+  expect((await api<{ items: unknown[] }>(request, "/api/v1/queue")).items).toEqual(before.items);
+  expect(seen.filter(r => !["GET", "HEAD"].includes(r.method())).map(line)).toEqual([]);
+});
+
+test("D3-A: a failing later page clears selection; reload recovers; search applies after IME composition", async ({ app, request }) => {
+  const seen = recordApi(app);
+  const id = await finishedJob(app, request, seen, "meeting.wav");
+  const search = app.getByTestId("history-search").locator("input");
+  const pageRow = row(app, id);
+  await search.fill("meeting.wav");
+  await pageRow.getByTestId("results-select").press("Enter");
+  await expect(app.getByTestId("results-detail")).toHaveAttribute("data-root", id);
+  await search.evaluate((el: HTMLInputElement) => {
+    el.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    el.value = "未確定";
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true }));
+    const enter = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter", isComposing: true });
+    if (!el.dispatchEvent(enter)) throw new Error("composition confirmation was cancelled");
+  });
+  await expect(pageRow).toBeVisible();
+  await search.dispatchEvent("compositionend");
+  await expect(app.getByTestId("results-empty")).toBeVisible();
+  await expect(app.getByTestId("results-detail")).toHaveCount(0);
+
+  await search.fill(id);
+  await pageRow.getByTestId("results-select").click();
+  const before = seen.length;
+  const jobs = /\/api\/v1\/jobs\?/;
+  await app.route(jobs, async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/jobs") return route.continue();
+    if (url.searchParams.has("cursor")) return route.abort("internetdisconnected");
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({
+      response,
+      json: { ...body, next_cursor: `j2.${"a".repeat(32)}.100.100.${"f".repeat(64)}` },
+    });
+  });
+  await app.getByTestId("v1-board-refresh").click();
+  await expect(app.getByTestId("v1-board-error")).toHaveAttribute("data-error-kind", "network");
+  await expect(app.getByTestId("results-table")).toHaveCount(0);
+  await expect(app.getByTestId("results-detail")).toHaveCount(0);
+  await app.unroute(jobs);
+  await app.getByTestId("v1-board-refresh").click();
+  await expect(pageRow).toBeVisible();
+  await expect(app.getByTestId("results-detail")).toHaveCount(0);
+  expect(seen.slice(before).filter(r => r.method() !== "GET").map(line)).toEqual([]);
+});
+
+for (const language of ["ja", "en"]) {
+  for (const theme of ["light", "dark"]) {
+    test(`D3A-13: 900/1100/1280px ${language} ${theme}: results and confirmation fit`, async ({ app, request }) => {
+      const seen = recordApi(app);
+      const id = await finishedJob(app, request, seen, "meeting.wav");
+      const settings = await request.patch("/api/settings", { headers: HEADERS, data: { language, theme } });
+      expect(settings.status()).toBe(200);
+      await app.reload();
+      await expect(app.getByTestId("app-ready")).toBeVisible();
+      await app.getByTestId("mode-expert").click();
+      await openHistory(app);
+      const select = row(app, id).getByTestId("results-select");
+      await expect(select).toContainText(language === "ja" ? "ファイル名不明" : "Unknown file name");
+      await select.press("Enter");
+      await expect(app.getByTestId("results-detail")).toBeVisible();
+      const overflow = () => app.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      for (const width of [900, 1100, 1280]) {
+        await app.setViewportSize({ width, height: 820 });
+        expect(await overflow()).toBeLessThanOrEqual(0);
+        const table = (await app.getByTestId("results-table").boundingBox())!;
+        const detail = (await app.getByTestId("results-detail").boundingBox())!;
+        expect(detail.x).toBeGreaterThanOrEqual(table.x + table.width - 1);
+        await app.getByTestId("v1-board-delete-history").click();
+        await expect(dialog(app)).toHaveAttribute("data-phase", "planned");
+        await expect(app.getByTestId("v1-delete-cancel")).toBeFocused();
+        await expect(dialog(app)).toHaveCSS("background-color", theme === "dark" ? "rgb(30, 33, 38)" : "rgb(255, 255, 255)");
+        expect(await overflow()).toBeLessThanOrEqual(0);
+        await app.getByTestId("v1-delete-cancel").press("Enter");
+        await expect(app.getByTestId("v1-board-delete-history")).toBeFocused();
+      }
+      expect(deletions(seen)).toEqual([]);
+    });
+  }
+}

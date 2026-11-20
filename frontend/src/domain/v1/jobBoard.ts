@@ -15,16 +15,16 @@
 
 import type { ApiError } from "../../api/errors";
 import { MutationIntent, type RandomSource } from "../../api/idempotency";
-import type { JobArtifactsV1, JobV1, JobVisibilityFilter, JsonObject, QueueViewV1, V1ResourcesApi } from "../../api/v1Resources";
+import type { JobArtifactsV1, JobListV1, JobV1, JobVisibilityFilter, JsonObject, QueueViewV1, V1ResourcesApi } from "../../api/v1Resources";
 import { ApiError as ApiErrorClass } from "../../api/errors";
 import { browserScheduler, type Scheduler } from "../../transport/scheduler";
 import { classifyStartFailure } from "../admission";
 import { toApiError } from "../operation";
 import { Store } from "../store";
-import { groupLogicalJobs, isFinished, type LogicalJob } from "./logicalJobs";
+import { groupLogicalJobs, type LogicalJob } from "./logicalJobs";
 import { QueueMutationGate } from "./queueGate";
 import { adjacentOrder, waitingItems, type QueueDisabled, type QueueItem, type QueueDisplay } from "./queueOrder";
-export { isFinished };
+export { isFinished } from "./logicalJobs";
 
 export const BOARD_MAX_PAGES = 100;
 export const BOARD_POLL_MS = 2000;
@@ -136,6 +136,8 @@ export class V1JobBoardController {
   private leases = 0;
   private disposed = false;
   private frozen: Frozen | null = null;
+  private visibilityRevision: number | null = null;
+  private chainIds = new Map<string, readonly string[]>();
   /** Highest queue revision confirmed by a GET or a mutation acknowledgement. */
   private queueFloor = 0;
   private readonly scheduler: Scheduler;
@@ -152,7 +154,7 @@ export class V1JobBoardController {
 
   // ------------------------------------------------------------------ reads
 
-  private async allJobs(visibility: JobVisibilityFilter | undefined, signal: AbortSignal): Promise<JobV1[]> {
+  private async allJobs(visibility: JobVisibilityFilter | undefined, signal: AbortSignal, first?: JobListV1): Promise<{ items: JobV1[]; revision: number }> {
     const items: JobV1[] = [];
     const ids = new Set<string>();
     const cursors = new Set<string>();
@@ -160,7 +162,7 @@ export class V1JobBoardController {
     let revision: number | null = null;
     for (let page = 0; ; page += 1) {
       if (page >= BOARD_MAX_PAGES) throw listError("job_list_too_long");
-      const list = await this.api.listJobs(cursor, signal, visibility);
+      const list: JobListV1 = page === 0 && first ? first : await this.api.listJobs(cursor, signal, visibility);
       if (revision === null) revision = list.revision;
       else if (list.revision !== revision) throw listError("job_list_inconsistent");
       for (const item of list.items) {
@@ -168,11 +170,38 @@ export class V1JobBoardController {
         ids.add(item.id);
         items.push(item);
       }
-      if (list.nextCursor === null) return items;
+      if (list.nextCursor === null) return { items, revision: list.revision };
       if (cursors.has(list.nextCursor)) throw listError("job_list_inconsistent");
       cursors.add(list.nextCursor);
       cursor = list.nextCursor;
     }
+  }
+
+  private async readHistory(signal: AbortSignal) {
+    if (!this.store.get().visibilitySupported) {
+      const all = await this.allJobs(undefined, signal);
+      return { all, visible: all, supported: false };
+    }
+    // Read the two first pages together: each cursor pins its own point-in-time snapshot.
+    // Keep the B7 insertion order and retry graph from "all", and get visibility from "visible".
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const [visible, all] = await Promise.all([
+        this.api.listJobs(null, signal, "visible").then(
+          first => this.allJobs("visible", signal, first),
+          error => {
+            if (toApiError(error).status === 422) return null; // older layout
+            throw error;
+          },
+        ),
+        this.allJobs("all", signal),
+      ]);
+      if (visible === null) return { all, visible: all, supported: false };
+      if (visible.revision !== all.revision) continue;
+      const ids = new Set(all.items.map(job => job.id));
+      if (visible.items.some(job => !ids.has(job.id))) break;
+      return { all, visible, supported: true };
+    }
+    throw listError("job_list_inconsistent");
   }
 
   /** One full read of the lists and the queue. A newer call or `dispose()` makes an older one write nothing. */
@@ -185,46 +214,47 @@ export class V1JobBoardController {
     const current = () => generation === this.generation && !this.disposed;
     if (this.store.get().phase !== "done") this.store.patch({ phase: "pending", error: null });
     try {
-      const wantHidden = this.store.get().showHidden;
-      const visible = await this.allJobs(undefined, abort.signal);
+      const { all, visible, supported } = await this.readHistory(abort.signal);
       if (!current()) return;
-      let hiddenJobs: JobV1[] = [];
-      let supported = this.store.get().visibilitySupported;
-      if (wantHidden && supported) {
-        try {
-          hiddenJobs = await this.allJobs("hidden", abort.signal);
-        } catch (error) {
-          // A store without layout v7 refuses the filter (422): hide/show is simply not available.
-          const apiError = toApiError(error);
-          if (apiError.status !== 422) throw apiError;
-          supported = false;
-        }
-        if (!current()) return;
-      }
       const queueView = await this.api.getQueue(abort.signal);
       if (!current()) return;
       const previous = this.store.get().queueView;
       if (queueView.revision < Math.max(previous?.revision ?? 0, this.queueFloor)) throw listError("job_list_inconsistent");
       this.queueFloor = queueView.revision;
-      const groups = groupLogicalJobs(visible);
+      const groups = groupLogicalJobs(all.items);
+      this.chainIds = new Map(groups.map(group => [group.rootId, group.jobIds]));
+      const visibleIds = new Set(visible.items.map(job => job.id));
+      const project = (group: LogicalJob, hidden: boolean): LogicalJob[] => {
+        const attempts = group.attempts.filter(job => visibleIds.has(job.id) !== hidden);
+        if (attempts.length === 0) return [];
+        return [{
+          ...group,
+          attempts,
+          latest: attempts.at(-1)!,
+          jobIds: attempts.map(job => job.id),
+          incomplete: group.incomplete || attempts.length !== group.attempts.length,
+        }];
+      };
       const places = queuePlaces(queueView);
       // A row is finished only when *every* internal job is: a still-waiting branch keeps it in the
       // queue (and keeps the polling alive) even if the newest job of the chain already ended.
-      const unfinished = groups.filter((g) => g.open.length > 0);
+      const unfinished = groups.filter(g => g.open.length > 0).flatMap(g => project(g, false));
       const order = new Map(unfinished.map((g, index) => [g.rootId, index]));
       unfinished.sort((a, b) => rank(places[currentJob(a, places).id]) - rank(places[currentJob(b, places).id]) || order.get(a.rootId)! - order.get(b.rootId)!);
+      const finished = groups.filter(g => g.open.length === 0).reverse();
       this.store.patch({
         phase: "done",
         error: null,
         queue: unfinished,
         places,
-        history: groups.filter((g) => g.open.length === 0).reverse(),
-        hidden: groupLogicalJobs(hiddenJobs).reverse(),
+        history: finished.flatMap(g => project(g, false)),
+        hidden: this.store.get().showHidden ? finished.flatMap(g => project(g, true)) : [],
         visibilitySupported: supported,
         queueView,
       });
     } catch (error) {
       if (!current()) return;
+      this.chainIds.clear();
       // Nothing partial is shown as "the jobs".
       this.store.patch({ phase: "error", error: toApiError(error), queue: [], history: [], hidden: [], places: {} });
     } finally {
@@ -275,10 +305,10 @@ export class V1JobBoardController {
     }, this.options.pollMs ?? BOARD_POLL_MS);
   }
 
-  setShowHidden(on: boolean): void {
+  async setShowHidden(on: boolean): Promise<void> {
     if (this.store.get().showHidden === on) return;
     this.store.patch({ showHidden: on, hidden: on ? this.store.get().hidden : [] });
-    void this.refresh();
+    await this.refresh();
   }
 
   async loadArtifacts(jobId: string): Promise<void> {
@@ -331,7 +361,7 @@ export class V1JobBoardController {
 
   canHide(group: LogicalJob): boolean {
     // Every internal job of the row must be finished: a waiting or running job stays visible.
-    return !this.actionOpen() && this.store.get().visibilitySupported && group.attempts.every(isFinished);
+    return !this.actionOpen() && this.store.get().visibilitySupported && group.open.length === 0;
   }
 
   /**
@@ -339,7 +369,7 @@ export class V1JobBoardController {
    * open. Which one internal job is deleted is chosen explicitly in the dialog (never the whole chain).
    */
   canDelete(group: LogicalJob): boolean {
-    return !this.actionOpen() && group.attempts.every(isFinished);
+    return !this.actionOpen() && group.open.length === 0;
   }
 
   async cancel(rootId: string, jobId?: string): Promise<void> {
@@ -362,9 +392,11 @@ export class V1JobBoardController {
   async setHidden(rootId: string, hidden: boolean): Promise<void> {
     const group = this.find(rootId);
     if (this.disposed || !group || this.actionOpen() || !this.store.get().visibilitySupported) return;
-    if (hidden && !this.canHide(group)) return;
-    this.frozen = null;
-    await this.run({ kind: hidden ? "hide" : "show", rootId, remaining: [...group.jobIds], phase: "pending", error: null });
+    if (group.open.length !== 0) return;
+    const jobIds = this.chainIds.get(rootId);
+    if (!jobIds) return;
+    this.visibilityRevision = null;
+    await this.run({ kind: hidden ? "hide" : "show", rootId, remaining: [...jobIds], phase: "pending", error: null });
   }
 
   queueReason(): QueueDisabled | null {
@@ -443,6 +475,7 @@ export class V1JobBoardController {
     // The outcome of *this* write. The shown `action` can be dismissed (or replaced) while the
     // lists are re-read below, so it is not what decides the notification.
     let visibilityDone = false;
+    let outcomeUnknown = false;
     try {
       if (action.kind === "dispatch" || action.kind === "hold" || action.kind === "order") {
         const frozen = this.frozen!;
@@ -465,7 +498,12 @@ export class V1JobBoardController {
           const jobId = remaining[0]!;
           // Read the visibility revision right before the write (its own CAS, not the job revision).
           const current = await this.api.getVisibility(jobId);
-          if (current.hidden !== hidden) await this.api.setVisibility(jobId, current.revision, hidden);
+          if (current.hidden !== hidden) {
+            // A lost PUT keeps its original CAS. The GET only lets an already applied PUT settle.
+            this.visibilityRevision ??= current.revision;
+            await this.api.setVisibility(jobId, this.visibilityRevision, hidden);
+          }
+          this.visibilityRevision = null;
           remaining = remaining.slice(1);
           if (this.disposed) return;
           this.store.patch({ action: { ...action, remaining } });
@@ -479,12 +517,17 @@ export class V1JobBoardController {
       if (this.disposed) return;
       const apiError = toApiError(error);
       const phase: BoardActionPhase = apiError.kind === "precondition" ? "conflict" : classifyStartFailure(apiError);
-      if (phase !== "unknown") this.frozen = null;
+      outcomeUnknown = phase === "unknown";
+      if (!outcomeUnknown) {
+        this.frozen = null;
+        this.visibilityRevision = null;
+      }
       this.store.patch({ action: { ...action, remaining, phase, error: apiError } });
     }
     // Whatever happened, the lists come from the server again.
     await this.refresh();
-    if (this.store.get().action?.phase !== "unknown") this.gate.release(this.owner);
+    // A recheck can start during this refresh. Only the settled write may release the gate.
+    if (!outcomeUnknown) this.gate.release(this.owner);
     if (visibilityDone && !this.disposed) this.options.onVisibilitySettled?.();
   }
 

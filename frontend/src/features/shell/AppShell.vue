@@ -9,6 +9,8 @@ import ExpertWorkspace from "../expert/ExpertWorkspace.vue";
 import SettingsPage from "../settings/SettingsPage.vue";
 import NormalWorkspace from "../workspace/NormalWorkspace.vue";
 import QueuePage from "../queue/QueuePage.vue";
+import ResultsPage from "../results/ResultsPage.vue";
+import V1DeleteDialog from "../transcribe/V1DeleteDialog.vue";
 import ExpertSidebar from "./ExpertSidebar.vue";
 import NormalTopNav from "./NormalTopNav.vue";
 
@@ -67,10 +69,12 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
       <SettingsPage v-else-if="state.section === 'settings'" />
       <!-- D2-A: the queue page exists only in the v1 shape (`--next-ui-v1`); legacy keeps the notice. -->
       <QueuePage v-else-if="state.section === 'queue' && apiMode === 'v1-dev'" />
+      <ResultsPage v-else-if="state.section === 'results' && apiMode === 'v1-dev'" />
       <section v-else class="u-page u-stack" :data-testid="`section-${state.section}`">
         <h1 class="u-heading">{{ currentTitle }}</h1>
         <NotMigrated :section="currentTitle" :stage="STAGE[state.section]" />
       </section>
+      <V1DeleteDialog v-if="apiMode === 'v1-dev'" />
     </v-main>
   </v-layout>
 </template>

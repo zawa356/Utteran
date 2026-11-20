@@ -1,5 +1,7 @@
 # Architecture documents — where to start
 
+追補（2026-11-19、0.1.61未リリース）。[`--next-ui-v1` Expert 結果・履歴](ui3/d3a-results-history.md)。既存B7/C2cに接続。Windows実機未受入。
+
 追補（2026-11-19、0.1.60未リリース）: [D2-B Expertキュー操作](ui3/d2b-queue-actions.md)。B7既存契約へ接続、単一mutation gate、Draft PR。Windows実機は未受入。
 
 更新: 2026-11-12 JST（UI-3 S5-A 新UIからv1単一ジョブ、開発版0.1.51・未リリース）

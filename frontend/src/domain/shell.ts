@@ -32,7 +32,7 @@ export type MigrationStatus = "partial" | "not_migrated";
 
 export const SECTION_STATUS: Record<SectionId, MigrationStatus> = {
   transcribe: "partial", // S3-A/S3-B1 (legacy) or S5-A/S5-B (v1-dev): no diarization
-  results: "not_migrated", // bundle D3
+  results: "not_migrated", // v1-dev: partial (D3-A)
   models: "not_migrated",
   queue: "not_migrated", // legacy `--next-ui`; v1-dev: partial (bundle D2-A, see `sectionStatus`)
   setup: "not_migrated",
@@ -40,11 +40,10 @@ export const SECTION_STATUS: Record<SectionId, MigrationStatus> = {
 };
 
 /**
- * The migration status shown for a page in this API mode (bundle D2-A). Only the v1 shape
- * (`--next-ui-v1`) has the queue page; the legacy `--next-ui` keeps it not migrated.
+ * The queue and results pages are available only with the v1 API.
  */
 export function sectionStatus(section: SectionId, apiMode: ApiMode): MigrationStatus {
-  if (section === "queue" && apiMode === "v1-dev") return "partial";
+  if ((section === "queue" || section === "results") && apiMode === "v1-dev") return "partial";
   return SECTION_STATUS[section];
 }
 

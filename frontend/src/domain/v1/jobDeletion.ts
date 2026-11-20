@@ -134,9 +134,9 @@ export class V1DeletionController {
     this.options.onSettled?.();
   }
 
-  /** Close the dialog. Refused while a request is in flight; an unknown outcome must be dismissed explicitly. */
+  /** Close a plan or settled result. Unknown outcomes keep the frozen intent and the gate. */
   close(): void {
-    if (this.store.get().phase === "executing") return;
+    if (this.busy()) return;
     this.generation += 1;
     this.intent = null;
     this.gate.release(this.owner);

@@ -1,24 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import type { JobV1 } from "../../api/v1Resources";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
 import { useCodeText } from "../../composables/v1";
 import type { MessageKey } from "../../i18n";
 
-/**
- * Bundle C2c confirmation (`--next-ui-v1`). One dialog per mode, opened from one of two separate row
- * buttons ("delete history" / "delete history and outputs"). The target is one internal job id, shown
- * verbatim; a row with several attempts asks which one. Default focus is the cancel button. The
- * dialog never says "completely erased": it lists what the server says is retained.
- */
-const props = defineProps<{ candidates: readonly JobV1[] }>();
+/** C2c confirmation for one explicitly selected internal job. */
 const core = useCore();
 const deletion = core.v1!.deletion;
 const s = useStore(deletion.store);
 const queueGate = useStore(deletion.gate.store);
-const { t, status, reason } = useCodeText();
+const { t, reason } = useCodeText();
+let returnFocus: HTMLElement | null = null;
 const cancelButton = ref<{ $el: HTMLElement } | null>(null);
 
 const open = computed(() => s.value.phase !== "idle");
@@ -28,25 +22,21 @@ const settled = computed(() => ["done", "incomplete", "rejected", "conflict"].in
 const title = computed(() => t(mode.value === "history" ? "v1.delete.history.title" : "v1.delete.artifacts.title"));
 const body = computed(() => t(mode.value === "history" ? "v1.delete.history.body" : "v1.delete.artifacts.body"));
 
-function choose(jobId: string | null): void {
-  const target = s.value.target;
-  const job = props.candidates.find((item) => item.id === jobId);
-  if (!target || !job || job.id === target.jobId || deletion.busy()) return;
-  void deletion.plan({ ...target, jobId: job.id, revision: job.revision });
-}
-
 const canConfirm = computed(() => {
   void s.value;
   void queueGate.value;
   return deletion.canConfirm();
 });
 
-function close(): void {
-  // After an unknown outcome the lists are read again (what the server has is the truth).
-  const unknown = s.value.phase === "unknown";
-  deletion.close();
-  if (unknown) void core.v1!.board.refresh();
+function restoreFocus(): void {
+  if (returnFocus?.isConnected) returnFocus.focus();
+  else document.querySelector<HTMLElement>('[data-testid="v1-board-refresh"], [data-testid="nav-results"]')?.focus();
+  returnFocus = null;
 }
+
+watch(open, (active) => {
+  if (active) returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+}, { flush: "sync" });
 
 // The safe choice has the focus whenever a plan is shown.
 watch(
@@ -61,19 +51,12 @@ watch(
 </script>
 
 <template>
-  <v-dialog :model-value="open" max-width="560" persistent data-testid="v1-delete-dialog" @update:model-value="(v: boolean) => (!v ? close() : undefined)">
+  <v-dialog :model-value="open" max-width="560" persistent data-testid="v1-delete-dialog" @after-leave="restoreFocus">
     <!-- The app default card variant is "outlined" (transparent): a dialog needs its own surface. -->
     <v-card v-if="s.target" variant="flat" color="surface" elevation="8" :title="title" data-testid="v1-delete-card" :data-mode="s.target.mode" :data-phase="s.phase" :data-job="s.target.jobId">
       <v-card-text class="u-stack">
         <p class="text-body-2" data-testid="v1-delete-body">{{ body }}</p>
         <p class="text-body-2 u-break" data-testid="v1-delete-target">{{ t("v1.delete.target", { id: s.target.jobId }) }}</p>
-        <template v-if="candidates.length > 1">
-          <p class="text-caption">{{ t("v1.delete.chooseTarget") }}</p>
-          <v-radio-group :model-value="s.target.jobId" density="compact" hide-details :disabled="executing || s.phase === 'unknown' || settled" data-testid="v1-delete-choose" @update:model-value="choose">
-            <v-radio v-for="job in candidates" :key="job.id" :value="job.id" :label="t('v1.delete.targetOption', { status: status(job.status), id: job.id })" :data-job="job.id" data-testid="v1-delete-option" />
-          </v-radio-group>
-        </template>
-
         <p v-if="s.phase === 'planning'" role="status" class="text-body-2" data-testid="v1-delete-planning">{{ t("v1.delete.planning") }}</p>
         <ErrorAlert v-if="s.phase === 'plan_error' && s.error" :error="s.error" testid="v1-delete-plan-error" @retry="deletion.plan(s.target)" />
 
@@ -122,8 +105,8 @@ watch(
         </template>
       </v-card-text>
       <v-card-actions class="flex-wrap">
-        <v-btn ref="cancelButton" variant="flat" color="primary" :disabled="executing" data-testid="v1-delete-cancel" @click="close">
-          {{ settled || s.phase === "unknown" ? t("v1.delete.close") : t("v1.delete.cancel") }}
+        <v-btn v-if="s.phase !== 'unknown'" ref="cancelButton" variant="flat" color="primary" :disabled="executing" data-testid="v1-delete-cancel" @click="deletion.close()">
+          {{ settled ? t("v1.delete.close") : t("v1.delete.cancel") }}
         </v-btn>
         <v-btn v-if="s.phase === 'unknown'" variant="outlined" data-testid="v1-delete-recheck" @click="deletion.recheck()">{{ t("v1.delete.recheck") }}</v-btn>
         <v-btn v-if="!settled && s.phase !== 'unknown'" variant="outlined" color="error" :disabled="!canConfirm || executing" :loading="executing" data-testid="v1-delete-confirm" @click="deletion.confirm()">

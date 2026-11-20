@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createHttpClient } from "../../api/http";
 import { createV1ResourcesApi } from "../../api/v1Resources";
 import { json } from "../../test/fakeFetch";
@@ -314,4 +314,99 @@ describe("PR #53 review P2-2: a branched retry chain never loses an unfinished j
     await b.cancel(a, "job_" + "0".repeat(32)); // not a job of this row: nothing is sent
     expect(server.writes().filter((w) => w.line.endsWith("/cancel"))).toHaveLength(1);
   });
+});
+
+describe("D3-A finished history with mixed visibility", () => {
+  it("keeps the same logical root in each view and re-shows every surviving attempt", async () => {
+    const { server, board: b } = board();
+    const [root, child] = server.addJobs(2);
+    server.setStatus(root!, "failed");
+    server.setStatus(child!, "succeeded");
+    server.jobs[1]!.retry_of = root!;
+    if (server.visibility === false) throw new Error("expected visibility support");
+    server.visibility.set(root!, { hidden: true, revision: 3 });
+
+    await b.refresh();
+    expect(b.store.get().history).toMatchObject([{ rootId: root, jobIds: [child], latest: { id: child } }]);
+    expect(b.store.get().hidden).toEqual([]);
+    b.setShowHidden(true);
+    await b.refresh();
+    expect(b.store.get().hidden).toMatchObject([{ rootId: root, jobIds: [root], latest: { id: root } }]);
+    await b.setHidden(root!, false);
+    expect(b.store.get().history).toMatchObject([{ rootId: root, jobIds: [root, child] }]);
+    expect(b.store.get().hidden).toEqual([]);
+    expect(server.writes().map(w => [w.line, w.ifMatch])).toEqual([[`PUT /api/v1/jobs/${root}/visibility`, '"3"']]);
+  });
+
+  it("excludes a hidden ancestor from finished history while any visible branch is open", async () => {
+    const { server, board: b } = board();
+    const [root, waiting, success] = server.addJobs(3);
+    server.setStatus(root!, "failed");
+    server.setStatus(success!, "succeeded");
+    server.jobs[1]!.retry_of = root!;
+    server.jobs[2]!.retry_of = root!;
+    if (server.visibility === false) throw new Error("expected visibility support");
+    server.visibility.set(root!, { hidden: true, revision: 1 });
+
+    b.setShowHidden(true);
+    await b.refresh();
+    expect(b.store.get()).toMatchObject({ queue: [{ rootId: root, open: [{ id: waiting }] }], history: [], hidden: [] });
+    expect(server.writes()).toEqual([]);
+  });
+});
+
+it("D3A-09: unknown visibility PUT retains its CAS if another visibility revision intervenes", async () => {
+  const { server, board: b } = board();
+  const [id] = server.addJobs(1);
+  server.setStatus(id!, "succeeded");
+  await b.refresh();
+  server.inject.set(`PUT /api/v1/jobs/${id}/visibility`, { reply: new TypeError("network") });
+  await b.setHidden(id!, true);
+  expect(b.store.get().action?.phase).toBe("unknown");
+  if (server.visibility === false) throw new Error("expected visibility support");
+  server.visibility.set(id!, { hidden: false, revision: 2 });
+  await b.refresh();
+  expect(b.actionOpen()).toBe(true);
+  await b.recheck();
+  expect(server.writes().map(w => w.ifMatch)).toEqual(['"0"', '"0"']);
+  expect(b.store.get().action?.phase).toBe("conflict");
+  expect(b.actionOpen()).toBe(false);
+});
+
+it("D3A-12: the previous refresh cannot release the gate while explicit recheck is pending", async () => {
+  const { server, api, board: b } = board();
+  const [id] = server.addJobs(1);
+  server.setStatus(id!, "failed");
+  await b.refresh();
+  server.inject.set(`POST /api/v1/jobs/${id}/retry`, { reply: new TypeError("network") });
+  const queue = api.getQueue;
+  let finishRead!: () => void;
+  const holdRead = new Promise<void>(resolve => { finishRead = resolve; });
+  vi.spyOn(api, "getQueue").mockImplementationOnce(async signal => {
+    await holdRead;
+    return queue(signal);
+  });
+  const initial = b.retry(id!);
+  await vi.waitFor(() => expect(api.getQueue).toHaveBeenCalledOnce());
+  expect(b.store.get().action?.phase).toBe("unknown");
+
+  const retry = api.retry;
+  let finishReplay!: () => void;
+  const holdReplay = new Promise<void>(resolve => { finishReplay = resolve; });
+  vi.spyOn(api, "retry").mockImplementationOnce(async (...args) => {
+    await holdReplay;
+    return retry(...args);
+  });
+  const recheck = b.recheck();
+  finishRead();
+  await initial;
+  try {
+    expect(b.store.get().action?.phase).toBe("pending");
+    expect(b.actionOpen()).toBe(true);
+  } finally {
+    finishReplay();
+    await recheck;
+  }
+  expect(b.store.get().action?.phase).toBe("done");
+  expect(b.actionOpen()).toBe(false);
 });
