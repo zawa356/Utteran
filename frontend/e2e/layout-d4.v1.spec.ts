@@ -44,6 +44,12 @@ test("D4-A Expert switches by measured area without stacking panes", async ({ ap
   await expect(queue).toBeHidden();
   await app.keyboard.press("Shift+F6");
   await expect(queue).toBeFocused();
+  await app.setViewportSize({ width: 420, height: 660 });
+  const nav = app.getByTestId("nav-toggle");
+  await nav.click();
+  await expect(nav).toHaveAttribute("aria-expanded", "true");
+  await nav.press("Escape");
+  await expect(nav).toHaveAttribute("aria-expanded", "false");
 });
 
 test("D4-A keeps drafts and bounded separator widths through switches", async ({ app }) => {

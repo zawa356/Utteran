@@ -47,6 +47,7 @@ const items = computed(() =>
   <v-navigation-drawer
     :permanent="!overlay"
     :temporary="overlay"
+    :disable-resize-watcher="v1"
     :model-value="true"
     :rail="rail"
     :rail-width="SIDEBAR.rail"
