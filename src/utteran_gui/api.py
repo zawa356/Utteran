@@ -162,6 +162,7 @@ def create_app(
     enable_v1_settings: bool = False,
     v1_authority: str | None = None,
     v1_store_path: Path | None = None,
+    v1_worksets_path: Path | None = None,
     enable_v1_jobs: bool = False,
     v1_jobs_runtime: Any = None,
     enable_v1_setup: bool = False,
@@ -216,6 +217,12 @@ def create_app(
             raise ValueError("v1_authority is required when enabling v1 settings")
         settings_path = v1_store_path or resolve_data_paths(repo_root).settings_resources
         v1_app = create_settings_app(session_key, authority=v1_authority, store_path=settings_path)
+        # E-B: named worksets in their own private store (never B5/B6/B7 files), same sub-app.
+        from utteran_gui.worksets_api import register_workset_routes
+
+        register_workset_routes(
+            v1_app, v1_worksets_path or resolve_data_paths(repo_root).worksets_store
+        )
         if enable_v1_jobs:
             # Same sub-app: one /api/v1 mount, one session/Host/Origin boundary.
             from utteran_gui.jobs_api import register_job_routes

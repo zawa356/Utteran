@@ -1,0 +1,346 @@
+{
+  "$defs": {
+    "Common": {
+      "additionalProperties": false,
+      "description": "Screen differences from the Preset (``null`` = inherit) and the common output folder.",
+      "properties": {
+        "formats": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "srt",
+                  "vtt",
+                  "json",
+                  "txt",
+                  "md"
+                ],
+                "type": "string"
+              },
+              "maxItems": 5,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Formats"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Language"
+        },
+        "output_dir": {
+          "maxLength": 32768,
+          "title": "Output Dir",
+          "type": "string"
+        },
+        "output_source": {
+          "anyOf": [
+            {
+              "enum": [
+                "saved_default",
+                "picker",
+                "typed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Output Source"
+        }
+      },
+      "required": [
+        "language",
+        "formats",
+        "output_dir",
+        "output_source"
+      ],
+      "title": "Common",
+      "type": "object"
+    },
+    "Input": {
+      "additionalProperties": false,
+      "properties": {
+        "input_path": {
+          "maxLength": 32768,
+          "minLength": 1,
+          "title": "Input Path",
+          "type": "string"
+        },
+        "output": {
+          "$ref": "#/$defs/Output"
+        },
+        "overrides": {
+          "$ref": "#/$defs/Overrides"
+        },
+        "selected": {
+          "title": "Selected",
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "picker",
+            "drop",
+            "typed"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_path",
+        "source",
+        "selected",
+        "output",
+        "overrides"
+      ],
+      "title": "Input",
+      "type": "object"
+    },
+    "Output": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "inherit",
+            "custom"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Output",
+      "type": "object"
+    },
+    "Overrides": {
+      "additionalProperties": false,
+      "description": "Only the leaves a row changes; an absent key follows the common value.",
+      "properties": {
+        "asr_backend": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asr Backend"
+        },
+        "asr_device": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asr Device"
+        },
+        "asr_model": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asr Model"
+        },
+        "formats": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "srt",
+                  "vtt",
+                  "json",
+                  "txt",
+                  "md"
+                ],
+                "type": "string"
+              },
+              "maxItems": 5,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Formats"
+        },
+        "glossary": {
+          "anyOf": [
+            {
+              "exclusiveMaximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Glossary"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        }
+      },
+      "title": "Overrides",
+      "type": "object"
+    },
+    "Ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 1000000000000000000,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "revision"
+      ],
+      "title": "Ref",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "common": {
+      "$ref": "#/$defs/Common"
+    },
+    "glossaries": {
+      "items": {
+        "items": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "maxItems": 1000,
+        "type": "array"
+      },
+      "maxItems": 100,
+      "title": "Glossaries",
+      "type": "array"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/Input"
+      },
+      "maxItems": 100,
+      "title": "Inputs",
+      "type": "array"
+    },
+    "policy_ref": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Ref"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "preset_ref": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Ref"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "primary_index": {
+      "anyOf": [
+        {
+          "exclusiveMaximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Primary Index"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "preset_ref",
+    "policy_ref",
+    "common",
+    "inputs",
+    "primary_index",
+    "glossaries"
+  ],
+  "title": "WorksetState",
+  "type": "object"
+}
