@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { choose, SESSION_HEADER } from "./fixtures";
-import { expect, test } from "./isolatedV1";
+import { choose, expect, SESSION_HEADER } from "./fixtures";
+import { test } from "./isolatedV1";
 
 async function createPreset(page: Page, name: string) {
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
