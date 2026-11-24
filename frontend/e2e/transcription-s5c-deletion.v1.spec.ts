@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, shot, test } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot, test, isWorksetPath } from "./fixtures";
 
 /**
  * Bundle C2c against the real FastAPI app in the `--next-ui-v1` shape (layout v8): the history-only
@@ -24,7 +24,9 @@ const POLICY = "S5-C CPU";
 function recordApi(page: Page): Request[] {
   const seen: Request[] = [];
   page.on("request", (r) => {
-    if (new URL(r.url()).pathname.startsWith("/api/")) seen.push(r);
+    const { pathname } = new URL(r.url());
+    // E-B autosave has its own spec; these specs record B5/B7 traffic only.
+    if (pathname.startsWith("/api/") && !isWorksetPath(pathname)) seen.push(r);
   });
   return seen;
 }

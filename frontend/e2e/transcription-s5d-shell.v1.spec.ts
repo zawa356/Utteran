@@ -21,7 +21,9 @@ const EXPERT = ["transcribe", "queue", "results", "models", "setup", "settings"]
 function recordApi(page: Page): Request[] {
   const seen: Request[] = [];
   page.on("request", (r) => {
-    if (new URL(r.url()).pathname.startsWith("/api/")) seen.push(r);
+    const { pathname } = new URL(r.url());
+    // E-B autosave has its own spec; these specs record B5/B7 traffic only.
+    if (pathname.startsWith("/api/") && !isWorksetPath(pathname)) seen.push(r);
   });
   return seen;
 }
