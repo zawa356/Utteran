@@ -104,7 +104,6 @@ export class WorksetController {
   private failedKey: string | null = null;
   private generation = 0;
   private applying = false;
-  private editsDuringLoad = 0;
   private modeTouchedDuringLoad = false;
   private snapshot: Snapshot | null = null;
   private timer: unknown = null;
@@ -150,6 +149,8 @@ export class WorksetController {
   /** Anything not confirmed by the server (leaving the page would lose it). */
   hasUnsaved(): boolean {
     const s = this.store.get();
+    // Without a readable store nothing is saved: any entered state would be lost.
+    if (s.phase === "error" || s.phase === "idle") return this.projectionKey() !== stateKey(emptyWorksetState());
     if (s.phase !== "ready" || !s.current) return false;
     return s.save.phase !== "clean" || this.projectionKey() !== this.baseline || s.current.name !== this.savedName;
   }
@@ -170,7 +171,6 @@ export class WorksetController {
   async start(): Promise<void> {
     if (this.disposed || this.store.get().phase === "loading") return;
     const generation = ++this.generation;
-    this.editsDuringLoad = 0;
     this.modeTouchedDuringLoad = false;
     this.snapshot = this.take();
     this.store.patch({ phase: "loading", error: null, op: { ...IDLE_OP, kind: "start", phase: "pending" } });
@@ -182,9 +182,11 @@ export class WorksetController {
       const doc = await this.api.get(pick);
       if (generation !== this.generation || this.disposed) return;
       this.store.patch({ items: listing.items, limits: listing.limits });
+      // The page starts empty: anything else was entered before the saved state arrived (also
+      // while the settings were still loading, or in memory after a failed start).
       const localKey = this.projectionKey();
       const pristine = stateKey(emptyWorksetState());
-      if (this.editsDuringLoad > 0 && localKey !== pristine && localKey !== stateKey(doc.state)) {
+      if (localKey !== pristine && localKey !== stateKey(doc.state)) {
         this.adoptCurrent(doc);
         if (stateKey(doc.state) === pristine) {
           // A new, empty workset: what was entered while it loaded is simply saved into it.
@@ -488,10 +490,6 @@ export class WorksetController {
   private onChange(): void {
     if (this.applying || this.disposed || !this.changed()) return;
     const s = this.store.get();
-    if (s.phase === "loading") {
-      this.editsDuringLoad += 1;
-      return;
-    }
     if (s.phase !== "ready" || !s.current || s.conflict) return;
     this.schedule();
   }

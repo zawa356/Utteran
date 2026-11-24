@@ -1,4 +1,4 @@
-import { expect, type Page, test as base } from "@playwright/test";
+import { type APIRequestContext, expect, type Page, test as base } from "@playwright/test";
 
 export const SESSION = "ui2-e2e-synthetic-session-key";
 export const SESSION_HEADER = { "x-utteran-session": SESSION };
@@ -7,6 +7,41 @@ declare global {
   interface Window {
     __violations: { directive: string; blocked: string }[];
   }
+}
+
+/**
+ * E-B autosaves the workset through its own `/api/v1/worksets` routes. Specs that assert the exact
+ * B5/B7 write sequence leave those out (they are verified in worksets-eb.v1.spec.ts).
+ */
+export const isWorksetPath = (pathname: string) => pathname === "/api/v1/worksets" || pathname.startsWith("/api/v1/worksets/");
+
+const EMPTY_WORKSET = {
+  schema_version: 1, preset_ref: null, policy_ref: null,
+  common: { language: null, formats: null, output_dir: "", output_source: null },
+  inputs: [], primary_index: null, glossaries: [],
+};
+
+/**
+ * A server shared by several tests keeps its worksets (that is the feature): start every test from
+ * one empty "作業セット1" in Normal mode, through the real API, like the settings reset above.
+ */
+async function resetWorksets(request: APIRequestContext): Promise<void> {
+  const listing = await request.get("/api/v1/worksets", { headers: SESSION_HEADER });
+  if (listing.status() !== 200) return; // legacy servers have no v1 routes
+  const body = (await listing.json()) as { exists: boolean; items: { id: string; revision: number }[] };
+  if (!body.exists || body.items.length === 0) return;
+  const [keep, ...rest] = body.items;
+  for (const item of rest) {
+    const removed = await request.delete(`/api/v1/worksets/${item.id}`, { headers: { ...SESSION_HEADER, "If-Match": `"${item.revision}"` } });
+    expect(removed.status()).toBe(200);
+  }
+  const put = await request.put(`/api/v1/worksets/${keep!.id}`, {
+    headers: { ...SESSION_HEADER, "If-Match": `"${keep!.revision}"` },
+    data: { schema_version: 1, name: "作業セット1", state: EMPTY_WORKSET },
+  });
+  expect(put.status()).toBe(200);
+  const active = await request.put("/api/v1/worksets/active", { headers: SESSION_HEADER, data: { schema_version: 1, workset_id: keep!.id, view: { mode: "normal" } } });
+  expect(active.status()).toBe(200);
 }
 
 /** Every page records CSP violations and same-origin-only network use. */
@@ -28,6 +63,7 @@ export const test = base.extend<{ app: Page; externalRequests: string[] }>({
     });
     expect(reset.status()).toBe(200);
     expect((await request.delete("/api/token", { headers: SESSION_HEADER })).status()).toBe(200);
+    await resetWorksets(request);
     await page.addInitScript(() => {
       window.__violations = [];
       document.addEventListener("securitypolicyviolation", (event) => {

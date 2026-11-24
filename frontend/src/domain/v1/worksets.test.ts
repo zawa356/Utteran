@@ -353,6 +353,18 @@ describe("E-B worksets controller", () => {
     expect(core.inputs.store.get().rows.map((r) => r.inputPath)).toEqual(["/saved.wav"]);
   });
 
+  it("edits made before the restore starts (settings still loading) are not replaced either", async () => {
+    const { core, worksets, ws } = setup({ exists: true });
+    const saved = { ...emptyWire(), inputs: [{ input_path: "/saved.wav", source: "typed", selected: true, output: { kind: "inherit" }, overrides: {} }], primary_index: 0 };
+    ws.items.push({ id: "ws_" + "c".repeat(32), name: "x", revision: 1, state: saved, updatedAt: "2026-11-24T00:00:00Z" });
+    ws.active = { id: ws.items[0]!.id, mode: "normal", revision: 1 };
+    add(core, "early.wav"); // before core.start() reaches the worksets
+    await core.start();
+    expect(worksets.store.get().conflict?.kind).toBe("edited_during_load");
+    expect(core.inputs.store.get().rows.map((r) => r.inputPath)).toEqual([path("early.wav")]);
+    expect(ws.items[0]!.revision).toBe(1);
+  });
+
   it("an unreadable store keeps the screen working in memory and never shows 'saved'", async () => {
     const { core, worksets, ws } = setup();
     ws.inject.set("GET /api/v1/worksets", { reply: json(503, { schema_version: 1, error: { code: "store_corrupt", message_key: "worksets.store_corrupt", request_id: "r", retryable: false, issues: [] } }) });
@@ -361,7 +373,8 @@ describe("E-B worksets controller", () => {
     add(core, "a.wav");
     await settle();
     expect(ws.applied).toEqual([]);
-    expect(worksets.hasUnsaved()).toBe(false); // nothing is claimed; the bar says "not saved"
+    // Nothing is claimed as saved, and leaving the page warns because nothing is.
+    expect(worksets.hasUnsaved()).toBe(true);
   });
 
   it("restore replaces rows with new page-local ids (no old admission/file id can attach)", async () => {

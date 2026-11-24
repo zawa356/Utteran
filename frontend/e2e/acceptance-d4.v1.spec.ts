@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
-import { choose, expect, SESSION, SESSION_HEADER } from "./fixtures";
+import { choose, expect, SESSION, SESSION_HEADER, isWorksetPath } from "./fixtures";
 import { test } from "./isolatedV1";
 import { THREE_COLUMNS_AT, TWO_COLUMNS_AT } from "../src/domain/paneLayout";
 
@@ -96,7 +96,7 @@ test("D4-C shows the real B5/B7 lifecycle from submission to results", async ({ 
   const writes: string[] = [];
   app.on("request", request => {
     const url = new URL(request.url());
-    if (url.pathname.startsWith("/api/") && request.method() !== "GET") writes.push(`${request.method()} ${url.pathname}`);
+    if (url.pathname.startsWith("/api/") && request.method() !== "GET" && !isWorksetPath(url.pathname)) writes.push(`${request.method()} ${url.pathname}`);
   });
   await expect(call("v1-presets-empty")).toBeVisible();
   await capture(app, "product-normal-empty-ja-light-blue-1280");
@@ -185,7 +185,7 @@ test("D4-C confirmations and connection failures preserve the actual job state",
   const writes: string[] = [];
   app.on("request", request => {
     const { pathname } = new URL(request.url());
-    if (pathname.startsWith("/api/") && request.method() !== "GET") writes.push(`${request.method()} ${pathname}`);
+    if (pathname.startsWith("/api/") && request.method() !== "GET" && !isWorksetPath(pathname)) writes.push(`${request.method()} ${pathname}`);
   });
   await call("result-rerun").click();
   await expect(call("rerun-close")).toBeFocused();

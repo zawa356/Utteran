@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page, Request, Route } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, SESSION_HEADER, shot, test } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, SESSION_HEADER, shot, test, isWorksetPath } from "./fixtures";
 import { test as isolatedTest } from "./isolatedV1";
 
 /**
@@ -29,7 +29,7 @@ function recordApi(page: Page): Request[] {
   return seen;
 }
 const line = (r: Request) => `${r.method()} ${new URL(r.url()).pathname}`;
-const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET").map(line);
+const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET" && !isWorksetPath(new URL(r.url()).pathname)).map(line);
 const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 
 async function api<T>(request: APIRequestContext, path: string): Promise<T> {

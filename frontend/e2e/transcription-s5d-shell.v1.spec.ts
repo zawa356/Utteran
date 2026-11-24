@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, SESSION, shot, test } from "./fixtures";
+import { choose, expect, SESSION, shot, test, isWorksetPath } from "./fixtures";
 
 /**
  * Bundle D1 in the `--next-ui-v1` shape (real B5/B7 on the real loopback authority, synthetic B4
@@ -26,7 +26,7 @@ function recordApi(page: Page): Request[] {
   return seen;
 }
 const line = (r: Request) => `${r.method()} ${new URL(r.url()).pathname}`;
-const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET").map(line);
+const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET" && !isWorksetPath(new URL(r.url()).pathname)).map(line);
 /** The legacy job routes (start, cancel, queue): v1-dev must never use them, by any path. */
 const legacyJobCalls = (seen: Request[]) => seen.map(line).filter((l) => / \/api\/(jobs|queue)(\/|$)/.test(l));
 

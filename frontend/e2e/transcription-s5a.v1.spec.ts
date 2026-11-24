@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, shot, test } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot, test, isWorksetPath } from "./fixtures";
 
 /**
  * UI-3 S5-A against the real FastAPI app in the `--next-ui-v1` shape (tools/ui2/serve_next_ui.py
@@ -28,7 +28,7 @@ function recordApi(page: Page): Request[] {
   return seen;
 }
 const line = (r: Request) => `${r.method()} ${new URL(r.url()).pathname}`;
-const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET").map(line);
+const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET" && !isWorksetPath(new URL(r.url()).pathname)).map(line);
 const legacyWrites = (seen: Request[]) => writes(seen).filter((l) => !l.includes(" /api/v1/") && !l.startsWith("PATCH /api/settings"));
 
 async function serverJobs(request: APIRequestContext): Promise<{ id: string; status: string }[]> {

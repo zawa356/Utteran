@@ -1,5 +1,11 @@
 # AI 作業状態
 
+## 現在地（2026-11-24、束 E-B、0.1.68・未リリース）
+
+- main 基点 `db67640f997e74c81b4dbf2ffe3abcdf5085731e`（0.1.67、E-A 統合済み）。作業ブランチ `claude/zealous-bell-rn7slw`、[#80](https://github.com/zawa356/Utteran/issues/80)。
+- 名前付き作業セットの自動保存・復元（Normal／Expert 共通）、独立 private ストア `worksets-v1` と `/api/v1/worksets`、CAS・競合・応答喪失の照合、復旧 2 世代、容量上限（実測根拠）を実装。B5/B7 の契約・DB、既定 GUI、CLI は不変。
+- [E-B 正本](docs/architecture/ui3/e-b-worksets.md)。HEAD・試験件数・CI は Draft PR に記録する。Windows WebView2 の実機確認（離脱確認・複数ウィンドウ・IME・ACL）は [#22](https://github.com/zawa356/Utteran/issues/22)。
+
 ## 現在地（2026-11-24、束 E-A、0.1.67・未リリース）
 
 - main 基点 `bb6e7cc1ae4a320612847beeea69d49074405a7d`。作業ブランチ `feat/ui3-ea-presets-glossary`、[#78](https://github.com/zawa356/Utteran/issues/78)。

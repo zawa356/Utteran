@@ -1,6 +1,6 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, shot } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot, isWorksetPath } from "./fixtures";
 import { test } from "./isolatedV1";
 
 /**
@@ -26,7 +26,7 @@ function recordApi(page: Page): Request[] {
   return seen;
 }
 const line = (r: Request) => `${r.method()} ${new URL(r.url()).pathname}`;
-const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET").map(line);
+const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET" && !isWorksetPath(new URL(r.url()).pathname)).map(line);
 const legacyWrites = (seen: Request[]) => writes(seen).filter((l) => !l.includes(" /api/v1/") && !l.startsWith("PATCH /api/settings"));
 
 async function api<T>(request: APIRequestContext, path: string): Promise<T> {
