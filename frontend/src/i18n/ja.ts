@@ -42,6 +42,8 @@ export const ja = {
   "tx.input.picking": "ファイル選択ダイアログを表示しています…",
   "tx.input.clear": "一覧から外す",
   "tx.input.pathLabel": "入力ファイルのパス（このPC上）",
+  "tx.input.pathHintV1": "このPC上の絶対パスを指定します。",
+  "tx.input.dropHintV1": "アプリのウィンドウにファイルをドロップして追加できます。",
   "tx.input.pathHint": "アップロードではありません。Utteranのサーバーと同じPC上のファイルを、絶対パスで指定します。",
   "tx.input.dropHint": "アプリ版では、画面内へファイルをまとめてドロップして追加できます（フォルダは対象外）。ブラウザ表示ではドロップできないため、ファイル選択かパス入力を使ってください。",
   "tx.input.source.picker": "ファイル選択で指定",

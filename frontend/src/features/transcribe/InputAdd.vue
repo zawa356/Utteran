@@ -14,6 +14,7 @@ import type { MessageKey } from "../../i18n";
  */
 const { core, list } = useTranscription();
 const { t } = useI18n();
+const v1 = core.apiMode === "v1-dev";
 
 let unsubscribe: (() => void) | null = null;
 function retainDrop() {
@@ -72,9 +73,9 @@ function add(event?: KeyboardEvent) {
   <div class="u-stack" data-testid="tx-input-add" @dragover="refuseBrowserDrop" @drop="refuseBrowserDrop">
     <div class="u-row">
       <v-btn
-        :variant="core.apiMode === 'v1-dev' ? 'tonal' : 'outlined'"
-        :color="core.apiMode === 'v1-dev' ? 'primary' : undefined"
-        :prepend-icon="core.apiMode === 'v1-dev' ? mdiFilePlusOutline : undefined"
+        :variant="v1 ? 'tonal' : 'outlined'"
+        :color="v1 ? 'primary' : undefined"
+        :prepend-icon="v1 ? mdiFilePlusOutline : undefined"
         :loading="list.picking" :disabled="list.picking || full" data-testid="tx-input-pick" @click="core.inputs.pick(core.host)"
       >
         {{ t("tx.input.pick") }}
@@ -84,7 +85,7 @@ function add(event?: KeyboardEvent) {
       <v-text-field
         :label="t('tx.input.pathLabel')"
         :model-value="list.typed"
-        :hint="t('tx.input.pathHint')"
+        :hint="t(v1 ? 'tx.input.pathHintV1' : 'tx.input.pathHint')"
         persistent-hint
         :maxlength="MAX_JOB_PATH_LENGTH + 1"
         :error-messages="typedProblem"
@@ -97,8 +98,8 @@ function add(event?: KeyboardEvent) {
       <v-btn variant="tonal" :disabled="list.typed === '' || typedProblem.length > 0 || full" data-testid="tx-input-add-typed" @click="add()">{{ t("tx.input.add") }}</v-btn>
     </div>
     <p v-if="list.picking" role="status" class="text-body-2">{{ t("tx.input.picking") }}</p>
-    <p class="text-caption" data-testid="tx-drop-hint">{{ t("tx.input.dropHint") }}</p>
-    <p class="text-caption" data-testid="tx-input-limit">{{ t("tx.input.limit", { max: MAX_INPUTS }) }}</p>
+    <p class="text-caption" data-testid="tx-drop-hint">{{ t(v1 ? "tx.input.dropHintV1" : "tx.input.dropHint") }}</p>
+    <p v-if="!v1 || full" class="text-caption" data-testid="tx-input-limit">{{ t("tx.input.limit", { max: MAX_INPUTS }) }}</p>
     <v-alert v-if="notice" :type="notice.type" density="compact" role="status" data-testid="tx-list-notice">{{ notice.text }}</v-alert>
     <v-alert v-if="list.pickError" type="info" role="status" data-testid="tx-input-pick-error">
       {{ list.pickError === "host_unavailable" ? t("tx.pick.hostUnavailable") : t("tx.pick.failed") }}
