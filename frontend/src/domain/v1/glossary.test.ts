@@ -12,6 +12,13 @@ it("accepts BOM and mixed line endings and gives the original duplicate line", a
   });
 });
 
+it.each(["ACME\tNetwork", "\tACME", "ACME\t", "\t", "ACME\0"])("rejects raw control characters in %j before trimming", async (line) => {
+  const text = `valid\r\n${line}\r\nnext`;
+  expect(analyzeGlossary(text)).toMatchObject({ valid: false, invalid: [2] });
+  const imported = await readGlossary(new Blob([`\uFEFF${text}`]));
+  expect(analyzeGlossary(imported)).toMatchObject({ valid: false, invalid: [2] });
+});
+
 it("counts Unicode code points and rejects invalid, long or excess terms", () => {
   expect(analyzeGlossary("😀".repeat(256)).valid).toBe(true);
   expect(analyzeGlossary("😀".repeat(257))).toMatchObject({ valid: false, long: [1] });

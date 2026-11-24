@@ -14,8 +14,9 @@ export function analyzeGlossary(text: string) {
   const seen = new Map<string, number>();
   for (const [index, raw] of lines.entries()) {
     const line = index + 1;
+    // Check the original line so trimming cannot hide a control character.
+    if (INVALID_CHARACTERS.test(raw)) invalid.push(line);
     const term = raw.trim();
-    if (INVALID_CHARACTERS.test(raw.replace(/\t/g, ""))) invalid.push(line);
     if (term !== raw) trimmed.push(line);
     if (!term) {
       empty.push(line);
