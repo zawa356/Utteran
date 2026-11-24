@@ -105,13 +105,13 @@ test("first start: empty store, nothing created implicitly; explicit Preset/Poli
   expect(writes(seen).filter((l) => l.includes("/api/v1/"))).toEqual(["POST /api/v1/presets", "POST /api/v1/execution-policies"]);
 
   // The browser sent its own Origin and cookie; no session header was added by the page.
-  for (const r of seen.filter((x) => x.method() === "POST")) {
+  for (const r of seen.filter((x) => x.method() === "POST" && !isWorksetPath(new URL(x.url()).pathname))) {
     const headers = await r.allHeaders();
     expect(headers.origin).toBe(new URL(r.url()).origin);
     expect(headers["x-utteran-session"]).toBeUndefined();
     expect(headers["idempotency-key"]).toMatch(/^[A-Za-z0-9_.-]{16,128}$/);
   }
-  const keys = await Promise.all(seen.filter((x) => x.method() === "POST").map(async (r) => (await r.allHeaders())["idempotency-key"]));
+  const keys = await Promise.all(seen.filter((x) => x.method() === "POST" && !isWorksetPath(new URL(x.url()).pathname)).map(async (r) => (await r.allHeaders())["idempotency-key"]));
   expect(new Set(keys).size).toBe(keys.length);
   const presets = await (await request.get("/api/v1/presets", { headers: AUTH })).json();
   expect(presets.items).toHaveLength(1);

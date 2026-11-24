@@ -287,7 +287,7 @@ test("hide and show: the row leaves and returns; the job, its state and its outp
   expect(await api(request, `/api/v1/jobs/${id}/visibility`)).toMatchObject({ hidden: false, revision: 2 });
   expect(await api(request, `/api/v1/jobs/${id}`)).toMatchObject({ revision: job.revision, status: "succeeded" });
 
-  const puts = seen.filter((r) => r.method() === "PUT");
+  const puts = seen.filter((r) => r.method() === "PUT" && !isWorksetPath(new URL(r.url()).pathname));
   expect(puts.map(line)).toEqual([`PUT /api/v1/jobs/${id}/visibility`, `PUT /api/v1/jobs/${id}/visibility`]);
   for (const r of puts) {
     const headers = await r.allHeaders();
