@@ -101,6 +101,12 @@ const switchBlocked = computed(() => {
       <p class="text-caption u-break">{{ t("v1.lib.summary", { backend: effective.backend, model: effective.model, language: effective.language, formats: effective.formats.join(", ") }) }}</p>
       <p class="text-caption u-break" data-testid="v1-prepared-output">{{ t("tx.job.outputFolder", { folder: prepared.outputDir }) }}</p>
       <p v-if="prepared.validation" class="text-caption" data-testid="v1-validated">{{ t("v1.job.validated") }}</p>
+      <ul v-if="prepared.validation?.files[0]?.warnings.length" class="text-caption u-notes" data-testid="ea-validation-warnings">
+        <li v-for="w in prepared.validation.files[0].warnings" :key="w.path + w.code">{{ issue(w) }}</li>
+      </ul>
+      <ul v-if="prepared.validation?.files[0]?.issues.length" class="text-caption u-notes">
+        <li v-for="i in prepared.validation.files[0].issues" :key="i.path + i.code">{{ issue(i) }}</li>
+      </ul>
       <template v-if="spec && resolution">
         <v-alert type="success" variant="tonal" density="compact" data-testid="v1-resolution">
           <p>{{ t("v1.job.resolved") }}</p>

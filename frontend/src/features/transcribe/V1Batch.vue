@@ -110,6 +110,9 @@ watch(
           <span v-if="((s.prepared.session.files as { overrides: unknown[] }[])[index]?.overrides.length ?? 0) > 0" class="text-caption">
             · {{ t("v1.batch.fileOverrides", { count: (s.prepared.session.files as { overrides: unknown[] }[])[index]!.overrides.length }) }}
           </span>
+          <ul v-if="s.prepared.validation?.files[index]" class="text-caption u-notes" data-testid="ea-batch-validation">
+            <li v-for="item in [...s.prepared.validation.files[index]!.issues, ...s.prepared.validation.files[index]!.warnings]" :key="item.path + item.code">{{ issue(item) }}</li>
+          </ul>
         </li>
       </ul>
       <v-alert v-if="s.step === 'resolved' && !stale && !expired" type="success" variant="tonal" density="compact" data-testid="v1-batch-resolved">{{ t("v1.batch.resolved", { count }) }}</v-alert>

@@ -72,6 +72,7 @@ export class V1LibraryController {
     createPreset: idleCreate,
     createPolicy: idleCreate,
   });
+  private listGeneration = { preset: 0, policy: 0 };
   private generation = { preset: 0, policy: 0 };
 
   constructor(private readonly api: V1ResourcesApi) {}
@@ -83,12 +84,15 @@ export class V1LibraryController {
 
   async loadList(kind: Kind): Promise<void> {
     const key = listKey(kind);
+    const generation = ++this.listGeneration[kind];
     this.store.patch({ [key]: { ...this.store.get()[key], phase: "pending", error: null } } as Partial<LibraryState>);
     try {
       const all = await this.api.listAll(collection(kind));
+      if (generation !== this.listGeneration[kind]) return;
       this.store.patch({ [key]: { phase: "done", items: all.items, truncated: all.truncated, error: null } } as Partial<LibraryState>);
       this.reconcile(kind);
     } catch (error) {
+      if (generation !== this.listGeneration[kind]) return;
       this.store.patch({ [key]: { ...this.store.get()[key], phase: "error", error: toApiError(error) } } as Partial<LibraryState>);
     }
   }
@@ -125,6 +129,35 @@ export class V1LibraryController {
     return this.create("preset", new MutationIntent(presetBody(draft)));
   }
 
+  /** Duplicating a saved Preset creates a new resource with the full settings. */
+  async duplicatePreset(name: string, settings: JsonObject): Promise<boolean> {
+    return this.create("preset", new MutationIntent({ schema_version: 1, name: name.trim(), settings }));
+  }
+
+  getGlossarySupport() {
+    return this.api.getGlossarySupport();
+  }
+
+  getLatestPreset(id: string): Promise<PresetV1> {
+    return this.api.getLatestPreset(id);
+  }
+
+  async revisePreset(base: PresetV1, name: string, settings: JsonObject): Promise<void> {
+    const updated = await this.api.revisePreset(base.id, base.revision, { schema_version: 1, name: name.trim(), settings });
+    const selected = this.store.get().preset;
+    if (selected.item?.id === base.id && selected.item.revision < updated.revision) {
+      this.store.patch({ preset: { ...selected, newerRevision: Math.max(selected.newerRevision ?? 0, updated.revision) } });
+    }
+    await this.loadList("preset");
+  }
+
+  async deletePreset(base: PresetV1): Promise<void> {
+    await this.api.deletePreset(base.id, base.revision);
+    const selected = this.store.get().preset;
+    if (selected.item?.id === base.id) this.store.patch({ preset: { ...selected, missing: true, newerRevision: null } });
+    await this.loadList("preset");
+  }
+
   async createPolicy(name: string): Promise<boolean> {
     return this.create("policy", new MutationIntent(policyBody(name)));
   }
@@ -143,7 +176,8 @@ export class V1LibraryController {
 
   private async create(kind: Kind, intent: MutationIntent<JsonObject>): Promise<boolean> {
     const key = createKey(kind);
-    if (this.store.get()[key].phase === "pending") return false;
+    const current = this.store.get()[key];
+    if (current.phase === "pending" || (current.phase === "unknown" && current.intent !== intent)) return false;
     this.store.patch({ [key]: { phase: "pending", error: null, intent } } as Partial<LibraryState>);
     try {
       const created = (await this.api.create(collection(kind), intent)) as PresetV1 | PolicyV1;
@@ -179,8 +213,8 @@ export class V1LibraryController {
     const list = s[listKey(kind)];
     if (!sel.item || list.phase !== "done") return;
     const listed = (list.items as readonly (PresetV1 | PolicyV1)[]).find((i) => i.id === sel.item!.id);
-    const missing = !listed && !list.truncated;
-    const newerRevision = listed && listed.revision > sel.item.revision ? listed.revision : null;
+    const missing = !listed && (!list.truncated || sel.missing);
+    const newerRevision = listed && listed.revision > sel.item.revision ? listed.revision : list.truncated && !listed ? sel.newerRevision : null;
     if (missing !== sel.missing || newerRevision !== sel.newerRevision) this.store.patch({ [kind]: { ...sel, missing, newerRevision } } as Partial<LibraryState>);
   }
 }

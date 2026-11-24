@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { OUTPUT_FORMATS_V1, type OutputFormatV1, type PolicyV1, type PresetV1 } from "../../api/v1Resources";
+import GlossaryEditor from "./GlossaryEditor.vue";
+import PresetManager from "./PresetManager.vue";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCodeText, useV1 } from "../../composables/v1";
 import { MAX_JOB_PATH_LENGTH } from "../../domain/paths";
@@ -40,6 +42,12 @@ function toggleFormat(f: OutputFormatV1, on: boolean) {
 
 // ---- explicit creation (check → save)
 const presetForm = ref<PresetDraft & { open: boolean; confirm: boolean }>({ open: false, confirm: false, name: "", model: DEFAULT_PRESET_MODEL, language: "ja", formats: ["srt", "json", "md"] });
+const createGlossaryDirty = ref(false);
+function toggleCreatePreset() {
+  if (presetForm.value.open && createGlossaryDirty.value && !window.confirm(t("ea.confirm.close"))) return;
+  createGlossaryDirty.value = false;
+  presetForm.value.open = !presetForm.value.open;
+}
 const presetIssues = computed(() => presetDraftIssues(presetForm.value));
 const presetPreview = computed(() => summarize(presetSettings(presetForm.value)));
 function togglePresetFormat(f: OutputFormatV1, on: boolean) {
@@ -47,8 +55,8 @@ function togglePresetFormat(f: OutputFormatV1, on: boolean) {
   presetForm.value.formats = OUTPUT_FORMATS_V1.filter((x) => next.includes(x));
 }
 async function savePreset() {
-  const { name, model, language, formats } = presetForm.value;
-  if (await v1.library.createPreset({ name, model, language, formats })) presetForm.value = { ...presetForm.value, open: false, confirm: false, name: "" };
+  const { name, model, language, formats, glossary } = presetForm.value;
+  if (await v1.library.createPreset({ name, model, language, formats, glossary })) presetForm.value = { ...presetForm.value, open: false, confirm: false, name: "", glossary: [] };
 }
 const policyForm = ref({ open: false, confirm: false, name: "" });
 async function savePolicy() {
@@ -63,6 +71,7 @@ const draft = computed(() => form.value.draft);
     <p class="text-caption">{{ t("v1.lib.explain") }}</p>
 
     <!-- Preset -->
+    <p class="text-caption">{{ t("ea.presetCount", { count: presetItems.length }) }}</p>
     <h3 class="u-subheading">{{ t("v1.lib.preset") }}</h3>
     <ErrorAlert v-if="library.presets.phase === 'error' && library.presets.error" :error="library.presets.error" testid="v1-presets-error" @retry="v1.library.loadList('preset')" />
     <v-alert v-if="library.presets.truncated" type="warning" density="compact" data-testid="v1-presets-truncated">{{ t("v1.lib.truncated") }}</v-alert>
@@ -86,6 +95,8 @@ const draft = computed(() => form.value.draft);
       <p class="text-caption u-break" data-testid="v1-preset-summary">
         {{ t("v1.lib.summary", { backend: presetSummary.backend, model: presetSummary.model, language: langText(presetSummary.language), formats: presetSummary.formats.join(", ") }) }}
       </p>
+      <p class="text-caption">{{ t("ea.savedTerms", { count: presetSummary.glossary }) }}</p>
+      <PresetManager :preset="preset" />
       <p class="text-caption">{{ presetSummary.diarization ? t("v1.lib.diarizationOn") : t("v1.lib.diarizationOff") }}</p>
       <v-alert v-if="library.preset.newerRevision !== null" type="info" density="compact" data-testid="v1-preset-newer">
         {{ t("v1.lib.newer", { revision: library.preset.newerRevision }) }}
@@ -96,7 +107,7 @@ const draft = computed(() => form.value.draft);
       <v-alert v-if="library.preset.missing" type="error" density="compact" data-testid="v1-preset-missing">{{ t("v1.lib.missing") }}</v-alert>
     </div>
     <div class="u-row">
-      <v-btn variant="outlined" size="small" data-testid="v1-preset-create-open" @click="presetForm.open = !presetForm.open">{{ t("v1.create.presetOpen") }}</v-btn>
+      <v-btn variant="outlined" size="small" data-testid="v1-preset-create-open" :disabled="library.createPreset.phase === 'pending'" @click="toggleCreatePreset">{{ t("v1.create.presetOpen") }}</v-btn>
     </div>
     <v-card v-if="presetForm.open" variant="outlined" class="pa-3 u-stack" data-testid="v1-preset-create">
       <p class="text-caption">{{ t("v1.create.presetExplain") }}</p>
@@ -119,6 +130,13 @@ const draft = computed(() => form.value.draft);
           />
         </div>
       </fieldset>
+      <v-expansion-panels>
+        <v-expansion-panel :title="t('ea.termCount', { count: presetForm.glossary?.length ?? 0 })">
+          <v-expansion-panel-text>
+            <GlossaryEditor :terms="presetForm.glossary ?? []" :disabled="presetForm.confirm" @apply="presetForm.glossary = $event" @dirty="createGlossaryDirty = $event" />
+          </v-expansion-panel-text>
+        </v-expansion-panel>
+      </v-expansion-panels>
       <ul v-if="presetIssues.length > 0" class="text-caption u-notes" data-testid="v1-preset-issues">
         <li v-for="i in presetIssues" :key="i">{{ t(`v1.create.issue.${i}` as MessageKey) }}</li>
       </ul>
@@ -138,7 +156,7 @@ const draft = computed(() => form.value.draft);
         </div>
       </template>
       <div v-else class="u-row">
-        <v-btn variant="outlined" :disabled="presetIssues.length > 0" data-testid="v1-preset-check" @click="presetForm.confirm = true">{{ t("v1.create.check") }}</v-btn>
+        <v-btn variant="outlined" :disabled="presetIssues.length > 0 || createGlossaryDirty" data-testid="v1-preset-check" @click="presetForm.confirm = true">{{ t("v1.create.check") }}</v-btn>
       </div>
       <ErrorAlert v-if="library.createPreset.phase === 'rejected' && library.createPreset.error" :error="library.createPreset.error" :title="t('v1.create.rejected')" testid="v1-preset-create-rejected" />
       <ul v-if="library.createPreset.error?.issues.length" class="text-caption u-notes" data-testid="v1-preset-create-issues">

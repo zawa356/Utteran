@@ -16,6 +16,7 @@ interface NativeApi {
 }
 
 interface PywebviewWindow extends Window {
+  chrome?: { webview?: object };
   pywebview?: { api?: Partial<NativeApi> };
 }
 
@@ -41,6 +42,9 @@ export function createPywebviewHost(win: Window, readyTimeoutMs = 5000): HostBri
   });
   return {
     kind: "pywebview",
+    get blocksDownloads() {
+      return Boolean(w.chrome?.webview || w.pywebview);
+    },
     async pickPath(kind) {
       const api = await ready;
       if (!api) throw new HostUnavailableError();

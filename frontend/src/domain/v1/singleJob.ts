@@ -168,7 +168,7 @@ function listError(code: "job_list_inconsistent" | "job_list_too_long"): ApiErro
   return new ApiError({ kind: "malformed", code, retryable: true });
 }
 
-const hasRowOverrides = (row: InputRow) => Object.values(row.overrides).some((v) => v !== undefined);
+const hasRowOverrides = (row: InputRow) => Object.entries(row.overrides).some(([field, value]) => field !== "glossary" && value !== undefined);
 
 export interface V1JobOptions {
   gate?: QueueMutationGate;
@@ -248,14 +248,15 @@ export class V1SingleJobController {
     const base = { workerLimits, inputPath: row?.inputPath ?? null, outputDir: outputDir === "" ? null : outputDir, selectedCount };
     if (issues.length > 0 || !preset || !lib.policy.item || !row) return { ...base, issues, session: null, effective: null };
     const overrides = commonOverrides(preset, lib.screen);
+    const fileOverrides = row.overrides.glossary === undefined ? [] : [{ path: "/asr/glossary" as const, value: [...row.overrides.glossary] }];
     const session: JsonObject = {
       schema_version: 1,
       preset_ref: { id: preset.id, revision: preset.revision },
       policy_ref: { id: lib.policy.item.id, revision: lib.policy.item.revision },
       common_overrides: overrides.map((o) => ({ path: o.path, value: clone(o.value) })),
-      files: [{ client_file_id: this.fileIdFor(row.clientFileId), input_path: row.inputPath, output_dir: outputDir, overrides: [] }],
+      files: [{ client_file_id: this.fileIdFor(row.clientFileId), input_path: row.inputPath, output_dir: outputDir, overrides: fileOverrides }],
     };
-    return { ...base, issues, session, effective: effectiveSettings(preset.settings, overrides, []) };
+    return { ...base, issues, session, effective: effectiveSettings(preset.settings, overrides, fileOverrides) };
   }
 
   /** Why a new `prepare()` is refused now (null = allowed). */
