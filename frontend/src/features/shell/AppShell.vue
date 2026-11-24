@@ -61,17 +61,23 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
       <LegacyLink :label="t('app.openLegacy')" size="small" testid="open-legacy" class="mr-2 u-no-shrink" />
     </v-app-bar>
     <ExpertSidebar v-if="state.mode === 'expert'" />
-    <v-main data-testid="content" :data-section="state.section">
+    <v-main
+      :class="{ 'u-expert-main': apiMode === 'v1-dev' && state.mode === 'expert' && state.section === 'transcribe' }"
+      data-testid="content" :data-section="state.section"
+    >
       <v-alert type="warning" density="compact" class="ma-2" data-testid="preview-notice" :data-notice="notice">{{ t(notice) }}</v-alert>
-      <template v-if="state.section === 'transcribe'">
-        <ExpertWorkspace v-if="state.mode === 'expert'" />
-        <NormalWorkspace v-else />
-      </template>
-      <SettingsPage v-else-if="state.section === 'settings'" />
+      <KeepAlive :include="apiMode === 'v1-dev' ? undefined : []">
+        <component
+          :is="state.mode === 'expert' ? ExpertWorkspace : NormalWorkspace"
+          v-if="state.section === 'transcribe'"
+          :key="state.mode"
+        />
+      </KeepAlive>
+      <SettingsPage v-if="state.section === 'settings'" />
       <!-- D2-A: the queue page exists only in the v1 shape (`--next-ui-v1`); legacy keeps the notice. -->
       <QueuePage v-else-if="state.section === 'queue' && apiMode === 'v1-dev'" />
       <ResultsPage v-else-if="state.section === 'results' && apiMode === 'v1-dev'" />
-      <section v-else class="u-page u-stack" :data-testid="`section-${state.section}`">
+      <section v-else-if="state.section !== 'transcribe'" class="u-page u-stack" :data-testid="`section-${state.section}`">
         <h1 class="u-heading">{{ currentTitle }}</h1>
         <NotMigrated :section="currentTitle" :stage="STAGE[state.section]" />
       </section>
@@ -80,3 +86,14 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
     </v-main>
   </v-layout>
 </template>
+
+<style scoped>
+.u-expert-main {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+.u-expert-main > .v-alert {
+  flex: none;
+}
+</style>

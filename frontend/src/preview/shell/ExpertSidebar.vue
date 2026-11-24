@@ -11,7 +11,7 @@ import {
 } from "@mdi/js";
 import { computed, ref } from "vue";
 import { useDisplay } from "vuetify";
-import ResizeHandle from "../components/ResizeHandle.vue";
+import ResizeHandle from "../../components/ResizeHandle.vue";
 import { usePreview } from "../composables";
 import { isActive } from "../domain/demo";
 import { EXPERT_SECTIONS, NARROW_WINDOW, SIDEBAR, type SectionId } from "../domain/layout";
@@ -94,6 +94,7 @@ const items = computed(() => EXPERT_SECTIONS.map((id) => ({ id, icon: ICONS[id],
     </nav>
     <ResizeHandle
       v-if="!rail"
+      prototype
       class="p-sidebar__resize"
       :value="width"
       :min="SIDEBAR.min"

@@ -9,7 +9,7 @@ import { onBeforeUnmount, ref } from "vue";
  * `invert` = the sized element is on the right of the handle (dragging right makes it smaller).
  */
 const props = withDefaults(
-  defineProps<{ value: number; min: number; max: number; label: string; controls?: string; invert?: boolean; testid: string; step?: number }>(),
+  defineProps<{ value: number; min: number; max: number; label: string; controls?: string; invert?: boolean; testid: string; step?: number; prototype?: boolean }>(),
   { invert: false, controls: undefined, step: 16 },
 );
 const emit = defineEmits<{ resize: [px: number]; reset: []; dragging: [active: boolean] }>();
@@ -26,7 +26,8 @@ function onMove(e: PointerEvent) {
   emit("resize", startValue + delta);
 }
 
-function stop() {
+function stop(event?: PointerEvent) {
+  if (pointerId === null || (event && event.pointerId !== pointerId)) return;
   const node = el.value;
   if (node) {
     node.removeEventListener("pointermove", onMove);
@@ -36,13 +37,13 @@ function stop() {
     if (pointerId !== null && node.hasPointerCapture(pointerId)) node.releasePointerCapture(pointerId);
   }
   if (dragging.value) emit("dragging", false);
-  document.documentElement.classList.remove("p-resizing");
+  document.documentElement.classList.remove(props.prototype ? "p-resizing" : "u-resizing");
   dragging.value = false;
   pointerId = null;
 }
 
 function onDown(e: PointerEvent) {
-  if (e.button !== 0 || !el.value) return;
+  if (e.button !== 0 || pointerId !== null || !el.value) return;
   e.preventDefault();
   startX = e.clientX;
   startValue = props.value;
@@ -52,13 +53,14 @@ function onDown(e: PointerEvent) {
   el.value.addEventListener("pointerup", stop);
   el.value.addEventListener("pointercancel", stop);
   el.value.addEventListener("lostpointercapture", stop);
-  document.documentElement.classList.add("p-resizing");
+  document.documentElement.classList.add(props.prototype ? "p-resizing" : "u-resizing");
   dragging.value = true;
   emit("dragging", true);
   el.value.focus();
 }
 
 function onKey(e: KeyboardEvent) {
+  if (e.isComposing || e.keyCode === 229) return;
   const step = e.shiftKey ? props.step * 4 : props.step;
   const sign = props.invert ? -1 : 1;
   let next: number | null = null;
@@ -82,8 +84,7 @@ onBeforeUnmount(stop);
 <template>
   <div
     ref="el"
-    class="p-resize"
-    :class="{ 'p-resize--active': dragging }"
+    :class="prototype ? ['p-resize', { 'p-resize--active': dragging }] : ['u-resize--product', { 'u-resize--active': dragging }]"
     role="separator"
     aria-orientation="vertical"
     tabindex="0"
@@ -98,7 +99,45 @@ onBeforeUnmount(stop);
     @dblclick="emit('reset')"
     @keydown="onKey"
   >
-    <span class="p-resize__track" aria-hidden="true"></span>
-    <span class="p-resize__grip" aria-hidden="true"></span>
+    <span :class="prototype ? 'p-resize__track' : 'u-resize__track'" aria-hidden="true"></span>
+    <span :class="prototype ? 'p-resize__grip' : 'u-resize__grip'" aria-hidden="true"></span>
   </div>
 </template>
+
+<style scoped>
+.u-resize--product {
+  display: grid;
+  place-items: center;
+  cursor: col-resize;
+  touch-action: none;
+}
+.u-resize--product .u-resize__track {
+  grid-area: 1 / 1;
+  height: 100%;
+  width: 1px;
+  background: rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.u-resize--product .u-resize__grip {
+  grid-area: 1 / 1;
+  width: 4px;
+  height: 24px;
+  border-radius: 4px;
+  background: rgb(var(--v-theme-on-surface));
+  opacity: 0.58;
+}
+.u-resize--product:is(:hover, :focus-visible, .u-resize--active) .u-resize__grip {
+  background: rgb(var(--v-theme-primary));
+  opacity: 1;
+}
+.u-resize--product:focus-visible {
+  outline-offset: -2px;
+}
+</style>
+
+<style>
+html.u-resizing,
+html.u-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+</style>

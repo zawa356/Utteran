@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted } from "vue";
 import { useI18n } from "../../composables/core";
 import { useTranscription } from "../../composables/transcription";
 import { MAX_INPUTS } from "../../domain/inputCollection";
@@ -15,14 +15,17 @@ const { core, list } = useTranscription();
 const { t } = useI18n();
 
 let unsubscribe: (() => void) | null = null;
-onMounted(() => {
-  // Native drops reach the list only while an input area is on screen.
-  unsubscribe = core.host.onDroppedPaths((paths) => core.inputs.acceptDrop(paths));
-});
-onUnmounted(() => {
+function retainDrop() {
+  unsubscribe ??= core.host.onDroppedPaths((paths) => core.inputs.acceptDrop(paths));
+}
+function releaseDrop() {
   unsubscribe?.();
   unsubscribe = null;
-});
+}
+onMounted(retainDrop);
+onActivated(retainDrop);
+onDeactivated(releaseDrop);
+onUnmounted(releaseDrop);
 
 // In a plain browser a dropped file would replace the page; refuse it here (no upload exists).
 function refuseBrowserDrop(event: DragEvent) {
@@ -57,7 +60,9 @@ const notice = computed(() => {
   return null;
 });
 
-function add() {
+function add(event?: KeyboardEvent) {
+  if (event?.isComposing || event?.keyCode === 229) return;
+  event?.preventDefault();
   core.inputs.addTyped();
 }
 </script>
@@ -81,9 +86,9 @@ function add() {
         spellcheck="false"
         data-testid="tx-input-path"
         @update:model-value="(v: string) => core.inputs.setTyped(v ?? '')"
-        @keydown.enter.prevent="add"
+        @keydown.enter="add"
       />
-      <v-btn variant="tonal" :disabled="list.typed === '' || typedProblem.length > 0 || full" data-testid="tx-input-add-typed" @click="add">{{ t("tx.input.add") }}</v-btn>
+      <v-btn variant="tonal" :disabled="list.typed === '' || typedProblem.length > 0 || full" data-testid="tx-input-add-typed" @click="add()">{{ t("tx.input.add") }}</v-btn>
     </div>
     <p v-if="list.picking" role="status" class="text-body-2">{{ t("tx.input.picking") }}</p>
     <p class="text-caption" data-testid="tx-drop-hint">{{ t("tx.input.dropHint") }}</p>

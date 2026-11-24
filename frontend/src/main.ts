@@ -11,10 +11,10 @@ import { readApiMode } from "./domain/v1/apiMode";
 import { createPywebviewHost } from "./host/pywebview";
 import { componentDefaults, darkTheme, lightTheme } from "./styles/theme";
 
-// The server writes a fresh nonce per response (utteran_gui.next_ui). A leftover placeholder
-// means the page was not served by Utteran: then no nonce is used and CSP blocks inline styles.
+// The server encodes 16 random bytes as 22 unpadded base64url characters. The
+// 21-character template placeholder does not match the server format.
 const nonceMeta = document.querySelector<HTMLMetaElement>('meta[name="csp-nonce"]')?.content ?? "";
-const cspNonce = /^[A-Za-z0-9_-]{16,}$/.test(nonceMeta) && !nonceMeta.startsWith("__") ? nonceMeta : undefined;
+const cspNonce = /^[A-Za-z0-9_-]{22}$/.test(nonceMeta) ? nonceMeta : undefined;
 
 const host = createPywebviewHost(window);
 // The API mode is whatever the server wrote into this page (legacy unless it is exactly "v1-dev").

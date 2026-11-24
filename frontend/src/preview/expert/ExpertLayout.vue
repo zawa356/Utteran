@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
-import ResizeHandle from "../components/ResizeHandle.vue";
+import ResizeHandle from "../../components/ResizeHandle.vue";
 import { usePreview } from "../composables";
 import { type ExpertPane, HANDLE_PX, paneRange, resolvePanes } from "../domain/layout";
 import InputsPane from "./InputsPane.vue";
@@ -105,6 +105,7 @@ async function nextPane(event: KeyboardEvent) {
       </section>
       <ResizeHandle
         v-if="columns > 1"
+        prototype
         :value="widths.inputs"
         :min="range('inputs').min"
         :max="range('inputs').max"
@@ -128,6 +129,7 @@ async function nextPane(event: KeyboardEvent) {
       </section>
       <ResizeHandle
         v-if="columns === 3"
+        prototype
         :value="widths.queue"
         :min="range('queue').min"
         :max="range('queue').max"

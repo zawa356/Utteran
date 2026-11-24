@@ -16,19 +16,42 @@ const v1 = useCore().apiMode === "v1-dev";
 </script>
 
 <template>
-  <section class="u-page u-stack" aria-labelledby="transcribe-heading" data-testid="normal-workspace">
+  <section class="u-page u-stack" :class="{ 'u-normal-layout': v1 }" aria-labelledby="transcribe-heading" data-testid="normal-workspace">
     <h1 id="transcribe-heading" class="u-heading">{{ t("transcribe.title") }}</h1>
     <v-alert v-if="v1" type="warning" density="compact" data-testid="v1-mode-notice">{{ t("v1.mode.notice") }}</v-alert>
     <v-alert v-else type="info" density="compact" data-testid="transcribe-not-migrated">{{ t("transcribe.notMigrated") }}</v-alert>
-    <v-card class="pa-3"><TranscribeInput /></v-card>
-    <template v-if="v1">
-      <v-card class="pa-3"><V1Settings /></v-card>
+    <div v-if="v1" class="u-normal-grid">
+      <div class="u-stack">
+        <v-card class="pa-3"><TranscribeInput /></v-card>
+        <v-card class="pa-3"><V1Settings /></v-card>
+        <v-card class="pa-3"><EnvironmentPanel /></v-card>
+      </div>
       <v-card class="pa-3"><V1Job /></v-card>
-    </template>
+    </div>
     <template v-else>
+      <v-card class="pa-3"><TranscribeInput /></v-card>
       <v-card class="pa-3"><TranscribeOptions /></v-card>
       <v-card class="pa-3"><TranscribeJob /></v-card>
+      <v-card class="pa-3"><EnvironmentPanel /></v-card>
     </template>
-    <v-card class="pa-3"><EnvironmentPanel /></v-card>
   </section>
 </template>
+
+<style scoped>
+.u-normal-layout {
+  max-width: 1480px;
+  margin-inline: auto;
+  container-type: inline-size;
+}
+.u-normal-grid {
+  display: grid;
+  align-items: start;
+  gap: var(--u-gap);
+  grid-template-columns: minmax(0, 1fr);
+}
+@container (min-width: 940px) {
+  .u-normal-grid {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+}
+</style>

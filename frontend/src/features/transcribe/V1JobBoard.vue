@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted } from "vue";
 import { fileName } from "../../api/legacyJobs";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore } from "../../composables/core";
@@ -18,8 +18,17 @@ const { t, status, reason } = useCodeText();
 
 // Share the board timer with the queue and results pages.
 let release: (() => void) | null = null;
-onMounted(() => (release = board.retainWatch()));
-onUnmounted(() => release?.());
+function retain() {
+  release ??= board.retainWatch();
+}
+function stop() {
+  release?.();
+  release = null;
+}
+onMounted(retain);
+onActivated(retain);
+onDeactivated(stop);
+onUnmounted(stop);
 
 // File names are known only for rows of this page (the API carries no path).
 const names = computed(() => new Map(inputs.value.rows.map((row) => [job.fileIdFor(row.clientFileId), fileName(row.inputPath) ?? "?"])));

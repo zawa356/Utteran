@@ -36,36 +36,37 @@ body {
   margin: 0;
 }
 /* Expert workspace: 23/45/32 three panes, 2 columns + bottom row, then one pane with tabs. */
-.u-panes {
+.u-expert-legacy .u-panes {
   display: grid;
   grid-template-columns: minmax(var(--u-pane-min), 23fr) minmax(320px, 45fr) minmax(var(--u-pane-min), 32fr);
   gap: var(--u-gap);
   padding: var(--u-gap);
   align-items: start;
 }
-.u-pane {
+.u-expert-legacy .u-pane {
   min-width: 0;
   overflow: auto;
 }
-.u-pane-switch {
+.u-expert-legacy .u-pane-switch {
   display: none;
 }
 @media (max-width: 1279px) {
-  .u-panes {
+  .u-expert-legacy .u-panes {
     grid-template-columns: minmax(var(--u-pane-min), 1fr) minmax(320px, 2fr);
   }
-  .u-pane[data-pane="queue"] {
+  .u-expert-legacy .u-pane[data-pane="queue"] {
     grid-column: 1 / -1;
   }
 }
 @media (max-width: 1023px) {
-  .u-panes {
+  .u-expert-legacy .u-panes {
     grid-template-columns: 1fr;
   }
-  .u-pane-switch {
+  .u-expert-legacy .u-pane-switch {
     display: flex;
+    margin: 12px;
   }
-  .u-pane:not(.u-pane--current) {
+  .u-expert-legacy .u-pane:not(.u-pane--current) {
     display: none;
   }
 }
