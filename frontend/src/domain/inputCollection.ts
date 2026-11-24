@@ -419,9 +419,10 @@ export class InputCollectionController {
   /**
    * E-B: replace the whole list with a saved workset in one store update (new page-local row
    * ids, so no admission record, file id or job of the previous rows can attach to them). The
-   * typed field, staged edit and notices are cleared. Refused while any row is locked.
+   * staged edit and notices are cleared; the typed field too unless `keepTyped` (the start-up
+   * restore keeps what the person is typing). Refused while any row is locked.
    */
-  replaceAll(rows: readonly { inputPath: string; source: InputSource; selected: boolean; output: OutputChoice; overrides: SettingOverrides }[], primaryIndex: number | null): boolean {
+  replaceAll(rows: readonly { inputPath: string; source: InputSource; selected: boolean; output: OutputChoice; overrides: SettingOverrides }[], primaryIndex: number | null, keepTyped = false): boolean {
     if (rows.length > MAX_INPUTS || this.store.get().rows.some((r) => isLocked(this.statusOf(r)))) return false;
     const next: InputRow[] = rows.map((r) => ({
       clientFileId: newRowId(),
@@ -433,7 +434,7 @@ export class InputCollectionController {
       attemptFloor: this.gate.nextSeq(),
     }));
     const primaryId = next.length === 0 ? null : (next[primaryIndex ?? 0] ?? next[0]!).clientFileId;
-    this.store.set({ rows: next, primaryId, typed: "", notice: null, picking: false, pickError: null, staged: {} });
+    this.store.set({ rows: next, primaryId, typed: keepTyped ? this.store.get().typed : "", notice: null, picking: false, pickError: null, staged: {} });
     return true;
   }
 

@@ -196,7 +196,7 @@ export class WorksetController {
           this.store.patch({ phase: "ready", op: IDLE_OP, conflict: { kind: "edited_during_load", remote: doc }, save: { ...this.store.get().save, phase: "conflict" } });
         }
       } else {
-        this.apply(doc);
+        this.apply(doc, true);
         this.store.patch({ phase: "ready", op: IDLE_OP });
       }
       if (listing.active && !this.modeTouchedDuringLoad) this.shell.setMode(listing.active.mode);
@@ -660,14 +660,14 @@ export class WorksetController {
   }
 
   /** Make `doc` current and put its state on the screen (one boundary; no side effects). */
-  private apply(doc: WorksetDoc): void {
+  private apply(doc: WorksetDoc, keepTyped = false): void {
     const plan = restorePlan(doc.state);
     this.clearTimer();
     this.clearRetry();
     this.applying = true;
     let libraryRestore: Promise<void> = Promise.resolve();
     try {
-      if (!this.inputs.replaceAll(plan.rows, plan.primaryIndex)) throw new Error("locked_rows");
+      if (!this.inputs.replaceAll(plan.rows, plan.primaryIndex, keepTyped)) throw new Error("locked_rows");
       this.form.restoreOutput(plan.outputDir, plan.outputSource);
       // References are set synchronously (pending); the revision reads finish later.
       libraryRestore = this.library.restore(plan.presetRef, plan.policyRef, plan.screen);

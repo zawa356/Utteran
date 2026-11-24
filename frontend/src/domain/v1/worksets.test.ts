@@ -365,6 +365,15 @@ describe("E-B worksets controller", () => {
     expect(ws.items[0]!.revision).toBe(1);
   });
 
+  it("a path being typed during start-up is kept (not saved, not cleared)", async () => {
+    const { core, ws } = setup();
+    core.inputs.setTyped(path("typing"));
+    await core.start();
+    expect(core.inputs.store.get().typed).toBe(path("typing"));
+    await settle();
+    expect(ws.applied).toEqual(["bootstrap"]);
+  });
+
   it("an unreadable store keeps the screen working in memory and never shows 'saved'", async () => {
     const { core, worksets, ws } = setup();
     ws.inject.set("GET /api/v1/worksets", { reply: json(503, { schema_version: 1, error: { code: "store_corrupt", message_key: "worksets.store_corrupt", request_id: "r", retryable: false, issues: [] } }) });
