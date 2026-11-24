@@ -138,8 +138,21 @@ export class V1LibraryController {
     return this.api.getGlossarySupport();
   }
 
-  getLatestPreset(id: string): Promise<PresetV1> {
-    return this.api.getLatestPreset(id);
+  async getLatestPreset(id: string): Promise<PresetV1> {
+    try {
+      const latest = await this.api.getLatestPreset(id);
+      const selected = this.store.get().preset;
+      if (selected.item?.id === id) {
+        this.store.patch({ preset: { ...selected, missing: false, newerRevision: latest.revision > selected.item.revision ? latest.revision : null } });
+      }
+      return latest;
+    } catch (error) {
+      const selected = this.store.get().preset;
+      if (selected.item?.id === id && toApiError(error).status === 404) {
+        this.store.patch({ preset: { ...selected, missing: true, newerRevision: null } });
+      }
+      throw error;
+    }
   }
 
   async revisePreset(base: PresetV1, name: string, settings: JsonObject): Promise<void> {

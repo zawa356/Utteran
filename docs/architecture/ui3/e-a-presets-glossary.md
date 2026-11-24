@@ -20,4 +20,8 @@ Windows WebView2 の実ファイルダイアログは未検証。pywebview 6.2.1
 - 保存後の revision 採用は明示操作。412 では最新 GET と編集内容を表示し、最新を起点にする場合は下書き破棄を確認する。通信断や読めない応答のときは GET を先に行い、最新の revision・名前・設定を照合する。同じ内容でも当該要求の成功は断定できない。PUT／DELETE の再送は行わない。POST の再確認は元の Idempotency-Key と要求本文を保持する。
 - 削除後、選択中の旧 revision には欠落表示が出る。旧 revision から別 ID への複製で復旧できる。既存 Job snapshot は保持される。
 - Expert のファイル別編集は、操作開始時の編集可能な選択に `/asr/glossary` を設定する。空の用語集は明示的に上書きし、継承に戻す操作は上書き自体を解除する。選択や編集可能状態が変化した場合は適用を拒否する。
-- B5 validation の用語集警告と拒否を表示する。faster-whisper の prompt bias の品質は未検証。適用値は B7 の既存の解決・投入経路で凍結する。プライベートな設定内容は認証済み要求の本文とローカル画面で扱う。URL・ログ・SSE・public DTO の経路は変更していない。
+- エンジンの用語集能力は `GET /api/v1/engines` から表示し、B5 validation の用語集警告と拒否を表示する。faster-whisper の prompt bias の品質は未検証。適用値は B7 の既存の解決・投入経路で凍結する。プライベートな設定内容は認証済み要求の本文とローカル画面で扱う。URL・ログ・SSE・public DTO の経路は変更していない。
+
+## 試験証跡
+
+実 API の回帰試験で、強い If-Match、412、削除後の過去 revision、B5 警告、B7 の private snapshot 不変、公開応答の非漏洩を確認した。最終 HEAD と push／PR CI は [Draft PR #79](https://github.com/zawa356/Utteran/pull/79) に記録する。

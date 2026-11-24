@@ -3,7 +3,6 @@ import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { choose, SESSION_HEADER } from "./fixtures";
 import { expect, test } from "./isolatedV1";
-import { policyBody } from "../src/domain/v1/settings";
 
 async function createPreset(page: Page, name: string) {
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
@@ -17,7 +16,11 @@ async function createPreset(page: Page, name: string) {
 test("Normal imports and exports TXT, confirms a revision, and uses it only after adoption", async ({ app, request, backend }) => {
   const policy = await request.post("/api/v1/execution-policies", {
     headers: { ...SESSION_HEADER, "Idempotency-Key": "ea-synthetic-policy-key" },
-    data: policyBody("EA CPU"),
+    data: {
+      schema_version: 1, name: "EA CPU", mode: "auto", fixed_candidate_id: null,
+      allowed_profile_ids: ["cpu"], objective: "balanced", max_memory_bytes: null,
+      fallback: "none", execution_deadline_seconds: null,
+    },
   });
   expect(policy.status()).toBe(201);
   await app.getByTestId("v1-lib-reload").click();
@@ -67,6 +70,9 @@ test("Normal imports and exports TXT, confirms a revision, and uses it only afte
   await expect(app.getByTestId("v1-resolution")).toBeVisible();
   await app.getByTestId("v1-submit").click();
   await expect(app.getByTestId("v1-accepted-note")).toBeVisible();
+  const jobs = await request.get("/api/v1/jobs", { headers: SESSION_HEADER });
+  expect((await jobs.json()).items[0].snapshot.preset_ref.revision).toBe(2);
+  expect(await jobs.text()).not.toContain(term);
 
   await app.reload();
   await expect(app.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
@@ -74,7 +80,7 @@ test("Normal imports and exports TXT, confirms a revision, and uses it only afte
   await expect(frozen).toContainText("保存済み用語集：3語");
 });
 
-test("Expert reconciles a lost write response with GET and keeps the selected revision", async ({ app }) => {
+test("Expert reconciles a lost write response with GET and keeps the selected revision", async ({ app, backend }) => {
   await app.getByTestId("mode-expert").click();
   await createPreset(app, "EA original");
   let puts = 0;
@@ -101,6 +107,18 @@ test("Expert reconciles a lost write response with GET and keeps the selected re
   await editor.getByTestId("ea-confirm").click();
   await expect(app.getByTestId("v1-preset-frozen")).toContainText("EA original");
   await expect(app.getByTestId("v1-preset-newer")).toBeVisible();
+  await app.getByTestId("tx-input-path").locator("input").fill(join(backend.root, "in", "meeting.wav"));
+  await app.getByTestId("tx-input-add-typed").click();
+  await app.getByTestId("ea-row-glossary").click();
+  const rowEditor = app.getByRole("dialog").filter({ has: app.getByTestId("ea-glossary") });
+  await rowEditor.getByTestId("ea-glossary").locator("textarea").first().fill("行の用語");
+  await rowEditor.getByTestId("ea-glossary-apply").click();
+  await expect(rowEditor).toBeHidden();
+  await app.getByTestId("ea-row-glossary").click();
+  await expect(rowEditor.getByTestId("ea-glossary").locator("textarea").first()).toHaveValue("行の用語");
+  await rowEditor.getByTestId("ea-row-glossary-inherit").click();
+  await app.getByTestId("ea-row-glossary").click();
+  await expect(rowEditor.getByTestId("ea-glossary").locator("textarea").first()).toHaveValue("");
 });
 
 test("CAS conflict shows the latest preset and keeps the English draft separate", async ({ app, request }) => {

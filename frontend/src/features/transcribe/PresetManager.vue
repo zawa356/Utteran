@@ -10,7 +10,7 @@ import GlossaryEditor from "./GlossaryEditor.vue";
 
 const props = defineProps<{ preset: PresetV1 }>();
 const { v1, library } = useV1();
-const { t } = useCodeText();
+const { t, issue } = useCodeText();
 const open = ref(false);
 const support = ref<ReadonlyMap<string, GlossarySupport>>(new Map());
 const glossarySupport = computed(() => support.value.get(String((settings.value?.asr as JsonObject | undefined)?.backend)));
@@ -22,7 +22,7 @@ const settingsText = ref("");
 const terms = ref<string[]>([]);
 const glossaryDirty = ref(false);
 const glossaryVersion = ref(0);
-const action = ref<"revise" | "duplicate" | "delete" | "close" | null>(null);
+const action = ref<"revise" | "duplicate" | "delete" | "close" | "useLatest" | null>(null);
 const error = ref<ReturnType<typeof toApiError> | null>(null);
 const notice = ref<"saved" | "deleted" | "matched" | "missing" | "conflict" | "unknown" | null>(null);
 const uncertain = ref<"revise" | "delete" | null>(null);
@@ -107,6 +107,10 @@ async function confirm() {
     open.value = false;
     return;
   }
+  if (choice === "useLatest") {
+    useLatest();
+    return;
+  }
   if (!choice || blocked.value || needsRecheck.value) return;
   error.value = null;
   notice.value = null;
@@ -171,6 +175,9 @@ onUnmounted(() => window.removeEventListener("beforeunload", beforeUnload));
         <p class="text-caption u-break">{{ base.id }} · r{{ base.revision }}</p>
         <v-alert v-if="notice" :type="notice === 'saved' || notice === 'deleted' ? 'info' : 'warning'" density="compact" role="status">{{ t(`ea.notice.${notice}`) }}</v-alert>
         <ErrorAlert v-if="error" :error="error" />
+        <ul v-if="error?.issues.length" class="text-caption u-notes">
+          <li v-for="item in error.issues" :key="item.path + item.code">{{ issue(item) }}</li>
+        </ul>
         <v-alert v-if="remoteMissing" type="warning" density="compact">{{ t("ea.recover") }}</v-alert>
         <ErrorAlert v-if="library.createPreset.phase === 'rejected' && library.createPreset.error" :error="library.createPreset.error" />
         <v-alert v-if="library.createPreset.phase === 'unknown'" type="warning" density="compact">
@@ -182,8 +189,7 @@ onUnmounted(() => window.removeEventListener("beforeunload", beforeUnload));
         <template v-if="latest">
           <p class="text-body-2">{{ t("v1.lib.frozen", { name: latest.name, revision: latest.revision }) }}</p>
           <v-textarea :model-value="JSON.stringify(latest.settings, null, 2)" :label="t('ea.latestSettings')" readonly rows="4" />
-          <v-btn v-if="!action" :disabled="blocked" variant="outlined" @click="action = 'close'">{{ t("ea.discardOptions") }}</v-btn>
-          <v-btn v-if="action === 'close'" :disabled="blocked" color="primary" @click="action = null; useLatest()">{{ t("ea.useLatest") }}</v-btn>
+          <v-btn v-if="!action" :disabled="blocked" variant="outlined" @click="action = 'useLatest'">{{ t("ea.discardOptions") }}</v-btn>
         </template>
         <v-text-field v-model="name" :label="t('ea.projectName')" maxlength="120" autocomplete="off" :disabled="!editable" data-testid="ea-name" />
         <p v-if="glossarySupport" class="text-caption" role="status">{{ t(`ea.support.${glossarySupport}`) }}</p>

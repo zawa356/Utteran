@@ -14,6 +14,7 @@ const preview = ref<{ append: string; replace: string } | null>(null);
 const mode = ref<"append" | "replace">("replace");
 const proposed = computed(() => preview.value?.[mode.value] ?? "");
 const importAnalysis = computed(() => analyzeGlossary(proposed.value));
+const report = computed(() => preview.value ? importAnalysis.value : analysis.value);
 const reading = ref(false);
 const fileError = ref(false);
 const newline = ref<"LF" | "CRLF">("LF");
@@ -37,7 +38,6 @@ async function importFile(event: Event) {
   try {
     const imported = await readGlossary(file);
     preview.value = { replace: imported, append: [text.value, imported].filter(Boolean).join("\n") };
-    emit("dirty", true);
   } catch {
     fileError.value = true;
   } finally {
@@ -83,17 +83,15 @@ function download() {
       data-testid="ea-glossary" @update:model-value="edit($event ?? '')"
       @compositionstart="composing = true" @compositionend="composing = false"
     />
-    <template v-for="report in [preview ? importAnalysis : analysis]" :key="preview ? 'import' : 'draft'">
-      <div class="text-caption u-break" role="status" data-testid="ea-glossary-report">
-        {{ t("ea.termCount", { count: report.terms.length }) }}
-        <p v-if="report.empty.length">{{ t("ea.empty", { lines: report.empty.slice(0, 20).join(", "), count: report.empty.length }) }}</p>
-        <p v-if="report.trimmed.length">{{ t("ea.trimmed", { lines: report.trimmed.slice(0, 20).join(", "), count: report.trimmed.length }) }}</p>
-        <p v-if="report.duplicates.length">{{ t("ea.duplicates", { lines: report.duplicates.slice(0, 20).map(d => `${d.line} → ${d.first}`).join(", "), count: report.duplicates.length }) }}</p>
-        <p v-if="report.long.length">{{ t("ea.long", { lines: report.long.slice(0, 20).join(", "), count: report.long.length }) }}</p>
-        <p v-if="report.invalid.length">{{ t("ea.invalid", { lines: report.invalid.slice(0, 20).join(", "), count: report.invalid.length }) }}</p>
-        <p v-if="report.overflow">{{ t("ea.overflow") }}</p>
-      </div>
-    </template>
+    <div class="text-caption u-break" role="status" data-testid="ea-glossary-report">
+      {{ t("ea.termCount", { count: report.terms.length }) }}
+      <p v-if="report.empty.length">{{ t("ea.empty", { lines: report.empty.slice(0, 20).join(", "), count: report.empty.length }) }}</p>
+      <p v-if="report.trimmed.length">{{ t("ea.trimmed", { lines: report.trimmed.slice(0, 20).join(", "), count: report.trimmed.length }) }}</p>
+      <p v-if="report.duplicates.length">{{ t("ea.duplicates", { lines: report.duplicates.slice(0, 20).map(d => `${d.line} → ${d.first}`).join(", "), count: report.duplicates.length }) }}</p>
+      <p v-if="report.long.length">{{ t("ea.long", { lines: report.long.slice(0, 20).join(", "), count: report.long.length }) }}</p>
+      <p v-if="report.invalid.length">{{ t("ea.invalid", { lines: report.invalid.slice(0, 20).join(", "), count: report.invalid.length }) }}</p>
+      <p v-if="report.overflow">{{ t("ea.overflow") }}</p>
+    </div>
     <div class="u-row">
       <v-btn :disabled="disabled || composing || reading || preview !== null || !analysis.valid" data-testid="ea-glossary-apply" @click="apply">{{ t("ea.apply") }}</v-btn>
       <label class="text-body-2">

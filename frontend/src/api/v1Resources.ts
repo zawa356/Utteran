@@ -118,6 +118,7 @@ export function parseSettings(raw: unknown, where = "settings"): JsonObject {
   str(asr.model, `${where}.asr.model`);
   str(asr.language, `${where}.asr.language`);
   str(asr.backend, `${where}.asr.backend`);
+  list(asr.glossary, `${where}.asr.glossary`).forEach((term) => str(term, `${where}.asr.glossary[]`));
   bool(record(r.diarization, `${where}.diarization`).enabled, `${where}.diarization.enabled`);
   const output = record(r.output, `${where}.output`);
   list(output.formats, `${where}.output.formats`).forEach((f, i) => oneOf(f, OUTPUT_FORMATS_V1, `${where}.output.formats[${i}]`));

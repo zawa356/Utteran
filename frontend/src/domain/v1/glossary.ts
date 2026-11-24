@@ -1,7 +1,7 @@
 export const MAX_GLOSSARY_BYTES = 1024 * 1024;
 const MAX_TERMS = 1000;
 const MAX_TERM_LENGTH = 256;
-const INVALID_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F\uD800-\uDFFF\uFEFF]/u;
+const INVALID_CHARACTERS = /[\p{Cc}\p{Cs}\uFEFF]/u;
 
 export function analyzeGlossary(text: string) {
   const terms: string[] = [];
@@ -15,7 +15,7 @@ export function analyzeGlossary(text: string) {
   for (const [index, raw] of lines.entries()) {
     const line = index + 1;
     const term = raw.trim();
-    if (INVALID_CHARACTERS.test(raw)) invalid.push(line);
+    if (INVALID_CHARACTERS.test(raw.replace(/\t/g, ""))) invalid.push(line);
     if (term !== raw) trimmed.push(line);
     if (!term) {
       empty.push(line);

@@ -552,6 +552,7 @@ export const en: Record<MessageKey, string> = {
   "ea.confirm.revise": "Add a revision to this ID. Adopt the new revision explicitly before using it for processing.",
   "ea.confirm.duplicate": "Create a preset with a new ID from this draft.",
   "ea.confirm.delete": "Remove this preset from the list. Existing jobs and past revisions remain available for recovery by duplication.",
+  "ea.confirm.useLatest": "Loading the latest revision discards this draft. The revision selected for processing stays pinned.",
   "ea.confirm.close": "Closing discards this draft and any unresolved status shown here.",
   "ea.notice.saved": "New revision saved. Close this editor and adopt the new revision to use it.",
   "ea.notice.deleted": "Preset deleted.",
