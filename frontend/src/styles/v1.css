@@ -1,0 +1,76 @@
+/* Density and wrapping in the development v1 workspace. */
+[data-api-mode="v1-dev"] {
+  --u-gap: 12px;
+}
+[data-api-mode="v1-dev"] .u-heading {
+  font-size: 1.25rem;
+}
+[data-api-mode="v1-dev"] .u-subheading {
+  font-size: 1rem;
+}
+[data-api-mode="v1-dev"] .u-page {
+  overflow-wrap: anywhere;
+}
+[data-api-mode="v1-dev"] .u-row--field {
+  flex-wrap: wrap;
+}
+[data-api-mode="v1-dev"] .u-row--field > .v-input {
+  flex: 1 1 13rem;
+}
+[data-api-mode="v1-dev"] .u-row > .v-input,
+[data-api-mode="v1-dev"] .u-grid > .v-input,
+[data-api-mode="v1-dev"] .u-fieldset {
+  min-inline-size: 0;
+}
+[data-api-mode="v1-dev"] .u-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+[data-api-mode="v1-dev"] .u-row .v-selection-control-group--inline {
+  flex-wrap: wrap;
+}
+[data-api-mode="v1-dev"] .v-main .v-btn:not(.v-btn--icon),
+.u-v1-dialog .v-btn:not(.v-btn--icon) {
+  min-height: 36px;
+  max-inline-size: 100%;
+  height: auto;
+  padding-block: 5px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+[data-api-mode="v1-dev"] .v-main .v-btn__content,
+.u-v1-dialog .v-btn__content {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+[data-api-mode="v1-dev"] .v-card-title,
+.u-v1-dialog .v-card-title,
+.u-v1-dialog .v-alert__content {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+[data-api-mode="v1-dev"] .v-main .v-alert__content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-api-mode="v1-dev"] .v-main .v-alert__append {
+  margin-inline-start: 8px;
+}
+.u-v1-dialog > .v-card-text {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+[data-api-mode="v1-dev"] .u-env-heading {
+  justify-content: space-between;
+}
+[data-api-mode="v1-dev"] .u-input-list .v-list-item-title {
+  white-space: normal;
+}
+[data-api-mode="v1-dev"] .v-card > .v-card-actions {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+[data-api-mode="v1-dev"] .u-row .v-chip {
+  max-inline-size: 100%;
+}

@@ -51,9 +51,17 @@ watch(
 </script>
 
 <template>
-  <v-dialog :model-value="open" max-width="560" persistent data-testid="v1-delete-dialog" @after-leave="restoreFocus">
+  <v-dialog
+    :model-value="open"
+    max-width="560"
+    :persistent="executing || s.phase === 'unknown'"
+    :aria-label="title"
+    data-testid="v1-delete-dialog"
+    @update:model-value="(visible) => { if (!visible) deletion.close(); }"
+    @after-leave="restoreFocus"
+  >
     <!-- The app default card variant is "outlined" (transparent): a dialog needs its own surface. -->
-    <v-card v-if="s.target" variant="flat" color="surface" elevation="8" :title="title" data-testid="v1-delete-card" :data-mode="s.target.mode" :data-phase="s.phase" :data-job="s.target.jobId">
+    <v-card v-if="s.target" class="u-v1-dialog" variant="flat" color="surface" elevation="8" :title="title" data-testid="v1-delete-card" :data-mode="s.target.mode" :data-phase="s.phase" :data-job="s.target.jobId">
       <v-card-text class="u-stack">
         <p class="text-body-2" data-testid="v1-delete-body">{{ body }}</p>
         <p class="text-body-2 u-break" data-testid="v1-delete-target">{{ t("v1.delete.target", { id: s.target.jobId }) }}</p>

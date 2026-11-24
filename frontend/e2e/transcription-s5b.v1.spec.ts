@@ -1,6 +1,6 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, SESSION, shot } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot } from "./fixtures";
 import { test } from "./isolatedV1";
 
 /**
@@ -40,6 +40,7 @@ const recentItem = (page: Page, id: string) => page.getByTestId("v1-recent-item"
 
 /** Read the auxiliary list on request (the user's own button), and wait for the server's answer. */
 async function loadRecent(page: Page): Promise<void> {
+  await openSingleJobTools(page);
   await page.getByTestId("v1-recent-reload").click();
   await expect(page.getByTestId("v1-recent")).toHaveAttribute("data-phase", "done");
 }
@@ -91,6 +92,7 @@ async function expert(page: Page, request: APIRequestContext, files: string[], r
 }
 
 async function ensureQueueRunning(page: Page): Promise<void> {
+  await openSingleJobTools(page);
   const dispatch = page.getByTestId("v1-queue-dispatch");
   await expect(dispatch).toBeVisible();
   if (/停止中/.test((await dispatch.textContent()) ?? "")) {

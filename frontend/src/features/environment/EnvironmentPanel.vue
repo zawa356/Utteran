@@ -88,7 +88,7 @@ const noteUnchanged = computed(() => state.value.followsDefault && (note.value?.
 
 <template>
   <section class="u-stack" aria-labelledby="env-heading" data-testid="environment-panel" :data-view="view">
-    <div class="u-row">
+    <div class="u-row u-env-heading">
       <h2 id="env-heading" class="u-subheading">{{ t("env.title") }}</h2>
       <v-chip size="small" label color="warning" variant="outlined" data-testid="env-readiness">{{ t("env.unverified") }}</v-chip>
     </div>

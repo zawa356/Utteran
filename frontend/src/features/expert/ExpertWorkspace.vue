@@ -36,8 +36,13 @@ const gridStyle = computed(() => {
 
 const range = (pane: "inputs" | "queue") => paneRange(areaWidth.value, state.value.paneRatios, pane);
 const selected = computed(() => v1 && columns.value === 2 ? state.value.expertRightPane : state.value.expertPane);
+const title = (pane: ExpertPane) => {
+  if (v1 && pane === "inputs") return t("expert.paneInputs");
+  if (v1 && pane === "queue") return t("expert.paneQueue");
+  return t(`expert.${pane}`);
+};
 const panes = computed(() => (v1 && columns.value === 2 ? order.slice(1) : order).map((value) => ({
-  value, title: v1 ? `${order.indexOf(value) + 1} ${t(`expert.${value}`)}` : t(`expert.${value}`),
+  value, title: v1 ? `${order.indexOf(value) + 1} ${title(value)}` : title(value),
 })));
 const visible = (pane: ExpertPane) => !v1 || columns.value === 3 || (columns.value === 2 && pane === "inputs") || selected.value === pane;
 const current = (pane: ExpertPane) => ({ "u-pane": true, "u-pane--current": state.value.expertPane === pane });
@@ -94,7 +99,10 @@ if (v1) {
       <v-btn v-for="p in panes" :key="p.value" :value="p.value" size="small" :data-testid="`pane-switch-${p.value}`">{{ p.title }}</v-btn>
     </v-btn-toggle>
     <div ref="area" class="u-panes" :style="v1 ? gridStyle : undefined" data-testid="expert-panes">
-      <section v-show="visible('inputs')" id="u-pane-inputs" :class="current('inputs')" :tabindex="v1 ? -1 : undefined" data-pane="inputs" :aria-label="t('expert.inputs')" data-testid="pane-inputs">
+      <section v-show="visible('inputs')" id="u-pane-inputs" :class="current('inputs')" :tabindex="v1 ? -1 : undefined" data-pane="inputs" :aria-label="title('inputs')" data-testid="pane-inputs">
+        <h2 v-if="v1" class="u-pane-title">
+          <span aria-hidden="true">1</span>{{ title("inputs") }}
+        </h2>
         <v-card class="pa-3"><InputList /></v-card>
       </section>
       <ResizeHandle
@@ -108,11 +116,16 @@ if (v1) {
         @resize="(px) => shell.resizePane('inputs', px, areaWidth)"
         @reset="shell.resetPanes()"
       />
-      <section v-show="visible('inspector')" id="u-pane-inspector" :class="current('inspector')" :tabindex="v1 ? -1 : undefined" data-pane="inspector" :aria-label="t('expert.inspector')" data-testid="pane-inspector">
-        <v-card class="pa-3"><InputOverrides /></v-card>
-        <v-alert v-if="v1" type="info" density="compact" class="mt-3" data-testid="v1-overrides-note">{{ t("v1.overrides.note") }}</v-alert>
-        <v-card v-if="v1" class="pa-3 mt-3"><V1Settings /></v-card>
-        <v-card v-else class="pa-3 mt-3"><TranscribeOptions /></v-card>
+      <section v-show="visible('inspector')" id="u-pane-inspector" :class="current('inspector')" :tabindex="v1 ? -1 : undefined" data-pane="inspector" :aria-label="title('inspector')" data-testid="pane-inspector">
+        <h2 v-if="v1" class="u-pane-title">
+          <span aria-hidden="true">2</span>{{ title("inspector") }}
+        </h2>
+        <v-card v-if="v1" class="pa-3"><V1Settings /></v-card>
+        <v-card class="pa-3" :class="{ 'mt-3': v1 }">
+          <InputOverrides />
+          <p v-if="v1" class="mt-2 text-caption" data-testid="v1-overrides-note">{{ t("v1.overrides.note") }}</p>
+        </v-card>
+        <v-card v-if="!v1" class="pa-3 mt-3"><TranscribeOptions /></v-card>
         <v-card class="pa-3 mt-3"><EnvironmentPanel detail /></v-card>
       </section>
       <ResizeHandle
@@ -127,11 +140,17 @@ if (v1) {
         @resize="(px) => shell.resizePane('queue', px, areaWidth)"
         @reset="shell.resetPanes()"
       />
-      <section v-show="visible('queue')" id="u-pane-queue" :class="current('queue')" :tabindex="v1 ? -1 : undefined" data-pane="queue" :aria-label="t('expert.queue')" data-testid="pane-queue">
+      <section v-show="visible('queue')" id="u-pane-queue" :class="current('queue')" :tabindex="v1 ? -1 : undefined" data-pane="queue" :aria-label="title('queue')" data-testid="pane-queue">
+        <h2 v-if="v1" class="u-pane-title">
+          <span aria-hidden="true">3</span>{{ title("queue") }}
+        </h2>
         <template v-if="v1">
           <v-card class="pa-3"><V1Batch /></v-card>
           <v-card class="pa-3 mt-3"><V1JobBoard /></v-card>
-          <v-card class="pa-3 mt-3"><V1Job /></v-card>
+          <details class="u-single-tools mt-3" data-testid="v1-single-tools">
+            <summary data-testid="v1-single-tools-toggle">{{ t("expert.singleTools") }}</summary>
+            <v-card class="pa-3 mt-2"><V1Job /></v-card>
+          </details>
         </template>
         <template v-else>
           <v-card class="pa-3"><BatchPanel /></v-card>
@@ -166,6 +185,34 @@ if (v1) {
   overflow-wrap: anywhere;
   padding: 2px;
   scrollbar-width: thin;
+  scroll-padding-block-start: 44px;
+}
+.u-pane-title {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-block: 8px;
+  font-size: 1rem;
+  background: rgb(var(--v-theme-background));
+}
+.u-pane-title span {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 4px;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+.u-single-tools > summary {
+  cursor: pointer;
+  padding: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 .u-expert-layout .u-pane:focus-visible {
   outline-offset: -2px;

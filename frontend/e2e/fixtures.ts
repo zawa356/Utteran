@@ -57,3 +57,11 @@ export async function choose(page: Page, testid: string, optionText: RegExp | st
   await page.getByTestId(testid).click();
   await page.getByRole("option", { name: optionText }).click();
 }
+
+/** Expert keeps single-job recovery behind its disclosure; Normal shows it directly. */
+export async function openSingleJobTools(page: Page): Promise<void> {
+  const tools = page.getByTestId("v1-single-tools");
+  if (await tools.isVisible() && await tools.getAttribute("open") === null) {
+    await page.getByTestId("v1-single-tools-toggle").click();
+  }
+}

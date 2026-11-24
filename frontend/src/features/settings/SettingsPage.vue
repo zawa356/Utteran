@@ -4,6 +4,7 @@ import { type DefaultProfile, EDITABLE_FIELDS, type EditableField, type Language
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore, useI18n } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
+import type { Accent } from "../../domain/shell";
 import { folderTooLong, isDirty } from "../../domain/settings";
 import type { MessageKey } from "../../i18n";
 import FolderField from "./FolderField.vue";
@@ -16,12 +17,14 @@ import TokenCard from "./TokenCard.vue";
  * native folder choosers via HostBridge, token status/register/delete, log state, and a link to
  * the legacy setup wizard. Theme/language apply only after the server confirmed them.
  */
-const { settings } = useCore();
+const { settings, shell, apiMode } = useCore();
+const shellState = useStore(shell.store);
 const state = useStore(settings.store);
 const { t } = useI18n();
 const themes = computed(() =>
   (["system", "light", "dark"] as const).map((value) => ({ value, title: t(`settings.theme.${value}`) })),
 );
+const accents = computed(() => (["blue", "green"] as const).map((value) => ({ value, title: t(`settings.accent.${value}`) })));
 const languages = computed(() => (["ja", "en"] as const).map((value) => ({ value, title: t(`settings.language.${value}`) })));
 // null = "not specified" (a real value). Vuetify cannot use null as an item value, so map it.
 const NONE = "__none__";
@@ -85,6 +88,16 @@ function onProfile(value: string): void {
             :disabled="busy"
             data-testid="settings-language"
             @update:model-value="(v: Language) => settings.edit({ language: v })"
+          />
+          <v-select
+            v-if="apiMode === 'v1-dev'"
+            :label="t('settings.accent')"
+            :items="accents"
+            :model-value="shellState.accent"
+            :hint="t('settings.accentHint')"
+            persistent-hint
+            data-testid="settings-accent"
+            @update:model-value="(value: Accent) => shell.setAccent(value)"
           />
         </v-card-text>
       </v-card>

@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, SESSION, shot, test } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot, test } from "./fixtures";
 
 /**
  * UI-3 S5-A against the real FastAPI app in the `--next-ui-v1` shape (tools/ui2/serve_next_ui.py
@@ -259,6 +259,7 @@ test("Expert uses the same v1 controller; the batch panel cannot submit before i
   await expect(app.getByTestId("tx-start")).toHaveCount(0);
   // One v1 job panel (the shared controller), in the third pane.
   await expect(app.getByTestId("pane-queue").getByTestId("v1-job")).toHaveCount(1);
+  await openSingleJobTools(app);
   await expect(app.getByTestId("v1-recent-items")).toBeVisible();
   await app.reload();
   await expect(app.getByTestId("app-ready")).toBeVisible();
@@ -340,6 +341,7 @@ test("PR #48 additional P2: while a cancel is pending or unknown the submit butt
   await expect(app.getByTestId("v1-submit")).toBeDisabled();
   await expect(app.getByTestId("v1-block")).toBeVisible();
   await app.getByTestId("mode-expert").click();
+  await openSingleJobTools(app);
   await expect(app.getByTestId("pane-queue").getByTestId("v1-submit")).toBeDisabled();
   await app.getByTestId("mode-normal").click();
   release();
@@ -347,6 +349,7 @@ test("PR #48 additional P2: while a cancel is pending or unknown the submit butt
   await expect(app.getByTestId("v1-submit")).toBeDisabled();
   await app.getByTestId("v1-submit").click({ force: true }); // a forced click on the disabled button sends nothing
   await app.getByTestId("mode-expert").click();
+  await openSingleJobTools(app);
   await expect(app.getByTestId("pane-queue").getByTestId("v1-submit")).toBeDisabled();
   await app.getByTestId("mode-normal").click();
   expect(seen.filter((r) => line(r) === "POST /api/v1/jobs")).toHaveLength(0);
