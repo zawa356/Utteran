@@ -48,6 +48,9 @@ const renameOpen = ref(false);
 const renameValue = ref("");
 const renameField = ref<{ focus: () => void } | null>(null);
 const renameValid = computed(() => checkName(renameValue.value) !== null);
+// IME: Enter while a composition is open only confirms the conversion (some hosts report
+// `isComposing` late, so the composition events are tracked as well).
+const composing = ref(false);
 async function openRename() {
   renameValue.value = s.value.current?.name ?? "";
   renameOpen.value = true;
@@ -55,7 +58,7 @@ async function openRename() {
   renameField.value?.focus();
 }
 function submitRename(event?: KeyboardEvent) {
-  if (event && (event.isComposing || event.keyCode === 229)) return;
+  if (event && (composing.value || event.isComposing || event.keyCode === 229)) return;
   if (!renameValid.value) return;
   if (worksets.rename(renameValue.value)) renameOpen.value = false;
 }
@@ -188,6 +191,8 @@ onUnmounted(() => {
             :error-messages="renameValid ? [] : [t('eb.block.name_invalid')]"
             autocomplete="off"
             data-testid="ws-rename-input"
+            @compositionstart="composing = true"
+            @compositionend="composing = false"
             @keydown.enter="submitRename"
           />
         </v-card-text>
