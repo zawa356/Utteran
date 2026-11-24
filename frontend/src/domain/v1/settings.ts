@@ -15,8 +15,8 @@ import { OUTPUT_FORMATS_V1 } from "../../api/v1Resources";
 import template from "./presetTemplate.json";
 
 export interface SettingOverride {
-  readonly path: "/asr/language" | "/output/formats" | "/asr/backend" | "/asr/model";
-  readonly value: string | readonly OutputFormatV1[];
+  readonly path: "/asr/language" | "/output/formats" | "/asr/backend" | "/asr/model" | "/asr/glossary";
+  readonly value: string | readonly string[];
 }
 
 /** The screen's differences from the selected Preset (null = inherit the Preset value). */
@@ -33,6 +33,7 @@ export interface PresetDraft {
   model: string;
   language: string;
   formats: readonly OutputFormatV1[];
+  glossary?: readonly string[];
 }
 
 export type PresetDraftIssue = "name" | "model" | "language" | "formats";
@@ -57,6 +58,7 @@ export function clone<T>(value: T): T {
 export function presetSettings(draft: PresetDraft): JsonObject {
   const settings = clone(template) as JsonObject & { asr: JsonObject; output: JsonObject };
   settings.asr.model = draft.model;
+  if (draft.glossary) settings.asr.glossary = [...draft.glossary];
   settings.asr.language = draft.language;
   settings.output.formats = [...draft.formats];
   return settings;

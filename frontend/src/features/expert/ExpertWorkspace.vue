@@ -12,6 +12,7 @@ import InputList from "../transcribe/InputList.vue";
 import InputOverrides from "../transcribe/InputOverrides.vue";
 import TranscribeJob from "../transcribe/TranscribeJob.vue";
 import TranscribeOptions from "../transcribe/TranscribeOptions.vue";
+import RowGlossary from "../transcribe/RowGlossary.vue";
 import V1Batch from "../transcribe/V1Batch.vue";
 import V1Job from "../transcribe/V1Job.vue";
 import V1JobBoard from "../transcribe/V1JobBoard.vue";
@@ -123,6 +124,7 @@ if (v1) {
         <v-card v-if="v1" class="pa-3"><V1Settings /></v-card>
         <v-card class="pa-3" :class="{ 'mt-3': v1 }">
           <InputOverrides />
+          <RowGlossary v-if="v1" class="mt-2" />
           <p v-if="v1" class="mt-2 text-caption" data-testid="v1-overrides-note">{{ t("v1.overrides.note") }}</p>
         </v-card>
         <v-card v-if="!v1" class="pa-3 mt-3"><TranscribeOptions /></v-card>

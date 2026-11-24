@@ -5,7 +5,7 @@
  * `src/utteran_gui/jobs_api.py` + `src/utteran_contracts/jobs.py` (B7 resolution, jobs, queue),
  * offline schemas `docs/architecture/b5/preview.schema.json`, `b7/jobs.schema.json`.
  *
- * - Every write carries an Idempotency-Key from a `MutationIntent` (one key per user intent).
+ * - Replayable writes carry an Idempotency-Key. Preset PUT/DELETE use only If-Match.
  *   This client never resends; an explicit retry of the same intent reuses its key and body.
  * - Responses are parsed into allowlisted views. The resolution token is kept only in the returned
  *   object (never logged, rendered or stored). Public B7 views carry no path, prompt or transcript.
@@ -90,11 +90,13 @@ function ref(value: unknown, where: string): Ref {
 
 // ------------------------------------------------------------------ B5 Preset / Policy
 
+export type GlossarySupport = "unsupported" | "prompt_bias";
+
 export interface PresetV1 {
   id: string;
   revision: number;
   name: string;
-  /** The whole `ProcessingSettings` as stored (wire form). Never sent back as a Preset write. */
+  /** The whole `ProcessingSettings` as stored (wire form). */
   settings: JsonObject;
 }
 
@@ -116,6 +118,7 @@ export function parseSettings(raw: unknown, where = "settings"): JsonObject {
   str(asr.model, `${where}.asr.model`);
   str(asr.language, `${where}.asr.language`);
   str(asr.backend, `${where}.asr.backend`);
+  list(asr.glossary, `${where}.asr.glossary`).forEach((term) => str(term, `${where}.asr.glossary[]`));
   bool(record(r.diarization, `${where}.diarization`).enabled, `${where}.diarization.enabled`);
   const output = record(r.output, `${where}.output`);
   list(output.formats, `${where}.output.formats`).forEach((f, i) => oneOf(f, OUTPUT_FORMATS_V1, `${where}.output.formats[${i}]`));
@@ -562,6 +565,10 @@ export interface V1ResourcesApi {
   listAll<K extends CollectionKind>(kind: K, signal?: AbortSignal): Promise<CollectionAll<K extends "presets" ? PresetV1 : PolicyV1>>;
   getRevision<K extends CollectionKind>(kind: K, resourceId: string, revision: number, signal?: AbortSignal): Promise<K extends "presets" ? PresetV1 : PolicyV1>;
   create<K extends CollectionKind>(kind: K, intent: MutationIntent<JsonObject>): Promise<K extends "presets" ? PresetV1 : PolicyV1>;
+  getGlossarySupport(): Promise<ReadonlyMap<string, GlossarySupport>>;
+  getLatestPreset(id: string): Promise<PresetV1>;
+  revisePreset(id: string, revision: number, body: JsonObject): Promise<PresetV1>;
+  deletePreset(id: string, revision: number): Promise<void>;
   validate(intent: MutationIntent<JsonObject>): Promise<ValidationV1>;
   resolve(intent: MutationIntent<JsonObject>): Promise<ResolutionV1>;
   submit(intent: MutationIntent<JsonObject>): Promise<{ status: number; batch: JobBatchV1 }>;
@@ -634,7 +641,45 @@ export function createV1ResourcesApi(http: HttpClient): V1ResourcesApi {
   }
   const parserFor = (kind: CollectionKind): ((raw: unknown) => PresetV1 | PolicyV1) => (kind === "presets" ? parsePreset : parsePolicy);
 
+  function checkPreset(response: { data: PresetV1; headers: Headers; status: number }, id: string, revision?: number): PresetV1 {
+    const { data, headers, status } = response;
+    if (data.id !== id || (revision !== undefined && data.revision !== revision) || headers.get("ETag") !== ifMatch(data.revision)) {
+      throw malformed(status);
+    }
+    return data;
+  }
+
   return {
+    async getGlossarySupport() {
+      const response = await http.request({ method: "GET", path: "/api/v1/engines" }, (raw) => {
+        const catalog = record(raw, "engines");
+        version(catalog, "engines");
+        return new Map(list(catalog.engines, "engines").map((item) => {
+          const engine = record(item, "engine");
+          return [str(engine.engine, "engine.id"), oneOf(engine.glossary, ["unsupported", "prompt_bias"] as const, "engine.glossary")];
+        }));
+      });
+      return response.data;
+    },
+    async getLatestPreset(id) {
+      return checkPreset(await http.request({ method: "GET", path: `/api/v1/presets/${resourceId(id)}` }, parsePreset), id);
+    },
+    async revisePreset(id, revision, body) {
+      const response = await http.request({
+        method: "PUT", path: `/api/v1/presets/${resourceId(id)}`, body,
+        headers: { "If-Match": ifMatch(revision) }, timeoutMs: V1_WRITE_TIMEOUT_MS,
+      }, parsePreset);
+      return checkPreset(response, id, revision + 1);
+    },
+    async deletePreset(id, revision) {
+      const response = await http.request({
+        method: "DELETE", path: `/api/v1/presets/${resourceId(id)}`,
+        headers: { "If-Match": ifMatch(revision) }, timeoutMs: V1_WRITE_TIMEOUT_MS,
+      }, (raw) => {
+        if (raw !== null) throw new ShapeError("preset deletion");
+      });
+      if (response.status !== 204) throw malformed(response.status);
+    },
     async listAll(kind, signal) {
       const parse = parsePage<PresetV1 | PolicyV1>(parserFor(kind), kind);
       const items: (PresetV1 | PolicyV1)[] = [];

@@ -244,6 +244,20 @@ describe("S5-A v1 single job (AppCore in v1-dev mode)", () => {
     expect(lines.filter((l) => l.endsWith("/cancel"))).toEqual([]);
   });
 
+  it("freezes the supported per-file glossary leaf and revalidates after inheritance changes", async () => {
+    const { job, core } = await ready();
+    const ids = core.inputs.editableSelection().map((row) => row.clientFileId);
+    expect(core.inputs.setGlossary(ids, ["synthetic glossary"])).toBe(true);
+    expect(job.evaluate().session?.files).toMatchObject([
+      { overrides: [{ path: "/asr/glossary", value: ["synthetic glossary"] }] },
+    ]);
+    await job.prepare();
+    expect(job.store.get().step).toBe("resolved");
+    expect(core.inputs.setGlossary(ids, null)).toBe(true);
+    expect(job.isStale()).toBe(true);
+    expect(job.evaluate().session?.files).toMatchObject([{ overrides: [] }]);
+  });
+
   it("per-file legacy overrides block the v1 start (not silently dropped)", async () => {
     const { job, core } = await ready();
     const row = core.inputs.primary()!;

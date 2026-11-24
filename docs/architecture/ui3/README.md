@@ -1,5 +1,7 @@
 # UI-3-0 — 第5案で設計確定した隔離プロトタイプ
 
+追補（2026-11-24、0.1.67 未リリース）。[束 E-A の製品仕様・検証記録](e-a-presets-glossary.md)。
+
 追補（2026-11-19、0.1.60未リリース）: [D2-B Expertキュー操作](d2b-queue-actions.md)。B7既存契約へ接続、単一mutation gate、Draft PR。Windows実機は未受入。
 
 ## 最新の実装進捗（2026-11-19、束D2-A、0.1.59未リリース・Draft PR）

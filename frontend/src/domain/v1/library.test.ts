@@ -126,3 +126,50 @@ describe("v1 parsers", () => {
     expect(all.items).toHaveLength(10);
   });
 });
+
+it("writes a full preset with strong If-Match, without replay or implicit adoption", async () => {
+  const server = fakeV1Server();
+  const wire = presetWire(V1_PRESET, 2, "revised");
+  const calls: RequestInit[] = [];
+  const api = createV1ResourcesApi(createHttpClient({ fetch: async (url, init) => {
+    if (init.method === "PUT") {
+      calls.push(init);
+      server.presets.splice(0, 1, wire);
+      return new Response(JSON.stringify(wire), { headers: { ETag: '"2"' } });
+    }
+    if (init.method === "DELETE") {
+      calls.push(init);
+      server.presets.splice(0);
+      return new Response(null, { status: 204 });
+    }
+    return server.fetch(url, init);
+  } }));
+  const lib = new V1LibraryController(api);
+  await lib.loadList("preset");
+  await lib.select("preset", V1_PRESET);
+  const old = lib.store.get().preset.item!;
+  await lib.revisePreset(old, "revised", old.settings);
+  expect(calls[0]?.headers).toMatchObject({ "If-Match": '"1"' });
+  expect(calls[0]?.headers).not.toHaveProperty("Idempotency-Key");
+  expect(JSON.parse(calls[0]?.body as string)).toEqual({ schema_version: 1, name: "revised", settings: old.settings });
+  expect(lib.store.get().preset).toMatchObject({ item: { revision: 1 }, newerRevision: 2 });
+  await lib.adoptNewer("preset");
+  await lib.deletePreset(lib.store.get().preset.item!);
+  expect(calls[1]?.headers).toMatchObject({ "If-Match": '"2"' });
+  expect(calls[1]?.headers).not.toHaveProperty("Idempotency-Key");
+  expect(lib.store.get().preset).toMatchObject({ item: { revision: 2 }, missing: true });
+});
+
+it("surfaces 412, 404 and malformed ETags without replay", async () => {
+  let calls = 0;
+  const api = createV1ResourcesApi(createHttpClient({ fetch: async (_url, init) => {
+    calls += 1;
+    if (init.method === "PUT") return new Response(null, { status: 412 });
+    if (init.method === "DELETE") return new Response(null, { status: 404 });
+    return new Response(JSON.stringify(presetWire()), { headers: { ETag: 'W/"1"' } });
+  } }));
+  await expect(api.revisePreset(V1_PRESET, 1, {})).rejects.toMatchObject({ status: 412 });
+  await expect(api.deletePreset(V1_PRESET, 1)).rejects.toMatchObject({ status: 404 });
+  await expect(api.getLatestPreset(V1_PRESET)).rejects.toMatchObject({ kind: "malformed" });
+  expect(calls).toBe(3);
+});

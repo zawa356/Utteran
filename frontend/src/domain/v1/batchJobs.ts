@@ -103,6 +103,7 @@ export function fileOverrides(common: JsonObject, row: InputRow): SettingOverrid
   add("/asr/model", row.overrides.asrModel);
   add("/asr/language", row.overrides.language);
   add("/output/formats", row.overrides.formats);
+  if (row.overrides.glossary !== undefined) out.push({ path: "/asr/glossary", value: [...row.overrides.glossary] });
   return out;
 }
 

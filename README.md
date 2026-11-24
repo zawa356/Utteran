@@ -6,7 +6,8 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.66`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.67`（未release）。API・設定は1.0まで変更されます。
+> 開発専用 v1 の案件別 Preset 管理・用語集は [E-A の製品仕様](docs/architecture/ui3/e-a-presets-glossary.md) を参照してください。
 
 > バックエンド（Phase A〜B9）の現在の構成・提供状況・制約・試験範囲は
 > [docs/architecture/README.md](docs/architecture/README.md)を正本とします。B5〜B9のv1 APIはすべて

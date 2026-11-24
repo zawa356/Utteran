@@ -405,3 +405,51 @@ def test_http_inflight_same_key_is_retryable_503_then_replays(client: TestClient
     assert again.headers["Location"] == leader[0].headers["Location"]
     assert again.headers["ETag"] == leader[0].headers["ETag"]
     assert len(client.get("/api/v1/jobs").json()["items"]) == 1
+
+
+def test_preset_glossary_http_revision_and_tombstone_preserve_private_job_snapshot(
+    client: TestClient, env: Env
+) -> None:
+    session = env.session(env.file())
+    path = "/api/v1/presets/" + session["preset_ref"]["id"]
+    first = client.get(path)
+    assert first.status_code == 200 and first.headers["Cache-Control"] == "no-store"
+    body = {key: first.json()[key] for key in ("schema_version", "name", "settings")}
+    terms = ["合成用語", "x" * 220, "y" * 220]
+    body["settings"]["asr"]["glossary"] = terms
+    revised = client.put(path, json=body, headers={"If-Match": first.headers["ETag"]})
+    assert revised.status_code == 200 and revised.headers["ETag"] == '"2"'
+    assert client.put(path, json=body, headers={"If-Match": '"1"'}).status_code == 412
+    assert client.get(path, params={"revision": 1}).json() == first.json()
+
+    session["preset_ref"] = {"id": first.json()["id"], "revision": 2}
+    validated = client.post(
+        "/api/v1/validations", json=session, headers=headers("ea-validation-key")
+    )
+    file = validated.json()["files"][0]
+    assert file["valid"] and file["effective_settings"]["asr"]["glossary"] == terms
+    assert {warning["code"] for warning in file["warnings"]} >= {
+        "glossary_may_be_truncated",
+        "prompt_quality_unverified",
+    }
+    resolved = client.post(
+        "/api/v1/execution-resolutions", json=session, headers=headers("ea-resolution-key")
+    )
+    assert resolved.status_code == 201
+    submitted = client.post(
+        "/api/v1/jobs",
+        json=env.submit_body(session, resolved.json()["token"]),
+        headers=headers("ea-submission-key"),
+    )
+    assert submitted.status_code == 202
+    job_id = submitted.json()["jobs"][0]["id"]
+    before = env.store.get_snapshot(job_id)
+    assert before.resolved.settings.asr.glossary == tuple(terms)
+
+    assert client.delete(path, headers={"If-Match": '"2"'}).status_code == 204
+    assert client.get(path).status_code == 404
+    assert client.get(path, params={"revision": 2}).json() == revised.json()
+    assert env.store.get_snapshot(job_id) == before
+    for response in (resolved, submitted, client.get("/api/v1/jobs/" + job_id)):
+        assert all(term not in response.text for term in terms)
+        assert SENTINEL not in response.text and str(env.tmp) not in response.text

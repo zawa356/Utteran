@@ -1,5 +1,11 @@
 # AI 作業状態
 
+## 現在地（2026-11-24、束 E-A、0.1.67・未リリース）
+
+- main 基点 `bb6e7cc1ae4a320612847beeea69d49074405a7d`。作業ブランチ `feat/ui3-ea-presets-glossary`、[#78](https://github.com/zawa356/Utteran/issues/78)。
+- Normal／Expert の Preset 改訂・複製・削除、用語集 TXT、Expert のファイル別用語集を接続。[Draft PR #79](https://github.com/zawa356/Utteran/pull/79) に HEAD と CI 結果を記録する。
+- [E-A 製品仕様・検証記録](docs/architecture/ui3/e-a-presets-glossary.md)。Windows WebView2 でのファイル選択・保存は [#22](https://github.com/zawa356/Utteran/issues/22) の受入項目。
+
 ## 現在地（2026-11-20、D4 製品画面、0.1.66・未リリース）
 
 - main 基点 `08e594fad42ed7f721ee56cb00652013db36a5d2`。D4-A [#73](https://github.com/zawa356/Utteran/pull/73)、D4-B [#74](https://github.com/zawa356/Utteran/pull/74)、D4-C の順に Draft PR でレビューする。

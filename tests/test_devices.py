@@ -338,6 +338,14 @@ def _pid_is_alive(pid: int) -> bool:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
+    if sys.platform == "linux":
+        # kill(pid, 0) also succeeds for an exited child that PID 1 has not reaped.
+        # The probe owns termination, while the process that adopted the child owns reaping.
+        try:
+            stat = (Path("/proc") / str(pid) / "stat").read_text()
+        except FileNotFoundError:
+            return False
+        return not stat.rpartition(") ")[2].startswith("Z ")
     return True
 
 

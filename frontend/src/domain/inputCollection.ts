@@ -35,8 +35,9 @@ export interface SettingOverrides {
   asrDevice?: string;
   language?: JobLanguage;
   formats?: readonly OutputFormat[];
+  glossary?: readonly string[];
 }
-export type OverrideField = keyof SettingOverrides;
+export type OverrideField = Exclude<keyof SettingOverrides, "glossary">;
 export const OVERRIDE_FIELDS: readonly OverrideField[] = ["asrBackend", "asrModel", "asrDevice", "language", "formats"];
 
 export interface InputRow {
@@ -402,6 +403,19 @@ export class InputCollectionController {
     });
     this.store.patch({ staged: {} });
     return ids.length;
+  }
+
+  /** Apply a v1 glossary to editable members of the original selection, or restore inheritance. */
+  setGlossary(rowIds: readonly string[], terms: readonly string[] | null): boolean {
+    const ids = this.editableSelection().map((row) => row.clientFileId);
+    if (ids.length === 0 || ids.length !== rowIds.length || ids.some((id, index) => id !== rowIds[index])) return false;
+    this.updateRows(ids, (row) => {
+      const overrides = { ...row.overrides };
+      if (terms === null) delete overrides.glossary;
+      else overrides.glossary = Object.freeze([...terms]);
+      return { ...row, overrides };
+    });
+    return true;
   }
 
   /** Follow the common value again for these fields (the selection's editable rows). */

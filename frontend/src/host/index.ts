@@ -27,6 +27,8 @@ export class HostUnavailableError extends Error {
 
 export interface HostBridge {
   readonly kind: "pywebview" | "browser" | "fake";
+  /** Whether this window’s embedding host cancels browser downloads. */
+  readonly blocksDownloads?: boolean;
   /** Native dialog. Resolves null when the person cancels; rejects when no host exists. */
   pickPath(kind: PathKind): Promise<string | null>;
   /** Native file drops (pywebview `utteran-input-dropped`). Returns an unsubscribe function. */
