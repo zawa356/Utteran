@@ -157,7 +157,7 @@ export class TranscriptionFormController {
 
   constructor(
     private readonly environment: ReadonlyStore<EnvironmentState>,
-    settings: ReadonlyStore<SettingsState>,
+    private readonly settings: ReadonlyStore<SettingsState>,
   ) {
     this.unsubscribers.push(environment.subscribe(() => this.syncChoices()));
     this.unsubscribers.push(settings.subscribe((s) => this.adoptDefaultOutput(s)));
@@ -201,6 +201,15 @@ export class TranscriptionFormController {
     } catch (error) {
       this.store.patch({ picking: null, pickError: { target, reason: error instanceof HostUnavailableError ? "host_unavailable" : "failed" } });
     }
+  }
+
+  /**
+   * E-B: restore the saved common output folder. An empty, untouched one follows the saved
+   * default again (as on a fresh start); ASR choices stay environment-derived.
+   */
+  restoreOutput(outputDir: string, outputSource: CommonDraft["outputSource"]): void {
+    this.store.patch({ draft: { ...this.store.get().draft, outputDir, outputSource }, picking: null, pickError: null });
+    if (outputDir === "" && outputSource === null) this.adoptDefaultOutput(this.settings.get());
   }
 
   dispose(): void {

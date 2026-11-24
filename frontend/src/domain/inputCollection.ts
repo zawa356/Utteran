@@ -49,6 +49,17 @@ export interface InputRow {
   readonly output: OutputChoice;
   /** Gate attempts below this seq are ignored (an explicit reset after a refusal). */
   readonly attemptFloor: number;
+  /**
+   * E-B: the last explicit existence check of a restored row (absent = not checked). Runtime
+   * only (never saved); `missing`/`not_file` block a v1 start until the person fixes the row.
+   */
+  readonly availability?: "file" | "missing" | "not_file" | "unchecked";
+}
+
+/** A restored input that is known not to be a readable file (v1 issue code). */
+export type AvailabilityProblem = "missing_on_disk" | "not_file";
+export function availabilityProblem(row: InputRow): AvailabilityProblem | null {
+  return row.availability === "missing" ? "missing_on_disk" : row.availability === "not_file" ? "not_file" : null;
 }
 
 /** `queued` = frozen in a running batch and not sent yet (it will be, unless the batch is stopped). */
@@ -403,6 +414,41 @@ export class InputCollectionController {
     });
     this.store.patch({ staged: {} });
     return ids.length;
+  }
+
+  /**
+   * E-B: replace the whole list with a saved workset in one store update (new page-local row
+   * ids, so no admission record, file id or job of the previous rows can attach to them). The
+   * typed field, staged edit and notices are cleared. Refused while any row is locked.
+   */
+  replaceAll(rows: readonly { inputPath: string; source: InputSource; selected: boolean; output: OutputChoice; overrides: SettingOverrides }[], primaryIndex: number | null): boolean {
+    if (rows.length > MAX_INPUTS || this.store.get().rows.some((r) => isLocked(this.statusOf(r)))) return false;
+    const next: InputRow[] = rows.map((r) => ({
+      clientFileId: newRowId(),
+      inputPath: r.inputPath,
+      source: r.source,
+      selected: r.selected,
+      overrides: Object.freeze({ ...r.overrides }),
+      output: r.output.kind === "custom" ? { kind: "custom", path: r.output.path } : { kind: "inherit" },
+      attemptFloor: this.gate.nextSeq(),
+    }));
+    const primaryId = next.length === 0 ? null : (next[primaryIndex ?? 0] ?? next[0]!).clientFileId;
+    this.store.set({ rows: next, primaryId, typed: "", notice: null, picking: false, pickError: null, staged: {} });
+    return true;
+  }
+
+  /** E-B: record an explicit existence check (by row id; rows replaced since are ignored). */
+  setAvailability(states: ReadonlyMap<string, NonNullable<InputRow["availability"]>>): void {
+    if (states.size === 0) return;
+    const rows = this.store.get().rows;
+    if (!rows.some((r) => states.has(r.clientFileId) && states.get(r.clientFileId) !== r.availability)) return;
+    this.store.patch({ rows: rows.map((r) => (states.has(r.clientFileId) ? { ...r, availability: states.get(r.clientFileId) } : r)) });
+  }
+
+  /** Unapplied input the person typed or staged (lost when another workset is opened). */
+  hasTransientEdits(): boolean {
+    const s = this.store.get();
+    return s.typed !== "" || Object.keys(s.staged).length > 0;
   }
 
   /** Apply a v1 glossary to editable members of the original selection, or restore inheritance. */

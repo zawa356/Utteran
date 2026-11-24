@@ -6,6 +6,7 @@ import TranscribeJob from "../transcribe/TranscribeJob.vue";
 import TranscribeOptions from "../transcribe/TranscribeOptions.vue";
 import V1Job from "../transcribe/V1Job.vue";
 import V1Settings from "../transcribe/V1Settings.vue";
+import WorksetBar from "../transcribe/WorksetBar.vue";
 
 /**
  * Normal mode: one file → settings → run, with the S2 environment panel below (same controllers as
@@ -20,6 +21,7 @@ const v1 = useCore().apiMode === "v1-dev";
     <h1 id="transcribe-heading" class="u-heading">{{ t("transcribe.title") }}</h1>
     <p v-if="v1" class="text-body-2 text-medium-emphasis" data-testid="v1-mode-notice">{{ t("v1.mode.notice") }}</p>
     <v-alert v-else type="info" density="compact" data-testid="transcribe-not-migrated">{{ t("transcribe.notMigrated") }}</v-alert>
+    <v-card v-if="v1" class="pa-3"><WorksetBar /></v-card>
     <div v-if="v1" class="u-normal-grid">
       <div class="u-stack">
         <v-card class="pa-3"><TranscribeInput /></v-card>

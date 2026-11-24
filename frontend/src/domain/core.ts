@@ -3,6 +3,8 @@ import { createLegacyApi, type LegacyApi } from "../api/legacy";
 import { ApiError } from "../api/errors";
 import { createLegacyJobsApi, type LegacyJobsApi } from "../api/legacyJobs";
 import { createV1ResourcesApi, type V1ResourcesApi } from "../api/v1Resources";
+import { createWorksetsApi } from "../api/worksets";
+import { translate } from "../i18n";
 import type { HostBridge } from "../host";
 import { AdmissionGate } from "./admission";
 import { BatchSubmitter } from "./batchSubmission";
@@ -21,6 +23,7 @@ import { V1JobBoardController } from "./v1/jobBoard";
 import { V1DeletionController } from "./v1/jobDeletion";
 import { V1LibraryController } from "./v1/library";
 import { V1SingleJobController } from "./v1/singleJob";
+import { WorksetController } from "./v1/worksets";
 import { WizardStatusController } from "./wizard";
 
 /** S5-A v1 single-job path; present only when the server rendered `v1-dev` (`--next-ui-v1`). */
@@ -36,6 +39,8 @@ export interface V1Core {
   board: V1JobBoardController;
   /** C2c: history-only / history-and-outputs deletion of one internal job (plan → approval → execute). */
   deletion: V1DeletionController;
+  /** E-B: named worksets — autosave and restore of the confirmed editing state (Normal and Expert). */
+  worksets: WorksetController;
 }
 
 /**
@@ -93,6 +98,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     void environment.selectDefault(after.defaultProfile);
   });
   const transcription = new TranscriptionFormController(environment.store, settings.store);
+  const shell = new ShellController();
   const gate = new AdmissionGate(jobsApi);
   const job = new JobController(jobsApi, { eventSource: deps.eventSource, gate });
   const inputs = new InputCollectionController(gate, transcription.store, environment.store);
@@ -125,7 +131,13 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
         job.refreshRecentIfLoaded();
       },
     });
-    v1 = { api, queueGate, library, job, batch, rerun, board, deletion };
+    const busy = new Set(["validating", "resolving", "submitting", "unknown"]);
+    const worksets = new WorksetController(createWorksetsApi(http), inputs, transcription, library, shell, {
+      // A workset is never switched under an open v1 admission (its frozen session stays as sent).
+      jobBusy: () => queueGate.busy() || busy.has(job.store.get().step) || busy.has(batch.store.get().step) || busy.has(rerun.store.get().step),
+      nameFor: (n) => translate(settings.store.get().saved?.language ?? "ja", "eb.defaultName", { n }),
+    });
+    v1 = { api, queueGate, library, job, batch, rerun, board, deletion, worksets };
   }
   return {
     host: deps.host,
@@ -138,6 +150,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     inputs,
     batch,
     dispose() {
+      v1?.worksets.dispose();
       v1?.job.dispose();
       v1?.batch.dispose();
       v1?.rerun.dispose();
@@ -148,7 +161,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
       transcription.dispose();
     },
     legacy,
-    shell: new ShellController(),
+    shell,
     environment,
     settings,
     token: new TokenController(legacy),
@@ -158,10 +171,12 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
       // v1 reads only (GET): no Preset/Policy is created and the queue is not touched.
       const v1Reads = v1 ? Promise.all([v1.library.load(), v1.job.loadQueue(), v1.job.loadRecent()]) : Promise.resolve();
       await settings.load();
+      // E-B: restore the last workset (first run: create "Workset 1" in the saved language).
+      const restore = v1 ? v1.worksets.start() : Promise.resolve();
       if (environment.store.get().load.phase === "idle") {
         await environment.selectDefault(settings.store.get().saved?.defaultProfile ?? null);
       }
-      await v1Reads;
+      await Promise.all([v1Reads, restore]);
     },
   };
 }

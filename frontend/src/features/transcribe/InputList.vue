@@ -82,6 +82,7 @@ function removeSelected() {
           <RowStatusChip :status="statusOf(row.clientFileId)" />
           <span class="text-caption">{{ t(`tx.input.source.${row.source}` as MessageKey) }}</span>
           <v-chip v-if="overridden(row.clientFileId)" size="small" variant="outlined" data-testid="tx-list-overridden">{{ t("tx.list.overridden") }}</v-chip>
+          <v-chip v-if="row.availability === 'missing' || row.availability === 'not_file'" size="small" color="error" variant="outlined" data-testid="tx-list-missing">{{ t(row.availability === "missing" ? "eb.row.missing" : "eb.row.notFile") }}</v-chip>
           <v-chip v-if="hasProblem(row.clientFileId)" size="small" color="warning" variant="outlined" data-testid="tx-list-problem">{{ t("tx.list.problem") }}</v-chip>
           <span v-if="core.inputs.recordOf(row)?.jobId" class="text-caption" data-testid="tx-list-job-id">{{ t("tx.job.id", { id: core.inputs.recordOf(row)!.jobId! }) }}</span>
           <v-btn

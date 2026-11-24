@@ -89,7 +89,8 @@ const draft = computed(() => form.value.draft);
       />
       <v-btn variant="text" size="small" :loading="library.presets.phase === 'pending'" data-testid="v1-lib-reload" @click="v1.library.load()">{{ t("v1.lib.reload") }}</v-btn>
     </div>
-    <ErrorAlert v-if="library.preset.phase === 'error' && library.preset.error" :error="library.preset.error" :title="t('v1.lib.selectFailed')" testid="v1-preset-select-error" />
+    <v-alert v-if="library.preset.ref && !library.preset.item && library.preset.missing" type="error" density="compact" data-testid="v1-preset-ref-missing">{{ t("v1.lib.refMissing", { revision: library.preset.ref.revision }) }}</v-alert>
+    <ErrorAlert v-else-if="library.preset.phase === 'error' && library.preset.error" :error="library.preset.error" :title="t('v1.lib.selectFailed')" testid="v1-preset-select-error" />
     <div v-if="preset && presetSummary" class="u-stack" data-testid="v1-preset-frozen">
       <p class="text-body-2">{{ t("v1.lib.frozen", { name: preset.name, revision: preset.revision }) }}</p>
       <p class="text-caption u-break" data-testid="v1-preset-summary">
@@ -186,7 +187,8 @@ const draft = computed(() => form.value.draft);
       data-testid="v1-policy-select"
       @update:model-value="(v: string | null) => v1.library.select('policy', v)"
     />
-    <ErrorAlert v-if="library.policy.phase === 'error' && library.policy.error" :error="library.policy.error" :title="t('v1.lib.selectFailed')" testid="v1-policy-select-error" />
+    <v-alert v-if="library.policy.ref && !library.policy.item && library.policy.missing" type="error" density="compact" data-testid="v1-policy-ref-missing">{{ t("v1.lib.refMissing", { revision: library.policy.ref.revision }) }}</v-alert>
+    <ErrorAlert v-else-if="library.policy.phase === 'error' && library.policy.error" :error="library.policy.error" :title="t('v1.lib.selectFailed')" testid="v1-policy-select-error" />
     <div v-if="policy" data-testid="v1-policy-frozen">
       <p class="text-body-2">{{ t("v1.lib.frozen", { name: policy.name, revision: policy.revision }) }}</p>
       <p class="text-caption">{{ t("v1.lib.policySummary", { mode: policy.mode, profiles: policy.allowedProfileIds.join(", ") || t("v1.lib.anyProfile"), fallback: policy.fallback }) }}</p>
