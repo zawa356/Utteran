@@ -25,3 +25,5 @@ Windows WebView2 の実ファイルダイアログは未検証。pywebview 6.2.1
 ## 試験証跡
 
 実 API の回帰試験で、強い If-Match、412、削除後の過去 revision、B5 警告、B7 の private snapshot 不変、公開応答の非漏洩を確認した。Chromium の E-A 3 件で Normal の TXT 実書出・再読込と B5/B7、Expert の応答喪失と継承復帰、英語の 412 比較を確認した。最終 HEAD と push／PR CI は [Draft PR #79](https://github.com/zawa356/Utteran/pull/79) に記録する。
+
+Linux の初回全体試験ではプローブの終了済み子プロセスが PID 1 に残り、既存の生存判定が失敗した。回帰試験で Linux のプロセス状態を確認し、終了済みのゾンビと実行中の子を区別するよう修正した。製品のプローブ終了処理は同じ。
