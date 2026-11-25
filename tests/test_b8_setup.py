@@ -117,7 +117,7 @@ class World:
         self.cli.profiles[profile] = Info(True, True, None)
 
     # ChildRunner protocol
-    def run(self, argv, *, cwd, env, on_spawn, capture_status) -> ChildResult:
+    def run(self, argv, *, cwd, env, on_spawn, capture_status, stdin=None) -> ChildResult:
         assert isinstance(argv, list) and all(isinstance(a, str) for a in argv)
         self.calls.append(list(argv))
         joined = " ".join(argv)

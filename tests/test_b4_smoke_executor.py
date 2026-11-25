@@ -913,7 +913,13 @@ assert not any(n in sys.modules for n in (
 
 
 def test_smoke_is_reachable_only_from_the_explicit_entry() -> None:
-    """GUI startup, APIs, B7 and the metadata bridge never reference the smoke paths."""
+    """GUI startup, APIs, B7 and the metadata bridge never reference the smoke paths.
+
+    束F (0.1.71): besides the development entry, only an *approved* B8 setup step
+    (``capability_smoke``, executed in the shared heavy slot by the setup executor) may start
+    the smoke child; the contract and planner name that step kind. No route handler, B7
+    module, GUI startup or the bridge does.
+    """
     hits = []
     for path in sorted((ROOT / "src").rglob("*.py")):
         relative = path.relative_to(ROOT / "src").as_posix()
@@ -921,6 +927,9 @@ def test_smoke_is_reachable_only_from_the_explicit_entry() -> None:
             "utteran/capabilities/smoke.py",
             "utteran/capabilities/evidence.py",  # the record format/writer itself
             "utteran_gui/capability_smoke.py",
+            "utteran_gui/setup_executor.py",  # the approved B8 step (heavy slot, journal)
+            "utteran_gui/setup_planner.py",  # plans the step kind (pure)
+            "utteran_contracts/setup.py",  # declares the step kind name
         }:
             continue
         text = path.read_text(encoding="utf-8")

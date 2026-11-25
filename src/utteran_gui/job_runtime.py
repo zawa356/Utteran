@@ -40,6 +40,8 @@ class SetupComponents:
     adapter: Any
     runner: Any
     work_dir: Path | None = None
+    # F-B: read-only diagnostics (OS / VC++ / runtime probe). Optional: tests may omit it.
+    diagnostics: Any = None
 
 
 class RuntimeStateError(Exception):

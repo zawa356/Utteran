@@ -32,6 +32,7 @@ from typing import Annotated, Literal, Protocol, cast, get_args
 
 from pydantic import Field, StrictStr, ValidationError
 
+from utteran.capabilities import nvml
 from utteran.capabilities.collector import collect_managed_deployments
 from utteran.capabilities.evaluator import (
     _verify_smoke_route,
@@ -190,6 +191,19 @@ def write_fixture(path: Path) -> str:
 # --------------------------------------------------------------------------- real runtime
 
 
+def _attested_gpu(ordinal: int) -> str | None:
+    """UUID of the CUDA ordinal this process runs on, only if NVML reports that same GPU.
+
+    The link comes from the CUDA driver API in this very process (no index guessing).
+    Without it the VRAM values stay unknown, so the evaluator keeps the candidate unknown.
+    """
+    uuid = nvml.cuda_ordinal_uuid(ordinal)
+    info = nvml.snapshot()
+    if uuid is None or info is None or uuid not in {gpu.uuid for gpu in info.gpus}:
+        return None
+    return uuid
+
+
 def _peak_rss_bytes() -> int | None:
     if sys.platform == "win32":
         return None
@@ -220,6 +234,10 @@ class FasterWhisperSmokeRuntime:
         from utteran.types import ASROptions
 
         available = read_memory("cpu").system_available_bytes if device == "cpu" else None
+        gpu_uuid = _attested_gpu(device_index) if device == "cuda" else None
+        if gpu_uuid is not None:
+            available = nvml.free_memory(gpu_uuid)
+        gpu_used: int | None = None
         backend = FasterWhisperBackend()
         target = "cpu" if device == "cpu" else f"cuda:{device_index}"
         with measure_peak() as monitor:
@@ -261,6 +279,10 @@ class FasterWhisperSmokeRuntime:
             observed_device = getattr(replica, "device", None)
             observed_indices = getattr(replica, "device_index", None)
             observed_compute = getattr(replica, "compute_type", None)
+            if gpu_uuid is not None:
+                # Before unload: this process's own allocation on the attested GPU (NVML
+                # reports N/A under some drivers, e.g. Windows WDDM -> unknown, not guessed).
+                gpu_used = nvml.process_used_memory(gpu_uuid)
         peak = max((v for v in (monitor.peak_bytes, _peak_rss_bytes()) if v), default=None)
         backend.unload()
         import ctranslate2
@@ -281,7 +303,7 @@ class FasterWhisperSmokeRuntime:
             device_indices=indices,
             compute_type=observed_compute if isinstance(observed_compute, str) else "",
             duration_seconds=duration,
-            required_memory_bytes=peak if device == "cpu" else None,
+            required_memory_bytes=peak if device == "cpu" else gpu_used,
             available_memory_bytes=available,
         )
 

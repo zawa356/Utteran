@@ -128,6 +128,43 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
             raise SetupApiError("resource_not_found", 404)
         return value
 
+    diagnostics = runtime.setup.diagnostics
+
+    def diagnostics_service() -> Any:
+        if diagnostics is None:
+            raise SetupApiError("diagnostics_unavailable", 503)
+        executor = runtime.setup_executor
+        # A profile being built or verified is not probed concurrently (heavy slot owner).
+        diagnostics.busy_profile = lambda: None if executor is None else executor.active_operation
+        return diagnostics
+
+    @app.get("/setup-diagnostics")
+    async def get_diagnostics() -> Response:
+        service = diagnostics_service()
+        return json(200, service.snapshot(), {"Cache-Control": "no-store"})
+
+    @app.post("/setup-diagnostics/refresh")
+    async def refresh_diagnostics(request: Request) -> Response:
+        # Starts one background pass (single-flight) and returns at once: never waits for
+        # a probe. Body: {"schema_version": 1, "runtime": bool, "force": bool}.
+        async def handler() -> Response:
+            body = await _body(request)
+            if (
+                not isinstance(body, dict)
+                or body.get("schema_version") != 1
+                or set(body) - {"schema_version", "runtime", "force"}
+                or not isinstance(body.get("runtime", True), bool)
+                or not isinstance(body.get("force", False), bool)
+            ):
+                raise SetupApiError("contract_validation_failed", 422)
+            service = diagnostics_service()
+            view = service.refresh(
+                runtime=bool(body.get("runtime", True)), force_runtime=bool(body.get("force"))
+            )
+            return json(202, view, {"Cache-Control": "no-store"})
+
+        return await guarded(handler)
+
     @app.post("/setup-plans")
     async def create_plan(request: Request) -> Response:
         async def handler() -> Response:

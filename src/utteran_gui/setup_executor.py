@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -46,6 +47,39 @@ LOGGER = logging.getLogger(__name__)
 MAX_STATUS_LINE = 64 * 1024
 
 
+# B4 smoke child outcomes (utteran.capabilities.smoke.SmokeOutcome) grouped into the
+# public step reasons. Anything unknown is ``smoke_failed``; the raw code is not stored.
+SMOKE_REASONS: dict[str, StepReason] = {
+    "model_missing": "smoke_model_incomplete",
+    "model_load_failed": "smoke_model_incomplete",
+    "backend_unavailable": "smoke_backend_unavailable",
+    "out_of_memory": "smoke_out_of_memory",
+    "route_unverified": "smoke_route_unverified",
+    "route_mismatch": "smoke_route_unverified",
+    "compute_mismatch": "smoke_route_unverified",
+    "settings_unsupported": "smoke_unsupported",
+    "recipe_unavailable": "smoke_unsupported",
+    "profile_incompatible": "smoke_unsupported",
+    "dev_root_invalid": "smoke_unsupported",
+}
+
+
+def smoke_outcome(status_line: str | None) -> str | None:
+    """The child's single fixed outcome line, or ``None`` (never interpreted further)."""
+    try:
+        payload = json.loads(status_line or "")
+    except ValueError:
+        return None
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"schema_version", "outcome", "evidence"}
+        or payload["schema_version"] != 1
+        or not isinstance(payload["outcome"], str)
+    ):
+        return None
+    return payload["outcome"]
+
+
 class ChildUnconfirmed(Exception):
     """A spawned child's exit could not be observed; the slot must stay occupied."""
 
@@ -69,6 +103,7 @@ class ChildRunner(Protocol):
         env: dict[str, str],
         on_spawn: Callable[[Any], None],
         capture_status: bool,
+        stdin: bytes | None = None,
     ) -> ChildResult: ...
 
 
@@ -193,6 +228,7 @@ class ProcessChildRunner:
         env: dict[str, str],
         on_spawn: Callable[[Any], None],
         capture_status: bool,
+        stdin: bytes | None = None,
     ) -> ChildResult:
         from utteran_gui.processes import build_popen_kwargs
 
@@ -201,6 +237,8 @@ class ProcessChildRunner:
         for name in ("text", "encoding", "errors", "bufsize"):
             kwargs.pop(name, None)
         kwargs["shell"] = False
+        if stdin is not None:
+            kwargs["stdin"] = subprocess.PIPE
         process = self.popen_factory(argv, **kwargs)
         try:
             on_spawn(process)
@@ -221,6 +259,10 @@ class ProcessChildRunner:
         ]
         for drain in drains:
             drain.thread.start()
+        if stdin is not None:
+            # Private request body (bounded by the caller); written by a helper thread so a
+            # child that stops reading cannot block the runner, then closed (EOF).
+            threading.Thread(target=_feed_stdin, args=(process.stdin, stdin), daemon=True).start()
         try:
             while True:
                 try:
@@ -249,6 +291,12 @@ class ProcessChildRunner:
         return ChildResult(int(code), status)
 
 
+def _feed_stdin(stream: Any, body: bytes) -> None:
+    with contextlib.suppress(Exception):
+        stream.write(body)
+    _close(stream)
+
+
 def _stop(process: Any) -> None:
     from utteran_gui.processes import kill_process_tree
 
@@ -268,6 +316,10 @@ class StepAdapter(Protocol):
     def venv_command(self, profile: str) -> list[str]: ...
 
     def profile_verified(self, profile: str) -> bool: ...
+
+    def capability_smoke_command(self, profile: str) -> list[str]: ...
+
+    def capability_environment(self, profile: str) -> dict[str, str]: ...
 
 
 class ProductionStepAdapter:
@@ -302,6 +354,21 @@ class ProductionStepAdapter:
     def profile_verified(self, profile: str) -> bool:
         info = self.cli.profile_info(profile)
         return bool(info.exists) and info.compatible is True
+
+    def capability_smoke_command(self, profile: str) -> list[str]:
+        """The explicit B4 smoke child (same module as the development entry point)."""
+        info = self.cli.profile_info(profile)
+        python = Path(info.path) / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        if not info.exists or not python.is_file():
+            raise StepUnsupported("profile_missing")
+        return [str(python.absolute()), "-I", "-B", "-m", "utteran.capabilities.smoke", "run"]
+
+    def capability_environment(self, profile: str) -> dict[str, str]:
+        # The same allowlisted environment as every later B4 refresh/resolve, so the
+        # runtime/hardware fingerprints the smoke binds to are computed identically.
+        from utteran_gui.capability_transport import bridge_environment
+
+        return bridge_environment(profile)
 
 
 @dataclass
@@ -521,6 +588,8 @@ class SetupExecutor:
         *,
         profile: str,
         capture_status: bool = False,
+        env: dict[str, str] | None = None,
+        stdin: bytes | None = None,
     ) -> ChildResult:
         self._boundary(run)
         self.store.child_intent(run.operation_id, run.fence, step.id)
@@ -532,12 +601,14 @@ class SetupExecutor:
             self.store.step_launched(run.operation_id, run.fence, step.id, child)
 
         try:
+            extra: dict[str, Any] = {} if stdin is None else {"stdin": stdin}
             result = self.runner.run(
                 argv,
                 cwd=self.adapter.repo_root,
-                env=self.adapter.environment(profile),
+                env=self.adapter.environment(profile) if env is None else env,
                 on_spawn=on_spawn,
                 capture_status=capture_status,
+                **extra,
             )
         except ChildUnconfirmed:
             raise
@@ -585,6 +656,8 @@ class SetupExecutor:
             self._model(run, step, profile)
         elif step.kind == "smoke":
             self._smoke(run, step, content)
+        elif step.kind == "capability_smoke":
+            self._capability_smoke(run, step, content)
         else:
             self._fail(run, step, "process_failed", "unsupported_step")
 
@@ -698,6 +771,68 @@ class SetupExecutor:
             self._finish(run, step, "succeeded", "verified", "smoke_output_present")
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
+
+    def _capability_smoke(self, run: _Run, step: SetupStep, content: PlanContent) -> None:
+        """B4 smoke child: records private evidence for exactly the planned settings.
+
+        Runs in this heavy slot with the step journal (intent / PID / exit) like every other
+        child; the child writes the evidence itself and reports one fixed outcome code.
+        Success here is *recorded evidence*; readiness is decided later by the B4 evaluator
+        on read (CUDA identity/VRAM may still be unknown). Nothing is promoted here.
+        """
+        verification = content.verification
+        if verification is None or step.target != verification.model_ref:
+            self._fail(run, step, "process_failed", "unsupported_step")
+            return
+        model = SETUP_MODELS.get(verification.model_ref)
+        if model is None or model.backend != "faster-whisper":
+            self._fail(run, step, "process_failed", "unsupported_step")
+            return
+        try:
+            argv = self.adapter.capability_smoke_command(content.profile_kind)
+        except (StepUnsupported, OSError, ValueError):
+            self._fail(run, step, "launch_failed", "launch_failed")
+            return
+        except Exception:
+            self._fail(run, step, "launch_failed", "launch_failed")
+            return
+        workdir = Path(tempfile.mkdtemp(prefix="utteran-setup-verify-", dir=self.work_dir))
+        try:
+            body = json.dumps(
+                {
+                    "schema_version": 1,
+                    "profile_id": content.profile_kind,
+                    "recipe_id": verification.recipe_id,
+                    "model_id": model.model_id,
+                    "settings": verification.settings.to_wire(),
+                    "work_dir": str(workdir),
+                }
+            ).encode("utf-8")
+            result = self._child(
+                run,
+                step,
+                argv,
+                profile=content.profile_kind,
+                capture_status=True,
+                env=self.adapter.capability_environment(content.profile_kind),
+                stdin=body,
+            )
+            outcome = smoke_outcome(result.status_line)
+            if result.exit_code == 0 and outcome == "passed":
+                self._finish(run, step, "succeeded", "verified", "capability_evidence_recorded")
+                return
+            self._finish(run, step, "failed", SMOKE_REASONS.get(outcome or "", "smoke_failed"))
+            raise _Fail("smoke_failed", step.id)
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+            self._remove_evidence_temporaries()
+
+    def _remove_evidence_temporaries(self) -> None:
+        with contextlib.suppress(Exception):
+            from utteran_gui.capability_smoke import _remove_writer_temporaries
+            from utteran_paths import resolve_data_paths
+
+            _remove_writer_temporaries(resolve_data_paths(self.adapter.repo_root))
 
     @staticmethod
     def _commit(action: Callable[[], object]) -> None:

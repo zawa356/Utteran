@@ -288,6 +288,15 @@ class SetupControlStore(JobControlStore):
             state = "expired"  # computed; a GET never writes
         wire = content.to_wire()
         wire.pop("schema_version")
+        if content.verification is not None:
+            # The stored settings may hold a prompt: the public view carries a digest only.
+            wire["verification"] = {
+                "recipe_id": content.verification.recipe_id,
+                "model_ref": content.verification.model_ref,
+                "settings_sha256": hashlib.sha256(
+                    canonical(content.verification.settings.to_wire()).encode()
+                ).hexdigest(),
+            }
         try:
             return SetupPlan.model_validate(
                 {
