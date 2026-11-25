@@ -1,5 +1,11 @@
 # AI 作業状態
 
+## CI最適化（2026-11-25、[#84](https://github.com/zawa356/Utteran/issues/84)）
+
+- main `b846312` から `ci/optimize-quality-gates` を独立。製品版0.1.68を維持。#83との統合順に応じて、後続側が最新mainを取り込んで再検証する。
+- 非main pushを軽量化。全PRとmainの製品ゲートはfull。製品Playwrightを3 runnerに分割し、UI-2品質・実bundle/wheel・npm auditを独立化した。Windows pytestと競合反復は維持。
+- [CI運用の正本](docs/architecture/backend/testing-and-operations.md)に定期監査、各check、required checksのオーナー操作を記録。実行証跡と実測はDraft PRを参照。
+
 ## 現在地（2026-11-24、束 E-B、0.1.68・未リリース）
 
 - main 基点 `db67640f997e74c81b4dbf2ffe3abcdf5085731e`（0.1.67、E-A 統合済み）。作業ブランチ `claude/zealous-bell-rn7slw`、[#80](https://github.com/zawa356/Utteran/issues/80)。
