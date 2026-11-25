@@ -234,8 +234,13 @@ class SetupDiagnostics:
         busy_profile: Callable[[], str | None] = lambda: None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         runtime_budget: float = RUNTIME_BUDGET,
+        venv_build_supported: bool | None = None,
     ) -> None:
         self.cli = cli
+        # Same rule as the planner (setup.ps1 is Windows-only); injectable for synthetic worlds.
+        self.venv_build_supported = (
+            os.name == "nt" if venv_build_supported is None else venv_build_supported
+        )
         self.probes = probes or DiagnosticProbes(
             gpu=hardware.detect_gpu,
             memory=hardware.detect_memory,
@@ -269,7 +274,7 @@ class SetupDiagnostics:
                 "platform": {"Windows": "windows", "Linux": "linux"}.get(
                     platform.system(), "other"
                 ),
-                "venv_build_supported": os.name == "nt",
+                "venv_build_supported": self.venv_build_supported,
             },
             "gpu": None
             if gpu is None

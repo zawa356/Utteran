@@ -8,6 +8,7 @@ import { useStore } from "../../composables/useStore";
 import { type Mode, previewNoticeKey, type SectionId } from "../../domain/shell";
 import ExpertWorkspace from "../expert/ExpertWorkspace.vue";
 import SettingsPage from "../settings/SettingsPage.vue";
+import SetupWizard from "../settings/SetupWizard.vue";
 import NormalWorkspace from "../workspace/NormalWorkspace.vue";
 import QueuePage from "../queue/QueuePage.vue";
 import ReexportDialog from "../results/ReexportDialog.vue";
@@ -81,6 +82,11 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
       <!-- D2-A: the queue page exists only in the v1 shape (`--next-ui-v1`); legacy keeps the notice. -->
       <QueuePage v-else-if="state.section === 'queue' && apiMode === 'v1-dev'" />
       <ResultsPage v-else-if="state.section === 'results' && apiMode === 'v1-dev'" />
+      <!-- 束F: the setup page exists only in the v1 shape; legacy keeps the notice. -->
+      <section v-else-if="state.section === 'setup' && apiMode === 'v1-dev'" class="u-page u-stack" data-testid="section-setup">
+        <h1 class="u-heading">{{ currentTitle }}</h1>
+        <SetupWizard />
+      </section>
       <section v-else-if="state.section !== 'transcribe'" class="u-page u-stack" :data-testid="`section-${state.section}`">
         <h1 class="u-heading">{{ currentTitle }}</h1>
         <NotMigrated :section="currentTitle" :stage="STAGE[state.section]" />
