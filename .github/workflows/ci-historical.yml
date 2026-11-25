@@ -1,0 +1,124 @@
+name: Historical checks
+
+on:
+  schedule:
+    - cron: '37 18 * * *'
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  privacy-history:
+    name: Privacy audit of reachable history (report only)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      # History is never rewritten by CI; the redacted report records counts and
+      # locations only (see docs/architecture/backend/validation.md).
+      - name: Audit complete reachable history
+        run: >-
+          uv run --no-project python tools/public_history_scan.py
+          --json output/public-history-scan-ci.json
+
+  historical-changes:
+    name: Detect changes to historical tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      spike: ${{ steps.paths.outputs.spike }}
+      prototype: ${{ steps.paths.outputs.prototype }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 2
+      - name: Compare the tested merge candidate with its PR base
+        id: paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # Git diff has no GitHub paths-filter file limit. Include either side
+          # of a rename and run both suites if the comparison is unavailable.
+          if [[ "$(git rev-parse HEAD^1)" != "$BASE" ]]; then
+            echo 'spike=true' >> "$GITHUB_OUTPUT"
+            echo 'prototype=true' >> "$GITHUB_OUTPUT"
+          else
+            if ! git diff --quiet --no-renames "$BASE" HEAD -- tools/ui1 .github; then
+              echo 'spike=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'spike=false' >> "$GITHUB_OUTPUT"
+            fi
+            if ! git diff --quiet --no-renames "$BASE" HEAD -- frontend .github; then
+              echo 'prototype=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'prototype=false' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  ui1-frontend-spike:
+    name: UI-1 frontend spike (clean install, typecheck, build, E2E)
+    needs: historical-changes
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' ||
+        needs.historical-changes.result != 'success' ||
+        needs.historical-changes.outputs.spike != 'false') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+      # Investigation spike only (tools/ui1/spike); it is not the product GUI. npm ci
+      # installs exactly the committed lockfiles, and run.mjs exits non-zero when any
+      # scenario fails or the nonce CSP is violated.
+      - name: Install, type-check and build each spike
+        working-directory: tools/ui1/spike
+        run: |
+          set -euo pipefail
+          for app in vue-primevue vue-vuetify react-mui; do
+            (cd "$app" && npm ci --no-audit --no-fund && npm run typecheck && npm run build)
+          done
+      - name: Install pinned Playwright and Chromium
+        working-directory: tools/ui1/spike/e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Same-condition E2E (7 scenarios x 3 spikes)
+        working-directory: tools/ui1/spike
+        run: node e2e/run.mjs --out=report.json
+
+  # UI-3 frontend on Windows (owner policy 2026-11-09): every phase/fix PR runs the production
+  # frontend's lint, vue-tsc, Vitest and Vite build on windows-latest as well, next to the Linux
+  # ui2-frontend job. Synthetic tests only (fake host/fetch): no real token, OS keyring, user
+  # profile or OS dialog is touched. This is NOT a WebView2 acceptance — native picker, Explorer,
+  # DPI, IME and installer/portable stay in the final manual Windows gate (UI-3/UI-4).
+
+  prototype-e2e:
+    name: UI-3-0 prototype UX (synthetic)
+    needs: historical-changes
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' ||
+        needs.historical-changes.result != 'success' ||
+        needs.historical-changes.outputs.prototype != 'false') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-frontend
+      - name: Build into src/utteran_gui/web-next
+        working-directory: frontend
+        run: npm run build
+      - name: Install pinned Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: UI-3-0 prototype E2E (dev-only preview.html; isolation from the production build)
+        working-directory: frontend
+        run: npm run e2e:prototype
