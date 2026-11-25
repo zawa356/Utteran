@@ -218,6 +218,26 @@ describe("SetupController", () => {
     expect(start.body.plan_ref).toEqual({ id: PLAN, revision: 2 });
   });
 
+  it("an accepted approval is reused when only the start failed (no second approval)", async () => {
+    const { api, controller } = make();
+    await controller.createPlan();
+    const original = api.start.bind(api);
+    let fail = true;
+    api.start = async (intent) => {
+      if (fail) {
+        fail = false;
+        api.calls.push("start");
+        throw new ApiError({ kind: "conflict", status: 409, code: "slot_occupied" });
+      }
+      return original(intent);
+    };
+    expect(await controller.confirmAndStart()).toBe(false);
+    expect(await controller.confirmAndStart()).toBe(true);
+    expect(api.calls.filter((c) => c === "approve")).toHaveLength(1);
+    expect(api.calls.filter((c) => c === "start")).toHaveLength(2);
+    controller.dispose();
+  });
+
   it("never starts with a missing credential", async () => {
     const { api, controller } = make();
     api.planResult = plan({ missingCredentials: ["hf_token"] });

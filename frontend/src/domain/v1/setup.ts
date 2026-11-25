@@ -5,6 +5,7 @@ import {
   type ProfileKind,
   type Readiness,
   type SetupApi,
+  type SetupApproval,
   type SetupOperation,
   type SetupPlan,
   TERMINAL_SETUP,
@@ -141,6 +142,8 @@ export class SetupController {
   private planIntent: MutationIntent<JsonObject> | null = null;
   private startIntent: MutationIntent<JsonObject> | null = null;
   private approvalIntent: MutationIntent<JsonObject> | null = null;
+  /** An approval the server accepted for the current plan (reused when only the start failed). */
+  private approval: SetupApproval | null = null;
   private finished = new Set<string>();
   private disposed = false;
 
@@ -237,6 +240,7 @@ export class SetupController {
   private resetPlan(): void {
     this.planIntent = null;
     this.approvalIntent = null;
+    this.approval = null;
     this.startIntent = null;
     this.store.patch({ plan: { phase: "idle", plan: null, error: null, unknown: false }, start: { phase: "idle", error: null, unknown: false } });
   }
@@ -299,7 +303,8 @@ export class SetupController {
         plan_hash: plan.planHash,
         accepted_agreement_ids: state.choice.agreementAccepted ? plan.requiredAgreements : [],
       });
-      const approval = await this.api.approve(plan, this.approvalIntent);
+      const approval = this.approval ?? (await this.api.approve(plan, this.approvalIntent));
+      this.approval = approval;
       this.startIntent ??= new MutationIntent({
         schema_version: 1,
         plan_ref: { id: approval.planId, revision: approval.planRevision },
@@ -314,7 +319,8 @@ export class SetupController {
       const e = toApiError(error);
       // An unknown outcome keeps both intents: an explicit retry replays the same keys.
       if (!e.outcomeUnknown) {
-        this.approvalIntent = e.code === "plan_already_approved" ? this.approvalIntent : null;
+        // A rejected approval is asked again with a new intent; an accepted one is kept.
+        if (this.approval === null) this.approvalIntent = null;
         this.startIntent = null;
       }
       this.store.patch({ start: { phase: "error", error: e, unknown: e.outcomeUnknown } });
@@ -488,7 +494,7 @@ export class SetupController {
 
   dismissResult(): void {
     if (!isTerminal(this.store.get().operation)) return;
-    this.store.patch({ operation: null, operationError: null, action: idle, defaults: idle });
+    this.store.patch({ operation: null, operationError: null, action: idle, defaults: idle, mode: this.store.get().mode === "verify" ? "standard" : this.store.get().mode });
     this.resetPlan();
   }
 
