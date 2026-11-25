@@ -1,0 +1,35 @@
+name: Product Playwright E2E shard
+description: Build the product and run one verified Playwright shard.
+inputs:
+  shard:
+    description: Shard number from 1 to 3.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-frontend
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      with:
+        python-version: "3.12"
+        enable-cache: true
+    - name: Build into src/utteran_gui/web-next
+      working-directory: frontend
+      shell: bash
+      run: npm run build
+    - name: Install Python dependencies
+      shell: bash
+      run: uv sync --extra dev --extra gui --locked
+    - name: Install pinned Playwright Chromium
+      working-directory: frontend
+      shell: bash
+      run: npx playwright install --with-deps chromium
+    - name: Run product E2E shard and verify collected and executed tests
+      working-directory: frontend
+      env:
+        SHARD: ${{ inputs.shard }}
+      shell: bash
+      run: |
+        UI2_E2E_PORT=$((8790 + 10 * SHARD + 1)) \
+        UI2_E2E_V1_PORT=$((8790 + 10 * SHARD + 2)) \
+        UI2_E2E_S5A_PORT=$((8790 + 10 * SHARD + 3)) \
+        node scripts/check-e2e-shards.mjs "$SHARD" 3

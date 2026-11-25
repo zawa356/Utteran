@@ -4,6 +4,7 @@
 
 - main `b846312` から `ci/optimize-quality-gates` を独立。製品版0.1.68を維持。#83との統合順に応じて、後続側が最新mainを取り込んで再検証する。
 - 非main pushを軽量化。全PRとmainの製品ゲートはfull。製品Playwrightを3 runnerに分割し、UI-2品質・実bundle/wheel・npm auditを独立化した。Windows pytestと競合反復は維持。
+- PR #85のP2-1に対応。Python互換2件と製品E2E 3件に固定job IDを割り当て、full gateは18 IDと全結果を照合する。
 - [CI運用の正本](docs/architecture/backend/testing-and-operations.md)に定期監査、各check、required checksのオーナー操作を記録。実行証跡と実測はDraft PRを参照。
 
 ## 現在地（2026-11-24、束 E-B、0.1.68・未リリース）

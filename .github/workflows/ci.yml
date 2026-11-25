@@ -1,7 +1,7 @@
 name: CI
 
 # Product checks run independently (Issue #27). The final job only evaluates
-# their results, including the combined result of each fail-fast-disabled matrix.
+# the result of each explicitly named job in this run.
 on:
   push:
     branches: [main]
@@ -218,29 +218,23 @@ jobs:
           if ($failed) { exit 1 }
           exit 0
 
-  contracts-python-compatibility:
-    name: Contracts and backend integration (Python ${{ matrix.python-version }})
+  contracts-python-3-11:
+    name: Contracts and backend integration (Python 3.11)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: ./.github/actions/contracts-python-compatibility
         with:
-          python-version: ${{ matrix.python-version }}
-          enable-cache: true
-      - run: uv sync --extra dev --extra gui --locked
-      - name: Contract, schema, import boundary, and B7-B9 integration tests (no models)
-        run: uv run --no-sync pytest tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py tests/test_worker_protocol.py tests/test_capability_inventory.py tests/test_capability_bridge.py tests/test_b4_smoke_evidence.py tests/test_b4_smoke_executor.py tests/test_b4_smoke_b7.py tests/test_b5_settings.py tests/test_b6_control.py tests/test_b7_jobs.py tests/test_b7_api.py tests/test_b7_review_fixes.py tests/test_b8_setup.py tests/test_b8_api.py tests/test_b8_review_fixes.py tests/test_b9_events.py tests/test_b9_review_fixes.py tests/test_backend_foundation_e2e.py
-      - run: uv run --no-sync python -m utteran_contracts.schema --output docs/architecture/b1/contracts.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.capability_schema --output docs/architecture/b4/capabilities.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.preview_schema --output docs/architecture/b5/preview.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.control_schema --output docs/architecture/b6/control.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.job_schema --output docs/architecture/b7/jobs.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.setup_schema --output docs/architecture/b8/setup.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.events_schema --output docs/architecture/b9/events.schema.json --check
+          python-version: '3.11'
+
+  contracts-python-3-12:
+    name: Contracts and backend integration (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/contracts-python-compatibility
+        with:
+          python-version: '3.12'
 
   powershell-bom:
     name: PowerShell UTF-8 BOM
@@ -392,38 +386,35 @@ jobs:
         working-directory: frontend
         run: npm run audit:prod
 
-  product-e2e:
-    timeout-minutes: 20
-    name: Product Playwright E2E (${{ matrix.shard }}/3)
+  product-e2e-1:
+    name: Product Playwright E2E (1/3)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: ./.github/actions/setup-frontend
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: ./.github/actions/product-e2e
         with:
-          python-version: "3.12"
-          enable-cache: true
-      - name: Build into src/utteran_gui/web-next
-        working-directory: frontend
-        run: npm run build
-      - name: Install Python dependencies
-        run: uv sync --extra dev --extra gui --locked
-      - name: Install pinned Playwright Chromium
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-      - name: Run product E2E shard and verify collected and executed tests
-        working-directory: frontend
-        env:
-          SHARD: ${{ matrix.shard }}
-        run: |
-          UI2_E2E_PORT=$((8790 + 10 * SHARD + 1)) \
-          UI2_E2E_V1_PORT=$((8790 + 10 * SHARD + 2)) \
-          UI2_E2E_S5A_PORT=$((8790 + 10 * SHARD + 3)) \
-          node scripts/check-e2e-shards.mjs "$SHARD" 3
+          shard: '1'
+
+  product-e2e-2:
+    name: Product Playwright E2E (2/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/product-e2e
+        with:
+          shard: '2'
+
+  product-e2e-3:
+    name: Product Playwright E2E (3/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/product-e2e
+        with:
+          shard: '3'
 
   full-product-gate:
     name: Full product quality gate
@@ -436,7 +427,8 @@ jobs:
       - linux-tests
       - windows-tests
       - windows-powershell
-      - contracts-python-compatibility
+      - contracts-python-3-11
+      - contracts-python-3-12
       - powershell-bom
       - privacy-worktree
       - privacy-history-delta
@@ -444,11 +436,13 @@ jobs:
       - frontend-quality
       - frontend-bundle-wheel
       - npm-production-audit
-      - product-e2e
+      - product-e2e-1
+      - product-e2e-2
+      - product-e2e-3
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Require success from every full CI dependency
         env:
-          RESULTS: ${{ toJSON(needs.*.result) }}
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          jq -e --argjson expected 15 \
-            'length == $expected and all(.[]; . == "success")' <<< "$RESULTS"
+          jq -e -L .github/scripts 'include "full-product-gate"; full_product_gate' <<< "$RESULTS"

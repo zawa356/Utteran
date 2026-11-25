@@ -20,7 +20,9 @@ PRの新runは同一PR番号の古いfullだけを取消す。mainはrun IDで�
 ## Full CIジョブ（`.github/workflows/ci.yml`）
 
 Issue #27の方針を継承し、製品の検査jobは独立して実行する。固定名の `Full product quality gate` は全依存jobの
-結果を検査し、失敗・取消・skip・欠損で失敗する。matrixは `fail-fast: false` で全runnerを実行する。
+結果を現在runの `needs` からjob IDごとに検証する。期待する18 IDとの完全一致と各 `result == "success"` が条件。
+失敗・取消・skip・未知の結果・IDの欠損や追加を拒否する。各Python版と各shardには独立したjob IDがあり、並列で実行する。
+ゲート判定の回帰テストはリポジトリルートで `jq -ne -L .github/scripts -f .github/scripts/test-full-product-gate.jq` を実行する。
 
 | job | runner | 検査 | 守備範囲外 |
 |---|---|---|---|
@@ -30,7 +32,7 @@ Issue #27の方針を継承し、製品の検査jobは独立して実行する�
 | `linux-tests` | ubuntu | `pytest -m "not requires_model"` | モデル・GPU・Windows専用test |
 | `windows-tests` | windows | 同上＋Job Object親死亡testを**毎回20回反復**＋B6 concurrent snapshot **10回反復**。本体は `--durations=20` で計測 | GPU・実モデル・installer |
 | `windows-powershell` | windows | 全tracked `.ps1`のPS 5.1 AST parse、安全な起動allowlist | installer統合（下記） |
-| `contracts-python-compatibility` | ubuntu 3.11/3.12 | 契約・境界・B5〜B9・**B7〜B9横断E2E**のtestとschema `--check` | — |
+| `contracts-python-3-11` / `contracts-python-3-12` | ubuntu 3.11/3.12 | 契約・境界・B5〜B9・**B7〜B9横断E2E**のtestとschema `--check` | — |
 | `powershell-bom` | ubuntu | 全tracked `.ps1`のUTF-8 BOM | — |
 | `privacy-worktree` | ubuntu | tracked fileのscan、blocking 1件以上で失敗 | 履歴 |
 | `privacy-history-delta` | ubuntu | **新規commit全系列**のprivate data検出で失敗（下記。`fetch-depth: 0`） | 信頼済み履歴（protected main＋レビュー済みcutover） |
@@ -38,7 +40,7 @@ Issue #27の方針を継承し、製品の検査jobは独立して実行する�
 | `frontend-quality` | ubuntu | lint、型、Vitest、Vite build | ブラウザー統合 |
 | `frontend-bundle-wheel` | ubuntu | 実bundle必須Python tests、prototype隔離、wheelの新規venvからのserve | prototype UX |
 | `npm-production-audit` | ubuntu | 本番依存の既存blocking audit。失効・例外範囲、registryエラーも検査 | — |
-| `product-e2e` ×3 | ubuntu | Playwrightのファイル単位shard、実FastAPI、合成サービス | WebView2 |
+| `product-e2e-1` / `product-e2e-2` / `product-e2e-3` | ubuntu | Playwrightのファイル単位shard、実FastAPI、合成サービス | WebView2 |
 | `full-product-gate` | ubuntu | 全製品jobの成功を集約 | 定期監査・歴史的試作 |
 
 ### 再実行と計測
