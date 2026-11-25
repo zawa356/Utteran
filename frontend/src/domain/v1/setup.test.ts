@@ -279,6 +279,31 @@ describe("SetupController", () => {
     controller.dispose();
   });
 
+  it("a detection that finishes after the person chose or planned never changes the profile", async () => {
+    const { api, controller } = make();
+    controller.edit({ profile: "cpu" });
+    api.diag = diagnostics("completed", "cuda");
+    await controller.loadDiagnostics();
+    expect(controller.store.get().choice.profile).toBe("cpu");
+    controller.setMode("standard");
+    await controller.createPlan();
+    api.diag = diagnostics("completed", "cpu");
+    await controller.loadDiagnostics();
+    expect(controller.store.get().plan.plan).not.toBeNull();
+    expect(controller.store.get().choice.profile).toBe("cuda");
+  });
+
+  it("after a reload the first success still creates the defaults from the plan's verified model", async () => {
+    const { api, resources, controller } = make();
+    api.getPlan = async () => plan({ verification: { recipeId: "fw-cuda", modelRef: "faster-whisper:large-v3", settingsSha256: "f".repeat(64) } });
+    api.list = [operation("running")];
+    await controller.recover();
+    api.ops = [operation("succeeded")];
+    await controller.poll();
+    expect(controller.store.get().defaults.phase).toBe("created");
+    expect(((resources.created[0]!.body.settings as JsonObject).asr as JsonObject).model).toBe("large-v3");
+  });
+
   it("keeps existing settings untouched after a later setup", async () => {
     const { api, resources, controller } = make();
     resources.presets = [{ id: "pre_x", revision: 3, name: "mine", settings: defaultSettings("large-v3") }];

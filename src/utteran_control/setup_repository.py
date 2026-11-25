@@ -293,9 +293,9 @@ class SetupControlStore(JobControlStore):
             wire["verification"] = {
                 "recipe_id": content.verification.recipe_id,
                 "model_ref": content.verification.model_ref,
-                "settings_sha256": hashlib.sha256(
-                    canonical(content.verification.settings.to_wire()).encode()
-                ).hexdigest(),
+                # Keyed (installation secret): a plain hash of a mostly known template
+                # would let a short prompt be confirmed by guessing.
+                "settings_sha256": self._digest(content.verification.settings.to_wire()),
             }
         try:
             return SetupPlan.model_validate(

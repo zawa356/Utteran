@@ -1394,6 +1394,7 @@ export const ja = {
   "code.inventory_stale": "計画の作成後に環境が変わりました。作り直してください。",
   "code.setup_runtime_inactive": "セットアップ機能が有効ではありません。",
   "code.diagnostics_unavailable": "環境の確認機能が有効ではありません。",
+  "code.diagnostics_running": "環境の確認（GPU ランタイムの検出）が実行中です。終わってから開始してください。",
   "code.policy_unresolved": "選択中の Policy が見つかりません。",
   "code.native_build_unsupported": "ネイティブ部品の作成にはこの画面では対応していません。",
   "code.setup_backend_unsupported": "このエンジンのセットアップにはこの画面では対応していません。",

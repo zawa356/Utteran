@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from utteran_gui import hardware
-from utteran_gui.cli import CliAdapter, CliError, as_json_dict
+from utteran_gui.cli import CliAdapter, CliError, CliTimeout, as_json_dict
 
 VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
 NVIDIA_DRIVER_URL = "https://www.nvidia.com/Download/index.aspx"
@@ -140,6 +140,9 @@ _PROBE_NAMES = frozenset(
 )
 
 
+_CUDA_PROBES = frozenset({"ctranslate2_cuda_count", "ctranslate2_cuda", "torch_cuda"})
+
+
 def parse_devices(profile: str, payload: dict[str, Any], attempts: int) -> RuntimeReport:
     """Allowlisted projection of ``utteran devices --json`` (no paths, no free text)."""
     ct2 = payload.get("ctranslate2") if isinstance(payload.get("ctranslate2"), dict) else {}
@@ -162,7 +165,8 @@ def parse_devices(profile: str, payload: dict[str, Any], attempts: int) -> Runti
         and item.get("name") in _PROBE_NAMES
         and item.get("status") in {"completed", "timeout", "error"}
     )
-    timed_out = any(status == "timeout" for _, status in probes)
+    # Only the CUDA probes decide a retry: a slow Vulkan/OpenVINO probe is not a CUDA answer.
+    timed_out = any(status == "timeout" for name, status in probes if name in _CUDA_PROBES)
     return RuntimeReport(
         profile,
         "probe_timeout" if timed_out else None,
@@ -211,6 +215,8 @@ class _State:
     vcredist: VcRedist | None = None
     runtime: RuntimeReport | None = None
     runtime_phase: Phase = "idle"
+    # A forced re-detection asked for while a pass was running: run right after it.
+    pending_force: bool = False
     thread: threading.Thread | None = field(default=None, repr=False)
 
 
@@ -291,6 +297,7 @@ class SetupDiagnostics:
             "disk": None if state.disk is None else {"free_bytes": state.disk.free_bytes},
             "vcredist": None if state.vcredist is None else state.vcredist.to_wire(),
             "runtime_phase": state.runtime_phase,
+            "rerun_pending": state.pending_force,
             "runtime": None if state.runtime is None else state.runtime.to_wire(),
             "recommendation": None if gpu is None else recommend(gpu, state.runtime),
         }
@@ -298,32 +305,48 @@ class SetupDiagnostics:
     # ------------------------------------------------------------------ refresh
 
     def refresh(self, *, runtime: bool, force_runtime: bool = False) -> dict[str, Any]:
-        """Start one detection pass unless one is running (single-flight). Never blocks."""
+        """Start one detection pass unless one is running (single-flight). Never blocks.
+
+        A forced runtime request that arrives during a pass is not dropped: it is recorded and
+        runs once after the current pass (several such requests coalesce into one).
+        """
         with self._lock:
-            if self._state.phase != "running":
-                self._state.generation += 1
-                self._state.phase = "running"
-                self._state.started_at = self.clock()
-                self._state.finished_at = None
-                generation = self._state.generation
-                thread = threading.Thread(
-                    target=self._run,
-                    args=(generation, runtime, force_runtime),
-                    daemon=True,
-                    name="utteran-setup-diagnostics",
-                )
-                self._state.thread = thread
-                thread.start()
+            if self._state.phase == "running":
+                if runtime and force_runtime:
+                    self._state.pending_force = True
+            else:
+                self._start_locked(runtime, force_runtime)
         return self.snapshot()
 
+    def _start_locked(self, runtime: bool, force_runtime: bool) -> None:
+        """Caller holds ``self._lock``."""
+        self._state.generation += 1
+        self._state.phase = "running"
+        self._state.started_at = self.clock()
+        self._state.finished_at = None
+        thread = threading.Thread(
+            target=self._run,
+            args=(self._state.generation, runtime, force_runtime),
+            daemon=True,
+            name="utteran-setup-diagnostics",
+        )
+        self._state.thread = thread
+        thread.start()
+
     def wait(self, timeout: float) -> bool:
-        """Test helper: join the running pass."""
-        with self._lock:
-            thread = self._state.thread
-        if thread is None:
-            return True
-        thread.join(timeout)
-        return not thread.is_alive()
+        """Test helper: join the running pass and a queued forced pass after it."""
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._lock:
+                thread = self._state.thread
+            if thread is None:
+                return True
+            thread.join(max(0.0, deadline - time.monotonic()))
+            if thread.is_alive():
+                return False
+            with self._lock:
+                if self._state.thread is thread and self._state.phase != "running":
+                    return True
 
     def _apply(self, generation: int, **values: Any) -> bool:
         with self._lock:
@@ -351,6 +374,15 @@ class SetupDiagnostics:
             )
         except Exception:
             self._apply(generation, phase="failed", finished_at=self.clock())
+        with self._lock:
+            if generation == self._state.generation and self._state.pending_force:
+                self._state.pending_force = False
+                self._start_locked(True, True)
+
+    def runtime_busy(self) -> bool:
+        """A runtime probe (profile ``devices`` children) is running or about to run."""
+        with self._lock:
+            return self._state.phase == "running" or self._state.pending_force
 
     def _runtime_profile(self) -> str | None:
         for name in ("cuda", "cpu"):
@@ -375,7 +407,9 @@ class SetupDiagnostics:
             try:
                 payload = self.probes.runtime(profile, force and attempt == 1)
                 report = parse_devices(profile, payload, attempt)
-            except subprocess.TimeoutExpired:
+            except (subprocess.TimeoutExpired, CliTimeout):
+                # The adapter tree-kills the CLI and raises CliTimeout (a CliError): catch it
+                # before the generic failure so the cold-start retry really happens (#89).
                 report = RuntimeReport(profile, "probe_timeout", attempts=attempt)
             except (CliError, OSError, subprocess.SubprocessError, ValueError):
                 return RuntimeReport(profile, "probe_failed", attempts=attempt)

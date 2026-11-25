@@ -876,3 +876,103 @@ def test_http_readiness_check_is_read_only(http) -> None:
     assert result.status_code == 200, result.text
     assert result.json()["state"] in {"ready", "not_ready"}
     assert http.post("/api/v1/readiness-checks", json={"schema_version": 1}).status_code == 422
+
+
+# --------------------------------------------------------------------------- review fixes
+
+
+class _TimeoutProcess:
+    """Fake Popen: the first ``devices`` run outlives its timeout, the next one answers."""
+
+    calls = 0
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        type(self).calls += 1
+        self.first = type(self).calls == 1
+        self.returncode = 0
+        self.args = args[0] if args else []
+        self.killed = False
+
+    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+        if self.first and not self.killed and timeout is not None:
+            raise subprocess.TimeoutExpired("devices", timeout)
+        return json.dumps(devices_json(True)), ""
+
+    def poll(self) -> int:
+        return 0
+
+
+def test_real_cli_timeout_is_retried_through_the_adapter(tmp_path, monkeypatch) -> None:
+    """The production adapter turns a timeout into CliTimeout (a CliError): still retried."""
+    from utteran_gui.cli import CliAdapter, CliTimeout
+
+    _TimeoutProcess.calls = 0
+
+    def kill(process: Any) -> None:
+        process.killed = True
+
+    cli = CliAdapter(tmp_path, tmp_path / "venvs", popen_factory=_TimeoutProcess)
+    cli._tree_killer = kill  # type: ignore[method-assign]
+    monkeypatch.setattr(cli, "command", lambda profile, arguments: ["devices"])
+    with pytest.raises(CliTimeout):
+        cli.run_json("cuda", ["devices", "--json"], timeout=0.01)
+    _TimeoutProcess.calls = 0
+    service = SetupDiagnostics(cli)
+    service.probes = DiagnosticProbes(
+        gpu=lambda: gpu("nvidia"),
+        memory=lambda: hardware.MemoryReport(None, None),
+        disk=lambda _p: hardware.DiskReport(None),
+        vcredist=lambda: VcRedist("present"),
+        runtime=lambda profile, refresh: service._devices(profile, refresh),
+    )
+    monkeypatch.setattr(
+        cli, "profile_info", lambda name: type("I", (), {"exists": name == "cuda"})()
+    )
+    monkeypatch.setattr("utteran_gui.setup_diagnostics.RUNTIME_TIMEOUT", 0.01)
+    service.refresh(runtime=True, force_runtime=True)
+    assert service.wait(5)
+    runtime = service.snapshot()["runtime"]
+    assert runtime["ctranslate2_cuda"] is True and runtime["attempts"] == 2
+
+
+def test_a_forced_redetect_during_a_pass_runs_after_it(tmp_path) -> None:
+    release = threading.Event()
+    forced: list[bool] = []
+
+    def runtime(profile: str, refresh: bool) -> dict[str, Any]:
+        forced.append(refresh)
+        release.wait(5)
+        return devices_json(True)
+
+    service = diagnostics(tmp_path, runtime)
+    service.refresh(runtime=True, force_runtime=False)
+    assert service.runtime_busy()
+    assert service.refresh(runtime=True, force_runtime=True)["rerun_pending"] is True
+    service.refresh(runtime=True, force_runtime=True)  # coalesced into the same pending pass
+    release.set()
+    assert service.wait(5)
+    assert forced == [False, True]
+    assert service.snapshot()["generation"] == 2 and not service.runtime_busy()
+
+
+def test_only_cuda_probe_timeouts_trigger_a_retry() -> None:
+    payload = devices_json(True)
+    payload["probes"].append({"name": "vulkan", "status": "timeout"})
+    assert parse_devices("cuda", payload, 1).reason_code is None
+
+
+def test_setup_start_is_refused_while_a_runtime_probe_runs(http) -> None:
+    from utteran_gui.setup_diagnostics import SetupDiagnostics as Diag
+
+    http.diagnostics.runtime_busy = lambda: True  # type: ignore[method-assign]
+    assert isinstance(http.diagnostics, Diag)
+    body = {
+        "schema_version": 1,
+        "plan_ref": {"id": "plan_" + "0" * 32, "revision": 1},
+        "approval_id": "apr_" + "0" * 32,
+    }
+    refused = http.post(
+        "/api/v1/setup-operations", json=body, headers={"Idempotency-Key": "start-f-busy-000001"}
+    )
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "diagnostics_running"

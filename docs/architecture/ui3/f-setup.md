@@ -32,7 +32,7 @@ PR #88（0.1.70、Windows VM 受入待ち）とは独立。対象は `--next-ui-
 
 | 項目 | 実装 |
 |---|---|
-| 契約 | `SetupPlanRequest.verification_settings`（任意）。`PlanContent.verification` に recipe（cpu→`fw-cpu`、cuda→`fw-cuda`）・モデル・設定を保存。**plan の公開 view は設定の SHA-256 だけ**（prompt 等を返さない）。指定なしの plan は従来と同じ形・hash |
+| 契約 | `SetupPlanRequest.verification_settings`（任意）。`PlanContent.verification` に recipe（cpu→`fw-cpu`、cuda→`fw-cuda`）・モデル・設定を保存。**plan の公開 view は設定の digest だけ**（installation 秘密鍵の HMAC-SHA256。短い prompt を推測照合できないようにした。prompt 等は返さない）。指定なしの plan は従来と同じ形・hash |
 | 拒否 | intel/vulkan、faster-whisper 以外、話者分離有効、plan に無いモデル → 422 `verification_unsupported` |
 | ステップ | 新 kind `capability_smoke`（`verify`）。既存 B4 smoke 子 `python -I -B -m utteran.capabilities.smoke run` を **B8 の `_child`（intent→PID→exit の journal、heavy slot、fence、協調取消）**で起動。私的 request は stdin のみ、環境は B4 bridge と同じ allowlist（fingerprint を同一に計算するため） |
 | 結果 | 子の固定 outcome 1 行だけを読む。`passed` → `succeeded`（evidence `capability_evidence_recorded`）。それ以外は `smoke_failed` と分類済み理由（`smoke_backend_unavailable` 等）。生コード・出力は保存しない |
@@ -60,6 +60,8 @@ PR #88（0.1.70、Windows VM 受入待ち）とは独立。対象は `--next-ui-
 - `devices.py`: `ctranslate2_cuda_count`/`ctranslate2_cuda`/`torch_cuda` の **timeout だけを 1 回再試行**（1 pass で最大 2 回、`ProbeOutcome.attempts`）。エラー・確定値は再試行しない。timeout は従来どおり cache しない・unknown のまま。
 - `nvidia-smi` の index と CUDA ordinal を同一視していた表示を廃止。CUDA 1 台・NVIDIA 1 台の一意な場合だけ名前・メモリを対応させる。
 - GUI 側 `setup_diagnostics.py`: OS 段（CIM の GPU・driver 版、メモリ、ディスク、VC++）→ runtime 段（profile がある場合のみ `devices --json`）。背景 1 スレッドの single-flight（並行要求は合流）、世代番号で古い結果の上書きを防止、runtime の timeout は総時間 420 秒内で 1 回だけ再実行（2 回目は cache 利用可）、setup 実行中は probe しない、timeout は「GPU なし」「CPU 確定」にしない。
+- 実行中に来た強制再検出は捨てず、現在の pass の後に 1 回だけ実行する（`rerun_pending`）。CLI の timeout は adapter が `CliTimeout`（`CliError` の派生）に変換するため、それを捕捉して再試行する。再試行の判定は CUDA 系 probe の timeout だけ。
+- runtime probe の実行中（保留中を含む）は setup の開始・retry・resume を 409 `diagnostics_running` で拒否する（probe が profile venv の DLL を保持しているため）。逆に setup 実行中は probe しない。残留: probe は heavy slot の外で走るため、実行中の B7 ジョブと GPU を取り合い得る（旧 `/api/environment` と同じ扱い。実機で影響を確認）。
 - 旧 `/api/wizard/hardware` と `/api/environment` は変更しない（旧 GUI 維持）。重複 probe の解消は新 GUI の診断経路のみ。
 
 ## 5. VC++・ドライバーの診断と修復導線
@@ -96,7 +98,11 @@ PR #88（0.1.70、Windows VM 受入待ち）とは独立。対象は `--next-ui-
 | W-F8 | 話者分離をオン（トークン・同意あり／なし） | なし: 開始不可。あり: 導入と動作確認まで完了。v1 キューでは話者分離付きジョブは拒否される |
 | W-F9 | 証拠ファイルの確認 | `<root>\cache\capability-evidence-v1\*.json` にパス・prompt・文字起こし・トークンが無い |
 
-## 9. 試験（Cloud Linux、合成のみ）
+## 9. 独立レビューへの対応（2026-11-25）
+
+サブエージェントによるレビューで重要 5 件・軽微 5 件。全て同じ作業単位で修正し回帰試験を追加した: 実 CLI の timeout で再試行が働かない（`CliTimeout`）、検出完了で確認済みの計画と異なる profile が表示される（手動選択・計画後は推奨で上書きしない）、再読込後の初回成功で既定値が作られない（plan の検証モデルから復元）、probe 中に setup が始まる（409）、強制再検出が合流で失われる（保留して実行）、未確認の子の一時ファイル削除、digest の鍵付け、CUDA 以外の timeout で再試行、無効になった承認の再利用、不明結果の再送時の設定不一致。
+
+## 10. 試験（Cloud Linux、合成のみ）
 
 - pytest: `tests/test_f_setup.py`（plan/検証の拒否、executor の capability_smoke 成功・失敗分類・retry、未構築→ready→B7 統合、readiness、診断の初回 timeout→再試行・重複要求の合流・古い結果・unknown、VC++、#89 再試行と番号対応、NVML/fingerprint、HTTP）。既存 B8/B4 試験は維持（境界試験の許可先に B8 ステップを明示追加）。
 - Vitest: `src/domain/v1/setup.test.ts`（表示時は GET のみ、計画内容、主モデル順・話者分離・同意、資格情報不足、既定値の一度だけの作成と既存設定の維持、キュー再開、retry/不明時の再読込、復元、再検証の可否）。

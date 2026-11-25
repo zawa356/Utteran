@@ -165,6 +165,12 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
 
         return await guarded(handler)
 
+    def probe_idle() -> None:
+        # A diagnostics runtime probe holds the profile venv (DLLs) outside the heavy slot:
+        # a setup that may rebuild or verify that venv does not start meanwhile.
+        if diagnostics is not None and diagnostics.runtime_busy():
+            raise SetupApiError("diagnostics_running", 409)
+
     @app.post("/setup-plans")
     async def create_plan(request: Request) -> Response:
         async def handler() -> Response:
@@ -245,6 +251,7 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
                 if replay is not None:
                     return replay
                 payload = SetupStart.model_validate(body)
+                probe_idle()
                 return repo.start_operation(
                     scope, digest, payload, fingerprint=observe().fingerprint
                 )
@@ -292,6 +299,7 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
 
             def work() -> Any:
                 repo = store()
+                probe_idle()
                 observation = observe()
                 method = repo.retry_setup if action == "retry" else repo.resume_setup
                 return method(

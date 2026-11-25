@@ -145,6 +145,8 @@ export class SetupController {
   /** An approval the server accepted for the current plan (reused when only the start failed). */
   private approval: SetupApproval | null = null;
   private finished = new Set<string>();
+  /** The person chose a profile themselves: a later detection never replaces it. */
+  private profileTouched = false;
   private disposed = false;
 
   constructor(
@@ -187,12 +189,21 @@ export class SetupController {
   }
 
   private applyDiagnostics(data: Diagnostics): void {
-    const state = this.store.get();
-    const first = state.diagnostics.data === null;
     this.patchDiag({ phase: data.phase === "running" ? "pending" : "done", data, error: null });
     const recommended = data.recommendation?.profile;
-    if ((first || data.phase === "completed") && recommended && state.mode === "standard" && VERIFIABLE_PROFILES.includes(recommended)) {
-      this.store.patch({ choice: { ...this.store.get().choice, profile: recommended } });
+    const state = this.store.get();
+    // Follow the recommendation only while nothing was chosen or planned: a reviewed plan is
+    // never changed under the person (and an edited profile is theirs).
+    if (
+      recommended &&
+      VERIFIABLE_PROFILES.includes(recommended) &&
+      state.mode === "standard" &&
+      !this.profileTouched &&
+      !this.busy() &&
+      state.plan.plan === null &&
+      state.choice.profile !== recommended
+    ) {
+      this.store.patch({ choice: { ...state.choice, profile: recommended } });
     }
     if (data.phase === "running" && !this.disposed) {
       if (this.diagTimer) clearTimeout(this.diagTimer);
@@ -219,12 +230,14 @@ export class SetupController {
     if (this.busy()) return;
     const recommended = this.store.get().diagnostics.data?.recommendation?.profile;
     const profile = recommended && VERIFIABLE_PROFILES.includes(recommended) ? recommended : "cpu";
+    if (mode === "standard") this.profileTouched = false; // the standard setup follows detection
     this.store.patch({ mode, choice: mode === "standard" ? initialChoice(profile) : this.store.get().choice });
     this.resetPlan();
   }
 
   edit(partial: Partial<SetupChoice>): void {
     if (this.busy()) return;
+    if (partial.profile !== undefined) this.profileTouched = true;
     const next = { ...this.store.get().choice, ...partial };
     if (!next.models.includes(next.primary)) next.models = [next.primary, ...next.models];
     if (!next.diarization) next.agreementAccepted = false;
@@ -265,7 +278,9 @@ export class SetupController {
     if (!this.planIntent || state.plan.phase !== "error" || !state.plan.unknown) {
       this.planIntent = new MutationIntent(planRequest(choice, settings));
     }
-    this.store.patch({ plan: { phase: "pending", plan: null, error: null, unknown: false }, verifiedSettings: settings });
+    // A replayed (unknown-outcome) intent keeps its own body: remember exactly what it verifies.
+    const sent = this.planIntent.body.verification_settings as JsonObject;
+    this.store.patch({ plan: { phase: "pending", plan: null, error: null, unknown: false }, verifiedSettings: sent });
     try {
       const plan = await this.api.createPlan(this.planIntent);
       this.store.patch({ plan: { phase: "done", plan, error: null, unknown: false } });
@@ -319,8 +334,12 @@ export class SetupController {
       const e = toApiError(error);
       // An unknown outcome keeps both intents: an explicit retry replays the same keys.
       if (!e.outcomeUnknown) {
-        // A rejected approval is asked again with a new intent; an accepted one is kept.
-        if (this.approval === null) this.approvalIntent = null;
+        // A rejected approval is asked again with a new intent; an accepted one is kept unless
+        // the start says the approval or plan itself is no longer valid.
+        if (this.approval === null || /^(approval_|plan_|reapproval_required|inventory_stale)/.test(e.code ?? "")) {
+          this.approval = null;
+          this.approvalIntent = null;
+        }
         this.startIntent = null;
       }
       this.store.patch({ start: { phase: "error", error: e, unknown: e.outcomeUnknown } });
@@ -429,7 +448,18 @@ export class SetupController {
   // ---------------------------------------------------------------- defaults / readiness
 
   private async applyDefaults(op: SetupOperation): Promise<void> {
-    const settings = this.store.get().verifiedSettings;
+    let settings = this.store.get().verifiedSettings;
+    if (settings === null && this.store.get().mode !== "verify") {
+      // After a reload the plan is read back: only a template-based plan (standard/custom)
+      // can create defaults, and its settings are the template with the verified model.
+      try {
+        const plan = await this.api.getPlan(op.planId);
+        const model = plan.verification?.modelRef.replace(/^faster-whisper:/, "");
+        settings = model ? defaultSettings(model) : null;
+      } catch {
+        settings = null;
+      }
+    }
     if (this.store.get().mode === "verify" || !settings) {
       this.store.patch({ defaults: { phase: "kept", error: null } });
       return;

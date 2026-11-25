@@ -1396,6 +1396,7 @@ export const en: Record<MessageKey, string> = {
   "code.inventory_stale": "The environment changed after the plan was made. Create it again.",
   "code.setup_runtime_inactive": "Setup is not active.",
   "code.diagnostics_unavailable": "Diagnostics are not available.",
+  "code.diagnostics_running": "Detection of the GPU runtime is running. Start after it finishes.",
   "code.policy_unresolved": "The selected Policy was not found.",
   "code.native_build_unsupported": "Building native parts is not offered here.",
   "code.setup_backend_unsupported": "Setting up this engine is not offered here.",

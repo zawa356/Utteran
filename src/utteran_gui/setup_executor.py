@@ -247,6 +247,7 @@ class ProcessChildRunner:
             with contextlib.suppress(Exception):
                 process.wait(timeout=5)
             alive = process.poll() is None
+            _close(process.stdin)
             _close(process.stdout)
             _close(process.stderr)
             if alive:
@@ -797,6 +798,7 @@ class SetupExecutor:
             self._fail(run, step, "launch_failed", "launch_failed")
             return
         workdir = Path(tempfile.mkdtemp(prefix="utteran-setup-verify-", dir=self.work_dir))
+        reaped = True
         try:
             body = json.dumps(
                 {
@@ -823,9 +825,13 @@ class SetupExecutor:
                 return
             self._finish(run, step, "failed", SMOKE_REASONS.get(outcome or "", "smoke_failed"))
             raise _Fail("smoke_failed", step.id)
+        except ChildUnconfirmed:
+            reaped = False  # the child may still run: never touch its files (recovery decides)
+            raise
         finally:
-            shutil.rmtree(workdir, ignore_errors=True)
-            self._remove_evidence_temporaries()
+            if reaped:
+                shutil.rmtree(workdir, ignore_errors=True)
+                self._remove_evidence_temporaries()
 
     def _remove_evidence_temporaries(self) -> None:
         with contextlib.suppress(Exception):
