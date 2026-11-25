@@ -513,18 +513,58 @@ def test_revision_digest_label_and_option_checks(world: World) -> None:
 
 
 @POSIX
-def test_explicit_parent_and_original_parent_both_get_a_new_directory(world: World) -> None:
+def test_an_explicit_parent_elsewhere_gets_a_new_directory(world: World) -> None:
     job_id = world.finished()
     elsewhere = world.tmp / "elsewhere"
     elsewhere.mkdir()
     _, record = world.run(job_id, world.body(job_id, output_parent=str(elsewhere)))
     assert Path(record["directory"]).parent == elsewhere and record["options"]["explicit_parent"]
-    # The job's own directory as an explicit parent: a new sub-directory, the job files stay.
+
+
+@POSIX
+def test_owner_p2_2_the_job_directory_and_its_descendants_are_refused(world: World) -> None:
+    """Owner review P2-2: the job's own directory is never a destination, nor anything in it.
+    The refusal happens before any record or directory exists."""
+    job_id = world.finished()
     original = world.directory(job_id)
-    before = tree(original)
-    _, inner = world.run(job_id, world.body(job_id, output_parent=str(original)))
-    assert Path(inner["directory"]).parent == original
-    assert {k: v for k, v in tree(original).items() if "_reexport_" not in k} == before
+    (original / "user-made" / "deeper").mkdir(parents=True)
+    before = tree(world.output)
+    for parent in (original, original / "user-made", original / "user-made" / "deeper"):
+        with pytest.raises(ReexportError) as caught:
+            world.run(job_id, world.body(job_id, output_parent=str(parent)))
+        assert (caught.value.code, caught.value.status) == ("output_inside_source", 409)
+    assert tree(world.output) == before
+    assert world.service.list_for_job(job_id)["items"] == []
+    assert not world.reexports.exists()
+
+
+@POSIX
+def test_owner_p2_2_a_job_directory_moved_under_the_destination_is_refused_by_identity(
+    world: World, monkeypatch: Any
+) -> None:
+    """The verified job directory is moved (same inode, other name) into the requested parent
+    path after the source was read: refused by identity, not by name."""
+    job_id = world.finished()
+    original = world.directory(job_id)
+    elsewhere = world.tmp / "elsewhere"
+    elsewhere.mkdir()
+    moved = elsewhere / "renamed-job-dir"
+    real_read = reexport_files.read_verified_json
+
+    def read_then_move(*args: Any, **kwargs: Any) -> Any:
+        result_ = real_read(*args, **kwargs)
+        original.rename(moved)
+        return result_
+
+    body = world.body(job_id, output_parent=str(moved))  # the plan reads the source unmoved
+    monkeypatch.setattr(reexport_files, "read_verified_json", read_then_move)
+    with pytest.raises(ReexportError) as caught:
+        world.run(job_id, body)
+    assert caught.value.code == "output_inside_source"
+    assert sorted(p.name for p in moved.iterdir()) == sorted(
+        [OUTPUT_MARKER] + [f"{original.name}.{f}" for f in ("srt", "json", "md")]
+    )
+    assert world.service.list_for_job(job_id)["items"] == []
 
 
 # ---- refusals of the source -----------------------------------------------------------------
@@ -1297,3 +1337,114 @@ def test_review_p3_2_claim_failure_reads_interrupted_and_partial(world: World) -
     assert record["directory"] is None and record["partial"] is True
     made = [p for p in world.output.iterdir() if "_reexport_" in p.name]
     assert len(made) == 1 and list(made[0].iterdir()) == []  # the empty folder stays
+
+
+# ---- owner review (PR #83) P2-1 / P2-3 ------------------------------------------------------
+
+
+def _repo(tmp_path: Path, ignore: str) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "transcripts").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / ".gitignore").write_text(ignore)
+    return repo
+
+
+@POSIX
+@pytest.mark.parametrize(
+    "ignore,formats",
+    [
+        # Only the old probe name is ignored: the real files and the marker are not.
+        ("private-transcript.*\n", ["txt"]),
+        # The real format files are ignored, the ownership marker is not.
+        ("*.txt\n*.md\n", ["txt", "md"]),
+        # A negation re-includes the real Markdown file of a re-export directory.
+        ("*.txt\n*.md\n!*_reexport_*.md\n", ["txt", "md"]),
+        # Only one real format of two is ignored.
+        ("*.txt\n.utteran-reexport\n", ["txt", "md"]),
+    ],
+)
+def test_owner_p2_1_every_real_file_name_and_the_marker_must_be_ignored(
+    world: World, ignore: str, formats: list[str]
+) -> None:
+    job_id = world.finished()
+    repo = _repo(world.tmp, ignore)
+    with pytest.raises(ReexportError) as caught:
+        world.run(
+            job_id, world.body(job_id, formats=formats, output_parent=str(repo / "transcripts"))
+        )
+    assert caught.value.code == "output_in_repository"
+    assert list((repo / "transcripts").iterdir()) == []  # nothing created
+    assert world.service.list_for_job(job_id)["items"] == []  # and no record
+
+
+@POSIX
+@pytest.mark.parametrize(
+    "ignore",
+    ["transcripts/\n", "*.txt\n*.md\n.utteran-reexport\n", "*_reexport_*/\n"],
+)
+def test_owner_p2_1_fully_ignored_destinations_are_accepted(world: World, ignore: str) -> None:
+    job_id = world.finished()
+    repo = _repo(world.tmp, ignore)
+    status, record = world.run(
+        job_id, world.body(job_id, formats=["txt", "md"], output_parent=str(repo / "transcripts"))
+    )
+    assert status == 201 and record["state"] == "completed"
+    listed = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "_reexport_" not in listed  # Git sees none of the written files
+
+
+def _move_during_write(world: World, move: Any) -> None:
+    real_claim = world.reexports.claim
+
+    def claim(reexport_id: str, name: str) -> Any:
+        record = real_claim(reexport_id, name)
+        move()  # after the directory exists, before the files are written
+        return record
+
+    world.reexports.claim = claim  # type: ignore[method-assign]
+
+
+@POSIX
+@pytest.mark.parametrize("level", ["parent", "grandparent"])
+@pytest.mark.parametrize("replace", [False, True])
+def test_owner_p2_3_a_moved_parent_or_ancestor_is_not_location_verified(
+    world: World, level: str, replace: bool
+) -> None:
+    """Owner review P2-3: the shown absolute path must still lead to the written directory."""
+    job_id = world.finished()
+    top = world.tmp / "top"
+    parent = top / "parent"
+    parent.mkdir(parents=True)
+    moving = parent if level == "parent" else top
+    aside = world.tmp / f"aside-{level}"
+
+    def move() -> None:
+        moving.rename(aside)
+        if replace:
+            (parent if level == "parent" else top / "parent").mkdir(parents=True)
+
+    _move_during_write(world, move)
+    status, record = world.run(
+        job_id, world.body(job_id, formats=["txt"], output_parent=str(parent))
+    )
+    assert status == 201 and record["state"] == "completed"
+    assert record["location_verified"] is False
+    shown = Path(record["directory"])
+    assert not (shown / f"{shown.name}.txt").exists()  # the shown path does not lead there
+
+
+@POSIX
+def test_owner_p2_3_an_unmoved_destination_is_location_verified(world: World) -> None:
+    job_id = world.finished()
+    parent = world.tmp / "top" / "parent"
+    parent.mkdir(parents=True)
+    _, record = world.run(job_id, world.body(job_id, formats=["txt"], output_parent=str(parent)))
+    assert record["location_verified"] is True
+    shown = Path(record["directory"])
+    assert (shown / f"{shown.name}.txt").is_file()
