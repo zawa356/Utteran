@@ -57,6 +57,9 @@ pub(crate) fn capabilities() -> Capabilities {
         handle_relative_lookup: true,
         no_follow: true,
         ancestors_pinned: Guarantee::Enforced,
+        // FSCTL_SET_REPARSE_POINT on an empty held dir is not share-checked.
+        held_kind_stable: Guarantee::DetectedOnly,
+        dir_flush: Guarantee::NotProvided,
         read_exclusive: Guarantee::Enforced,
         dir_creation: DirCreation::Atomic,
         mount_identity: Guarantee::Enforced, // mount points are reparse points: refused
@@ -132,7 +135,7 @@ pub(crate) fn map_io(e: std::io::Error) -> Error {
 /// Existing Windows components get the full portable rule set: those rules are
 /// exactly the Win32 ambiguities (device names, trailing dot/space, ADS, ...).
 pub(crate) fn validate_existing_component(c: &str) -> Result<()> {
-    crate::name::validate_portable(c)
+    crate::name::validate_win32_rules(c)
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -164,8 +167,14 @@ pub(crate) fn open_root(path: &str) -> Result<(File, String, Vec<String>)> {
     for c in &comps {
         validate_existing_component(c).map_err(|_| bad())?;
     }
-    let root_path = format!(r"\\?\{}:\", letter.to_ascii_uppercase());
-    let mut w = wide(&root_path);
+    // Resolve the drive letter in the *global* DOS device namespace. `\\?\C:\` would use
+    // the per-logon device map, which a same-user process can override with
+    // `DefineDosDevice`/`subst` (even for `C:`) to point at another volume.
+    let letter = letter.to_ascii_uppercase();
+    let global = format!(r"\\?\GLOBALROOT\GLOBAL??\{letter}:\");
+    // Re-openable form for `DirChain::verify_reachable` (goes through this function).
+    let root_path = format!(r"{letter}:\");
+    let mut w = wide(&global);
     w.push(0);
     // SAFETY: `w` is NUL-terminated and outlives the call; null security attributes
     // and template handle are permitted.
@@ -181,7 +190,13 @@ pub(crate) fn open_root(path: &str) -> Result<(File, String, Vec<String>)> {
         )
     };
     if h == INVALID_HANDLE_VALUE {
-        return Err(last_error());
+        // A letter missing from the global namespace (per-logon subst, mapped drive).
+        let e = last_error();
+        return Err(if e.code() == ErrorCode::NotFound {
+            Error::new(ErrorCode::InvalidRoot)
+        } else {
+            e
+        });
     }
     // SAFETY: `h` is a valid handle we exclusively own (success checked above).
     let root = File::from(unsafe { OwnedHandle::from_raw_handle(h as _) });
@@ -232,7 +247,11 @@ fn ensure_local_disk(root: &File) -> Result<()> {
     }
     // SAFETY: success status means the kernel filled the structure.
     let info = unsafe { info.assume_init() };
-    if info.Characteristics & FILE_REMOTE_DEVICE != 0 || info.DeviceType != FILE_DEVICE_DISK {
+    // FILE_REMOTE_DEVICE_VSMB (0x80000): Windows Sandbox / container mapped folders.
+    const FILE_REMOTE_DEVICE_VSMB: u32 = 0x0008_0000;
+    if info.Characteristics & (FILE_REMOTE_DEVICE | FILE_REMOTE_DEVICE_VSMB) != 0
+        || info.DeviceType != FILE_DEVICE_DISK
+    {
         return Err(Error::new(ErrorCode::RemoteVolume));
     }
     Ok(())
@@ -535,6 +554,12 @@ pub(crate) fn fs_kind(f: &File) -> Result<(FsKind, bool)> {
     Ok((k, false))
 }
 
+pub(crate) fn fs_supported(k: FsKind) -> bool {
+    k == FsKind::Ntfs
+}
+
+/// Note: the enumeration cursor belongs to the handle, so concurrent calls on the
+/// same `Dir` from two threads may interleave (documented on `Dir::is_empty`).
 pub(crate) fn is_empty_dir(f: &File) -> Result<bool> {
     // 64 KiB, 8-byte aligned buffer for FILE_ID_BOTH_DIR_INFO records.
     let mut buf = vec![0u64; 8192];

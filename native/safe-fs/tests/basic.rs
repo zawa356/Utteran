@@ -419,3 +419,31 @@ fn kill_mid_write_releases_handles_and_keeps_partial() {
     // renamed (it could not while held).
     std::fs::rename(&dir, fx.path("job-renamed")).unwrap();
 }
+
+#[test]
+fn verify_held_accepts_unchanged_chain() {
+    let fx = Fixture::new();
+    fx.mkdirs("out");
+    let mut chain = fx.chain("out");
+    chain.push_new(&name("job")).unwrap();
+    let mut f = chain.leaf().create_file(&name("marker")).unwrap();
+    f.write_all(b"m").unwrap();
+    f.finish().unwrap();
+    chain.verify_held().unwrap();
+    let c = capabilities();
+    println!(
+        "held_kind_stable={} dir_flush={}",
+        c.held_kind_stable.as_str(),
+        c.dir_flush.as_str()
+    );
+}
+
+/// Fail closed on file systems outside the allow-list (procfs on Linux).
+#[cfg(target_os = "linux")]
+#[test]
+fn unlisted_file_system_is_refused() {
+    assert_eq!(
+        code(DirChain::open_absolute("/proc/sys")),
+        ErrorCode::UnsupportedFileSystem
+    );
+}

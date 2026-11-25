@@ -90,6 +90,7 @@ native/                        # 独立 Cargo workspace（製品の pyproject／
 - `Dir`：`metadata()`、`is_empty()`、`open_dir`、`create_dir -> (Dir, DirCreation)`、`probe`、`read_file(&Name, max) -> ReadOutcome`、`create_file -> NewFile`、`sync()`。
 - `NewFile`：`write_all`（1 MiB 単位、失敗は以後も失敗）、`written()`、`finish() -> Metadata`（fsync／`F_FULLFSYNC`／`FlushFileBuffers` 後にサイズ照合）。Drop は閉じるだけで削除しない。
 - `Name::new(&str)`：単一 component の移植可能な検証（空・`.`・`..`・`/`・`\`・NUL・制御文字・`:`（ADS・drive）・`<>"|?*`・末尾の空白/ドット・先頭空白・DOS device 名（拡張子付き・上付き数字含む）・255 超を拒否。Unicode は正規化しない）。
+- `DirChain::verify_held()`：全保持 handle の種別・identity を handle 越しに再確認（Windows で保持中の dir が reparse 化された場合の検出）。
 - `capabilities()`：OS ごとの保証を `Guarantee::{Enforced, DetectedOnly, NotProvided}` と `DirCreation::{Atomic, ReopenedByName}` で返す。同じ名前の操作でも保証が違うことを型で表す。
 - `Error { code: ErrorCode, os_code: Option<i64> }`：固定コード 22 種、`Display` はコード文字列のみ。`Name`・`Dir` の `Debug` も値を出さない。
 
@@ -112,14 +113,17 @@ native/                        # 独立 Cargo workspace（製品の pyproject／
 - 新規 dir: `mkdirat(0700)` → `openat(O_NOFOLLOW)` で開き直し、自分の所有かつ空であることを確認（違えば `claim_lost`）。**同じユーザーが空の dir に差し替えた場合は区別できない**（E-C1 と同じ残留）。
 - 新規 file: `openat(O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW, 0600)`。dangling symlink を含む既存名は `already_exists`。
 - 読取り: `O_RDONLY|O_NOFOLLOW|O_NONBLOCK`（FIFO で止まらない）で開き、通常ファイル・link 数 1・上限以下を確認、上限＋1 バイトまで読み、前後の `fstat`（identity・サイズ・mtime・ctime）一致とバイト数一致を要求。
-- FS 種別: Linux `fstatfs.f_type`（ext4・xfs・btrfs・tmpfs・overlay・zfs・nfs/smb/cifs/9p/afs＝network、fuse は remote 扱い）。macOS `f_fstypename` と `MNT_LOCAL`。
-  `open_absolute` は leaf がリモートなら `remote_volume`。
+  **これは検出の補助（heuristic）で、同じサイズの上書きが同じ timestamp tick 内に起きると検出できない。完全性は呼出し側の digest 照合（E-C1 の SHA-256）で担保する**（独立レビュー P2-5）。
+  型の確認は open の後（device node を開く副作用は `O_NONBLOCK|O_NOCTTY` で抑えるのみ）。
+- FS 種別: Linux `fstatfs.f_type`、macOS `f_fstypename` と `MNT_LOCAL`。leaf がリモートなら `remote_volume`、**allow-list 外なら `unsupported_file_system`**
+  （Linux: ext4・xfs・btrfs・tmpfs・zfs・overlay、macOS: apfs・hfs。CephFS・Lustre 等の未知の FS を local と誤認しない。独立レビュー P2-1）。
 
 ### 4.2 Windows（ローカル NTFS、windows-sys）
 
 - root: `C:\a\b` か `\\?\C:\a\b` のみ。UNC（`\\server`、`\\?\UNC\`）、`\\.\`、`\\?\GLOBALROOT`・`\\?\Volume{…}`、drive 相対 `C:x`、`\x`、`/` 区切り、末尾 `\`、各要素の移植可能規則違反は `invalid_root`。
-  `\\?\C:\` を `CreateFileW(FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT)`、共有 READ|WRITE で開き、
-  (1) `GetFinalPathNameByHandleW(VOLUME_NAME_NONE)` が `\` ちょうど（SUBST・フォルダへ割り当てた drive を拒否）、(2) `FileFsDeviceInformation` が `FILE_DEVICE_DISK` かつ `FILE_REMOTE_DEVICE` なし（ネットワーク drive を拒否）、
+  drive letter は **global の DOS device 名前空間**で解決する（`\\?\GLOBALROOT\GLOBAL??\C:\`）。`\\?\C:\` はログオンごとの device map を通り、同じユーザーが `DefineDosDevice`／`subst` で `C:` を含む letter を
+  別 volume に向けられるため（独立レビュー P1-1）。per-logon の subst・mapped drive は global に無いので `invalid_root`。これを `CreateFileW(FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT)`、共有 READ|WRITE で開き、
+  (1) `GetFinalPathNameByHandleW(VOLUME_NAME_NONE)` が `\` ちょうど（SUBST・フォルダへ割り当てた drive を拒否）、(2) `FileFsDeviceInformation` が `FILE_DEVICE_DISK` かつ `FILE_REMOTE_DEVICE`／`FILE_REMOTE_DEVICE_VSMB`（Windows Sandbox・container の共有）なし、
   (3) `GetVolumeInformationByHandleW` の FS 名が `NTFS`（ReFS・FAT・exFAT 等は `unsupported_file_system`）。
 - 各要素: `NtCreateFile(RootDirectory=親, 1 要素名, FILE_OPEN, FILE_DIRECTORY_FILE|FILE_OPEN_REPARSE_POINT|FILE_SYNCHRONOUS_IO_NONALERT)`、
   access `FILE_LIST_DIRECTORY|FILE_TRAVERSE|FILE_READ_ATTRIBUTES|SYNCHRONIZE`、**共有 `FILE_SHARE_READ|FILE_SHARE_WRITE`（DELETE なし）**。
@@ -139,6 +143,8 @@ native/                        # 独立 Cargo workspace（製品の pyproject／
 |---|---|---|---|
 | 1 要素ずつの handle 相対 lookup、no-follow | Enforced | Enforced | Enforced |
 | 保持中の祖先の rename／削除 | **DetectedOnly**（`verify_reachable` の時点観測） | DetectedOnly | **Enforced**（DELETE 共有なし。既に DELETE を持つ handle があれば保持自体が `busy`） |
+| 保持中の dir の種別不変（reparse 化等） | Enforced（inode の種別は変わらない） | Enforced | **DetectedOnly**（空の保持 dir の junction 化は共有モードで防げない。`verify_held()` で handle 越しに再確認） |
+| dir の flush（`Dir::sync`） | Enforced（fsync） | Enforced | **NotProvided**（no-op。能力 `dir_flush` で明示） |
 | 新規 dir の handle | ReopenedByName（空 dir への差替えは検出不能） | 同左 | **Atomic** |
 | 読取り中の変更 | DetectedOnly（前後 fstat・バイト数） | DetectedOnly | **Enforced**（共有 READ のみ）＋同じ検出 |
 | mount／volume 越え（push 時） | DetectedOnly（st_dev＋mount id、5.8+） | st_dev のみ（mount id なし→`not_provided`） | Enforced（mount point は reparse として拒否＋volume serial） |
@@ -155,7 +161,9 @@ native/                        # 独立 Cargo workspace（製品の pyproject／
 ### 5.2 Windows で残る点・未検証点
 
 - 保持していない子孫（例えば `push_existing` していない兄弟）は保護されない。保護したいものは必ず chain に入れる。
-- 共有 WRITE を許すため、保持中の**空の** leaf dir を他 process が `FSCTL_SET_REPARSE_POINT` で junction に変える操作は共有モードでは防げない。保持 handle からの相対 open が reparse を再評価しない想定だが、**VM で未検証**（引継ぎ W-14）。
+- 保持中の**空の** leaf dir を他 process が `FSCTL_SET_REPARSE_POINT` で junction に変える操作は共有モードでは防げない（`FILE_WRITE_ATTRIBUTES` は共有検査の対象外）。
+  能力 `held_kind_stable = detected_only` として報告し、`DirChain::verify_held()`（全保持 handle の種別・identity を handle 越しに再確認）を書込み後に呼ぶ。
+  E-C2b では新規 dir に最初に marker を書いて空でなくする。保持 handle からの相対 open が reparse を再評価しない想定は **VM で未検証**（引継ぎ W-14）。
 - ACL 継承・`FILE_SHARE_*` の実効性・8.3・SUBST・ネットワーク drive・FAT/ReFS・OneDrive・長パス・別 process 競合は GitHub Windows runner の自動試験で一部、残りは VM（引継ぎ文書）で確認する。runner の成功を VM 受入とみなさない。
 
 ## 6. Git checkout の扱い
@@ -206,7 +214,7 @@ native/                        # 独立 Cargo workspace（製品の pyproject／
 
 ### 9.1 Cloud Linux（本セッション、kernel 6.18、ext4）
 
-- `cargo test -p utteran-safe-fs`（root）: 単体 4＋`basic` 16（+1 は子 process 用 helper で ignored）＋`unix_races` 7 = **27 PASS**、ignored 3。
+- `cargo test -p utteran-safe-fs`（root、レビュー修正後）: 単体 4＋`basic` 18（+1 は子 process 用 helper で ignored）＋`unix_races` 7 = **29 PASS**、ignored 3。
 - root で `--ignored bind_mount_below_leaf_is_refused_by_mount_id`: PASS。
 - 非 root（`nobody`）で `unix_races --include-ignored`: `permission_denied_is_reported` を含め 8 PASS（bind mount は root 必須のため FAIL＝想定。root 実行で PASS）、`basic --include-ignored` 17 PASS。
 - `cargo clippy --all-targets -D warnings` を `x86_64-unknown-linux-gnu`／`x86_64-pc-windows-msvc`／`aarch64-apple-darwin` の 3 target で PASS（Windows・macOS は型検査のみ、実行は CI）。
@@ -235,9 +243,34 @@ fmt・clippy・core 試験（Windows は `windows_only.rs` を実行）・権限
 
 設計・型検査（Cloud Linux からの cross clippy）と macos runner での実行を分けて記録する。実機受入は対象外（NOT_RUN）。
 
-## 10. 独立レビュー
+## 10. 独立レビュー（サブエージェント、2026-11-25、初版コミット対象）
 
-サブエージェントによる独立レビュー（安全性、依存・配布境界を優先）の結果と対応は Draft PR 本文と本節の追記で記録する。
+安全性と依存・配布境界を優先して依頼。**P0 なし**。Windows コードは読解のみ（実行なし）。
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| P1-1 | `\\?\C:\` は per-logon device map を通り、同じユーザーが `subst`／`DefineDosDevice` で別 volume の root に向けられる（`ensure_volume_root` は通る） | root を `\\?\GLOBALROOT\GLOBAL??\X:\` で開く。per-logon の letter は `invalid_root`。回帰 `per_logon_drive_mapping_is_not_followed`（Windows） |
+| P2-1 | Linux のリモート判定が deny-list で未知の FS（CephFS・Lustre 等）を local 扱い | leaf の FS を allow-list で判定し、それ以外は `unsupported_file_system`。回帰 `unlisted_file_system_is_refused`（procfs） |
+| P2-2 | Windows の junction／symlink／subst 試験が前提欠如時に NOT_RUN で PASS になる。`mklink` に `\\?\` 付きパス | CI で `SAFE_FS_REQUIRE=junction,symlink,subst` を設定し、欠如時は FAIL。cmd へは接頭辞を外して渡す |
+| P2-3 | `--ignored --exact` が改名で 0 件実行のまま成功する | `test result: ok. 1 passed` を必須化 |
+| P2-4 | 空の保持 dir の reparse 化を防げないのに `ancestors_pinned: Enforced` のみ | 能力 `held_kind_stable`（Windows `detected_only`）を追加、`verify_held()` を追加、`ancestors_pinned` を rename／削除に限定と明記 |
+| P2-5 | POSIX の読取り変更検出は heuristic、文書が保証に読める | 文書と API doc に digest 照合が必要と明記（core に hash 依存は追加しない） |
+| P2-6 | binding に `sync`・`is_empty`・読取り metadata がない。Windows の `sync` が無言の no-op | binding に `sync`・`is_empty`・`verify_held`・`read_file_with_metadata` を追加、能力 `dir_flush`（Windows `not_provided`） |
+| P3 | 情報 NTSTATUS で handle が漏れる | `NT_SUCCESS`（`st >= 0`）で handle を所有 |
+| P3 | VSMB 共有を拒否していない | `FILE_REMOTE_DEVICE_VSMB` を拒否 |
+| P3 | 既存 Windows 要素にも UTF-8 255 バイト制限 | 既存要素は UTF-16 255 単位だけで判定（作成名は移植可能規則のまま） |
+| P3 | 同じ `Dir` で `is_empty` を並行に呼ぶと列挙位置を共有 | doc に明記 |
+| P3 | binding の `max_bytes` が無制限で巨大な確保になり得る | binding で 1 GiB を上限（超過は `too_large`） |
+| P3 | CI で binding の clippy と `test-hooks` 非混入の確認がない | 両方を追加 |
+| P3 | GIL 試験が偶然で通り得る | 呼出しの内側（両端から 10 ms 離れた区間）に別 thread の時刻記録があることを要求 |
+| P3 | POSIX の読取りが型確認前に open する | 文書化（§4.1）。`O_PATH` 経由は Linux 専用のため PoC では採らない |
+| P3 | 版を上げていない（AGENTS.md） | **オーナー指示（製品版据置）を優先**し変更しない |
+| 情報 | レビュー中の `uv run` が gitignore 済みの `.venv` を作成 | 追跡対象外。削除は行っていない |
+
+確認済みとされた点: POSIX の全 lookup が単一要素 `openat(O_NOFOLLOW)`、`O_EXCL` 作成と dangling link、mkdir 競合の検出と空 dir 残留の明記、mount id による bind mount 拒否、
+Windows の全 `NtCreateFile` が RootDirectory＋`FILE_OPEN_REPARSE_POINT`、`FILE_CREATE` の handle 返却、名前規則と最終名照合による 8.3・ADS・末尾ドット・device 名の拒否、
+共有モードと DELETE の関係、`windows.rs` の unsafe（UNICODE_STRING 長、buffer 寿命・整列、可変長レコードの境界検査、handle の 1 回所有）、公開 API に生 handle・上書き・削除がないこと、
+binding の `detach` が `Send` データのみを借用すること、`test-hooks` が binding に入らないこと、workflow が `ci.yml`（18 ID）と独立で権限 read-only・SHA 固定であること。
 
 ## 11. 未解決事項・オーナー判断
 

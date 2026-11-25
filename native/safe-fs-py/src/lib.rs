@@ -25,6 +25,10 @@ fn name(s: &str) -> PyResult<core::Name> {
     core::Name::new(s).map_err(err)
 }
 
+/// Upper bound for `max_bytes` from Python: the read buffer is sized by the file, so
+/// an unbounded limit could request an allocation that aborts the process.
+const MAX_READ_LIMIT: u64 = 1 << 30;
+
 fn closed() -> PyErr {
     SafeFsError::new_err((core::ErrorCode::Closed.as_str(), None::<i64>))
 }
@@ -70,6 +74,8 @@ fn capabilities(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     d.set_item("dir_creation", creation_str(c.dir_creation))?;
     d.set_item("mount_identity", c.mount_identity.as_str())?;
     d.set_item("remote_refused", c.remote_refused.as_str())?;
+    d.set_item("held_kind_stable", c.held_kind_stable.as_str())?;
+    d.set_item("dir_flush", c.dir_flush.as_str())?;
     Ok(d)
 }
 
@@ -159,20 +165,56 @@ impl DirChain {
         Ok(r.map(kind_str))
     }
 
-    /// Read a regular file of the leaf through one handle (size-limited).
+    /// Read a regular file of the leaf through one handle (size-limited, at most
+    /// 1 GiB). Change detection is heuristic on POSIX: verify a digest yourself.
     fn read_file<'py>(
         &self,
         py: Python<'py>,
         entry: &str,
         max_bytes: u64,
     ) -> PyResult<Bound<'py, PyBytes>> {
+        Ok(self.read_file_with_metadata(py, entry, max_bytes)?.0)
+    }
+
+    /// Like `read_file`, also returning the handle metadata observed for the read.
+    fn read_file_with_metadata<'py>(
+        &self,
+        py: Python<'py>,
+        entry: &str,
+        max_bytes: u64,
+    ) -> PyResult<(Bound<'py, PyBytes>, Bound<'py, PyDict>)> {
+        if max_bytes > MAX_READ_LIMIT {
+            return Err(SafeFsError::new_err((
+                core::ErrorCode::TooLarge.as_str(),
+                None::<i64>,
+            )));
+        }
         let n = name(entry)?;
         let c = self.get()?;
         let out = py
             .detach(|| c.leaf().read_file(&n, max_bytes))
             .map_err(err)?;
         // One copy into a Python bytes object.
-        Ok(PyBytes::new(py, &out.bytes))
+        Ok((PyBytes::new(py, &out.bytes), meta_dict(py, &out.metadata)?))
+    }
+
+    /// Whether the leaf has no entries.
+    fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
+        let c = self.get()?;
+        py.detach(|| c.leaf().is_empty()).map_err(err)
+    }
+
+    /// Flush the leaf directory's metadata (POSIX fsync; no-op on Windows, see
+    /// `capabilities()["dir_flush"]`).
+    fn sync(&self, py: Python<'_>) -> PyResult<()> {
+        let c = self.get()?;
+        py.detach(|| c.leaf().sync()).map_err(err)
+    }
+
+    /// Re-check every held handle still is the same directory (not a reparse point).
+    fn verify_held(&self, py: Python<'_>) -> PyResult<()> {
+        let c = self.get()?;
+        py.detach(|| c.verify_held()).map_err(err)
     }
 
     /// Create `entry` exclusively in the leaf, write all of `data`, flush, close.

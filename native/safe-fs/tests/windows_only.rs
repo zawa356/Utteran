@@ -30,8 +30,20 @@ fn code<T: std::fmt::Debug>(r: utteran_safe_fs::Result<T>) -> ErrorCode {
     r.expect_err("expected an error").code()
 }
 
-fn not_run(why: &str) {
-    println!("NOT_RUN: {why}");
+/// Report a missing precondition. If the facility is listed in the comma-separated
+/// `SAFE_FS_REQUIRE` (CI sets it for facilities the runner must have), fail instead,
+/// so that a missing precondition can never be reported as a pass.
+fn not_run(facility: &str, why: &str) {
+    let required = std::env::var("SAFE_FS_REQUIRE").unwrap_or_default();
+    if required.split(',').any(|f| f.trim() == facility) {
+        panic!("required facility {facility} unavailable: {why}");
+    }
+    println!("NOT_RUN: {facility}: {why}");
+}
+
+/// cmd.exe tools (mklink, subst) do not reliably accept the `\\?\` prefix.
+fn plain(p: &std::path::Path) -> String {
+    path_str(p).trim_start_matches(r"\\?\").to_owned()
 }
 
 fn cmd(args: &[&str]) -> bool {
@@ -122,13 +134,8 @@ fn junctions_are_refused_in_walk_and_as_children() {
     fx.mkdirs("target");
     fx.write("target/keep", b"keep");
     let j = fx.path("junction");
-    if !cmd(&[
-        "mklink",
-        "/J",
-        j.to_str().unwrap(),
-        fx.path("target").to_str().unwrap(),
-    ]) {
-        return not_run("mklink /J failed");
+    if !cmd(&["mklink", "/J", &plain(&j), &plain(&fx.path("target"))]) {
+        return not_run("junction", "mklink /J failed");
     }
     let chain = fx.chain("");
     assert_eq!(
@@ -163,7 +170,10 @@ fn symlinks_are_refused_when_creatable() {
     let f = std::os::windows::fs::symlink_file(&t, fx.path("lf.json"));
     let d = std::os::windows::fs::symlink_dir(fx.path("tdir"), fx.path("ld"));
     if f.is_err() || d.is_err() {
-        return not_run("symlink creation privilege not held (ERROR_PRIVILEGE_NOT_HELD)");
+        return not_run(
+            "symlink",
+            "symlink creation privilege not held (ERROR_PRIVILEGE_NOT_HELD)",
+        );
     }
     let chain = fx.chain("");
     assert_eq!(
@@ -188,7 +198,7 @@ fn short_8dot3_alias_is_refused() {
     fx.mkdirs("Long Directory Name For Alias");
     let alias = "LONGDI~1";
     if !fx.path(alias).exists() {
-        return not_run("8.3 short names disabled on this volume");
+        return not_run("8dot3", "8.3 short names disabled on this volume");
     }
     let chain = fx.chain("");
     assert_eq!(
@@ -262,12 +272,12 @@ fn subst_drive_is_refused() {
         .rev()
         .find(|l| !std::path::Path::new(&format!("{l}:\\")).exists())
     else {
-        return not_run("no free drive letter");
+        return not_run("subst", "no free drive letter");
     };
     let drive = format!("{letter}:");
-    let target = path_str(&fx.root).trim_start_matches(r"\\?\").to_owned();
+    let target = plain(&fx.root);
     if !cmd(&["subst", &drive, &target]) {
-        return not_run("subst unavailable");
+        return not_run("subst", "subst unavailable");
     }
     let r = DirChain::open_absolute(&format!("{drive}\\"));
     cmd(&["subst", &drive, "/D"]);
@@ -279,7 +289,7 @@ fn subst_drive_is_refused() {
 #[test]
 fn non_ntfs_volume_is_refused() {
     let Ok(p) = std::env::var("SAFE_FS_NON_NTFS_ROOT") else {
-        return not_run("SAFE_FS_NON_NTFS_ROOT not set");
+        return not_run("non_ntfs", "SAFE_FS_NON_NTFS_ROOT not set");
     };
     assert_eq!(
         code(DirChain::open_absolute(&p)),
@@ -291,9 +301,15 @@ fn non_ntfs_volume_is_refused() {
 #[test]
 fn mapped_network_drive_is_refused() {
     let Ok(p) = std::env::var("SAFE_FS_REMOTE_ROOT") else {
-        return not_run("SAFE_FS_REMOTE_ROOT not set");
+        return not_run("remote", "SAFE_FS_REMOTE_ROOT not set");
     };
-    assert_eq!(code(DirChain::open_absolute(&p)), ErrorCode::RemoteVolume);
+    // Per-logon mapped drives are absent from the global namespace (`invalid_root`);
+    // a global mapping is refused by the device characteristics (`remote_volume`).
+    let c = code(DirChain::open_absolute(&p));
+    assert!(
+        matches!(c, ErrorCode::RemoteVolume | ErrorCode::InvalidRoot),
+        "{c:?}"
+    );
 }
 
 #[test]
@@ -309,4 +325,23 @@ fn ads_and_device_names_cannot_be_named() {
     ] {
         assert!(utteran_safe_fs::Name::new(bad).is_err());
     }
+}
+
+/// P1-1 regression: a per-logon drive letter (subst) pointing at a volume root must
+/// not be accepted, and `C:` keeps resolving through the global namespace.
+#[test]
+fn per_logon_drive_mapping_is_not_followed() {
+    let Some(letter) = ('M'..='Z')
+        .rev()
+        .find(|l| !std::path::Path::new(&format!("{l}:\\")).exists())
+    else {
+        return not_run("subst", "no free drive letter");
+    };
+    let drive = format!("{letter}:");
+    if !cmd(&["subst", &drive, "C:\\"]) {
+        return not_run("subst", "subst unavailable");
+    }
+    let r = DirChain::open_absolute(&format!("{drive}\\Windows"));
+    cmd(&["subst", &drive, "/D"]);
+    assert_eq!(code(r), ErrorCode::InvalidRoot);
 }

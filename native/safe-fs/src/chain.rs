@@ -43,7 +43,8 @@ impl Dir {
         sys::metadata(&self.file)
     }
 
-    /// Whether the directory has no entries other than `.`/`..`.
+    /// Whether the directory has no entries other than `.`/`..`. On Windows the
+    /// enumeration cursor belongs to the handle: do not call concurrently on one `Dir`.
     pub fn is_empty(&self) -> Result<bool> {
         sys::is_empty_dir(&self.file)
     }
@@ -79,6 +80,12 @@ impl Dir {
     /// the read and the byte count to equal the size; otherwise
     /// [`ErrorCode::ChangedDuringRead`]. On Windows the file is opened with
     /// `FILE_SHARE_READ` only, so concurrent writers/renamers are refused by the OS.
+    ///
+    /// On POSIX the change detection is a heuristic: a same-size in-place overwrite
+    /// within one timestamp tick is not detected. Callers that need integrity must
+    /// verify the returned bytes against an expected digest (E-C1 checks SHA-256).
+    /// POSIX opens the entry before checking its type (`O_NONBLOCK|O_NOCTTY` limit the
+    /// side effects of opening a device node).
     pub fn read_file(&self, name: &Name, max_bytes: u64) -> Result<ReadOutcome> {
         let mut f = sys::open_file_read_at(&self.file, name.as_str())?;
         let before = sys::metadata(&f)?;
@@ -214,7 +221,6 @@ pub struct DirChain {
     /// Root in the form `sys::open_root` accepts (`/`, `\\?\C:\`); never logged.
     root_path: String,
     fs: FsKind,
-    remote: bool,
 }
 
 impl std::fmt::Debug for DirChain {
@@ -236,7 +242,6 @@ impl DirChain {
     /// links, junctions and any reparse point are refused.
     pub fn open_absolute(path: &str) -> Result<Self> {
         let (root, root_path, comps) = sys::open_root(path)?;
-        let (fs, remote) = sys::fs_kind(&root)?;
         let root_meta = sys::metadata(&root)?;
         let mut held = vec![Held {
             dir: Dir::new(root),
@@ -254,20 +259,21 @@ impl DirChain {
                 meta,
             });
         }
-        let mut chain = Self {
-            held,
-            root_path,
-            fs,
-            remote,
-        };
-        // The leaf decides where data is written: re-check its file system.
-        let (fs, remote) = sys::fs_kind(&chain.leaf().file)?;
-        chain.fs = fs;
-        chain.remote = remote;
+        // The leaf decides where data is written: its file system must be local and
+        // on the allow-list (fail closed for anything unrecognised).
+        let leaf = held.last().ok_or(Error::new(ErrorCode::Io))?;
+        let (fs, remote) = sys::fs_kind(&leaf.dir.file)?;
         if remote {
             return Err(Error::new(ErrorCode::RemoteVolume));
         }
-        Ok(chain)
+        if !sys::fs_supported(fs) {
+            return Err(Error::new(ErrorCode::UnsupportedFileSystem));
+        }
+        Ok(Self {
+            held,
+            root_path,
+            fs,
+        })
     }
 
     /// The deepest held directory.
@@ -365,6 +371,23 @@ impl DirChain {
         } else {
             Err(Error::new(ErrorCode::Unreachable))
         }
+    }
+
+    /// Re-read every held handle and require it to still be a directory (not a
+    /// reparse point) with the identity recorded when it was opened. Through the
+    /// handles only; names are not consulted. Call after writing when
+    /// [`crate::Capabilities::held_kind_stable`] is `DetectedOnly` (Windows).
+    pub fn verify_held(&self) -> Result<()> {
+        for h in &self.held {
+            let m = h.dir.metadata()?;
+            if m.kind != FileKind::Directory {
+                return Err(Error::new(ErrorCode::LinkOrReparse));
+            }
+            if m.identity != h.meta.identity {
+                return Err(Error::new(ErrorCode::ClaimLost));
+            }
+        }
+        Ok(())
     }
 
     /// Find the nearest held directory (leaf first) that contains an entry `name`

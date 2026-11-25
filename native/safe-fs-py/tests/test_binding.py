@@ -64,6 +64,14 @@ def test_round_trip_and_fixed_errors(tmp_path: Path) -> None:
         assert err_code(e) == "invalid_name"
         # Messages carry only the fixed code: no names or paths.
         assert "job_reexport" not in str(e.value) and str(tmp_path) not in str(e.value)
+        assert ch.is_empty() is False
+        ch.sync()
+        ch.verify_held()
+        data, meta2 = ch.read_file_with_metadata("a.srt", 1024)
+        assert meta2["file_id"] == meta["file_id"] and len(data) == 35
+        with pytest.raises(sf.SafeFsError) as e:
+            ch.read_file("a.srt", 1 << 40)
+        assert err_code(e) == "too_large"
         ch.verify_reachable()
     assert ch.closed
     with pytest.raises(sf.SafeFsError) as e:
@@ -116,23 +124,28 @@ def test_windows_held_ancestor_rename_refused(tmp_path: Path) -> None:
 
 def test_gil_released_during_large_write(tmp_path: Path) -> None:
     data = os.urandom(1) * (128 << 20)
-    ticks = 0
+    stamps: list[float] = []
     stop = threading.Event()
 
     def spin() -> None:
-        nonlocal ticks
         while not stop.is_set():
-            ticks += 1
-            time.sleep(0)
+            stamps.append(time.perf_counter())
+            time.sleep(0.001)
 
     t = threading.Thread(target=spin)
     t.start()
+    time.sleep(0.05)
     with chain_of(tmp_path) as ch:
-        ticks_before = ticks
+        t0 = time.perf_counter()
         ch.write_new_file("big.bin", data)
-        progressed = ticks - ticks_before
+        t1 = time.perf_counter()
     stop.set()
     t.join()
-    assert progressed > 0, "another Python thread ran while Rust wrote 128 MiB"
+    # Only timestamps strictly inside the call (away from both edges) count: if the
+    # GIL were held for the whole write, the spinner could not record any of them.
+    margin = 0.01
+    inside = [x for x in stamps if t0 + margin < x < t1 - margin]
+    assert t1 - t0 > 3 * margin, "write too fast to judge on this machine"
+    assert inside, "another Python thread ran while Rust wrote 128 MiB"
     digest = hashlib.sha256((tmp_path / "big.bin").read_bytes()).hexdigest()
     assert digest == hashlib.sha256(data).hexdigest()

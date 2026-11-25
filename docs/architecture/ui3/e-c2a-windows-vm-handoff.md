@@ -32,6 +32,7 @@ rustup show active-toolchain          # 1.97.0-x86_64-pc-windows-msvc
 cargo fmt --check
 cargo clippy -p utteran-safe-fs --all-targets --locked -- -D warnings
 $env:SAFE_FS_TEST_ROOT = "C:\safefs-vm"
+$env:SAFE_FS_REQUIRE = "junction,subst"   # 前提欠如を NOT_RUN でなく FAIL にする（symlink は権限がある場合に追加）
 cargo test -p utteran-safe-fs --locked -- --nocapture *> core-tests.log
 Select-String NOT_RUN core-tests.log
 uvx --from maturin==1.16.0 maturin build --release --locked -m safe-fs-py/Cargo.toml -o dist -i (uv python find 3.11)
@@ -65,9 +66,10 @@ foreach ($v in "3.11","3.12") {
 | W-09 | 大小文字・Unicode・長パス | 〔自動〕`ascii_case_variant_reaches_the_same_directory`、`unicode_and_long_paths_beyond_max_path`。`LongPathsEnabled` が 0 と 1 の両方で実行 | 同一 identity、MAX_PATH 超でも PASS（レジストリ設定に依存しない） |
 | W-10 | UNC・device 名前空間 | 〔自動〕`unc_and_device_namespace_roots_are_refused` | `invalid_root` |
 | W-11 | SUBST | 〔自動〕`subst_drive_is_refused` | `invalid_root`。試験後 `subst` の割当てが残っていないこと |
-| W-12 | ネットワーク drive | 〔管理者〕`New-SmbShare` で専用 dir を共有し `net use Z: \\localhost\<share>`、`SAFE_FS_REMOTE_ROOT=Z:\` で `mapped_network_drive_is_refused` | `remote_volume`（または `invalid_root`）。終了後に割当てと共有を解除 |
+| W-11b | per-logon の drive 割当て（P1-1） | 〔自動〕`per_logon_drive_mapping_is_not_followed`。〔手動〕別 NTFS volume（VHD 可）がある場合、`DefineDosDevice` 相当（`subst C: <別 volume の root>` は不可のため、空き letter と別 volume root の組で）を作り `open_absolute` | `invalid_root`。global の `C:` は影響を受けない |
+| W-12 | ネットワーク drive | 〔管理者〕`New-SmbShare` で専用 dir を共有し `net use Z: \\localhost\<share>`、`SAFE_FS_REMOTE_ROOT=Z:\` で `mapped_network_drive_is_refused` | per-logon の割当ては `invalid_root`、global の割当て（あれば）は `remote_volume`。終了後に割当てと共有を解除 |
 | W-13 | 非 NTFS | 〔管理者〕FAT32 と exFAT（可能なら ReFS）の VHD を作成・mount し、`SAFE_FS_NON_NTFS_ROOT=<drive>:\dir` で `non_ntfs_volume_is_refused` | `unsupported_file_system` |
-| W-14 | 保持中の空 leaf の reparse 化 | 〔要実装〕`push_new` 直後、別 process（または別 thread で別 handle）が `FSCTL_SET_REPARSE_POINT` で leaf を junction 化し、その後 `create_file` する | 期待: 作成は保持した dir 自体に入り、junction の target 側に何も作られない。junction 化自体が共有違反で失敗する場合はその結果を記録。いずれでもなければ **BLOCKED** として報告 |
+| W-14 | 保持中の空 leaf の reparse 化 | 〔要実装〕`push_new` 直後、別 process（または別 thread で別 handle）が `FSCTL_SET_REPARSE_POINT` で leaf を junction 化し、その後 `create_file`・`verify_held()` する | 期待: 作成は保持した dir 自体に入り junction の target 側に何も作られない、かつ `verify_held()` が `link_or_reparse`。junction 化が失敗する場合はその結果を記録。いずれでもなければ **BLOCKED** |
 | W-15 | 子 process の kill と handle 解放 | 〔自動〕`kill_mid_write_releases_handles_and_keeps_partial` | 部分ファイルが残り、他に何も作られず、kill 後に rename 可能 |
 | W-16 | ACL 継承 | 〔手動〕継承 ACE を付けた専用 dir の下で `push_new`／`create_file` し、`icacls` で親・子を比較。継承を無効にした dir（読取り専用 ACE）では `permission_denied` | 子は親の継承可能 ACE を持つ。拒否時は何も作られない |
 | W-17 | 権限拒否 | 〔手動〕`icacls <dir> /deny %USERNAME%:(OI)(CI)(W)` 等で書込み拒否・一覧拒否を作り、`create_file`／`open_dir` | `permission_denied`、既存内容不変（終了後に ACE を戻す） |
@@ -80,6 +82,6 @@ foreach ($v in "3.11","3.12") {
 
 - 各 ID を PASS／FAIL／NOT_RUN／BLOCKED で記録し、NOT_RUN は理由を書く。NOT_RUN を PASS 扱いしない。runner の結果を VM の結果に流用しない。
 - 記録するもの: Windows の版・build、VM か実機か、標準ユーザー／管理者、`rustc -vV`、固定 SHA、`cargo test` の summary 行、NOT_RUN の行、W-04／W-12／W-13／W-16／W-17 の操作ログ（パスは合成 dir のみ）。
-- **E-C2b で Windows を解禁する条件**（提案、オーナー承認事項）: W-01〜W-06、W-09〜W-11、W-14、W-15、W-16、W-17、W-20 が PASS。W-12・W-13 が PASS か、少なくとも FAIL でないこと。
+- **E-C2b で Windows を解禁する条件**（提案、オーナー承認事項）: W-01〜W-06、W-09〜W-11b、W-14、W-15、W-16、W-17、W-20 が PASS。W-12・W-13 が PASS か、少なくとも FAIL でないこと。
   W-14 が BLOCKED の場合は、保持中の leaf に対する reparse 化の扱いを設計し直すまで解禁しない。
 - 結果は #86 へのコメントか、VM 用 branch の Draft PR に記録する。

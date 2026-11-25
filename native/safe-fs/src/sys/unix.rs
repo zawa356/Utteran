@@ -25,6 +25,9 @@ pub(crate) fn capabilities() -> Capabilities {
         handle_relative_lookup: true,
         no_follow: true,
         ancestors_pinned: Guarantee::DetectedOnly,
+        // An inode's type never changes; a rename is covered by `ancestors_pinned`.
+        held_kind_stable: Guarantee::Enforced,
+        dir_flush: Guarantee::Enforced,
         read_exclusive: Guarantee::DetectedOnly,
         dir_creation: DirCreation::ReopenedByName,
         mount_identity: if mount_id_supported() {
@@ -262,6 +265,26 @@ pub(crate) fn is_empty_dir(f: &File) -> Result<bool> {
 /// File system family and whether the volume is remote.
 pub(crate) fn fs_kind(f: &File) -> Result<(FsKind, bool)> {
     fs_kind_impl(f)
+}
+
+/// Allow-list of local file systems (fail closed: anything unrecognised is refused,
+/// including cluster/network file systems this crate does not know about).
+pub(crate) fn fs_supported(k: FsKind) -> bool {
+    if cfg!(target_os = "linux") {
+        matches!(
+            k,
+            FsKind::Ext4
+                | FsKind::Xfs
+                | FsKind::Btrfs
+                | FsKind::Tmpfs
+                | FsKind::Zfs
+                | FsKind::Overlay
+        )
+    } else if cfg!(target_os = "macos") {
+        matches!(k, FsKind::Apfs | FsKind::Hfs)
+    } else {
+        false
+    }
 }
 
 #[cfg(target_os = "linux")]

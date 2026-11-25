@@ -58,10 +58,19 @@ fn invalid() -> Error {
 }
 
 pub(crate) fn validate_portable(s: &str) -> Result<()> {
+    if s.len() > MAX_UTF8_BYTES {
+        return Err(invalid());
+    }
+    validate_win32_rules(s)
+}
+
+/// Win32 ambiguity rules with the NTFS length limit only (255 UTF-16 units). Used for
+/// *existing* Windows components, which may legitimately exceed 255 UTF-8 bytes.
+pub(crate) fn validate_win32_rules(s: &str) -> Result<()> {
     if s.is_empty() || s == "." || s == ".." {
         return Err(invalid());
     }
-    if s.len() > MAX_UTF8_BYTES || s.encode_utf16().count() > MAX_UTF16_UNITS {
+    if s.encode_utf16().count() > MAX_UTF16_UNITS {
         return Err(invalid());
     }
     for c in s.chars() {

@@ -49,7 +49,17 @@ jobs:
         run: |
           cargo fmt --check
           cargo clippy -p utteran-safe-fs --all-targets --locked -- -D warnings
+          PYO3_CROSS_PYTHON_VERSION=3.11 cargo clippy -p utteran-safe-fs-py --locked -- -D warnings
+      - name: Test hooks are absent from the binding build
+        run: |
+          if cargo tree -e features -p utteran-safe-fs-py --locked | grep -q 'test-hooks'; then
+            echo "test-hooks reached the binding feature set"; exit 1
+          fi
       - name: Core tests (cold build, timed)
+        env:
+          # Facilities every GitHub Windows runner has: a missing one fails the test
+          # instead of printing NOT_RUN (8dot3, remote, non-NTFS stay optional).
+          SAFE_FS_REQUIRE: ${{ runner.os == 'Windows' && 'junction,symlink,subst' || '' }}
         run: |
           SECONDS=0
           cargo test -p utteran-safe-fs --locked -- --nocapture 2>&1 | tee "$RUNNER_TEMP/core-tests.log"
@@ -65,11 +75,16 @@ jobs:
         run: |
           BIN=$(cargo test -p utteran-safe-fs --locked --test unix_races --no-run --message-format=json \
             | jq -r 'select(.executable != null) | .executable')
+          # `--exact` with a renamed test would run nothing and exit 0: require "1 passed".
+          run_one() {
+            "$@" 2>&1 | tee "$RUNNER_TEMP/one.log"
+            grep -q 'test result: ok. 1 passed' "$RUNNER_TEMP/one.log"
+          }
           # Runner user is not root: DAC refusals are observable.
-          "$BIN" --ignored --exact permission_denied_is_reported
+          run_one "$BIN" --ignored --exact permission_denied_is_reported
           if [ "$RUNNER_OS" = "Linux" ]; then
             # Bind mounts need root.
-            sudo "$BIN" --ignored --exact bind_mount_below_leaf_is_refused_by_mount_id
+            run_one sudo "$BIN" --ignored --exact bind_mount_below_leaf_is_refused_by_mount_id
           fi
       - name: Build abi3 wheel (timed, warm after tests)
         run: |

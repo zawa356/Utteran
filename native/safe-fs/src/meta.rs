@@ -153,8 +153,16 @@ pub struct Capabilities {
     pub handle_relative_lookup: bool,
     /// Final-component links/reparse points are never followed.
     pub no_follow: bool,
-    /// Held ancestors cannot be renamed/deleted by others while held.
+    /// Held ancestors cannot be **renamed or deleted** by others while held. This says
+    /// nothing about their attributes: see `held_kind_stable`.
     pub ancestors_pinned: Guarantee,
+    /// A held directory cannot change kind (e.g. an empty held directory turned into a
+    /// junction via `FSCTL_SET_REPARSE_POINT` on Windows). `DetectedOnly` means callers
+    /// must call [`crate::DirChain::verify_held`] after writing.
+    pub held_kind_stable: Guarantee,
+    /// [`crate::Dir::sync`] flushes directory metadata. `NotProvided` = `sync` is a
+    /// no-op on this platform.
+    pub dir_flush: Guarantee,
     /// A file being read cannot be written/renamed by others during the read.
     pub read_exclusive: Guarantee,
     /// How new directory handles are obtained.
