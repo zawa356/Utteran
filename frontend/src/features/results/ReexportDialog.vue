@@ -193,7 +193,9 @@ function restoreFocus(): void {
             {{ t(`ec.state.${state.record.state}` as MessageKey) }}
             <span v-if="state.record.errorCode"> {{ code(state.record.errorCode) }}</span>
           </v-alert>
-          <p v-if="state.record.directory" class="text-body-2" data-testid="reexport-directory">{{ t("ec.directory", { path: state.record.directory }) }}</p>
+          <p v-if="state.record.directory" class="text-body-2" data-testid="reexport-directory">
+            {{ t(state.record.state === "completed" && state.record.locationVerified ? "ec.directory" : "ec.directoryRecorded", { path: state.record.directory }) }}
+          </p>
           <ul v-if="state.record.files.length" class="u-notes text-body-2" data-testid="reexport-files">
             <li v-for="file in state.record.files" :key="file.format" :data-format="file.format">{{ t("ec.file", { format: file.format.toUpperCase(), size: file.size }) }}</li>
           </ul>

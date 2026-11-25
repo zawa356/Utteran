@@ -570,10 +570,26 @@ def create_output(
                 # written (the empty directory stays; nothing is deleted).
                 raise PartialOutput("output_inside_source", claimed)
             on_claimed(claimed)
+            shown = os.path.join(destination.parent, claimed)
+            expected = [*pinned.ids, _identity(info)]
+
+            def still_in_place() -> None:
+                """Right before each file (owner re-review P2-4): the shown path must still
+                walk to the held directories, so no ancestor was moved or replaced (which
+                also keeps the Git check, made on these very directories, valid), and no
+                ancestor reached through ".." is the job's directory. A move seen here stops
+                the write; where the directory is now is not claimed."""
+                if not reaches(shown, expected):
+                    raise PartialOutput("output_moved", claimed)
+                if _ancestry_protected(directory, destination.protected):
+                    raise PartialOutput("output_inside_source", claimed)
+
             records: list[tuple[str, str, int]] = []
             try:
+                still_in_place()  # after the DB commit of on_claimed, before the marker
                 _create(directory, REEXPORT_MARKER, (marker + "\n").encode("ascii"))
                 for extension, data in files.items():
+                    still_in_place()
                     _create(directory, f"{claimed}.{extension}", data)
                     records.append((extension, hashlib.sha256(data).hexdigest(), len(data)))
                 os.fsync(directory)
@@ -584,9 +600,7 @@ def create_output(
                 raise PartialOutput(_os_code(exc), claimed) from None
             # The shown path, walked again by name: every ancestor, the parent and the new
             # directory must be the ones held while writing (owner review P2-3).
-            verified = reaches(
-                os.path.join(destination.parent, claimed), [*pinned.ids, _identity(info)]
-            )
+            verified = reaches(shown, expected)
             return Written(claimed, tuple(records), verified)
         finally:
             os.close(directory)

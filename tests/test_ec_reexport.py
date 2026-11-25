@@ -1452,7 +1452,7 @@ def test_owner_p2_4_moved_into_the_job_directory_during_the_claim_gets_no_file(
     parent = world.tmp / "elsewhere"
     parent.mkdir()
     _move_during_write(world, lambda: parent.rename(job_dir / "moved-in"))
-    status, record = world.run(
+    _, record = world.run(
         job_id, world.body(job_id, formats=["txt", "json"], output_parent=str(parent))
     )
     assert record["state"] == "failed" and record["error_code"] in {
@@ -1473,9 +1473,7 @@ def test_owner_p2_4_moved_under_a_git_checkout_during_the_claim_exposes_nothing(
     parent = world.tmp / "plain"
     parent.mkdir()
     _move_during_write(world, lambda: parent.rename(repo / "transcripts" / "moved"))
-    status, record = world.run(
-        job_id, world.body(job_id, formats=["txt"], output_parent=str(parent))
-    )
+    _, record = world.run(job_id, world.body(job_id, formats=["txt"], output_parent=str(parent)))
     assert record["state"] == "failed" and record["error_code"] == "output_moved"
     listed = subprocess.run(
         ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all"],
