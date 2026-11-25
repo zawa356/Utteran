@@ -114,6 +114,15 @@ class DataPaths:
         )
 
     @property
+    def worksets_store(self) -> Path:
+        """E-B private worksets DB. Separate from B5/B6/B7 stores; created only on first run."""
+        return (
+            self.root / "data" / "worksets-v1" / "worksets.sqlite3"
+            if self.root
+            else Path(user_data_dir("utteran")) / "worksets-v1" / "worksets.sqlite3"
+        )
+
+    @property
     def capability_evidence(self) -> Path | None:
         """B4 private smoke evidence (0.1.50). Only below an explicit data root.
 

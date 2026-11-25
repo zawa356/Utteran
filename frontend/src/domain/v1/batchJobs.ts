@@ -18,7 +18,7 @@ import { MutationIntent, type RandomSource } from "../../api/idempotency";
 import type { JobV1, JsonObject, ResolutionV1, V1ResourcesApi, ValidationV1 } from "../../api/v1Resources";
 import type { ApiError } from "../../api/errors";
 import { classifyStartFailure } from "../admission";
-import type { CollectionState, InputRow } from "../inputCollection";
+import { type AvailabilityProblem, availabilityProblem, type CollectionState, type InputRow } from "../inputCollection";
 import { toApiError } from "../operation";
 import { checkPath, type PathProblem } from "../paths";
 import { type ReadonlyStore, Store } from "../store";
@@ -37,7 +37,8 @@ export type BatchStep = "idle" | "validating" | "resolving" | "resolved" | "subm
 export type BatchIssue =
   | { field: "preset" | "policy"; problem: "loading" | "error" | "none" | "missing" }
   | { field: "rows"; problem: "none" | "too_many" }
-  | { field: "input" | "output"; rowId: string; problem: PathProblem }
+  | { field: "input"; rowId: string; problem: PathProblem | AvailabilityProblem }
+  | { field: "output"; rowId: string; problem: PathProblem }
   | { field: "device"; rowId: string; problem: "unsupported" };
 
 export interface PreparedFile {
@@ -119,6 +120,8 @@ export function canRerun(group: LogicalJob): boolean {
 }
 
 export interface V1BatchOptions {
+  /** E-B: true while a workset is being switched/created/restored/deleted (no admission starts). */
+  admissionHeld?: () => boolean;
   /** Refresh shared reads after an accepted rerun or a stale source revision. */
   onRerunSettled?: () => void;
   gate?: QueueMutationGate;
@@ -178,7 +181,7 @@ export class V1BatchController {
       if (target?.path) {
         // A picker replaces the input path. Settings come from the job's original row.
         const sourceRow = inputs.find(row => row.clientFileId === target.sourceRowId);
-        rows = [sourceRow ? { ...sourceRow, inputPath: target.path } : {
+        rows = [sourceRow ? { ...sourceRow, inputPath: target.path, availability: undefined } : {
           clientFileId: target.jobId, inputPath: target.path, source: "picker", selected: true,
           overrides: {}, output: { kind: "inherit" }, attemptFloor: 0,
         }];
@@ -188,16 +191,16 @@ export class V1BatchController {
     for (const field of ["preset", "policy"] as const) {
       const s = lib[field];
       if (s.phase === "pending") issues.push({ field, problem: "loading" });
+      else if (s.missing) issues.push({ field, problem: "missing" });
       else if (s.phase === "error") issues.push({ field, problem: "error" });
       else if (!s.item) issues.push({ field, problem: "none" });
-      else if (s.missing) issues.push({ field, problem: "missing" });
     }
     if (rows.length === 0) issues.push({ field: "rows", problem: "none" });
     if (rows.length > V1_MAX_BATCH) issues.push({ field: "rows", problem: "too_many" });
     const defaultOutput = this.form.get().draft.outputDir;
     const outputs = rows.map((row) => (row.output.kind === "custom" ? row.output.path : defaultOutput));
     rows.forEach((row, index) => {
-      const input = checkPath(row.inputPath, "input_file");
+      const input = checkPath(row.inputPath, "input_file") ?? availabilityProblem(row);
       if (input) issues.push({ field: "input", rowId: row.clientFileId, problem: input });
       const output = checkPath(outputs[index]!, "output_folder");
       if (output) issues.push({ field: "output", rowId: row.clientFileId, problem: output });
@@ -247,14 +250,14 @@ export class V1BatchController {
 
   canPrepare(): boolean {
     const { step, failedAt, error } = this.store.get();
-    return !this.disposed && !this.busy() && step !== "unknown"
+    return !this.disposed && !this.busy() && step !== "unknown" && !this.options.admissionHeld?.()
       && !(this.rerunSelection.get() && failedAt === "submission" && [404, 410, 412].includes(error?.status ?? 0))
       && this.evaluate().session !== null;
   }
 
   canSubmit(): boolean {
     const s = this.store.get();
-    return !this.disposed && !this.gate.busy() && s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired();
+    return !this.disposed && !this.gate.busy() && !this.options.admissionHeld?.() && s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired();
   }
 
   async prepare(): Promise<void> {

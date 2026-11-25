@@ -1,4 +1,4 @@
-import { expect } from "./fixtures";
+import { expect, isWorksetPath } from "./fixtures";
 import { test } from "./isolatedV1";
 import { expectSplitterFeedback } from "./splitterStyle";
 
@@ -57,7 +57,7 @@ test("D4-A keeps drafts and bounded separator widths through switches", async ({
   const writes: string[] = [];
   app.on("request", (request) => {
     const path = new URL(request.url()).pathname;
-    if (path.startsWith("/api/") && request.method() !== "GET") writes.push(path);
+    if (path.startsWith("/api/") && request.method() !== "GET" && !isWorksetPath(path)) writes.push(path);
   });
   await app.setViewportSize({ width: 1440, height: 900 });
   const typed = app.getByTestId("tx-input-path").locator("input");

@@ -27,6 +27,11 @@ export interface ListState<T> {
 
 export interface Selection<T> {
   phase: "idle" | "pending" | "done" | "error";
+  /**
+   * E-B: the chosen id + revision, kept even while it cannot be read (pending, error, deleted).
+   * A workset saves this, never a guessed "latest"; only the person replaces it.
+   */
+  ref: { readonly id: string; readonly revision: number } | null;
   /** The frozen revision (null until read). */
   item: T | null;
   /** The list shows a newer revision of the selected id (not adopted automatically). */
@@ -54,7 +59,7 @@ export interface LibraryState {
 }
 
 const emptyList = { phase: "idle", items: [], truncated: false, error: null } as const;
-const emptySelection = { phase: "idle", item: null, newerRevision: null, missing: false, error: null } as const;
+const emptySelection = { phase: "idle", ref: null, item: null, newerRevision: null, missing: false, error: null } as const;
 const idleCreate: CreateState = { phase: "idle", error: null, intent: null };
 
 type Kind = "preset" | "policy";
@@ -114,6 +119,25 @@ export class V1LibraryController {
     const sel = this.store.get()[kind];
     if (!sel.item || sel.newerRevision === null) return;
     await this.freeze(kind, sel.item.id, sel.newerRevision, ++this.generation[kind]);
+  }
+
+  /**
+   * E-B: re-freeze saved references exactly (id + revision), whether or not they are still
+   * listed: B5 keeps past revisions readable after a tombstone, and a deleted or unreadable one
+   * stays selected as missing/error until the person chooses another. Screen differences are
+   * restored in the same step.
+   */
+  async restore(preset: { id: string; revision: number } | null, policy: { id: string; revision: number } | null, screen: ScreenDifferences): Promise<void> {
+    this.store.patch({ screen: { language: screen.language, formats: screen.formats === null ? null : [...screen.formats] } });
+    const one = async (kind: Kind, ref: { id: string; revision: number } | null) => {
+      const generation = ++this.generation[kind];
+      if (ref === null) {
+        this.store.patch({ [kind]: emptySelection } as Partial<LibraryState>);
+        return;
+      }
+      await this.freeze(kind, ref.id, ref.revision, generation);
+    };
+    await Promise.all([one("preset", preset), one("policy", policy)]);
   }
 
   setLanguage(language: string | null): void {
@@ -207,15 +231,18 @@ export class V1LibraryController {
   }
 
   private async freeze(kind: Kind, id: string, revision: number, generation: number): Promise<void> {
-    this.store.patch({ [kind]: { ...emptySelection, phase: "pending" } } as Partial<LibraryState>);
+    const ref = Object.freeze({ id, revision });
+    this.store.patch({ [kind]: { ...emptySelection, phase: "pending", ref } } as Partial<LibraryState>);
     try {
       const item = await this.api.getRevision(collection(kind), id, revision);
       if (generation !== this.generation[kind]) return;
-      this.store.patch({ [kind]: { ...emptySelection, phase: "done", item } } as Partial<LibraryState>);
+      this.store.patch({ [kind]: { ...emptySelection, phase: "done", ref, item } } as Partial<LibraryState>);
       this.reconcile(kind);
     } catch (error) {
       if (generation !== this.generation[kind]) return;
-      this.store.patch({ [kind]: { ...emptySelection, phase: "error", error: toApiError(error) } } as Partial<LibraryState>);
+      const apiError = toApiError(error);
+      // A revision that cannot be read (deleted/tombstone or never existed) stays referenced.
+      this.store.patch({ [kind]: { ...emptySelection, phase: "error", ref, missing: apiError.status === 404, error: apiError } } as Partial<LibraryState>);
     }
   }
 

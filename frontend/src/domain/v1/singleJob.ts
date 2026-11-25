@@ -13,7 +13,7 @@ import {
 import { SingleFlightPoller } from "../../transport/poller";
 import { browserScheduler, type Scheduler } from "../../transport/scheduler";
 import { classifyStartFailure } from "../admission";
-import type { CollectionState, InputRow } from "../inputCollection";
+import { type AvailabilityProblem, availabilityProblem, type CollectionState, type InputRow } from "../inputCollection";
 import { toApiError } from "../operation";
 import { checkPath, type PathProblem } from "../paths";
 import { type ReadonlyStore, Store } from "../store";
@@ -50,7 +50,7 @@ import { canonical, clone, commonOverrides, effectiveSettings, knownWorkerLimits
 
 export type V1Issue =
   | { field: "preset" | "policy"; problem: "none" | "loading" | "error" | "missing" }
-  | { field: "input"; problem: PathProblem | "none" }
+  | { field: "input"; problem: PathProblem | AvailabilityProblem | "none" }
   | { field: "output"; problem: PathProblem }
   | { field: "row_overrides"; problem: "unsupported" };
 
@@ -106,7 +106,7 @@ export interface V1JobState {
   recent: { phase: "idle" | "pending" | "done" | "error"; items: readonly JobV1[]; error: ApiError | null };
 }
 
-export type V1Block = "busy" | "unknown_unresolved" | "tracking" | "cancel_open";
+export type V1Block = "busy" | "unknown_unresolved" | "tracking" | "cancel_open" | "workset_busy";
 
 /** The shown job at one moment: its id and the target epoch (bumped on every target switch). */
 export interface CancelTarget {
@@ -172,6 +172,8 @@ const hasRowOverrides = (row: InputRow) => Object.entries(row.overrides).some(([
 
 export interface V1JobOptions {
   gate?: QueueMutationGate;
+  /** E-B: true while a workset is being switched/created/restored/deleted (no admission starts). */
+  admissionHeld?: () => boolean;
   scheduler?: Scheduler;
   now?: () => number;
   random?: RandomSource;
@@ -226,9 +228,9 @@ export class V1SingleJobController {
     const selection = (field: "preset" | "policy") => {
       const s = lib[field];
       if (s.phase === "pending") issues.push({ field, problem: "loading" });
+      else if (s.missing) issues.push({ field, problem: "missing" });
       else if (s.phase === "error") issues.push({ field, problem: "error" });
       else if (!s.item) issues.push({ field, problem: "none" });
-      else if (s.missing) issues.push({ field, problem: "missing" });
     };
     selection("preset");
     selection("policy");
@@ -236,7 +238,7 @@ export class V1SingleJobController {
     const outputDir = row ? (row.output.kind === "custom" ? row.output.path : this.form.get().draft.outputDir) : this.form.get().draft.outputDir;
     if (!row) issues.push({ field: "input", problem: "none" });
     else {
-      const input = checkPath(row.inputPath, "input_file");
+      const input = checkPath(row.inputPath, "input_file") ?? availabilityProblem(row);
       if (input) issues.push({ field: "input", problem: input });
       if (hasRowOverrides(row)) issues.push({ field: "row_overrides", problem: "unsupported" });
     }
@@ -266,6 +268,7 @@ export class V1SingleJobController {
     if (s.step === "unknown") return "unknown_unresolved";
     if (this.switchBlocked() !== null) return "cancel_open";
     if (s.origin === "submitted" && s.tracking === "active") return "tracking";
+    if (this.options.admissionHeld?.()) return "workset_busy";
     return null;
   }
 
@@ -289,7 +292,7 @@ export class V1SingleJobController {
    */
   canSubmit(): boolean {
     const s = this.store.get();
-    return s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired() && this.switchBlocked() === null && !this.gate.busy();
+    return s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired() && this.switchBlocked() === null && !this.gate.busy() && !this.options.admissionHeld?.();
   }
 
   /** Step 1: freeze, validate (B5), resolve (B7). One click = one attempt of each, never resent. */

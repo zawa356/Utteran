@@ -20,12 +20,14 @@ export function useV1() {
   // Reading these stores makes `evaluation` follow every input, folder and selection change.
   const inputs = useStore(core.inputs.store);
   const form = useStore(core.transcription.store);
+  // A workset transition holds admissions: the buttons follow it too.
+  const worksets = useStore(v1.worksets.store);
   const evaluation = computed(() => {
     void [library.value, inputs.value, form.value];
     return v1.job.evaluate();
   });
   const block = computed(() => {
-    void job.value;
+    void [job.value, worksets.value];
     return v1.job.blockFor();
   });
   const stale = computed(() => {

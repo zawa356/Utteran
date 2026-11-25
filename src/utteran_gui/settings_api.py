@@ -29,14 +29,17 @@ MAX_BODY = 8 * 1024 * 1024
 
 
 def error_response(error: SettingsError) -> JSONResponse:
+    # E-B errors (``WorksetError``) carry their own namespace and an explicit retryable flag.
+    namespace = getattr(error, "namespace", "settings")
+    retryable = getattr(error, "retryable", error.status == 503)
     return JSONResponse(
         {
             "schema_version": 1,
             "error": {
                 "code": error.code,
-                "message_key": f"settings.{error.code}",
+                "message_key": f"{namespace}.{error.code}",
                 "request_id": uuid4().hex,
-                "retryable": error.status == 503,
+                "retryable": retryable,
                 "issues": [item.to_wire() for item in error.issues],
             },
         },
@@ -91,6 +94,11 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 async def _body(request: Request) -> Any:
+    return await read_json_body(request, MAX_BODY)
+
+
+async def read_json_body(request: Request, limit: int) -> Any:
+    """Strict JSON (no duplicate keys, finite numbers, valid Unicode) of at most ``limit`` bytes."""
     if (
         request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         != "application/json"
@@ -100,11 +108,11 @@ async def _body(request: Request) -> Any:
     if length is not None:
         if not length.isascii() or not length.isdigit():
             raise SettingsError("content_length_invalid", 400)
-        if len(length) > 20 or int(length) > MAX_BODY:
+        if len(length) > 20 or int(length) > limit:
             raise SettingsError("request_too_large", 413)
     data = bytearray()
     async for chunk in request.stream():
-        if len(data) + len(chunk) > MAX_BODY:
+        if len(data) + len(chunk) > limit:
             raise SettingsError("request_too_large", 413)
         data.extend(chunk)
     try:

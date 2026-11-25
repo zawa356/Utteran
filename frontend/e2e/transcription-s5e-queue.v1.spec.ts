@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page, Request, Route } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, SESSION_HEADER, shot, test } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, SESSION_HEADER, shot, test, isWorksetPath } from "./fixtures";
 import { test as isolatedTest } from "./isolatedV1";
 
 /**
@@ -24,12 +24,14 @@ const POLICY = "S5-B CPU";
 function recordApi(page: Page): Request[] {
   const seen: Request[] = [];
   page.on("request", (r) => {
-    if (new URL(r.url()).pathname.startsWith("/api/")) seen.push(r);
+    const { pathname } = new URL(r.url());
+    // E-B autosave has its own spec; these specs record B5/B7 traffic only.
+    if (pathname.startsWith("/api/") && !isWorksetPath(pathname)) seen.push(r);
   });
   return seen;
 }
 const line = (r: Request) => `${r.method()} ${new URL(r.url()).pathname}`;
-const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET").map(line);
+const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET" && !isWorksetPath(new URL(r.url()).pathname)).map(line);
 const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 
 async function api<T>(request: APIRequestContext, path: string): Promise<T> {

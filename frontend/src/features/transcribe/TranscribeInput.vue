@@ -47,6 +47,7 @@ const batchCounts = computed(() => (batchRun.value ? countItems(batchRun.value.i
       <p class="text-body-2 u-path" data-testid="tx-input-current">{{ primary.inputPath }}</p>
       <div class="u-row">
         <RowStatusChip :status="primaryStatus" testid="tx-input-status" />
+        <v-chip v-if="primary.availability === 'missing' || primary.availability === 'not_file'" size="small" color="error" variant="outlined" data-testid="tx-input-missing">{{ t(primary.availability === "missing" ? "eb.row.missing" : "eb.row.notFile") }}</v-chip>
         <span class="text-caption" data-testid="tx-input-source">{{ t(`tx.input.source.${primary.source}` as MessageKey) }}</span>
         <v-btn variant="text" size="small" :disabled="isLocked(primaryStatus)" data-testid="tx-input-clear" @click="core.inputs.remove([primary.clientFileId])">
           {{ t("tx.input.clear") }}

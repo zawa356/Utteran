@@ -18,6 +18,7 @@ const { v1, job: s, inputs, evaluation, block, stale } = useV1();
 const { t, reason, issue, status, formIssue } = useCodeText();
 
 const queueGate = useStore(v1.queueGate.store);
+const worksets = useStore(v1.worksets.store);
 const queueBusy = computed(() => queueGate.value.owner !== null);
 const prepared = computed(() => s.value.prepared);
 const resolution = computed(() => prepared.value?.resolution ?? null);
@@ -42,7 +43,7 @@ const secondsLeft = computed(() => (resolution.value ? Math.max(0, Math.floor((D
 const expired = computed(() => !!resolution.value && secondsLeft.value <= 0);
 // The domain decides (resolved, fresh, unexpired, no open cancel); `s` and the clock make it re-evaluate.
 const canSubmit = computed(() => {
-  void [s.value, clock.value, evaluation.value, queueGate.value];
+  void [s.value, clock.value, evaluation.value, queueGate.value, worksets.value];
   return v1.job.canSubmit();
 });
 

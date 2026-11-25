@@ -1,6 +1,6 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, shot } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot, isWorksetPath } from "./fixtures";
 import { test } from "./isolatedV1";
 
 /**
@@ -21,12 +21,14 @@ const POLICY = "S5-B CPU";
 function recordApi(page: Page): Request[] {
   const seen: Request[] = [];
   page.on("request", (r) => {
-    if (new URL(r.url()).pathname.startsWith("/api/")) seen.push(r);
+    const { pathname } = new URL(r.url());
+    // E-B autosave has its own spec; these specs record B5/B7 traffic only.
+    if (pathname.startsWith("/api/") && !isWorksetPath(pathname)) seen.push(r);
   });
   return seen;
 }
 const line = (r: Request) => `${r.method()} ${new URL(r.url()).pathname}`;
-const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET").map(line);
+const writes = (seen: Request[]) => seen.filter((r) => r.method() !== "GET" && !isWorksetPath(new URL(r.url()).pathname)).map(line);
 const legacyWrites = (seen: Request[]) => writes(seen).filter((l) => !l.includes(" /api/v1/") && !l.startsWith("PATCH /api/settings"));
 
 async function api<T>(request: APIRequestContext, path: string): Promise<T> {
@@ -287,7 +289,7 @@ test("hide and show: the row leaves and returns; the job, its state and its outp
   expect(await api(request, `/api/v1/jobs/${id}/visibility`)).toMatchObject({ hidden: false, revision: 2 });
   expect(await api(request, `/api/v1/jobs/${id}`)).toMatchObject({ revision: job.revision, status: "succeeded" });
 
-  const puts = seen.filter((r) => r.method() === "PUT");
+  const puts = seen.filter((r) => r.method() === "PUT" && !isWorksetPath(new URL(r.url()).pathname));
   expect(puts.map(line)).toEqual([`PUT /api/v1/jobs/${id}/visibility`, `PUT /api/v1/jobs/${id}/visibility`]);
   for (const r of puts) {
     const headers = await r.allHeaders();

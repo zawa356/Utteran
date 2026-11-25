@@ -17,6 +17,7 @@ import V1Batch from "../transcribe/V1Batch.vue";
 import V1Job from "../transcribe/V1Job.vue";
 import V1JobBoard from "../transcribe/V1JobBoard.vue";
 import V1Settings from "../transcribe/V1Settings.vue";
+import WorksetBar from "../transcribe/WorksetBar.vue";
 
 const { shell, apiMode } = useCore();
 const v1 = apiMode === "v1-dev";
@@ -84,6 +85,7 @@ if (v1) {
     :data-columns="v1 ? columns : undefined"
     data-testid="expert-workspace"
   >
+    <v-card v-if="v1" class="pa-2 mb-2 u-workset-card"><WorksetBar /></v-card>
     <v-btn-toggle
       v-if="!v1 || columns < 3"
       class="u-pane-switch"
@@ -209,6 +211,9 @@ if (v1) {
   border-radius: 4px;
   color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.12);
+}
+.u-workset-card {
+  flex: none;
 }
 .u-single-tools > summary {
   cursor: pointer;

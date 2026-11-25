@@ -112,6 +112,7 @@ def build_app(
             enable_v1_settings=True,
             v1_authority=f"127.0.0.1:{port}",
             v1_store_path=settings_path,
+            v1_worksets_path=v1_root / "worksets" / "worksets.sqlite3",
             enable_v1_jobs=True,
             v1_jobs_runtime=runtime,
             enable_v1_events=True,
@@ -138,6 +139,11 @@ def main() -> None:
         "--hold-slow-launch", action="store_true", help="gate synthetic slow launch"
     )
     parser.add_argument("--exit-on-stdin-close", action="store_true")
+    parser.add_argument(
+        "--reuse-data-root",
+        action="store_true",
+        help="E-B restart test: serve an existing v1 data root of an earlier run of this harness",
+    )
     args = parser.parse_args()
     import uvicorn
 
@@ -146,7 +152,7 @@ def main() -> None:
         if args.data_root is None:
             parser.error("--v1 needs --data-root")
         v1_root = args.data_root.resolve()
-        if v1_root.exists() and any(v1_root.iterdir()):
+        if v1_root.exists() and any(v1_root.iterdir()) and not args.reuse_data_root:
             parser.error("--data-root must be empty or absent")
         v1_root.mkdir(parents=True, exist_ok=True)
     with (

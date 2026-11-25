@@ -1,5 +1,7 @@
 # UI-3-0 — 第5案で設計確定した隔離プロトタイプ
 
+追補（2026-11-24、0.1.68 未リリース）。[束 E-B 名前付き作業セットの自動保存・復元と容量上限](e-b-worksets.md)（offline schema [e-b-worksets.schema.json](e-b-worksets.schema.json)）。Windows 実機は未受入。
+
 追補（2026-11-24、0.1.67 未リリース）。[束 E-A の製品仕様・検証記録](e-a-presets-glossary.md)。
 
 追補（2026-11-19、0.1.60未リリース）: [D2-B Expertキュー操作](d2b-queue-actions.md)。B7既存契約へ接続、単一mutation gate、Draft PR。Windows実機は未受入。
@@ -67,6 +69,7 @@ Normal/Expert共通の1つのcontroller、旧投入は呼ばない、複数投�
 
 | 文書 | 役割 |
 |---|---|
+| [e-b-worksets.md](e-b-worksets.md) | **E-B: 作業セットのUX、永続API・DTO・CAS、保存プロジェクション、ストア・復旧、容量実測、セキュリティ、試験、残留課題** |
 | [design-freeze.md](design-freeze.md) | **確定した設計判断・受入証拠・未実装とS1〜S5引継ぎ** |
 | [s3b1-multi-input-and-admission.md](s3b1-multi-input-and-admission.md) | **S3-B1: 入力一覧・ファイル別override・出力先、段階的な受付（共通送信ゲート・preflight・凍結・部分受付）、旧APIの副作用、試験、S3-B2/S5引継ぎ** |
 | [s3a-legacy-transcription.md](s3a-legacy-transcription.md) | **S3-A: 1ファイルの文字起こし（旧`/api/jobs`）、DTO、状態遷移、制約、試験、S3-Bへの未決ゲート** |
