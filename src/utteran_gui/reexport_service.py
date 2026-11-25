@@ -47,6 +47,8 @@ from utteran_gui.reexport_files import FileError, PartialOutput
 from utteran_gui.reexport_store import Record, ReexportError, ReexportStore, canonical, iso
 
 MAX_LABEL = 256
+_FINAL_ATTEMPTS = 4
+_FINAL_RETRY_SECONDS = 0.5
 MAX_PARENT = 4096
 _SHA = re.compile(r"[0-9a-f]{64}")
 _BODY_KEYS = {
@@ -98,7 +100,13 @@ class ReexportService:
         self._clock = clock
         self._supported = supported
         self._lock = threading.Lock()
+        # Keys whose execution is in this process now. Registered *before* the pending record
+        # is committed, so a same-key replay in that gap reads ``pending``, never
+        # ``interrupted`` (PR review P2-1). Guarded by ``_state``.
+        self._state = threading.Lock()
         self._running: set[str] = set()
+        # The plan reads, hashes, parses and re-renders the whole source: at most two at once.
+        self._plans = threading.BoundedSemaphore(2)
 
     # ---- source -------------------------------------------------------------------------
 
@@ -153,6 +161,14 @@ class ReexportService:
         """What the dialog shows: availability with a fixed reason, the frozen defaults, the
         displayed speaker labels (private, authenticated body only) and the source digest the
         execution must match."""
+        if not self._plans.acquire(blocking=False):
+            raise ReexportError("reexport_busy", 503)
+        try:
+            return self._plan(job_id)
+        finally:
+            self._plans.release()
+
+    def _plan(self, job_id: str) -> dict[str, Any]:
         job, snapshot, evidence = self._job(job_id)
         output = snapshot.resolved.settings.output
         body: dict[str, Any] = {
@@ -211,6 +227,7 @@ class ReexportService:
         if (
             type(formats) is not list
             or not formats
+            or any(type(item) is not str for item in formats)
             or len(set(formats)) != len(formats)
             or any(item not in FORMATS for item in formats)
         ):
@@ -255,9 +272,13 @@ class ReexportService:
                 return self._replay(existing, digest_input)
         if not self._lock.acquire(blocking=False):
             raise ReexportError("reexport_busy", 503)
+        with self._state:
+            self._running.add(key)
         try:
             return self._execute(job_id, expected, key, body, digest_input)
         finally:
+            with self._state:
+                self._running.discard(key)
             self._lock.release()
 
     def _replay(self, existing: Record, digest_input: dict[str, Any]) -> tuple[int, dict[str, Any]]:
@@ -319,11 +340,7 @@ class ReexportService:
         )
         if not created:
             return self._replay(record, digest_input)
-        self._running.add(record.id)
-        try:
-            return 201, self.to_wire(self._write(record, snapshot, parent, files))
-        finally:
-            self._running.discard(record.id)
+        return 201, self.to_wire(self._write(record, snapshot, parent, files))
 
     def _write(self, record: Record, snapshot: Any, parent: str, files: dict[str, bytes]) -> Record:
         stamp = datetime.fromtimestamp(self._clock()).astimezone().strftime("%Y%m%d-%H%M%S")
@@ -355,18 +372,24 @@ class ReexportService:
             return self.store.fail(record.id, exc.code, partial=True)
         except FileError as exc:
             return self.store.fail(record.id, exc.code, partial=False)
-        return self.store.complete(
-            record.id,
-            [{"format": f, "sha256": s, "size": n} for f, s, n in written.files],
-            written.location_verified,
-        )
+        files_written = [{"format": f, "sha256": s, "size": n} for f, s, n in written.files]
+        # The files are complete and fsynced: retry a busy store a few times before the record
+        # is left pending (read as ``interrupted``, never redone) (PR review P3-3).
+        for attempt in range(_FINAL_ATTEMPTS):
+            try:
+                return self.store.complete(record.id, files_written, written.location_verified)
+            except ReexportError as exc:
+                if exc.code != "store_busy" or attempt == _FINAL_ATTEMPTS - 1:
+                    raise
+                time.sleep(_FINAL_RETRY_SECONDS)
+        raise AssertionError("unreachable")
 
     # ---- reading ------------------------------------------------------------------------
 
     def public_state(self, record: Record) -> str:
-        if record.state == "pending" and (
-            record.owner != self.store.owner or record.id not in self._running
-        ):
+        with self._state:
+            running = record.key in self._running
+        if record.state == "pending" and (record.owner != self.store.owner or not running):
             return "interrupted"  # crashed/killed (or its final write failed): files may remain
         return record.state
 
@@ -384,7 +407,8 @@ class ReexportService:
             "state": state,
             "error_code": record.error_code,
             # Files may exist in the new directory (never deleted automatically).
-            "partial": record.partial or (state == "interrupted" and record.directory is not None),
+            # An interrupted run may have made its directory before recording the name.
+            "partial": record.partial or state == "interrupted",
             "created_at": iso(record.created_ms),
             "updated_at": iso(record.updated_ms),
             "formats": options["formats"],

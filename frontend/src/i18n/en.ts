@@ -1120,6 +1120,7 @@ export const en: Record<MessageKey, string> = {
   "ec.labelsApplied": "The source job already applied speaker label changes. Changes start from the displayed labels in the JSON (original speaker IDs cannot be restored, and speakers sharing a name cannot be told apart).",
   "ec.noSpeakers": "This JSON has no speaker labels.",
   "ec.emptyLabel": "(empty label)",
+  "ec.labelEmptyKeeps": "An empty field keeps that label unchanged.",
   "ec.labelInvalid": "Labels must be at most 256 characters without control characters.",
   "ec.parent": "Destination",
   "ec.parentDefault": "Same output folder as the job: {path}",

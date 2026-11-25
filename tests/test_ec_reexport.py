@@ -1134,3 +1134,166 @@ def test_default_gui_has_no_reexport_routes_or_imports() -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, check=True, cwd=ROOT
     )
     assert out.stdout.strip() == "[]"
+
+
+# ---- independent review (P2/P3) regressions -------------------------------------------------
+
+
+@POSIX
+def test_review_p2_1_same_key_replay_while_committing_reads_pending(world: World) -> None:
+    """The pending record is committed before the files exist. A same-key replay arriving in
+    that gap must read ``pending`` (still running), never ``interrupted`` (settled)."""
+    job_id = world.finished()
+    body = world.body(job_id)
+    revision = world.store.get_job(job_id).revision
+    key = "inflight-key-000001"
+    seen: list[Any] = []
+    real_begin = world.reexports.begin
+
+    def begin(**kwargs: Any) -> Any:
+        result_ = real_begin(**kwargs)
+        # Another request with the same key, between the commit and the first file.
+        seen.append(world.service.execute(job_id, revision, key, body))
+        return result_
+
+    world.reexports.begin = begin  # type: ignore[method-assign]
+    status, final = world.service.execute(job_id, revision, key, body)
+    assert status == 201 and final["state"] == "completed"
+    assert seen[0][0] == 200 and seen[0][1]["state"] == "pending"
+    assert seen[0][1]["partial"] is False
+    # After the run, the same key replays the settled record.
+    assert world.service.execute(job_id, revision, key, body)[1]["state"] == "completed"
+
+
+def test_review_p2_2_interrupted_store_creation_has_fixed_codes(tmp_path: Path) -> None:
+    path = tmp_path / "r" / "reexports.sqlite3"
+    path.parent.mkdir(mode=0o700)
+    path.write_bytes(b"")  # creator killed between the O_EXCL create and the schema commit
+    store = ReexportStore(path, timeout=0.1)
+    for read in (lambda: store.for_job("job_" + "0" * 32), lambda: store.by_key("k" * 16)):
+        with pytest.raises(ReexportError) as caught:
+            read()
+        assert (caught.value.code, caught.value.status, caught.value.retryable) == (
+            "store_initializing",
+            503,
+            True,
+        )
+    with pytest.raises(ReexportError) as caught:
+        store.create_if_missing()
+    assert (caught.value.code, caught.value.status) == ("store_incomplete", 409)
+    assert path.read_bytes() == b""  # never initialized by a reader or a later writer
+
+
+@POSIX
+def test_review_p2_2_http_reports_the_fixed_code_not_a_500(world: World) -> None:
+    job_id = world.finished()
+    world.reexports.path.parent.mkdir(parents=True, exist_ok=True)
+    world.reexports.path.write_bytes(b"")
+    world.reexports.timeout = 0.1
+    with TestClient(
+        _app(world), base_url="http://" + AUTHORITY, headers={SESSION_HEADER: SESSION}
+    ) as client:
+        response = client.get(f"/api/v1/jobs/{job_id}/reexports")
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "store_initializing"
+
+
+@POSIX
+def test_review_p2_3_a_middle_component_swapped_after_the_check_is_refused(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """``/a/b`` becomes a link (to a Git checkout) after the name-based check: the descriptor
+    walk refuses it, so nothing is written behind the link and no checkout is bypassed."""
+    a = tmp_path / "a"
+    (a / "b" / "out").mkdir(parents=True)
+    repo = tmp_path / "repo"
+    (repo / "b" / "out").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    real_check = reexport_files.check_parent_path
+
+    def swapping(text: str) -> str:
+        checked = real_check(text)
+        (a / "b").rename(tmp_path / "moved")
+        (a / "b").symlink_to(repo / "b", target_is_directory=True)
+        return checked
+
+    monkeypatch.setattr(reexport_files, "check_parent_path", swapping)
+    with pytest.raises(FileError) as caught:
+        create_output(
+            str(a / "b" / "out"), ["n"], "rex", {"txt": b"secret"}, on_claimed=lambda _: None
+        )
+    assert caught.value.code == "output_parent_changed"
+    assert list((repo / "b" / "out").iterdir()) == []
+    assert list((tmp_path / "moved" / "out").iterdir()) == []
+
+
+@POSIX
+def test_review_p2_3_git_is_asked_about_the_pinned_directory(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "transcripts").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / ".gitignore").write_text("transcripts/\n")
+    written = create_output(
+        str(repo / "transcripts"), ["n"], "rex", {"md": b"x"}, on_claimed=lambda _: None
+    )
+    assert written.name == "n"
+    (repo / ".gitignore").write_text("")
+    with pytest.raises(FileError) as caught:
+        create_output(
+            str(repo / "transcripts"), ["m"], "rex", {"md": b"x"}, on_claimed=lambda _: None
+        )
+    assert caught.value.code == "output_in_repository"
+    assert not (repo / "transcripts" / "m").exists()
+
+
+@POSIX
+def test_review_p3_5_source_parent_with_a_swapped_component_is_not_followed(world: World) -> None:
+    job_id = world.finished()
+    moved = world.tmp / "out-moved"
+    world.output.rename(moved)
+    world.output.symlink_to(moved, target_is_directory=True)
+    assert world.service.plan(job_id)["refusal"] == "source_missing"
+
+
+@POSIX
+def test_review_p3_unhashable_formats_and_store_busy_at_the_end(
+    world: World, monkeypatch: Any
+) -> None:
+    job_id = world.finished()
+    with pytest.raises(ReexportError) as caught:
+        world.run(job_id, world.body(job_id, formats=[{}]))
+    assert caught.value.code == "formats_invalid"
+    import utteran_gui.reexport_service as service_module
+
+    monkeypatch.setattr(service_module, "_FINAL_RETRY_SECONDS", 0)
+    real_complete = world.reexports.complete
+    failures = {"n": 2}
+
+    def busy_complete(*args: Any) -> Any:
+        if failures["n"]:
+            failures["n"] -= 1
+            raise ReexportError("store_busy", 503)
+        return real_complete(*args)
+
+    world.reexports.complete = busy_complete  # type: ignore[method-assign]
+    status, record = world.run(job_id, world.body(job_id))
+    assert status == 201 and record["state"] == "completed"
+
+
+@POSIX
+def test_review_p3_2_claim_failure_reads_interrupted_and_partial(world: World) -> None:
+    job_id = world.finished()
+    body = world.body(job_id)
+    revision = world.store.get_job(job_id).revision
+
+    def broken(*_: Any) -> Any:
+        raise ReexportError("store_busy", 503)
+
+    world.reexports.claim = broken  # type: ignore[method-assign]
+    with pytest.raises(ReexportError):
+        world.service.execute(job_id, revision, "claim-key-00000001", body)
+    status, record = world.service.execute(job_id, revision, "claim-key-00000001", body)
+    assert status == 200 and record["state"] == "interrupted"
+    assert record["directory"] is None and record["partial"] is True
+    made = [p for p in world.output.iterdir() if "_reexport_" in p.name]
+    assert len(made) == 1 and list(made[0].iterdir()) == []  # the empty folder stays

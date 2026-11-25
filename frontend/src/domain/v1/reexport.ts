@@ -115,7 +115,8 @@ export class V1ReexportController {
     const form = this.store.get().form;
     if (!form) return;
     const labels = { ...form.labels };
-    if (value === null || value === label) delete labels[label];
+    // An empty field means "unchanged" (PR review P3-8): clearing it never hides a speaker.
+    if (value === null || value === "" || value === label) delete labels[label];
     else labels[label] = value;
     this.edit({ labels });
   }

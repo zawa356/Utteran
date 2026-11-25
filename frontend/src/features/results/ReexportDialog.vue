@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { OUTPUT_FORMATS_V1, type OutputFormatV1 } from "../../api/v1Resources";
 import { useCore } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
@@ -52,6 +52,21 @@ function toggle(f: OutputFormatV1, on: boolean): void {
 function onOpenChange(value: boolean): void {
   if (!value) reexport.close();
 }
+
+// Keep keyboard focus inside the modal when the primary button is disabled or replaced
+// (PR review P3-9): the in-progress text, the recheck button, the refusal or the close button.
+const focusFor: Record<string, string> = {
+  submitting: "reexport-submitting",
+  unknown: "reexport-recheck",
+  rejected: "reexport-rejected",
+  done: "reexport-close",
+};
+watch(() => state.value.step, async (step) => {
+  const target = focusFor[step];
+  if (!target) return;
+  await nextTick();
+  document.querySelector<HTMLElement>(`[data-testid="reexport-dialog"] [data-testid="${target}"]`)?.focus({ preventScroll: true });
+});
 
 watch(open, (value) => {
   if (!value) return;
@@ -140,6 +155,7 @@ function restoreFocus(): void {
               :data-testid="`reexport-label-${index}`"
               @update:model-value="(v: string | null) => reexport.setLabel(label, v ?? '')"
             />
+            <p class="text-caption">{{ t("ec.labelEmptyKeeps") }}</p>
             <p v-if="issues.includes('label')" class="text-caption text-error">{{ t("ec.labelInvalid") }}</p>
           </fieldset>
           <fieldset class="u-fieldset" data-testid="reexport-parent">
@@ -163,8 +179,8 @@ function restoreFocus(): void {
             <p v-if="issues.includes('parent')" class="text-caption text-error">{{ t("ec.parentInvalid") }}</p>
             <p class="text-caption">{{ t("ec.newDirectory") }}</p>
           </fieldset>
-          <p v-if="state.step === 'submitting'" role="status">{{ t("ec.submitting") }}</p>
-          <v-alert v-if="state.step === 'rejected'" type="warning" density="compact" role="status" data-testid="reexport-rejected" :data-code="state.error?.code ?? ''">
+          <p v-if="state.step === 'submitting'" role="status" tabindex="-1" data-testid="reexport-submitting">{{ t("ec.submitting") }}</p>
+          <v-alert v-if="state.step === 'rejected'" type="warning" density="compact" role="status" tabindex="-1" data-testid="reexport-rejected" :data-code="state.error?.code ?? ''">
             {{ state.error?.code ? code(state.error.code) : t("ec.failed") }}
           </v-alert>
           <v-alert v-if="state.step === 'unknown'" type="warning" density="compact" role="status" data-testid="reexport-unknown">{{ t("ec.unknown") }}</v-alert>

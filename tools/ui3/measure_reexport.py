@@ -1,10 +1,10 @@
 """E-C: measure parse/render time and peak memory of re-export sources (synthetic only).
 
-Usage: ``uv run --no-sync python tools/ui3/measure_reexport.py [MiB ...]`` (sources) or
-``... measure_reexport.py --store [records ...]`` (physical size of the record store). For each size a
-fresh subprocess builds a JSON v1 document of about that size with the shared renderer (the
-JSON exporter's own layout), then times ``parse_json_v1`` (with SHA-256) and the rendering of
-all five formats, and reports the peak RSS. No user data; nothing is written to disk.
+Usage: ``uv run --no-sync python tools/ui3/measure_reexport.py [MiB ...]`` (sources) or ``...
+measure_reexport.py --store [records ...]`` (physical size of the record store). For each source
+size a fresh subprocess builds a JSON v1 document of about that size with the shared renderer
+(the JSON exporter's own layout), then times ``parse_json_v1`` (with SHA-256) and the rendering
+of all five formats, and reports the peak RSS. No user data; nothing is written to disk.
 """
 
 from __future__ import annotations

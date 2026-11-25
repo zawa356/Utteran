@@ -63,10 +63,10 @@
 
 競合モデル: 同一ユーザーの別プロセスが、任意の時点で名前の変更・差替え・リンク作成を行い得る（C2c §5.0）。したがって「名前で確認してから名前で操作」はしない。
 
-1. 保存先は絶対パス・ローカル（`//` は拒否）・正規化し、各要素を `lstat` してリンクがあれば `output_parent_link`（B7 の出力先規則と同じ）。親を `O_DIRECTORY|O_NOFOLLOW` で開き、開いたものとパスの `(st_dev, st_ino)` が一致することを確認して記述子に固定する。
-2. 新しいフォルダ名ごとに、**作成前に** Git checkout の確認（core の `_ensure_git_ignored_output` と同じ規則で `git check-ignore --no-index`。`.gitignore` 対象外なら `output_in_repository`、Git が答えられなければ `output_git_unverified`。拒否時は何も作らない）。
+1. 保存先は絶対パス・ローカル（`//` は拒否）・正規化し、各要素を `lstat` してリンクがあれば `output_parent_link`（B7 の出力先規則と同じ。分かりやすい理由表示のため）。そのうえで `/` から**各要素を `openat(O_DIRECTORY|O_NOFOLLOW)` で順に開いて**親を記述子に固定する。確認の後に途中の要素がリンクへ差し替えられても、この walk が止まり `output_parent_changed` になる（独立レビュー P2-3）。
+2. 新しいフォルダ名ごとに、**作成前に** Git checkout の確認（core の `_ensure_git_ignored_output` と同じ規則で `git check-ignore --no-index`）。`.git` は名前ではなく**固定した祖先の記述子**から探し、Git は見つけた祖先の記述子（`/proc/self/fd/<n>`）を作業ディレクトリとして、そこからの相対パスを判定する。`.gitignore` 対象外なら `output_in_repository`、Git が答えられない・`/proc` がなく記述子を渡せない場合は `output_git_unverified`（fail closed）。拒否時は何も作らない。
 3. 固定した親に対し `mkdir(name, 0700, dir_fd=…)`。既存の名前（ディレクトリ・ファイル・リンク・大小文字違いで衝突するもの）は `FileExistsError` になり、再利用せず次の長い ID 形式へ進む。全候補が埋まっていれば `output_name_unavailable`。
-4. 作ったフォルダを `dir_fd` 相対・`O_NOFOLLOW` で開き、ディレクトリかつ所有者が自分かつ**空**であることを確認。違えば（作成と open の間に置き換えられた）`output_claim_lost` で何も書かない。
+4. 作ったフォルダを `dir_fd` 相対・`O_NOFOLLOW` で開き、ディレクトリかつ所有者が自分かつ**空**であることを確認。違えば（作成と open の間に置き換えられた）`output_claim_lost` で何も書かない。POSIX の `mkdir` は作成した inode を返さないため、同じユーザーが**空の**ディレクトリに差し替えた場合は検出できない（その場合も書込みは開いたディレクトリだけに行われ、上書き・リンク追従は起きない）。
 5. フォルダ名を記録（§6）してから、marker と各ファイルを `O_CREAT|O_EXCL|O_NOFOLLOW`（0600）で `dir_fd` 相対に作成し、全バイトを書き、`fsync`。最後にフォルダと親を `fsync`。既存の名前（差し込まれたリンクを含む）には書かない（`output_claim_lost`）。
 6. 完了後、親からのフォルダ名が書込みに使った記述子と同じ inode か確認し、`location_verified` として記録する（偽なら UI に「移動・置換の可能性」を表示）。
 
@@ -101,7 +101,7 @@
 | ソース JSON | 32 MiB（`MAX_SOURCE_BYTES`） | 一覧の `HASH_LIMIT` 64 MiB では約 9 秒・約 390 MiB 増。32 MiB で約 4.3 秒・約 210 MiB 増。合成で約 1.6 万セグメント（12 単語ずつ、約 15 時間の発話相当）を含む |
 | 出力合計 | 128 MiB（`MAX_OUTPUT_BYTES`） | 32 MiB ソースの 5 形式で約 47 MB。最長ラベル（256 文字）適用時の増加を見込んだ余裕 |
 | セグメント／単語／話者ラベル | 20 万／200 万／256 | 32 MiB 内に収まる構造の上限。超過は `source_too_large` |
-| 話者ラベル | 256 文字、制御文字不可 | B5 `OutputSettings.speaker_labels` と同じ長さ |
+| 話者ラベル | 256 文字、制御文字不可 | B5 `OutputSettings.speaker_labels` と同じ長さ。画面で欄を空にした場合は「変更しない」として扱う（API では空文字を既存の意味＝行頭ラベルなしとして受け付ける） |
 | 同時実行 | プロセスあたり 1 件 | 上記の CPU・メモリを重ねない。2 件目は `reexport_busy`（503、再試行可）。data root ごとの OS ロックにより GUI プロセスは 1 つ |
 
 再出力は ASR の heavy slot を使わない（モデル・GPU を使わない）。ジョブの実行中でも可能。
@@ -136,16 +136,18 @@
 - **ABA**: 同じ値でも新しい操作は新しいキー＝新しい記録・新しいフォルダ。値が同じことで未知の旧要求が失効したとはみなさない（キーでだけ同一性を判断）。
 - **途中 kill・再起動**: 記録は所有プロセスのトークンを持つ。別プロセス（再起動後）や、確定の書込みに失敗した `pending` は `interrupted`（結果不確定、`partial`＝フォルダ名が記録済みならファイルが残る可能性）と表示し、**同じ要求を再実行しない**。新しい再出力は新しいキーで行う。
 - **DB 確定の前後**: 6 より前の失敗は何も作らない。6 の後 7 より前の失敗は `failed`（`partial: false`）。7 の途中は `failed`（`partial: true`）または `interrupted`。8 のコミット失敗は `interrupted`（ファイルは完全な場合もある＝不確定として扱う）。
-- **並列**: 同じキーの同時要求は 1 件だけが実行し、他は `reexport_busy` か既存記録。別キーの同時要求は 1 件ずつ。
+- **並列**: 同じキーの同時要求は 1 件だけが実行し、他は `reexport_busy` か既存記録。実行中のキーは `pending` 記録のコミット前にプロセス内で登録するので、その間に届いた同じキーの再照合は `pending`（実行中）と答え、`interrupted` と誤らない（独立レビュー P2-1）。別キーの同時要求は 1 件ずつ。可否表示（`reexport-source`）はソース全体を読み直すため、同時 2 件まで（超過は `reexport_busy`）。
+- **最後の記録**: ファイルを fsync した後の `completed` の書込みが `store_busy` なら最大 4 回まで再試行する。それでも失敗したら `interrupted`（結果不確定）と表示する。
 
 ### 6.2 ストア（`reexport-v1`）
 
 - **パス**: `DataPaths.reexport_store`。通常は `user_data_dir("utteran")/reexport-v1/reexports.sqlite3`、明示 data root では `<UTTERAN_DATA_ROOT>/data/reexport-v1/reexports.sqlite3`。B5・B6/B7・E-B のファイルとは別で、それらを読み書き・prune しない。
 - **作成**: 最初の実行（`pending` の書込み直前）だけ。ディレクトリ 0700、ファイル 0600、symlink 拒否、O_EXCL 作成者プロトコル、`mode=rw` で開き消えたファイルを再作成しない。
+- **作成途中の停止**（O_EXCL 作成後・スキーマ確定前の kill）: 0 バイトのファイルが残る。読取りは `store_initializing`（503、再試行可）、書込みは作成者の待機時間を過ぎると `store_incomplete`（409）を返し、どちらも自動で初期化しない（独立レビュー P2-2）。復旧はアプリを終了し、0 バイトであることを確認してから `reexport-v1/reexports.sqlite3` を退避すると、次の再出力で新しく作られる。
 - **スキーマ（`user_version=1`）**: `installation(id, secret)`、`reexports(id PK, job_id, job_revision, key UNIQUE, digest, state∈{pending,completed,failed}, error_code, partial, created_ms, updated_ms, owner, request, parent, directory, source_sha256, source_size, files, location_verified)`。
 - **記録する値**: 実行時刻、形式、表示設定とラベル変更（要求の正規 JSON）、保存先と新しいフォルダ名、状態、形式別の SHA-256・サイズ、ソースの SHA-256・サイズ。**認識本文・JSON の複製は保存しない**。
 - **トランザクション**: `BEGIN IMMEDIATE`、`synchronous=FULL`、DELETE journal、`secure_delete=ON`、`auto_vacuum=INCREMENTAL`。未知の `user_version`・`quick_check` 失敗は拒否し、ファイルを変更しない。
-- **上限（明示拒否、自動削除なし）**: 全体 2,000 件・ジョブあたり 100 件（`reexport_limit`）、1 要求 512 KiB（`request_too_large`）、要求の合計 64 MiB（`store_quota_exceeded`）。上限に達しても記録・成果物を消さない。記録の削除 UI は本束にない（残留、§11）。
+- **上限（明示拒否、自動削除なし）**: 全体 2,000 件・ジョブあたり 100 件（`reexport_limit`）、1 要求 1 MiB（`request_too_large`。表示ラベル 256 個と新ラベル 256 個が各 256 文字・4 バイトでも 512 KiB に収まる。HTTP 本文の上限は 1 MiB＋64 KiB）、要求の合計 64 MiB（`store_quota_exceeded`）。上限に達しても記録・成果物を消さない。記録の削除 UI は本束にない（残留、§11）。
 - **物理容量の実測**（8 ラベル×256 CJK 文字・長い保存先パスの最悪寄りの要求 6,717 B）: 100 件 868 KB、1,000 件 8.4 MB、2,000 件 16.7 MB（空きページ 1）。要求合計の上限 64 MiB と管理領域で、ファイルは最大でも約 70〜80 MB に収まる。pytest で 60 件（256 文字ラベル）が 256 KiB 以下・空きページ 0 を毎回確認する。
 - **元ジョブ履歴の削除（C2c ③）との関係**: 履歴を墓標化しても再出力記録は残る（ジョブは 410 になり、ダイアログは開けない）。記録とフォルダは削除しない。記録内の保存先パスとラベルは残留する（§11）。
 
@@ -169,7 +171,26 @@
 
 ## 9. 独立レビュー
 
-Draft PR 提出前に、実装と別コンテキストのサブエージェントが差分・制御経路・不変条件・試験をレビューした。担当・範囲・指摘（P0〜P3）・対応・残留事項は Draft PR の本文と #82 に記録する。
+Draft PR 提出前に、実装と別コンテキストのサブエージェント（general-purpose、実装の会話文脈を持たない）が初版 `33e91b2` の差分全体・制御経路・不変条件・試験を読み、`tests/test_ec_reexport.py` を実行してレビューした。結果は **P0 0 件、P1 0 件、P2 3 件、P3 11 件**。
+
+| ID | 指摘 | 対応 | 回帰試験 |
+|---|---|---|---|
+| P2-1 | `pending` のコミット直後、実行中の登録前に届いた同じキーの再照合が `interrupted` と誤答し、画面が確定扱いにする | 実行中のキーをコミット前に登録し、それで判定 | `test_review_p2_1_…`（旧コードで失敗を確認） |
+| P2-2 | ストア作成途中の停止（0 バイト）で読取りが 500、書込みが永続的に拒否・理由不明 | `store_initializing`（503）／`store_incomplete`（409）の固定コード、自動初期化はしない、復旧手順を §6.2 に記載 | `test_review_p2_2_…` 2 件 |
+| P2-3 | 保存先の途中の要素を確認後にリンクへ差し替えると、別の場所（Git checkout を含む）へ書けた | `/` から `O_NOFOLLOW` で各要素を開いて固定、Git の判定も固定した記述子で行う | `test_review_p2_3_…` 2 件 |
+| P3-1 | `formats` にハッシュ不能な要素で 500 | 型を先に検査し `formats_invalid` | `test_review_p3_unhashable_…` |
+| P3-2 | フォルダ名の記録に失敗すると空フォルダが残るのに `partial: false` | `interrupted` は常に `partial: true` | `test_review_p3_2_…` |
+| P3-3 | 最後の DB 書込みの一時的な busy で完了が `interrupted` に固定 | busy を最大 4 回再試行 | 同上（`store_busy`×2 → `completed`） |
+| P3-4 | 本文上限が最大の正当な要求より小さい | 1 MiB（＋64 KiB）へ | 計算根拠を §6.2 に記載 |
+| P3-5 | ソースの親ディレクトリの途中要素を固定していない | 出力と同じ walk で固定 | `test_review_p3_5_…` |
+| P3-6 | `mkdir` 直後の空ディレクトリへの差替えは検出不能 | POSIX の制約として §4 に明記 | — |
+| P3-7 | 可否表示がロック外で毎回全体を処理 | 同時 2 件に制限（`reexport_busy`） | — |
+| P3-8 | ラベル欄を空にすると話者名が消える | 画面では空欄＝変更なし、説明を表示 | Vitest |
+| P3-9 | 送信中・結果表示でフォーカスがモーダル外へ外れる | 状態ごとに進行表示・再確認・拒否・閉じるへ移動 | E2E（キーボード操作） |
+| P3-10 | 記録上限が恒久的 | 削除 UI なしで上限到達時は拒否、owner 判断として §11 に残留 | — |
+| P3-11 | 再起動 E2E のサーバー起動待ちに期限がない | 30 秒で失敗 | — |
+
+レビューで確認済みとされた点: 元ジョブのファイル・marker・入力への書込みがないこと、ソースを記述子で 1 回読み同じバイト列を解析すること、出力がすべて `O_EXCL|O_NOFOLLOW`・fsync・削除/rename なしであること、厳格読取りと無損失確認、core exporter のバイト同等性、HMAC digest の一貫性と同じキー別本文の 409、再起動後に再実行しないこと、画面の結果不明の扱い（同じキーと本文の再確認、完了後は新キー）、エラー本文に値がないこと、境界（既定 GUI・core・worker・キュー非接触）。レビューで未検証とされた点（macOS、Windows 実機、停電時の耐久性）は §11 のとおり。
 
 ## 10. 互換性と変更しないもの
 
@@ -185,6 +206,8 @@ Draft PR 提出前に、実装と別コンテキストのサブエージェン�
 - Windows 11 実 WebView2、ACL、reparse、OneDrive、長パスの実機受入は [#22](https://github.com/zawa356/Utteran/issues/22) の別ゲート。CI・合成試験の成功を実機確認と混同しない。
 - 作成した直後のフォルダを同じユーザーの別プロセスが移動した場合、ファイルは移動先に存在する（書込みは記述子に固定）。完了時の位置確認で検出し `location_verified: false` と表示する。
 - 失敗・中断時の途中ファイルは削除しない（手動で削除する）。
+- `mkdir` 直後に同じユーザーが空のディレクトリへ差し替えた場合は検出できない（§4）。停電時の耐久性は fsync の順序に依存し、実機で未検証。
+- 記録の上限（全体 2,000 件・ジョブあたり 100 件）は削除 UI がないため恒久的。上限到達時の扱い（記録の削除・保持期間）は owner 判断。
 - 再出力記録の削除・保持期間・エクスポートは未実装（B5／E-B と共通の owner 未決事項）。上限到達時は新しい再出力を拒否する。元ジョブ履歴を削除しても記録（保存先パス・ラベル変更）は残る。
 - 元の話者 ID の復元、同名話者の分離はできない（§2.1）。
 - E-B の P3（active fence 再試行バックオフ）、CI 最適化、束 F、既定 GUI の切替、正式 Release は範囲外。

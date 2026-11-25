@@ -38,11 +38,13 @@ STORE_VERSION = 1
 #: new re-export is refused (``reexport_limit``); no record is removed automatically.
 MAX_RECORDS = 2000
 MAX_RECORDS_PER_JOB = 100
-#: Canonical options of one request (labels dominate: 256 labels x 256 characters).
-MAX_REQUEST_BYTES = 512 * 1024
+#: Canonical options of one request. Labels dominate: 256 keys (displayed labels from the
+#: source) and 256 values of up to 256 characters each, 4 UTF-8 bytes at most (512 KiB),
+#: plus the parent path and the envelope.
+MAX_REQUEST_BYTES = 1024 * 1024
 #: Sum of the stored request texts of the whole store.
 MAX_STORE_REQUEST_BYTES = 64 * 1024 * 1024
-_RETRYABLE = frozenset({"store_busy", "store_unavailable", "reexport_busy"})
+_RETRYABLE = frozenset({"store_busy", "store_unavailable", "reexport_busy", "store_initializing"})
 _CREATOR_POLL_SECONDS = 0.02
 
 
@@ -161,10 +163,23 @@ class ReexportStore:
                 except _CreatorPending:
                     pass
                 if time.monotonic() >= deadline:
-                    raise ReexportError("store_schema_unsupported", retryable=False)
+                    raise self._incomplete()
                 time.sleep(_CREATOR_POLL_SECONDS)
         except (sqlite3.Error, OSError) as exc:
             raise _storage_error(exc) from None
+
+    def _incomplete(self) -> ReexportError:
+        """No schema after the creator's deadline. An empty file is a creation interrupted
+        between the O_EXCL create and the schema commit (PR review P2-2): it is reported with
+        its own fixed code and never initialized silently (owner action, e-c-reexport.md §6.2).
+        """
+        try:
+            empty = self.path.stat().st_size == 0
+        except OSError:
+            return ReexportError("store_unavailable")
+        if empty:
+            return ReexportError("store_incomplete", 409, retryable=False)
+        return ReexportError("store_schema_unsupported", retryable=False)
 
     def _verify(self, created: bool = False) -> None:
         with self._transaction(write=created, initialize=created) as db:
@@ -231,8 +246,7 @@ class ReexportStore:
 
     @contextmanager
     def _open(self, *, write: bool) -> Iterator[sqlite3.Connection]:
-        if self._secret is None:
-            self._verify()
+        self._load()
         with self._transaction(write=write) as db:
             if db.execute("PRAGMA user_version").fetchone()[0] != STORE_VERSION:
                 raise ReexportError("store_schema_unsupported", retryable=False)
@@ -259,9 +273,21 @@ class ReexportStore:
         except (TypeError, ValueError):
             raise ReexportError("store_corrupt", retryable=False) from None
 
-    def digest(self, value: Any) -> str:
-        if self._secret is None:
+    def _load(self) -> None:
+        if self._secret is not None:
+            return
+        try:
             self._verify()
+        except _CreatorPending:
+            # A creator is still committing the schema, or was killed before it did: a fixed,
+            # retryable code (never a raw exception, never an initialization by a reader).
+            incomplete = self._incomplete()
+            if incomplete.code == "store_incomplete":
+                raise ReexportError("store_initializing", 503) from None
+            raise incomplete from None
+
+    def digest(self, value: Any) -> str:
+        self._load()
         assert self._secret is not None
         return hmac.new(self._secret, canonical(value).encode("utf-8"), hashlib.sha256).hexdigest()
 

@@ -1118,6 +1118,7 @@ export const ja = {
   "ec.labelsApplied": "元のジョブで話者ラベルの変更が適用済みです。JSONに記録された表示上のラベルを基準に変更します（元の話者IDへの逆変換や、同じ名前の話者の区別はできません）。",
   "ec.noSpeakers": "このJSONには話者ラベルがありません。",
   "ec.emptyLabel": "（空のラベル）",
+  "ec.labelEmptyKeeps": "空欄にすると、そのラベルは変更しません。",
   "ec.labelInvalid": "ラベルは256文字以内で、制御文字は使えません。",
   "ec.parent": "保存先",
   "ec.parentDefault": "元のジョブと同じ出力先: {path}",

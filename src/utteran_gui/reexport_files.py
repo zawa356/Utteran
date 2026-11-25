@@ -3,6 +3,8 @@
 Threat model: another process of the same user may rename, replace or link any name at any
 time (C2c §5.0). Therefore nothing here acts on a name after checking it:
 
+- **Pinning.** Parents are opened component by component from ``/`` with ``O_NOFOLLOW``
+  (``_Pinned``), so a component replaced by a link after a name-based check stops the walk.
 - **Source.** The job's own directory, its ownership marker and ``<name>.json`` are opened
   relative to directory descriptors with ``O_NOFOLLOW`` (a symlink at any of these names is
   refused). The JSON descriptor must be a regular file with one link and exactly the size
@@ -118,6 +120,38 @@ def check_parent_path(text: str) -> str:
     return text
 
 
+class _Pinned:
+    """Every directory of an absolute path opened from ``/`` with ``O_NOFOLLOW`` (PR review
+    P2-3): a component replaced by a link after a name-based check stops the walk, so the
+    final descriptor is the directory at that path *without* following any link."""
+
+    def __init__(self, text: str) -> None:
+        self.names = [part for part in text.split("/") if part]
+        self.fds: list[int] = []
+        try:
+            self.fds.append(os.open("/", _flags(_O_DIRECTORY)))
+            for name in self.names:
+                if name in (".", ".."):
+                    raise FileError("output_parent_invalid")
+                self.fds.append(
+                    os.open(name, _flags(_O_DIRECTORY, _O_NOFOLLOW), dir_fd=self.fds[-1])
+                )
+        except OSError:
+            self.close()
+            raise FileError("output_parent_changed") from None
+        except FileError:
+            self.close()
+            raise
+
+    @property
+    def fd(self) -> int:
+        return self.fds[-1]
+
+    def close(self) -> None:
+        while self.fds:
+            os.close(self.fds.pop())
+
+
 # ---- source ---------------------------------------------------------------------------------
 
 
@@ -162,10 +196,13 @@ def read_verified_json(
     digest, size = evidence
     if size > MAX_SOURCE_BYTES:
         raise FileError("source_too_large")
+    if not isinstance(parent, str) or not os.path.isabs(parent) or "\x00" in parent:
+        raise FileError("source_missing")
     try:
-        parent_fd = os.open(parent, _flags(_O_DIRECTORY))
-    except OSError:
+        pinned = _Pinned(os.path.normpath(parent))
+    except FileError:
         raise FileError("source_missing") from None
+    parent_fd = pinned.fd
     try:
         for name in names:
             try:
@@ -180,7 +217,7 @@ def read_verified_json(
                 os.close(directory)
         raise FileError("source_missing")
     finally:
-        os.close(parent_fd)
+        pinned.close()
 
 
 def _read_json(directory: int, name: str, digest: str, size: int) -> bytes:
@@ -226,28 +263,41 @@ class Written:
     location_verified: bool
 
 
-GitCheck = Callable[[str, list[str]], None]
+GitCheck = Callable[["_Pinned", str, list[str]], None]
 
 
-def git_check(directory: str, extensions: list[str]) -> None:
+def git_check(pinned: _Pinned, name: str, extensions: list[str]) -> None:
     """Refuse a destination inside a Git checkout unless ``.gitignore`` covers it.
 
-    Mirrors core ``_ensure_git_ignored_output`` (the GUI must not import core): the probe
-    names are ``<directory>/private-transcript.<ext>``. Fail closed when Git cannot answer.
+    Same rule as core ``_ensure_git_ignored_output`` (the GUI must not import core): the
+    probes are ``<new directory>/private-transcript.<ext>``. The checkout is found through
+    the *pinned* ancestor descriptors (never by name), and Git runs in that held directory
+    (``/proc/self/fd/<n>``), so a swapped path component cannot hide a checkout. Where the
+    held directory cannot be handed to Git (no ``/proc``), a checkout fails closed.
     """
-    resolved = Path(directory)
-    repository = next(
-        (parent for parent in (resolved, *resolved.parents) if os.path.lexists(parent / ".git")),
-        None,
-    )
-    if repository is None:
+    found = None
+    for index in range(len(pinned.fds) - 1, -1, -1):
+        try:
+            os.stat(".git", dir_fd=pinned.fds[index], follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            raise FileError("output_git_unverified") from None
+        found = index
+        break
+    if found is None:
         return
+    repository = pinned.fds[found]
+    if not os.path.isdir(f"/proc/self/fd/{repository}"):
+        raise FileError("output_git_unverified")
+    below = pinned.names[found:]
     for extension in extensions:
-        probe = resolved / f"private-transcript.{extension}"
+        probe = "/".join([*below, name, f"private-transcript.{extension}"])
         try:
             result = subprocess.run(
-                ["git", "check-ignore", "--no-index", "--quiet", str(probe)],
-                cwd=repository,
+                ["git", "check-ignore", "--no-index", "--quiet", probe],
+                cwd=f"/proc/self/fd/{repository}",
+                pass_fds=(repository,),
                 check=False,
                 capture_output=True,
                 timeout=_GIT_TIMEOUT_SECONDS,
@@ -306,21 +356,13 @@ def create_output(
     if not supported():
         raise FileError("reexport_platform_unsupported")
     parent = check_parent_path(parent)
+    pinned = _Pinned(parent)  # walked with O_NOFOLLOW from "/" (no link at any component)
+    parent_fd = pinned.fd
     try:
-        parent_fd = os.open(parent, _flags(_O_DIRECTORY, _O_NOFOLLOW))
-    except OSError:
-        raise FileError("output_parent_unavailable") from None
-    try:
-        try:
-            pinned = os.fstat(parent_fd)
-            if not _same(pinned, os.stat(parent, follow_symlinks=False)):
-                raise FileError("output_parent_changed")
-        except OSError:
-            raise FileError("output_parent_changed") from None
         claimed: str | None = None
         for name in names:
             # Before the directory exists, so a refusal leaves nothing behind.
-            git(os.path.join(parent, name), sorted(files))
+            git(pinned, name, sorted(files))
             try:
                 os.mkdir(name, 0o700, dir_fd=parent_fd)
             except FileExistsError:
@@ -366,4 +408,4 @@ def create_output(
         finally:
             os.close(directory)
     finally:
-        os.close(parent_fd)
+        pinned.close()

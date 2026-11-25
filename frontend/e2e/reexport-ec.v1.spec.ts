@@ -251,10 +251,15 @@ async function serve(root: string, directory: string, reuse: boolean) {
   const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
   const lines = createInterface({ input: child.stdout });
   const url = await new Promise<string>((resolve, reject) => {
+    // Bounded: a server that prints nothing fails the test instead of hanging it.
+    const timer = setTimeout(() => reject(new Error("server did not start")), 30_000);
     child.once("exit", (code) => reject(new Error(`server exited (${code})`)));
     lines.on("line", (text) => {
       const match = /^http:\/\/127\.0\.0\.1:\d+(?=\/launch\?)/.exec(text);
-      if (match) resolve(match[0]);
+      if (match) {
+        clearTimeout(timer);
+        resolve(match[0]);
+      }
     });
   });
   return {

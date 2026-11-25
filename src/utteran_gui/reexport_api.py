@@ -30,8 +30,8 @@ from utteran_gui.reexport_store import ReexportError
 from utteran_settings.errors import SettingsError
 
 T = TypeVar("T")
-#: 256 labels x 256 characters (4 bytes each at most) plus the envelope.
-MAX_REEXPORT_BODY = 512 * 1024
+#: The largest request record (``reexport_store.MAX_REQUEST_BYTES``) plus JSON escaping room.
+MAX_REEXPORT_BODY = 1024 * 1024 + 64 * 1024
 _JOB_ID = re.compile(r"job_[0-9a-f]{32}")
 _REEXPORT_ID = re.compile(r"rex_[0-9a-f]{32}")
 _IF_MATCH = re.compile(r'"([1-9][0-9]{0,17})"')

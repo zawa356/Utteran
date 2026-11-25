@@ -89,6 +89,14 @@ describe("V1ReexportController", () => {
     expect(controller.store.get().history.map(item => item.id)).toEqual([REX]);
   });
 
+  it("an emptied label field keeps the label unchanged (review P3-8)", async () => {
+    const { controller } = setup(call => call.url.endsWith("/reexports") ? list() : json(200, source()));
+    await controller.open(JOB);
+    controller.setLabel("Alice", "Bob");
+    controller.setLabel("Alice", "");
+    expect(controller.store.get().form?.labels).toEqual({});
+  });
+
   it("drops the BOM when SRT is not selected and validates the form", async () => {
     const { controller } = setup(call => call.url.endsWith("/reexports") ? list() : json(200, source()));
     await controller.open(JOB);
