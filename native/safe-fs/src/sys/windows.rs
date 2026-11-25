@@ -382,6 +382,19 @@ pub(crate) fn open_dir_at(parent: &File, name: &str) -> Result<File> {
     Ok(f)
 }
 
+/// With `FILE_CREATE`, NTFS reports an existing entry of the other kind as
+/// `STATUS_FILE_IS_A_DIRECTORY` / `STATUS_NOT_A_DIRECTORY` instead of a name
+/// collision; for an exclusive create both mean "the name exists".
+fn exists_on_create(e: Error) -> Error {
+    match e.code() {
+        ErrorCode::NotADirectory | ErrorCode::NotARegularFile => match e.os_code() {
+            Some(n) => Error::with_os(ErrorCode::AlreadyExists, n),
+            None => Error::new(ErrorCode::AlreadyExists),
+        },
+        _ => e,
+    }
+}
+
 pub(crate) fn create_dir_at(parent: &File, name: &str) -> Result<(File, DirCreation)> {
     let f = nt_open_at(
         parent,
@@ -392,7 +405,8 @@ pub(crate) fn create_dir_at(parent: &File, name: &str) -> Result<(File, DirCreat
             disposition: FILE_CREATE,
             options: FILE_DIRECTORY_FILE,
         },
-    )?;
+    )
+    .map_err(exists_on_create)?;
     // Defence in depth; FILE_CREATE cannot return an existing object.
     check_dir_handle(parent, &f, name).map_err(|_| Error::new(ErrorCode::ClaimLost))?;
     Ok((f, DirCreation::Atomic))
@@ -429,6 +443,7 @@ pub(crate) fn create_file_at(parent: &File, name: &str) -> Result<File> {
             options: FILE_NON_DIRECTORY_FILE,
         },
     )
+    .map_err(exists_on_create)
 }
 
 pub(crate) fn probe_at(parent: &File, name: &str) -> Result<Option<FileKind>> {
