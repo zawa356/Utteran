@@ -41,6 +41,10 @@ fn not_run(facility: &str, why: &str) {
     println!("NOT_RUN: {facility}: {why}");
 }
 
+/// `subst` tests pick "the first free drive letter"; run them one at a time so two
+/// tests never race for the same letter.
+static SUBST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// cmd.exe tools (mklink, subst) do not reliably accept the `\\?\` prefix.
 fn plain(p: &std::path::Path) -> String {
     path_str(p).trim_start_matches(r"\\?\").to_owned()
@@ -267,6 +271,7 @@ fn unc_and_device_namespace_roots_are_refused() {
 
 #[test]
 fn subst_drive_is_refused() {
+    let _serial = SUBST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let fx = Fixture::new();
     let Some(letter) = ('M'..='Z')
         .rev()
@@ -331,6 +336,7 @@ fn ads_and_device_names_cannot_be_named() {
 /// not be accepted, and `C:` keeps resolving through the global namespace.
 #[test]
 fn per_logon_drive_mapping_is_not_followed() {
+    let _serial = SUBST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let Some(letter) = ('M'..='Z')
         .rev()
         .find(|l| !std::path::Path::new(&format!("{l}:\\")).exists())
