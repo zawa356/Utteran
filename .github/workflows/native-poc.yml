@@ -1,0 +1,114 @@
+name: Native safe-fs PoC
+
+# E-C2a (Issue #86) proof of concept only. Independent of the product workflows:
+# it never feeds the "Full product quality gate" (ci.yml, 18 job IDs) and runs only
+# when the PoC workspace or this file changes. Runner results are CI evidence, not
+# Windows 11 VM acceptance.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "native/**"
+      - ".github/workflows/native-poc.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-poc-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  build-test:
+    name: safe-fs PoC (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: native
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component clippy,rustfmt
+          rustup show active-toolchain
+          rustc --version
+      - name: Format and lint
+        run: |
+          cargo fmt --check
+          cargo clippy -p utteran-safe-fs --all-targets --locked -- -D warnings
+      - name: Core tests (cold build, timed)
+        run: |
+          SECONDS=0
+          cargo test -p utteran-safe-fs --locked -- --nocapture 2>&1 | tee "$RUNNER_TEMP/core-tests.log"
+          echo "core test wall (incl. cold build): ${SECONDS}s"
+          echo "NOT_RUN lines:"
+          if grep -q 'NOT_RUN' "$RUNNER_TEMP/core-tests.log"; then
+            grep 'NOT_RUN' "$RUNNER_TEMP/core-tests.log" | sort | uniq -c
+          else
+            echo "  none"
+          fi
+      - name: Privilege-dependent POSIX tests
+        if: runner.os != 'Windows'
+        run: |
+          BIN=$(cargo test -p utteran-safe-fs --locked --test unix_races --no-run --message-format=json \
+            | jq -r 'select(.executable != null) | .executable')
+          # Runner user is not root: DAC refusals are observable.
+          "$BIN" --ignored --exact permission_denied_is_reported
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # Bind mounts need root.
+            sudo "$BIN" --ignored --exact bind_mount_below_leaf_is_refused_by_mount_id
+          fi
+      - name: Build abi3 wheel (timed, warm after tests)
+        run: |
+          uv python install 3.11 3.12
+          SECONDS=0
+          uvx --from maturin==1.16.0 maturin build --release --locked \
+            -m safe-fs-py/Cargo.toml -o dist -i "$(uv python find 3.11)"
+          echo "wheel build wall: ${SECONDS}s"
+          ls -l dist
+          uv run --no-project python -c "import glob, zipfile; [print(f'{i.file_size:>10} {i.filename}') for i in zipfile.ZipFile(glob.glob('dist/*.whl')[0]).infolist()]"
+      - name: Install the wheel into fresh venvs and test (3.11, 3.12)
+        run: |
+          WHEEL=$(ls "$PWD"/dist/*.whl)
+          TESTS="$PWD/safe-fs-py/tests"
+          for v in 3.11 3.12; do
+            VENV="$RUNNER_TEMP/venv-$v"
+            uv venv -q -p "$v" "$VENV"
+            if [ "$RUNNER_OS" = "Windows" ]; then PY="$VENV/Scripts/python.exe"; else PY="$VENV/bin/python"; fi
+            uv pip install -q --python "$PY" "$WHEEL" pytest==8.4.2
+            # Outside the checkout; Rust toolchain not needed at runtime.
+            (cd "$RUNNER_TEMP" && "$PY" -m pytest -q -p no:cacheprovider "$TESTS/test_binding.py")
+            (cd "$RUNNER_TEMP" && "$PY" "$TESTS/bench.py" "$RUNNER_TEMP")
+          done
+
+  audit:
+    name: safe-fs PoC dependency audit (cargo-deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: native
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install the pinned Rust toolchain and cargo-deny
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          SECONDS=0
+          cargo install cargo-deny --locked --version 0.22.1
+          echo "cargo-deny install wall: ${SECONDS}s"
+      - name: Advisories, licenses, bans, sources
+        run: cargo deny --locked check

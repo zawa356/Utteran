@@ -1,5 +1,11 @@
 # AI 作業状態
 
+## E-C2a 技術検証（2026-11-25、[#86](https://github.com/zawa356/Utteran/issues/86)、製品版据置）
+
+- main `57ba960` から独立。`native/` に Rust workspace（core `utteran-safe-fs`、PyO3 binding `utteran-safe-fs-py`）と PoC 専用 CI `native-poc.yml`。製品の pyproject・uv.lock・既存 CI・GUI は不変。
+- 推奨: 自前の薄い core（POSIX＝rustix、Windows＝windows-sys の NtCreateFile 相対）。fs_at は FILE_SHARE_DELETE 固定、cap-std は Windows の dir 作成がパス操作のため不採用。
+- Linux で試験・wheel（abi3、3.11/3.12）・実測を確認。Windows は runner で自動試験、**VM 受入は未実施**（[引継ぎ](docs/architecture/ui3/e-c2a-windows-vm-handoff.md)）。[ADR](docs/architecture/ui3/e-c2a-rust-safe-fs.md)。HEAD・CI は Draft PR。
+
 ## CI最適化（2026-11-25、[#84](https://github.com/zawa356/Utteran/issues/84)）
 
 - main `b846312` から `ci/optimize-quality-gates` を独立。製品版0.1.68を維持。#83との統合順に応じて、後続側が最新mainを取り込んで再検証する。

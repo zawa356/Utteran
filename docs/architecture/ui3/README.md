@@ -1,5 +1,7 @@
 # UI-3-0 — 第5案で設計確定した隔離プロトタイプ
 
+追補（2026-11-25、製品版据置・PoC）。[E-C2a Rust 共通安全ファイル操作基盤の技術検証（ADR）](e-c2a-rust-safe-fs.md)と[Windows 11 VM 引継ぎ](e-c2a-windows-vm-handoff.md)（#86）。`native/` の独立 workspace、製品非接続。Windows VM は未実施。
+
 追補（2026-11-24、0.1.68 未リリース）。[束 E-B 名前付き作業セットの自動保存・復元と容量上限](e-b-worksets.md)（offline schema [e-b-worksets.schema.json](e-b-worksets.schema.json)）。Windows 実機は未受入。
 
 追補（2026-11-24、0.1.67 未リリース）。[束 E-A の製品仕様・検証記録](e-a-presets-glossary.md)。

@@ -1,0 +1,17 @@
+# E-C2a PoC wheel. Independent of the product (../../pyproject.toml is untouched).
+[build-system]
+requires = ["maturin==1.16.0"]
+build-backend = "maturin"
+
+[project]
+name = "utteran-safe-fs-poc"
+version = "0.0.0"
+description = "E-C2a PoC binding for utteran-safe-fs (not a product dependency)"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+classifiers = ["Private :: Do Not Upload"]
+
+[tool.maturin]
+bindings = "pyo3"
+features = []
+strip = true
