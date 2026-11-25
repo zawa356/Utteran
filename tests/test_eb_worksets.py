@@ -804,6 +804,15 @@ def test_input_status_never_stats_a_windows_network_drive(monkeypatch):
     monkeypatch.setattr(module.os, "lstat", fake_lstat)
     assert module.input_status(["C:\\synthetic-local\\x.wav"]) == ["file"]
     assert seen == ["C:\\synthetic-local", "C:\\synthetic-local\\x.wav"]
+    # A reparse point (junction/symlink) on the way is never followed.
+    seen.clear()
+    junction = os.stat_result((stat.S_IFDIR | 0o700, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+    monkeypatch.setattr(module, "_is_reparse", lambda info: info is junction)
+    monkeypatch.setattr(
+        module.os, "lstat", lambda path, *a, **k: seen.append(str(path)) or junction
+    )
+    assert module.input_status(["C:\\synthetic-link\\x.wav"]) == ["unchecked"]
+    assert seen == ["C:\\synthetic-link"]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the Windows path is covered by the drive-type test")

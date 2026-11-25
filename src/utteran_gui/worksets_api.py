@@ -195,6 +195,12 @@ def _components(path: str) -> list[str]:
     return prefixes
 
 
+def _is_reparse(info: os.stat_result) -> bool:
+    """A symlink, or on Windows any reparse point (junction, mount point, cloud placeholder)."""
+    attributes = getattr(info, "st_file_attributes", 0) or 0
+    return stat.S_ISLNK(info.st_mode) or bool(attributes & _REPARSE_POINT)
+
+
 def _check_one(path: str, cancelled: threading.Event, mounts: list[tuple[str, str]]) -> str:
     rules = _paths()
     if "\x00" in path or path.startswith(("\\\\", "//")) or not rules.isabs(path):
@@ -224,7 +230,7 @@ def _check_one(path: str, cancelled: threading.Event, mounts: list[tuple[str, st
             return "missing"
         except (OSError, ValueError):
             return "unchecked"
-        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & _REPARSE_POINT:
+        if _is_reparse(info):
             # A link may lead anywhere (also onto a network share): not followed.
             return "unchecked"
     assert info is not None
@@ -246,7 +252,10 @@ def input_status(paths: list[str], deadline: float = INPUT_STATUS_DEADLINE_SECON
             for index, path in enumerate(paths):
                 if cancelled.is_set():
                     return
-                state = _check_one(path, cancelled, mounts)
+                try:
+                    state = _check_one(path, cancelled, mounts)
+                except Exception:  # any surprise stays unproven (never a crash or a guess)
+                    state = "unchecked"
                 with lock:
                     if not cancelled.is_set():
                         results[index] = state
