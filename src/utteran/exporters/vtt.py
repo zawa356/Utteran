@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from utteran.exporters.base import Exporter, display_text, format_timestamp
+from utteran.exporters._view import render_options, transcript_view
+from utteran.exporters.base import Exporter
 from utteran.types import ExportOptions, PipelineResult
+from utteran_contracts.transcript_export import render_vtt
 
 
 class VTTExporter(Exporter):
@@ -15,15 +17,4 @@ class VTTExporter(Exporter):
 
     def render(self, result: PipelineResult, options: ExportOptions) -> str:
         """Render WebVTT with period millisecond separators."""
-        cues = [
-            "\n".join(
-                [
-                    f"{format_timestamp(segment.start, '.')} --> "
-                    f"{format_timestamp(segment.end, '.')}",
-                    display_text(segment.text, segment.speaker, options),
-                ]
-            )
-            for segment in result.segments
-        ]
-        body = "\n\n".join(cues)
-        return f"WEBVTT\n\n{body}" + ("\n" if body else "")
+        return render_vtt(transcript_view(result), render_options(options))

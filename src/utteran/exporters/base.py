@@ -1,4 +1,8 @@
-"""Shared exporter interface and presentation helpers."""
+"""Shared exporter interface.
+
+Formatting lives in ``utteran_contracts.transcript_export`` (shared with the E-C
+re-export of the GUI, which must not import core); the helpers are re-exported here.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,11 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import ClassVar
 
+from utteran.exporters._view import render_options
 from utteran.types import ExportOptions, PipelineResult
+from utteran_contracts.transcript_export import encode, format_timestamp
+
+__all__ = ["Exporter", "display_speaker", "display_text", "format_timestamp"]
 
 
 class Exporter(ABC):
@@ -20,11 +28,9 @@ class Exporter(ABC):
 
     def write(self, result: PipelineResult, path: Path, options: ExportOptions) -> None:
         """Write UTF-8 using the configured line ending and optional SRT BOM."""
-        content = self.render(result, options).replace("\r\n", "\n")
-        if options.newline == "crlf":
-            content = content.replace("\n", "\r\n")
-        encoding = "utf-8-sig" if self.extension == "srt" and options.srt_bom else "utf-8"
-        path.write_text(content, encoding=encoding, newline="")
+        path.write_bytes(
+            encode(self.extension, self.render(result, options), render_options(options))
+        )
 
 
 def display_speaker(speaker: str | None, options: ExportOptions) -> str | None:
@@ -41,12 +47,3 @@ def display_text(text: str, speaker: str | None, options: ExportOptions) -> str:
     if options.show_speaker and label:
         return f"{label}: {clean_text}"
     return clean_text
-
-
-def format_timestamp(seconds: float, decimal_separator: str) -> str:
-    """Format a non-negative timestamp with millisecond rollover."""
-    milliseconds = max(0, round(seconds * 1000))
-    hours, remainder = divmod(milliseconds, 3_600_000)
-    minutes, remainder = divmod(remainder, 60_000)
-    whole_seconds, millis = divmod(remainder, 1000)
-    return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d}{decimal_separator}{millis:03d}"

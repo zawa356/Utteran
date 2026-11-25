@@ -130,6 +130,7 @@ const draft = computed(() => form.value.draft);
             @update:model-value="(on: boolean | null) => togglePresetFormat(f, on === true)"
           />
         </div>
+        <p v-if="!presetForm.formats.includes('json')" class="text-caption" role="status" data-testid="v1-preset-no-json">{{ t("ec.noJsonWarning") }}</p>
       </fieldset>
       <v-expansion-panels>
         <v-expansion-panel :title="t('ea.termCount', { count: presetForm.glossary?.length ?? 0 })">
@@ -252,6 +253,7 @@ const draft = computed(() => form.value.draft);
           @update:model-value="(on: boolean | null) => toggleFormat(f, on === true)"
         />
       </div>
+      <p v-if="preset && !effectiveFormats.includes('json')" class="text-caption" role="status" data-testid="v1-diff-no-json">{{ t("ec.noJsonWarning") }}</p>
       <v-btn v-if="screen.formats !== null" variant="text" size="small" data-testid="v1-diff-formats-reset" @click="v1.library.setFormats(null)">{{ t("v1.diff.reset") }}</v-btn>
     </fieldset>
 

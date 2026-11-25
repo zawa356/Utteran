@@ -5,7 +5,7 @@ Issue [#86](https://github.com/zawa356/Utteran/issues/86)（親 [#82](https://gi
 **PoC・技術選定のみ。製品非接続、製品版は据え置き（`pyproject.toml`／`uv.lock`／`変更履歴.md` の版は変更しない）。**
 採用方式・最終 API・配布方式はオーナー承認事項で、本書は判断材料と推奨を示す。
 
-- 基点 main: `57ba960f58b38dcd37a1b06ee0599ca9b2da1a1f`（#85 統合済み）。E-C1 [PR #83](https://github.com/zawa356/Utteran/pull/83) は Draft のまま未統合（調査時 HEAD `d849c0d`）で、本 PoC はその製品コードを変更・import しない。
+- 基点 main: `57ba960f58b38dcd37a1b06ee0599ca9b2da1a1f`（#85 統合済み）。作業中に E-C1 [PR #83](https://github.com/zawa356/Utteran/pull/83) が main `f859a5d6345f4a824de5c43f6b8f1baa77688d78`（0.1.69）に統合されたため、通常 merge で同期した（索引 3 文書の追記の衝突のみ、両方を残して解消）。本 PoC は E-C1 の製品コードを変更・import しない。製品版は main の 0.1.69 のまま。
 - 成果物: [`native/`](../../../native/)（独立 Cargo workspace）、PoC 専用 CI [`.github/workflows/native-poc.yml`](../../../.github/workflows/native-poc.yml)、Windows VM 引継ぎ [e-c2a-windows-vm-handoff.md](e-c2a-windows-vm-handoff.md)。
 - 最終 HEAD・CI run・各 OS の試験件数は Draft PR 本文に記録する（本書の数値は記載時点の実測）。
 

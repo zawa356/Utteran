@@ -10,6 +10,7 @@ import ExpertWorkspace from "../expert/ExpertWorkspace.vue";
 import SettingsPage from "../settings/SettingsPage.vue";
 import NormalWorkspace from "../workspace/NormalWorkspace.vue";
 import QueuePage from "../queue/QueuePage.vue";
+import ReexportDialog from "../results/ReexportDialog.vue";
 import RerunDialog from "../results/RerunDialog.vue";
 import ResultsPage from "../results/ResultsPage.vue";
 import V1DeleteDialog from "../transcribe/V1DeleteDialog.vue";
@@ -85,6 +86,7 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
         <NotMigrated :section="currentTitle" :stage="STAGE[state.section]" />
       </section>
       <RerunDialog v-if="apiMode === 'v1-dev'" />
+      <ReexportDialog v-if="apiMode === 'v1-dev'" />
       <V1DeleteDialog v-if="apiMode === 'v1-dev'" />
     </v-main>
   </v-layout>
