@@ -1171,6 +1171,7 @@ export const ja = {
   "ec.code.output_too_large": "出力の合計が上限（128 MiB）を超えます。",
   "ec.code.output_name_unavailable": "新しいフォルダ名をすべて使用済みです。",
   "ec.code.output_path_too_long": "保存先のパスが長すぎます。",
+  "ec.code.output_inside_source": "元のジョブのフォルダとその中には保存できません。別のフォルダを指定してください。",
   "ec.code.output_in_repository": "Gitリポジトリ内の、.gitignoreで除外されていない場所には保存できません。",
   "ec.code.output_git_unverified": "Gitリポジトリ内の保存先の安全性を確認できません。",
   "ec.code.output_full": "空き容量が不足しています。",

@@ -29,6 +29,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from utteran_contracts.output_naming import ID_LENGTHS, job_output_name, reexport_output_name
 from utteran_contracts.transcript_export import (
@@ -43,7 +44,7 @@ from utteran_contracts.transcript_export import (
 )
 from utteran_control.errors import ControlError
 from utteran_gui import reexport_files
-from utteran_gui.reexport_files import FileError, PartialOutput
+from utteran_gui.reexport_files import FileError, PartialOutput, Protected
 from utteran_gui.reexport_store import Record, ReexportError, ReexportStore, canonical, iso
 
 MAX_LABEL = 256
@@ -122,8 +123,9 @@ class ReexportService:
 
     def _source(
         self, job_id: str, snapshot: Any, evidence: Any, status: str
-    ) -> tuple[TranscriptView, str, int, str]:
-        """(view, sha256, size, newline) of the verified JSON, or _Refused(code)."""
+    ) -> tuple[TranscriptView, str, int, str, Protected]:
+        """(view, sha256, size, newline, the job directory) of the verified JSON, or
+        _Refused(code). The job directory is what no destination may be inside (P2-2)."""
         if status != "succeeded":
             raise _Refused("job_not_succeeded")
         if not self._supported():
@@ -149,13 +151,14 @@ class ReexportService:
             except ValueError:
                 break
         try:
-            data = reexport_files.read_verified_json(
+            source = reexport_files.read_verified_json(
                 snapshot.file.output_dir, names, job_id, evidence["json"]
             )
-            view, newline = parse_json_v1(data)
+            view, newline = parse_json_v1(source.data)
         except (FileError, SourceError) as exc:
             raise _Refused(exc.code) from None
-        return view, evidence["json"][0], evidence["json"][1], newline
+        protected = Protected(source.directory, source.path)
+        return view, evidence["json"][0], evidence["json"][1], newline, protected
 
     def plan(self, job_id: str) -> dict[str, Any]:
         """What the dialog shows: availability with a fixed reason, the frozen defaults, the
@@ -194,7 +197,9 @@ class ReexportService:
             },
         }
         try:
-            view, digest, size, newline = self._source(job_id, snapshot, evidence, str(job.status))
+            view, digest, size, newline, _ = self._source(
+                job_id, snapshot, evidence, str(job.status)
+            )
         except _Refused as exc:
             body["refusal"] = exc.code
             return body
@@ -298,7 +303,9 @@ class ReexportService:
         if job.revision != expected:
             raise ReexportError("revision_conflict", 412, retryable=False)
         try:
-            view, digest, size, _ = self._source(job_id, snapshot, evidence, str(job.status))
+            view, digest, size, _, protected = self._source(
+                job_id, snapshot, evidence, str(job.status)
+            )
         except _Refused as exc:
             raise ReexportError(
                 exc.code, _SOURCE_STATUS.get(exc.code, 409), retryable=False
@@ -321,48 +328,65 @@ class ReexportService:
             if total > reexport_files.MAX_OUTPUT_BYTES:
                 raise ReexportError("output_too_large", 413, retryable=False)
         explicit = body["output_parent"]
+        # The destination is pinned and every refusal of it (inside the job's directory, Git,
+        # path budget) happens *before* the record exists (owner review P2-1/P2-2).
         try:
-            parent = reexport_files.check_parent_path(
-                explicit if explicit is not None else snapshot.file.output_dir
+            destination = reexport_files.Destination(
+                explicit if explicit is not None else snapshot.file.output_dir, [protected]
             )
         except FileError as exc:
             raise ReexportError(exc.code, 409, retryable=False) from None
-        self.store.create_if_missing()  # the first attempted write creates the store
-        record, created = self.store.begin(
-            job_id=job_id,
-            job_revision=expected,
-            key=key,
-            digest=self.store.digest(digest_input),
-            request=canonical(body | {"output_parent": explicit}),
-            parent=parent,
-            source_sha256=digest,
-            source_size=size,
-        )
-        if not created:
-            return self._replay(record, digest_input)
-        return 201, self.to_wire(self._write(record, snapshot, parent, files))
-
-    def _write(self, record: Record, snapshot: Any, parent: str, files: dict[str, bytes]) -> Record:
-        stamp = datetime.fromtimestamp(self._clock()).astimezone().strftime("%Y%m%d-%H%M%S")
-        names = []
-        for length in ID_LENGTHS:
-            try:
-                names.append(
-                    reexport_output_name(
-                        snapshot.input_identity.path,
-                        stamp,
-                        record.id,
-                        parent=parent,
-                        id_length=length,
+        try:
+            identifier = "rex_" + uuid4().hex
+            stamp = datetime.fromtimestamp(self._clock()).astimezone().strftime("%Y%m%d-%H%M%S")
+            names = []
+            for length in ID_LENGTHS:
+                try:
+                    names.append(
+                        reexport_output_name(
+                            snapshot.input_identity.path,
+                            stamp,
+                            identifier,
+                            parent=destination.parent,
+                            id_length=length,
+                        )
                     )
-                )
-            except ValueError:
-                break
-        if not names:
-            return self.store.fail(record.id, "output_path_too_long", partial=False)
+                except ValueError:
+                    break
+            if not names:
+                raise ReexportError("output_path_too_long", 409, retryable=False)
+            try:
+                destination.check_git(names, files, reexport_files.git_check)
+            except FileError as exc:
+                raise ReexportError(exc.code, 409, retryable=False) from None
+            self.store.create_if_missing()  # the first attempted write creates the store
+            record, created = self.store.begin(
+                job_id=job_id,
+                job_revision=expected,
+                key=key,
+                digest=self.store.digest(digest_input),
+                request=canonical(body | {"output_parent": explicit}),
+                parent=destination.parent,
+                source_sha256=digest,
+                source_size=size,
+                identifier=identifier,
+            )
+            if not created:
+                return self._replay(record, digest_input)
+            return 201, self.to_wire(self._write(record, destination, names, files))
+        finally:
+            destination.close()
+
+    def _write(
+        self,
+        record: Record,
+        destination: reexport_files.Destination,
+        names: list[str],
+        files: dict[str, bytes],
+    ) -> Record:
         try:
             written = reexport_files.create_output(
-                parent,
+                destination,
                 names,
                 record.id,
                 files,

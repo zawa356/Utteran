@@ -1173,6 +1173,7 @@ export const en: Record<MessageKey, string> = {
   "ec.code.output_too_large": "The outputs would exceed the limit (128 MiB).",
   "ec.code.output_name_unavailable": "No new folder name is available.",
   "ec.code.output_path_too_long": "The destination path is too long.",
+  "ec.code.output_inside_source": "Cannot save into the job's own folder or anything inside it. Choose another folder.",
   "ec.code.output_in_repository": "Cannot save inside a Git repository unless .gitignore excludes the location.",
   "ec.code.output_git_unverified": "The safety of a destination inside a Git repository cannot be checked.",
   "ec.code.output_full": "Not enough disk space.",

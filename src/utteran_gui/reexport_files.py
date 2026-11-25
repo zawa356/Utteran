@@ -93,6 +93,38 @@ def _same(a: os.stat_result, b: os.stat_result) -> bool:
     return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
 
 
+Identity = tuple[int, int]
+
+
+def _identity(info: os.stat_result) -> Identity:
+    return (info.st_dev, info.st_ino)
+
+
+def reaches(path: str, expected: list[Identity]) -> bool:
+    """Whether walking ``path`` from ``/`` now, by name and without following any link, meets
+    exactly the directories ``expected`` (``/`` first, then every component). Read-only (opens
+    directories, writes nothing). Any error or difference is ``False``: this is an observation
+    at the moment of the call, never a guarantee about later renames (owner review P2-3)."""
+    names = [part for part in path.split("/") if part]
+    if len(names) + 1 != len(expected):
+        return False
+    fds: list[int] = []
+    try:
+        fds.append(os.open("/", _flags(_O_DIRECTORY)))
+        if _identity(os.fstat(fds[-1])) != expected[0]:
+            return False
+        for index, name in enumerate(names, start=1):
+            fds.append(os.open(name, _flags(_O_DIRECTORY, _O_NOFOLLOW), dir_fd=fds[-1]))
+            if _identity(os.fstat(fds[-1])) != expected[index]:
+                return False
+        return True
+    except OSError:
+        return False
+    finally:
+        for descriptor in fds:
+            os.close(descriptor)
+
+
 def _network(text: str) -> bool:
     return text.startswith("//")
 
@@ -126,16 +158,21 @@ class _Pinned:
     final descriptor is the directory at that path *without* following any link."""
 
     def __init__(self, text: str) -> None:
+        self.text = text
         self.names = [part for part in text.split("/") if part]
         self.fds: list[int] = []
+        #: ``(st_dev, st_ino)`` of ``/`` and of every component, read from the held descriptors.
+        self.ids: list[Identity] = []
         try:
             self.fds.append(os.open("/", _flags(_O_DIRECTORY)))
+            self.ids.append(_identity(os.fstat(self.fds[-1])))
             for name in self.names:
                 if name in (".", ".."):
                     raise FileError("output_parent_invalid")
                 self.fds.append(
                     os.open(name, _flags(_O_DIRECTORY, _O_NOFOLLOW), dir_fd=self.fds[-1])
                 )
+                self.ids.append(_identity(os.fstat(self.fds[-1])))
         except OSError:
             self.close()
             raise FileError("output_parent_changed") from None
@@ -183,13 +220,25 @@ def _read_exact(descriptor: int, size: int) -> bytes:
     return b"".join(chunks)
 
 
+@dataclass(frozen=True)
+class Source:
+    """The verified JSON bytes and the job directory they were read from."""
+
+    data: bytes
+    #: ``(st_dev, st_ino)`` of the job directory whose marker named the job (held at read).
+    directory: Identity
+    #: Normalized absolute path of that directory at read time.
+    path: str
+
+
 def read_verified_json(
     parent: str, names: Iterable[str], job_id: str, evidence: tuple[str, int]
-) -> bytes:
+) -> Source:
     """The bytes of the job's JSON output, proven equal to the completion record.
 
     ``names``: the candidate directory names of the job (every id length). The directory
-    is the one whose marker names ``job_id``; the file is ``<name>.json`` inside it.
+    is the one whose marker names ``job_id``; the file is ``<name>.json`` inside it. The
+    directory's identity is returned so the destination can be refused inside it.
     """
     if not supported():
         raise FileError("reexport_platform_unsupported")
@@ -212,7 +261,12 @@ def read_verified_json(
             try:
                 if _read_marker(directory, JOB_MARKER) != job_id:
                     continue
-                return _read_json(directory, f"{name}.json", digest, size)
+                data = _read_json(directory, f"{name}.json", digest, size)
+                try:
+                    identity = _identity(os.fstat(directory))
+                except OSError:
+                    raise FileError("source_unavailable") from None
+                return Source(data, identity, os.path.join(pinned.text, name))
             finally:
                 os.close(directory)
         raise FileError("source_missing")
@@ -266,14 +320,24 @@ class Written:
 GitCheck = Callable[["_Pinned", str, list[str]], None]
 
 
-def git_check(pinned: _Pinned, name: str, extensions: list[str]) -> None:
-    """Refuse a destination inside a Git checkout unless ``.gitignore`` covers it.
+def output_files(name: str, extensions: Iterable[str]) -> list[str]:
+    """Every name created inside a new re-export directory ``name``: the marker and
+    ``<name>.<ext>`` per format. The Git check judges exactly these (owner review P2-1)."""
+    return [REEXPORT_MARKER, *(f"{name}.{extension}" for extension in extensions)]
 
-    Same rule as core ``_ensure_git_ignored_output`` (the GUI must not import core): the
-    probes are ``<new directory>/private-transcript.<ext>``. The checkout is found through
-    the *pinned* ancestor descriptors (never by name), and Git runs in that held directory
-    (``/proc/self/fd/<n>``), so a swapped path component cannot hide a checkout. Where the
-    held directory cannot be handed to Git (no ``/proc``), a checkout fails closed.
+
+def git_check(pinned: _Pinned, name: str, files: list[str]) -> None:
+    """Refuse a destination inside a Git checkout unless ``.gitignore`` ignores **every file
+    that will be created** (``files``: names inside the new directory ``name``, the marker
+    included). Each path is asked separately (``check-ignore --quiet`` answers "ignored" if
+    any one of several paths is), so a narrow pattern or a negation that leaves one real file
+    visible refuses the destination.
+
+    The checkout is found through the *pinned* ancestor descriptors (never by name), and Git
+    runs in that held directory (``/proc/self/fd/<n>``), so a swapped path component cannot
+    hide a checkout. Where the held directory cannot be handed to Git (no ``/proc``), a
+    checkout fails closed. Git's own answer is lexical (``--no-index``): it reads the
+    ``.gitignore`` files of the checkout, nothing is created to ask it.
     """
     found = None
     for index in range(len(pinned.fds) - 1, -1, -1):
@@ -291,11 +355,13 @@ def git_check(pinned: _Pinned, name: str, extensions: list[str]) -> None:
     if not os.path.isdir(f"/proc/self/fd/{repository}"):
         raise FileError("output_git_unverified")
     below = pinned.names[found:]
-    for extension in extensions:
-        probe = "/".join([*below, name, f"private-transcript.{extension}"])
+    if not files:
+        raise FileError("output_git_unverified")
+    for file_name in files:
+        probe = "/".join([*below, name, file_name])
         try:
             result = subprocess.run(
-                ["git", "check-ignore", "--no-index", "--quiet", probe],
+                ["git", "check-ignore", "--no-index", "--quiet", "--", probe],
                 cwd=f"/proc/self/fd/{repository}",
                 pass_fds=(repository,),
                 check=False,
@@ -304,8 +370,10 @@ def git_check(pinned: _Pinned, name: str, extensions: list[str]) -> None:
             )
         except (OSError, subprocess.SubprocessError):
             raise FileError("output_git_unverified") from None
-        if result.returncode != 0:
+        if result.returncode == 1:
             raise FileError("output_in_repository")
+        if result.returncode != 0:
+            raise FileError("output_git_unverified")
 
 
 def _os_code(exc: OSError) -> str:
@@ -337,32 +405,78 @@ class PartialOutput(FileError):
         self.name = name
 
 
+@dataclass(frozen=True)
+class Protected:
+    """A directory no re-export may be written into or below: the job's own output
+    directory as it was verified (identity) and its path at that time (name)."""
+
+    identity: Identity
+    path: str
+
+
+class Destination:
+    """A parent directory pinned for one re-export (held across the record's commit)."""
+
+    def __init__(self, parent: str, protected: Iterable[Protected] = ()) -> None:
+        if not supported():
+            raise FileError("reexport_platform_unsupported")
+        self.parent = check_parent_path(parent)
+        guarded = list(protected)
+        # By name first: the path or a descendant of a protected path (owner review P2-2),
+        # also when another directory now has that name.
+        for item in guarded:
+            if self.parent == item.path or self.parent.startswith(item.path.rstrip("/") + "/"):
+                raise FileError("output_inside_source")
+        self.pinned = _Pinned(self.parent)  # O_NOFOLLOW from "/" (no link at any component)
+        # By identity: no pinned component may be a protected directory, whatever its name
+        # now (moved, renamed). The held descriptors cannot change identity later.
+        identities = {item.identity for item in guarded}
+        if any(identity in identities for identity in self.pinned.ids):
+            self.close()
+            raise FileError("output_inside_source")
+
+    def close(self) -> None:
+        self.pinned.close()
+
+    def check_git(self, names: Iterable[str], extensions: Iterable[str], git: GitCheck) -> None:
+        """Every candidate directory name, before any record or directory exists."""
+        extensions = list(extensions)
+        for name in names:
+            git(self.pinned, name, output_files(name, extensions))
+
+
 def create_output(
-    parent: str,
+    parent: str | Destination,
     names: Iterable[str],
     marker: str,
     files: Mapping[str, bytes],
     *,
     on_claimed: Callable[[str], object],
     git: GitCheck = git_check,
+    protected: Iterable[Protected] = (),
 ) -> Written:
     """Make a new directory under ``parent`` and write ``files`` (``ext -> bytes``) into it.
 
-    ``on_claimed(name)`` runs after the directory exists and before any file is written (the
-    caller records the name first, so a crash afterwards is attributable). Errors before the
-    directory exists raise :class:`FileError` (nothing was created); later errors raise
-    :class:`PartialOutput` with the directory name.
+    ``parent`` is a path (pinned here, then closed) or a :class:`Destination` the caller
+    pinned and checked (left open for the caller to close). ``on_claimed(name)`` runs after
+    the directory exists and before any file is written (the caller records the name first,
+    so a crash afterwards is attributable). Errors before the directory exists raise
+    :class:`FileError` (nothing was created); later errors raise :class:`PartialOutput` with
+    the directory name. ``location_verified`` is the observation, after writing, that the
+    shown absolute path still walks to the very directories that were written (§4).
     """
     if not supported():
         raise FileError("reexport_platform_unsupported")
-    parent = check_parent_path(parent)
-    pinned = _Pinned(parent)  # walked with O_NOFOLLOW from "/" (no link at any component)
+    owned = not isinstance(parent, Destination)
+    destination = Destination(parent, protected) if isinstance(parent, str) else parent
+    pinned = destination.pinned
     parent_fd = pinned.fd
     try:
         claimed: str | None = None
         for name in names:
-            # Before the directory exists, so a refusal leaves nothing behind.
-            git(pinned, name, sorted(files))
+            # Before the directory exists, so a refusal leaves nothing behind (again here for
+            # a destination checked earlier: the checkout's ignore rules may have changed).
+            git(pinned, name, output_files(name, files))
             try:
                 os.mkdir(name, 0o700, dir_fd=parent_fd)
             except FileExistsError:
@@ -400,12 +514,14 @@ def create_output(
                 raise PartialOutput("output_claim_lost", claimed) from None
             except OSError as exc:
                 raise PartialOutput(_os_code(exc), claimed) from None
-            try:
-                verified = _same(info, os.stat(claimed, dir_fd=parent_fd, follow_symlinks=False))
-            except OSError:
-                verified = False
+            # The shown path, walked again by name: every ancestor, the parent and the new
+            # directory must be the ones held while writing (owner review P2-3).
+            verified = reaches(
+                os.path.join(destination.parent, claimed), [*pinned.ids, _identity(info)]
+            )
             return Written(claimed, tuple(records), verified)
         finally:
             os.close(directory)
     finally:
-        pinned.close()
+        if owned:
+            destination.close()

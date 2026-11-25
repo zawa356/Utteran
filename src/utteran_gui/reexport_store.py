@@ -338,6 +338,7 @@ class ReexportStore:
         parent: str,
         source_sha256: str,
         source_size: int,
+        identifier: str | None = None,
     ) -> tuple[Record, bool]:
         """Insert the ``pending`` record (before any file exists), or return the record that
         already holds ``key`` (``created`` False). Same key, other request: 409."""
@@ -362,7 +363,9 @@ class ReexportStore:
                 raise ReexportError("reexport_limit", 409, retryable=False)
             if size + len(request.encode("utf-8")) > MAX_STORE_REQUEST_BYTES:
                 raise ReexportError("store_quota_exceeded", 413, retryable=False)
-            identifier = "rex_" + uuid4().hex
+            # Chosen by the caller before the record exists (the directory names derive from
+            # it and are checked first); otherwise a fresh one.
+            identifier = identifier or "rex_" + uuid4().hex
             db.execute(
                 f"INSERT INTO reexports ({_COLUMNS}) VALUES "
                 "(?,?,?,?,?,'pending',NULL,0,?,?,?,?,?,NULL,?,?,NULL,0)",
