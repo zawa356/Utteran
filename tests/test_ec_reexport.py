@@ -1413,10 +1413,12 @@ def _move_during_write(world: World, move: Any) -> None:
 @POSIX
 @pytest.mark.parametrize("level", ["parent", "grandparent"])
 @pytest.mark.parametrize("replace", [False, True])
-def test_owner_p2_3_a_moved_parent_or_ancestor_is_not_location_verified(
+def test_owner_p2_4_a_parent_or_ancestor_moved_during_the_claim_gets_no_file(
     world: World, level: str, replace: bool
 ) -> None:
-    """Owner review P2-3: the shown absolute path must still lead to the written directory."""
+    """Owner re-review P2-4 (formerly P2-3's "completed but unverified"): a move of the parent
+    or an ancestor while the directory name is being recorded is seen before the first file,
+    so nothing is written; the record says where it was made, not where it is now."""
     job_id = world.finished()
     top = world.tmp / "top"
     parent = top / "parent"
@@ -1433,10 +1435,102 @@ def test_owner_p2_3_a_moved_parent_or_ancestor_is_not_location_verified(
     status, record = world.run(
         job_id, world.body(job_id, formats=["txt"], output_parent=str(parent))
     )
-    assert status == 201 and record["state"] == "completed"
-    assert record["location_verified"] is False
-    shown = Path(record["directory"])
-    assert not (shown / f"{shown.name}.txt").exists()  # the shown path does not lead there
+    assert status == 201 and record["state"] == "failed"
+    assert record["error_code"] == "output_moved" and record["partial"] is True
+    assert record["location_verified"] is False and record["files"] == []
+    made = [p for p in aside.rglob("*") if "_reexport_" in p.name and p.is_dir()]
+    assert len(made) == 1 and list(made[0].iterdir()) == []  # no marker, no transcript
+
+
+@POSIX
+def test_owner_p2_4_moved_into_the_job_directory_during_the_claim_gets_no_file(
+    world: World,
+) -> None:
+    job_id = world.finished()
+    job_dir = world.directory(job_id)
+    before = tree(job_dir)
+    parent = world.tmp / "elsewhere"
+    parent.mkdir()
+    _move_during_write(world, lambda: parent.rename(job_dir / "moved-in"))
+    status, record = world.run(
+        job_id, world.body(job_id, formats=["txt", "json"], output_parent=str(parent))
+    )
+    assert record["state"] == "failed" and record["error_code"] in {
+        "output_moved",
+        "output_inside_source",
+    }
+    inside = [p for p in (job_dir / "moved-in").iterdir()]
+    assert len(inside) == 1 and list(inside[0].iterdir()) == []  # nothing written in the job dir
+    assert {k: v for k, v in tree(job_dir).items() if not k.startswith("moved-in")} == before
+
+
+@POSIX
+def test_owner_p2_4_moved_under_a_git_checkout_during_the_claim_exposes_nothing(
+    world: World,
+) -> None:
+    job_id = world.finished()
+    repo = _repo(world.tmp, "")  # nothing ignored
+    parent = world.tmp / "plain"
+    parent.mkdir()
+    _move_during_write(world, lambda: parent.rename(repo / "transcripts" / "moved"))
+    status, record = world.run(
+        job_id, world.body(job_id, formats=["txt"], output_parent=str(parent))
+    )
+    assert record["state"] == "failed" and record["error_code"] == "output_moved"
+    listed = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert ".txt" not in listed and ".utteran-reexport" not in listed
+
+
+@POSIX
+def test_owner_p2_4_a_move_between_files_stops_before_the_next_file(
+    world: World, monkeypatch: Any
+) -> None:
+    job_id = world.finished()
+    parent = world.tmp / "top" / "parent"
+    parent.mkdir(parents=True)
+    aside = world.tmp / "aside"
+    real_create = reexport_files._create
+    created: list[str] = []
+
+    def create(directory: int, name: str, data: bytes) -> None:
+        real_create(directory, name, data)
+        created.append(name)
+        if name.endswith(".txt"):
+            parent.rename(aside)  # after the first transcript, before the next one
+
+    monkeypatch.setattr(reexport_files, "_create", create)
+    _, record = world.run(
+        job_id, world.body(job_id, formats=["txt", "md"], output_parent=str(parent))
+    )
+    assert record["state"] == "failed" and record["error_code"] == "output_moved"
+    assert not any(name.endswith(".md") for name in created)
+
+
+@POSIX
+def test_owner_p2_3_a_move_after_the_last_file_is_not_location_verified(
+    world: World, monkeypatch: Any
+) -> None:
+    """A move after the last check cannot be prevented (POSIX): it is reported, not hidden."""
+    job_id = world.finished()
+    parent = world.tmp / "top" / "parent"
+    parent.mkdir(parents=True)
+    real_fsync = os.fsync
+    calls = {"n": 0}
+
+    def fsync(fd: int) -> None:
+        real_fsync(fd)
+        calls["n"] += 1
+        if calls["n"] == 3:  # marker, txt, then the directory: every file is written
+            (world.tmp / "top").rename(world.tmp / "aside")
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    _, record = world.run(job_id, world.body(job_id, formats=["txt"], output_parent=str(parent)))
+    assert record["state"] == "completed" and record["location_verified"] is False
 
 
 @POSIX
