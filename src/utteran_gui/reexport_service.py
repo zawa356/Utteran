@@ -290,7 +290,9 @@ class ReexportService:
                         existing = self.store.by_key(key)
                     except ReexportError:
                         existing = None
-                    if existing is not None:
+                    # Only a record of another process: never our own pending record, whose
+                    # error (e.g. ``store_incomplete`` while claiming) must stay visible.
+                    if existing is not None and existing.owner != self.store.owner:
                         return self._replay(existing, digest_input)
                 raise
         finally:
