@@ -129,6 +129,30 @@ if ($LASTEXITCODE -ne 0) {
 }
 $PythonExe = Join-Path $BuildVenvDir "Scripts\python.exe"
 
+Write-BuildStep "Building the internal native wheel (utteran-native-fs, E-C2b)"
+# Rust is needed on the build machine only; the frozen GUI carries the compiled .pyd and
+# never needs a toolchain. native\rust-toolchain.toml pins the compiler, Cargo.lock the
+# dependencies. Without the module the GUI keeps Windows re-export disabled (fail closed),
+# so the build refuses to continue instead of shipping that silently.
+if ($null -eq (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    throw "cargo (Rust, rustup) was not found: install it from https://rustup.rs and re-run"
+}
+$NativeDist = Join-Path $BuildDir "native-wheel"
+uvx --from maturin==1.16.0 maturin build --release --locked `
+    -m (Join-Path $RepoRoot "native\safe-fs-py\Cargo.toml") -o $NativeDist -i $PythonExe
+if ($LASTEXITCODE -ne 0) {
+    throw "native wheel build failed (exit $LASTEXITCODE)"
+}
+$NativeWheel = Get-ChildItem -LiteralPath $NativeDist -Filter "utteran_native_fs-*.whl" |
+    Select-Object -First 1
+if ($null -eq $NativeWheel) {
+    throw "native wheel was not produced"
+}
+uv pip install --python $PythonExe --no-deps $NativeWheel.FullName
+if ($LASTEXITCODE -ne 0) {
+    throw "native wheel install failed (exit $LASTEXITCODE)"
+}
+
 Write-BuildStep "Validating Inno Setup constants"
 & $PythonExe (Join-Path $RepoRoot "scripts\validate_inno_constants.py") `
     (Join-Path $PackagingDir "installer.iss")

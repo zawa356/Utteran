@@ -43,6 +43,14 @@ Issue #27の方針を継承し、製品の検査jobは独立して実行する�
 | `product-e2e-1` / `product-e2e-2` / `product-e2e-3` | ubuntu | Playwrightのファイル単位shard、実FastAPI、合成サービス | WebView2 |
 | `full-product-gate` | ubuntu | 全製品jobの成功を集約 | 定期監査・歴史的試作 |
 
+### Native CI（`.github/workflows/native.yml`、E-C2b #87）
+
+全 PR と main push で `ci.yml` とは独立に実行する（`ci.yml` の 18 ID は不変）。`native-linux`／`native-windows`／`native-macos` は
+`.github/actions/native-build-test`（fmt・clippy・core 試験・権限依存試験・abi3 wheel の build と 3.11／3.12 新規 venv 試験、Linux／Windows は
+製品の `tests/test_ec_reexport*.py` を wheel 入りの環境で実行）、`native-audit` は cargo-deny。固定名の `Native quality gate` が 4 ID の完全一致と
+全 success を確認する。required check への追加（`Native quality gate`）はオーナーの GitHub 設定。製品の `linux-tests`／`windows-tests` は wheel を
+入れないため `tests/test_ec_reexport_native.py` は skip になる（Windows の再出力は native 側でだけ検証される）。
+
 ### 再実行と計測
 
 `frontend/`で `npm run e2e` を実行すると製品E2E全件を直列で再現できる。CIと同じ収集照合は

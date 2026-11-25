@@ -1,0 +1,41 @@
+[package]
+name = "utteran-safe-fs"
+description = "E-C2a PoC: handle-relative, no-follow, exclusive-create file operations (no Python/UI dependency)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "utteran_safe_fs"
+
+[features]
+# Deterministic race points for this crate's own tests only. Never enabled by
+# the Python binding or any release build.
+test-hooks = []
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.6", default-features = false, features = ["std", "fs", "process"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Wdk_Foundation",
+    "Wdk_Storage_FileSystem",
+    "Wdk_System_SystemServices",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Kernel",
+    "Win32_System_SystemServices",
+    "Win32_System_WindowsProgramming",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+sha2 = "0.10"
+utteran-safe-fs = { path = ".", features = ["test-hooks"] }
+
+[lints]
+workspace = true
