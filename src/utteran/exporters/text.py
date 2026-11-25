@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from utteran.exporters.base import Exporter, display_text
+from utteran.exporters._view import render_options, transcript_view
+from utteran.exporters.base import Exporter
 from utteran.types import ExportOptions, PipelineResult
+from utteran_contracts.transcript_export import render_txt
 
 
 class TextExporter(Exporter):
@@ -15,7 +17,4 @@ class TextExporter(Exporter):
 
     def render(self, result: PipelineResult, options: ExportOptions) -> str:
         """Render a compact plain text transcript."""
-        lines = [
-            display_text(segment.text, segment.speaker, options) for segment in result.segments
-        ]
-        return "\n".join(lines) + ("\n" if lines else "")
+        return render_txt(transcript_view(result), render_options(options))

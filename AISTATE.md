@@ -1,5 +1,12 @@
 # AI 作業状態
 
+## 現在地（2026-11-25、束 E-C、0.1.69・未リリース）
+
+- main 基点 `b8463129d5bd213d81a11427a02d58f726a0e056`（0.1.68、E-B 統合済み）。作業ブランチ `claude/eloquent-fermi-nfc18l`（セッション指定）、[#82](https://github.com/zawa356/Utteran/issues/82)。E-B 統合後の main CI は着手時点で実行中（完了待ちなしで着手、オーナー承認済み）。
+- Expert の結果・履歴から、成功ジョブの検証済み JSON（記述子で読み、証跡と照合した同一バイト列）だけを元に、ASR なしで SRT/VTT/TXT/MD/JSON・話者表示・ラベル・BOM・改行を変えて新しい専用フォルダへ再出力する。5 形式の書式化を `utteran_contracts.transcript_export` に共通化（core の出力バイトは不変）。独立 private ストア `reexport-v1`、Idempotency-Key・結果不明の再照合・中断の明示、上限（実測根拠）。
+- POSIX（Linux で検証、macOS 未検証）だけ有効。Windows は出力先を固定した書込みを証明できないため `reexport_platform_unsupported` で拒否（BLOCKED）。
+- [E-C 正本](docs/architecture/ui3/e-c-reexport.md)。HEAD・試験件数・CI・独立レビューは Draft PR に記録する。Windows WebView2 等の実機確認は [#22](https://github.com/zawa356/Utteran/issues/22)。
+
 ## 現在地（2026-11-24、束 E-B、0.1.68・未リリース）
 
 - main 基点 `db67640f997e74c81b4dbf2ffe3abcdf5085731e`（0.1.67、E-A 統合済み）。作業ブランチ `claude/zealous-bell-rn7slw`、[#80](https://github.com/zawa356/Utteran/issues/80)。

@@ -32,6 +32,15 @@ from utteran_contracts.capabilities import (
     ExecutionIdentity,
 )
 from utteran_contracts.settings import Policy, ProcessingSettings
+from utteran_contracts.transcript_export import (
+    DiarizationView,
+    EngineView,
+    RenderOptions,
+    SegmentView,
+    TranscriptView,
+    WordView,
+    render_bytes,
+)
 from utteran_contracts.worker import (
     WorkerArtifact,
     WorkerCompleted,
@@ -126,6 +135,24 @@ class SyntheticProvider:
         return ProviderResult("supported", selection, models)
 
 
+def synthetic_transcript(input_path: str) -> TranscriptView:
+    """E-C: a small synthetic transcript (two speakers, words, an unlabeled segment)."""
+    return TranscriptView(
+        input_path=input_path,
+        duration=4.5,
+        asr=EngineView("synthetic", "synthetic-model", "cpu"),
+        diarization=DiarizationView("synthetic", "synthetic-diarization", "cpu", None),
+        created_at="2026-11-25T09:00:00+09:00",
+        segments=(
+            SegmentView(
+                0, 1.5, "合成の発話です。", "SPEAKER_00", "high", (WordView(0, 1.5, "合成", 0.9),)
+            ),
+            SegmentView(1.5, 3.25, "second line", "SPEAKER_01", "low"),
+            SegmentView(3.25, 4.5, "no speaker"),
+        ),
+    )
+
+
 class SyntheticRunner:
     def __init__(self, output: Path, launch_release: Path | None = None) -> None:
         self.output = output
@@ -166,9 +193,22 @@ class SyntheticRunner:
         target = target_dir / f"{stem}.srt"
         content = b"1\n00:00:00,000 --> 00:00:01,000\nsynthetic\n"
         target.write_bytes(content)
-        artifact = WorkerArtifact(
-            path=str(target), size=len(content), sha256=hashlib.sha256(content).hexdigest()
-        )
+        artifacts = [
+            WorkerArtifact(
+                path=str(target), size=len(content), sha256=hashlib.sha256(content).hexdigest()
+            )
+        ]
+        if Path(request.input_path).name.startswith("reexport-"):
+            # E-C: a synthetic JSON v1 written by the shared renderer (the JSON exporter's own
+            # layout), so a re-export has a verified source. Other inputs keep SRT only.
+            data = render_bytes("json", synthetic_transcript(request.input_path), RenderOptions())
+            source = target_dir / f"{stem}.json"
+            source.write_bytes(data)
+            artifacts.append(
+                WorkerArtifact(
+                    path=str(source), size=len(data), sha256=hashlib.sha256(data).hexdigest()
+                )
+            )
         manifest = WorkerArtifact(path=str(self.output / "manifest.json"), size=1, sha256="b" * 64)
         return WorkerCompleted(
             sequence=5,
@@ -176,7 +216,7 @@ class SyntheticRunner:
             job_id=request.job_id,
             attempt_id=request.attempt_id,
             core_job_id="0123456789abcdef",
-            artifacts=(artifact,),
+            artifacts=tuple(artifacts),
             manifest=manifest,
         )
 
@@ -186,7 +226,7 @@ def prepare_root(root: Path) -> dict[str, Path]:
     layout = {"inputs": root / "in", "output": root / "out", "model": root / "model"}
     for path in layout.values():
         path.mkdir(parents=True, exist_ok=True)
-    for name in ("meeting.wav", "slow-meeting.wav", "other.wav"):
+    for name in ("meeting.wav", "slow-meeting.wav", "other.wav", "reexport-meeting.wav"):
         (layout["inputs"] / name).write_bytes(b"RIFF synthetic S5-A bytes, not audio")
     return layout
 

@@ -62,3 +62,28 @@ def job_output_name(
     if room < STEM_MINIMUM:
         raise ValueError("output_path_too_long")
     return safe_stem(input_stem(input_path), min(STEM_LIMIT, room)) + suffix
+
+
+_REEXPORT_ID = re.compile(r"^rex_[0-9a-f]{32}$")
+
+
+def reexport_output_name(
+    input_path: str, stamp: str, reexport_id: str, *, parent: str, id_length: int = ID_LENGTHS[0]
+) -> str:
+    """E-C: ``<input stem>_reexport_<YYYYMMDD-HHMMSS>_<short re-export id>``.
+
+    Same rules as :func:`job_output_name` (Windows-safe stem, path budget for both
+    occurrences of the name, longer id forms only when a shorter name is taken). The
+    ``_reexport_`` part keeps it apart from every job directory name of the same input.
+    """
+    if (
+        not _STAMP.fullmatch(stamp)
+        or not _REEXPORT_ID.fullmatch(reexport_id)
+        or id_length not in ID_LENGTHS
+    ):
+        raise ValueError("output_name_invalid")
+    suffix = f"_reexport_{stamp}_{reexport_id[4 : 4 + id_length]}"
+    room = (PATH_BUDGET - len(parent) - 2 - _LONGEST_SUFFIX) // 2 - len(suffix)
+    if room < STEM_MINIMUM:
+        raise ValueError("output_path_too_long")
+    return safe_stem(input_stem(input_path), min(STEM_LIMIT, room)) + suffix

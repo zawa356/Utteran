@@ -1,5 +1,7 @@
 # UI-3-0 — 第5案で設計確定した隔離プロトタイプ
 
+追補（2026-11-25、0.1.69 未リリース）。[束 E-C 検証済み JSON からの ASR なし再出力](e-c-reexport.md)。Windows は安全な書込みを証明できないため BLOCKED、実機は未受入。
+
 追補（2026-11-24、0.1.68 未リリース）。[束 E-B 名前付き作業セットの自動保存・復元と容量上限](e-b-worksets.md)（offline schema [e-b-worksets.schema.json](e-b-worksets.schema.json)）。Windows 実機は未受入。
 
 追補（2026-11-24、0.1.67 未リリース）。[束 E-A の製品仕様・検証記録](e-a-presets-glossary.md)。

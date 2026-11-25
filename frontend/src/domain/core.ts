@@ -3,6 +3,7 @@ import { createLegacyApi, type LegacyApi } from "../api/legacy";
 import { ApiError } from "../api/errors";
 import { createLegacyJobsApi, type LegacyJobsApi } from "../api/legacyJobs";
 import { createV1ResourcesApi, type V1ResourcesApi } from "../api/v1Resources";
+import { createReexportApi } from "../api/reexport";
 import { createWorksetsApi } from "../api/worksets";
 import { translate } from "../i18n";
 import type { HostBridge } from "../host";
@@ -22,6 +23,7 @@ import { QueueMutationGate } from "./v1/queueGate";
 import { V1JobBoardController } from "./v1/jobBoard";
 import { V1DeletionController } from "./v1/jobDeletion";
 import { V1LibraryController } from "./v1/library";
+import { V1ReexportController } from "./v1/reexport";
 import { V1SingleJobController } from "./v1/singleJob";
 import { WorksetController } from "./v1/worksets";
 import { WizardStatusController } from "./wizard";
@@ -41,6 +43,8 @@ export interface V1Core {
   deletion: V1DeletionController;
   /** E-B: named worksets — autosave and restore of the confirmed editing state (Normal and Expert). */
   worksets: WorksetController;
+  /** E-C: re-export a finished job from its verified JSON (no ASR, no job, no queue). */
+  reexport: V1ReexportController;
 }
 
 /**
@@ -142,7 +146,8 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
       nameFor: (n) => translate(settings.store.get().saved?.language ?? "ja", "eb.defaultName", { n }),
     });
     worksetsRef = worksets;
-    v1 = { api, queueGate, library, job, batch, rerun, board, deletion, worksets };
+    const reexport = new V1ReexportController(createReexportApi(http));
+    v1 = { api, queueGate, library, job, batch, rerun, board, deletion, worksets, reexport };
   }
   return {
     host: deps.host,
@@ -161,6 +166,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
       v1?.rerun.dispose();
       v1?.board.dispose();
       v1?.deletion.dispose();
+      v1?.reexport.dispose();
       batch.dispose();
       job.dispose();
       transcription.dispose();

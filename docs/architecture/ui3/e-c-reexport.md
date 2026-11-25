@@ -1,0 +1,190 @@
+# 束 E-C — 検証済み JSON からの ASR なし再出力
+
+開発専用 `--next-ui-v1` のみ。対象は [#82](https://github.com/zawa356/Utteran/issues/82)（親 [束 E #77](https://github.com/zawa356/Utteran/issues/77)、UI-3 #21、Epic #18）。開発版 `0.1.69`、未リリース。
+本書は E-C の正本。挙動の正本はコード（`src/utteran_contracts/transcript_export.py`、`src/utteran_gui/reexport_{files,store,service,api}.py`、`frontend/src/api/reexport.ts`、`frontend/src/domain/v1/reexport.ts`、`frontend/src/features/results/ReexportDialog.vue`）。
+
+既定の旧 GUI、旧 `--next-ui`、CLI、B5/B6/B7 の契約・DB、E-B の作業セット、既存の出力バイトは変更していない（§10）。
+
+## 1. 確定した UX
+
+| 項目 | 実装 |
+|---|---|
+| 入口 | Expert の「結果と履歴」の詳細で、`succeeded` の最新ジョブに「再出力（ASRなし）」ボタン。D3-B2 の「現在の設定で再実行」（新しい ASR ジョブ）、再試行とは別のボタン・別の操作 |
+| 対象 | 単件。サーバーが可否と理由（固定コード）を判定し、ダイアログに表示する。画面の verified 表示は根拠にしない |
+| 初期値 | 元ジョブの凍結済み出力設定（`snapshot.resolved.settings.output`）の形式・話者表示・SRT BOM・改行。話者ラベルの変更は空から始める（JSON には元の変更が適用済みのため、二重に適用しない） |
+| 設定 | 形式（SRT/VTT/TXT/MD/JSON、複数可）、話者表示、SRT BOM（SRT を選んだときだけ）、LF/CRLF、JSON に記録された表示上の話者ラベルごとの新しいラベル、保存先（元ジョブと同じ出力先／明示指定） |
+| 出力 | 保存先の中に新しい専用フォルダ `<入力名>_reexport_<YYYYMMDD-HHMMSS>_<ID>`。中身は `<同名>.<形式>` と所有 marker `.utteran-reexport`（1 行、再出力 ID） |
+| 結果 | 完了・失敗（固定コード）・中断（結果不確定）、保存先パス、形式ごとのサイズ。このジョブの再出力記録の一覧（再起動後も表示） |
+| 結果不明 | ダイアログは閉じられず、設定は固定。「再確認」で**同じ Idempotency-Key と同じ本文**だけを再送し、サーバーはそのキーの記録で答える（二重出力しない） |
+| 新規 | 完了後の「別の設定で再出力」は新しいキー・新しいフォルダ（値が同じでも別要求） |
+| JSON 未選択 | v1 の出力形式（新規 Preset、画面の共通差分）で JSON を外すと「このジョブは後から再出力できません」を表示 |
+| 操作性 | Vuetify 標準部品。キーボードで開ける、取消に初期フォーカス、閉じると開いたボタンへ戻る。日英 |
+
+対象外（#82 の確定範囲）: 認識本文・時刻・単語・話者割当の編集、ASR／話者分離／モデル初期化・取得／worker による再認識／ASR キュー投入、内部 cache の利用、再出力結果からの再々出力、一括再出力、内蔵 Viewer。一括は API が単件・Idempotency-Key 単位のため、将来クライアントが複数要求を並べる形で追加でき、現設計はそれを妨げない。
+
+## 2. 情報充足性と共通レンダラ（先行調査の結論）
+
+5 形式の exporter（`src/utteran/exporters/*.py`）が読む値は次だけである。
+
+| 形式 | 使う値 |
+|---|---|
+| SRT / VTT / TXT | セグメントの start・end・text・speaker |
+| MD | 上記＋`input_path`（stem と表示）、`created_at`、duration、ASR の backend/model/device、話者分離の有無と backend/model/device |
+| JSON | 上記＋speaker_confidence、単語（start・end・text・probability）、diarization.memory |
+
+`TranscriptionResult.language`、`transcription.segments`、diarization の turns／exclusive_turns／num_speakers はどの形式も使わない。JSON v1 はこれらを持たないが、再出力にも不要なので補完・捏造しない。
+
+- **読み取りモデル** `TranscriptView`（`utteran_contracts.transcript_export`）は上表の値だけを持つ。core の exporter は `PipelineResult` からこのモデルを作り（`utteran/exporters/_view.py`）、GUI は JSON v1 から作る。**書式化コードは 1 か所だけ**で、core と GUI が同じ関数を使う（GUI は core を import しない。`utteran_contracts` は core を import しない）。
+- 数値は読み込んだ型のまま（int は int）。`PipelineResult.from_dict` のような `float()` 変換をしないので、`"duration": 1` は `1` のまま再出力される。
+- **厳格な読取り** `parse_json_v1`: UTF-8（BOM なし）、キー集合と型が完全一致、`bool` を数値として扱わない、NaN／Infinity と重複キーを拒否、`memory` は object か null（深さ 32 まで）、セグメント 20 万・単語 200 万・話者ラベル 256 まで。
+- **無損失の確認**: 読み取ったモデルを変更なしで JSON に戻し、LF または CRLF で**元のバイト列と完全一致**することを必須とする。手で編集された・他のツールが書いた・`speakers` が本文と矛盾する JSON は `source_noncanonical` で拒否する。これにより、読取りモデルがファイルの全情報を保持したことを毎回証明する。
+- **golden**: `tests/fixtures/b2/exports.json`（pre-B2 の固定バイト列）の JSON から、同じ BOM/CRLF で SRT/VTT/TXT/MD/JSON がすべてバイト一致する。さらに合成結果（時刻の丸め・1 時間超・空テキスト・話者なし・空ラベル・改行入りテキスト・単語あり／なし・話者分離あり／なし）× 5 種のオプションで、core exporter → JSON → 共通レンダラの出力が core exporter とバイト一致する（`tests/test_ec_reexport.py`）。既存の exporter 試験・b2 golden・CLI 試験は無変更で PASS。
+
+### 2.1 話者ラベルの意味（形式固有の制約）
+
+- JSON の `speaker` は**元ジョブの話者ラベル変更を適用した後**の値で、元の話者 ID は保持されない。再出力のラベル変更は、この表示上のラベルに 1 回だけ適用する（元の mapping は再適用しない）。元の変更が空なら、結果は core が元 ID に変更を適用した場合と同じ（試験で合成写像と比較）。
+- 同じ名前に変更された複数の話者は区別できず、まとめて変更される。元 ID への逆変換は保証しない。ダイアログはこの旨を表示する（`original_labels_applied`）。
+- `show_speaker` は SRT/VTT/TXT/MD の行頭表示だけに効く。**JSON は常に全セグメントの話者を含む**（既存 JSON exporter の仕様。変更していない）。ダイアログに明記。
+- 空文字のラベルは既存どおり「ラベルなし」と同じ表示（行頭に付けない）で、JSON には `""` のまま残る。
+- SRT BOM は SRT にだけ適用される。SRT を選ばずに BOM を指定した要求は `option_not_applicable`（UI では無効化）。
+
+## 3. 入力元の検証（`reexport_files.read_verified_json`）
+
+画面の verified 表示ではなく、サーバーが毎回次を確認する。
+
+1. ジョブが `succeeded`、`If-Match` の revision と一致（実行時）、per-job ディレクトリ（0.1.54 以降の `output_stamp`）であること。legacy は所有範囲を証明できないため `source_legacy`。
+2. 完了時の形式別証跡（`artifact_evidence`）があり、`json` の記録があること（なし／旧形式は `source_unverified`、JSON 未出力は `source_json_not_recorded`）。
+3. 出力親ディレクトリを開き、候補名（id 長 8〜32）の子を `dir_fd` 相対・`O_NOFOLLOW` で開く。marker も同様に開き、このジョブ ID を名指しすること。リンク・別ジョブの marker は不一致として扱う。
+4. `<name>.json` を `dir_fd` 相対・`O_NOFOLLOW|O_NONBLOCK` で開き、`fstat` で通常ファイル、リンク数 1（ハードリンク拒否）、サイズが記録と一致かつ上限以下を確認。FIFO などは開いた直後に `source_special`。
+5. その記述子から**1 回だけ**全バイトを読み（記録サイズ＋1 バイトまで）、読取り前後の `fstat` が一致し、SHA-256 が記録と一致することを確認。**このバイト列そのもの**を解析する（パスを開き直さない）。読取り中の変更・差替えはハッシュ不一致として拒否される。
+6. ダイアログが表示した `source_sha256` と実行時の照合結果が一致しなければ `source_changed`（計画と実行の間の差替え・すり替え防止）。
+
+## 4. 出力の安全性（`reexport_files.create_output`）
+
+競合モデル: 同一ユーザーの別プロセスが、任意の時点で名前の変更・差替え・リンク作成を行い得る（C2c §5.0）。したがって「名前で確認してから名前で操作」はしない。
+
+1. 保存先は絶対パス・ローカル（`//` は拒否）・正規化し、各要素を `lstat` してリンクがあれば `output_parent_link`（B7 の出力先規則と同じ）。親を `O_DIRECTORY|O_NOFOLLOW` で開き、開いたものとパスの `(st_dev, st_ino)` が一致することを確認して記述子に固定する。
+2. 新しいフォルダ名ごとに、**作成前に** Git checkout の確認（core の `_ensure_git_ignored_output` と同じ規則で `git check-ignore --no-index`。`.gitignore` 対象外なら `output_in_repository`、Git が答えられなければ `output_git_unverified`。拒否時は何も作らない）。
+3. 固定した親に対し `mkdir(name, 0700, dir_fd=…)`。既存の名前（ディレクトリ・ファイル・リンク・大小文字違いで衝突するもの）は `FileExistsError` になり、再利用せず次の長い ID 形式へ進む。全候補が埋まっていれば `output_name_unavailable`。
+4. 作ったフォルダを `dir_fd` 相対・`O_NOFOLLOW` で開き、ディレクトリかつ所有者が自分かつ**空**であることを確認。違えば（作成と open の間に置き換えられた）`output_claim_lost` で何も書かない。
+5. フォルダ名を記録（§6）してから、marker と各ファイルを `O_CREAT|O_EXCL|O_NOFOLLOW`（0600）で `dir_fd` 相対に作成し、全バイトを書き、`fsync`。最後にフォルダと親を `fsync`。既存の名前（差し込まれたリンクを含む）には書かない（`output_claim_lost`）。
+6. 完了後、親からのフォルダ名が書込みに使った記述子と同じ inode か確認し、`location_verified` として記録する（偽なら UI に「移動・置換の可能性」を表示）。
+
+**削除しない**: 失敗・中断のどの場合も、作ったフォルダや途中のファイルを削除・rename・上書きしない（名前による削除は検証済み inode を消す保証がないため。成果物削除を全 OS で無効とした C2c の判断と同じ）。記録に `partial: true` を付け、画面に「途中までのファイルが残る可能性」を表示する。元ジョブのファイル・フォルダ・marker・入力音声には書込み系の操作を一切行わない（読取りだけ）。
+
+**出力サイズ**: 全形式をメモリ上で生成し、合計が上限を超えればファイルを作る前に `output_too_large`。
+
+### 4.1 対応 OS と BLOCKED
+
+| OS | 状態 | 理由 |
+|---|---|---|
+| Linux | 対応（Cloud Linux の pytest・E2E で検証） | `open`/`mkdir`/`stat` の `dir_fd`、`O_NOFOLLOW`、`O_DIRECTORY`、`fdopendir` が揃う |
+| macOS | 同じ判定で有効になるが**未検証**（CI なし） | 機能判定（`supported()`）は同じ条件 |
+| Windows | **BLOCKED**（`reexport_platform_unsupported`、可否表示と実行の両方で拒否） | Python 標準の `os` に `dir_fd` 相対の作成がなく、パスで開き直すたびに junction／reparse point／親の差替えを辿り得る。保持したハンドルからの相対作成（`NtCreateFile` の RootDirectory 等）と `FILE_SHARE_DELETE` なしの親固定は設計可能だが、実機での証明がない（#59 と同じ課題）。安全性を緩めず fail closed とし、実装方式はオーナー確認・実機受入（#22）の後とする |
+
+## 5. 入力・出力の上限と実測
+
+`tools/ui3/measure_reexport.py`（合成値のみ）で実測。Cloud Linux、Python 3.11。1 件の JSON v1 を共通レンダラで作り、SHA-256＋厳格読取り（無損失確認を含む）と全 5 形式の生成を行う。
+
+| ソース | セグメント | 読取り | 5 形式生成 | 出力合計 | 実行前 RSS → ピーク |
+|---:|---:|---:|---:|---:|---:|
+| 1.0 MB | 498 | 0.07 s | 0.05 s | 1.5 MB | 38 → 44 MiB |
+| 8.3 MB | 3,986 | 0.58 s | 0.42 s | 11.7 MB | 102 → 150 MiB |
+| 16.7 MB | 7,973 | 1.27 s | 0.87 s | 23.5 MB | 174 → 280 MiB |
+| 33.4 MB | 15,947 | 2.61 s | 1.71 s | 47.0 MB | 320 → 533 MiB |
+| 66.8 MB | 31,895 | 5.38 s | 3.32 s | 94.0 MB | 610 → 996 MiB |
+
+（RSS の「実行前」は合成データの生成分を含む。増分が読取り・生成の負担。各セグメント 12 単語・3 文の日本語。）
+
+| 設定値 | 値 | 根拠 |
+|---|---:|---|
+| ソース JSON | 32 MiB（`MAX_SOURCE_BYTES`） | 一覧の `HASH_LIMIT` 64 MiB では約 9 秒・約 390 MiB 増。32 MiB で約 4.3 秒・約 210 MiB 増。合成で約 1.6 万セグメント（12 単語ずつ、約 15 時間の発話相当）を含む |
+| 出力合計 | 128 MiB（`MAX_OUTPUT_BYTES`） | 32 MiB ソースの 5 形式で約 47 MB。最長ラベル（256 文字）適用時の増加を見込んだ余裕 |
+| セグメント／単語／話者ラベル | 20 万／200 万／256 | 32 MiB 内に収まる構造の上限。超過は `source_too_large` |
+| 話者ラベル | 256 文字、制御文字不可 | B5 `OutputSettings.speaker_labels` と同じ長さ |
+| 同時実行 | プロセスあたり 1 件 | 上記の CPU・メモリを重ねない。2 件目は `reexport_busy`（503、再試行可）。data root ごとの OS ロックにより GUI プロセスは 1 つ |
+
+再出力は ASR の heavy slot を使わない（モデル・GPU を使わない）。ジョブの実行中でも可能。
+
+## 6. API・状態・永続化
+
+既存の v1 サブアプリに登録する（session・Host・Origin の境界は B5/B7/E-B と同じ）。既定 GUI では import もしない。ルートはジョブの `POST /jobs/{id}/{action}` より前に登録する。
+
+| メソッドとパス | 用途 | 成功 | 主なエラー |
+|---|---|---|---|
+| `GET /jobs/{id}/reexport-source` | 可否（`available`／`refusal` の固定コード）、凍結済みの初期値、表示上の話者ラベル、ソースの SHA-256・サイズ・改行・件数、既定の保存先、上限。**読取りのみ**（ストアも作らない） | 200 | 404、410 `job_deleted` |
+| `POST /jobs/{id}/reexports` + `If-Match: "<job revision>"` + `Idempotency-Key` | 実行 | 201 新規記録、200 このキーの既存記録 | 428／400、412 `revision_conflict`、409（拒否コード・`idempotency_conflict`・`reexport_limit`）、413、422、503 `reexport_busy` |
+| `GET /jobs/{id}/reexports` | このジョブの記録（新しい順） | 200 | |
+| `GET /reexports/{rex_id}` | 1 件（結果不明後の照合） | 200 | 404 `reexport_not_found` |
+
+本文（`schema_version: 1`、未知キー不可）: `source_sha256`、`formats`（重複なし・1 件以上。サーバーが B7 の順に正規化）、`show_speaker`、`srt_bom`、`newline`、`speaker_labels`（キーは JSON の表示ラベル。未知は `speaker_label_unknown`）、`output_parent`（`null`＝元の出力先）。
+
+エラーは `{schema_version, error:{code, message_key:"reexport.<code>", request_id, retryable, issues:[]}}`。値・パス・ラベルを含まない。`retryable` は `reexport_busy`・`store_busy`・`store_unavailable` だけ true。
+
+### 6.1 実行順序と冪等性
+
+1. 本文の厳格検証。既知の Idempotency-Key ならその記録で答える（同じ本文なら 200、違えば 409 `idempotency_conflict`。新しい作業はしない）。
+2. プロセス内ロック（1 件）。
+3. ジョブ・snapshot・証跡を**読取りだけ**（B7 ストアに書かない）。revision 不一致は 412。
+4. §3 の入力元検証と、表示した `source_sha256` との一致。
+5. 全出力をメモリで生成し上限を確認（ここまでの拒否は記録を作らない）。
+6. `pending` 記録をコミット（キー、本文全体＋ジョブ ID＋revision の HMAC digest、保存先）。同じトランザクションでキーの重複と件数・容量上限を確認。
+7. §4 のフォルダ作成→フォルダ名を記録→ファイル作成・fsync。
+8. `completed`（形式ごとの SHA-256・サイズ、`location_verified`）または `failed`（固定コード、`partial`）。
+
+- **結果不明・再送**: クライアントは同じキーと本文だけを再送する。記録があればその状態を返し、実行しない。要求がサーバーに届いていなければ、そのとき初めて実行される。
+- **ABA**: 同じ値でも新しい操作は新しいキー＝新しい記録・新しいフォルダ。値が同じことで未知の旧要求が失効したとはみなさない（キーでだけ同一性を判断）。
+- **途中 kill・再起動**: 記録は所有プロセスのトークンを持つ。別プロセス（再起動後）や、確定の書込みに失敗した `pending` は `interrupted`（結果不確定、`partial`＝フォルダ名が記録済みならファイルが残る可能性）と表示し、**同じ要求を再実行しない**。新しい再出力は新しいキーで行う。
+- **DB 確定の前後**: 6 より前の失敗は何も作らない。6 の後 7 より前の失敗は `failed`（`partial: false`）。7 の途中は `failed`（`partial: true`）または `interrupted`。8 のコミット失敗は `interrupted`（ファイルは完全な場合もある＝不確定として扱う）。
+- **並列**: 同じキーの同時要求は 1 件だけが実行し、他は `reexport_busy` か既存記録。別キーの同時要求は 1 件ずつ。
+
+### 6.2 ストア（`reexport-v1`）
+
+- **パス**: `DataPaths.reexport_store`。通常は `user_data_dir("utteran")/reexport-v1/reexports.sqlite3`、明示 data root では `<UTTERAN_DATA_ROOT>/data/reexport-v1/reexports.sqlite3`。B5・B6/B7・E-B のファイルとは別で、それらを読み書き・prune しない。
+- **作成**: 最初の実行（`pending` の書込み直前）だけ。ディレクトリ 0700、ファイル 0600、symlink 拒否、O_EXCL 作成者プロトコル、`mode=rw` で開き消えたファイルを再作成しない。
+- **スキーマ（`user_version=1`）**: `installation(id, secret)`、`reexports(id PK, job_id, job_revision, key UNIQUE, digest, state∈{pending,completed,failed}, error_code, partial, created_ms, updated_ms, owner, request, parent, directory, source_sha256, source_size, files, location_verified)`。
+- **記録する値**: 実行時刻、形式、表示設定とラベル変更（要求の正規 JSON）、保存先と新しいフォルダ名、状態、形式別の SHA-256・サイズ、ソースの SHA-256・サイズ。**認識本文・JSON の複製は保存しない**。
+- **トランザクション**: `BEGIN IMMEDIATE`、`synchronous=FULL`、DELETE journal、`secure_delete=ON`、`auto_vacuum=INCREMENTAL`。未知の `user_version`・`quick_check` 失敗は拒否し、ファイルを変更しない。
+- **上限（明示拒否、自動削除なし）**: 全体 2,000 件・ジョブあたり 100 件（`reexport_limit`）、1 要求 512 KiB（`request_too_large`）、要求の合計 64 MiB（`store_quota_exceeded`）。上限に達しても記録・成果物を消さない。記録の削除 UI は本束にない（残留、§11）。
+- **物理容量の実測**（8 ラベル×256 CJK 文字・長い保存先パスの最悪寄りの要求 6,717 B）: 100 件 868 KB、1,000 件 8.4 MB、2,000 件 16.7 MB（空きページ 1）。要求合計の上限 64 MiB と管理領域で、ファイルは最大でも約 70〜80 MB に収まる。pytest で 60 件（256 文字ラベル）が 256 KiB 以下・空きページ 0 を毎回確認する。
+- **元ジョブ履歴の削除（C2c ③）との関係**: 履歴を墓標化しても再出力記録は残る（ジョブは 410 になり、ダイアログは開けない）。記録とフォルダは削除しない。記録内の保存先パスとラベルは残留する（§11）。
+
+## 7. ログと機密
+
+- `reexport_*.py` は `logging` を import しない（試験で確認）。新しいログファイルは追加していない。GUI ログは既存の `logging_runtime` のまま。
+- 話者ラベル・保存先パスは、認証済みの要求・応答本文とローカル画面だけで扱う。エラー本文・URL・SSE・公開診断・ブラウザの storage には出さない（pytest でラベル・パス・sentinel がエラー応答とログに出ないこと、Vitest で URL に出ないこと、E2E で storage・URL に出ないことを確認）。
+- private DB は B5・E-B と同様に平文。保持・削除方針は owner の未決事項を引き継ぐ。
+
+## 8. 試験
+
+| 層 | ファイル | 主な確認 |
+|---|---|---|
+| Backend（pytest） | `tests/test_ec_reexport.py` | 共通レンダラと core exporter のバイト一致（5 形式×5 オプション×話者分離有無、空・単語なし・話者なし）、b2 golden の再現、表示ラベルへの再変更＝合成写像、同名ラベルを分離しない、不正 JSON 12 種・バイト改変 10 種・構造上限、命名規則、正常系で元フォルダ・入力・B5/B7 DB のバイト不変とジョブ数不変、同じキーの replay・別本文 409・同値の新キーは別フォルダ、revision・digest・ラベル・オプション・保存先の拒否 13 種（記録なし・ファイル不変）、明示保存先と元ジョブフォルダ内、ソースの改変・削除・symlink・ハードリンク・FIFO・別 marker、ジョブフォルダの symlink 差替え、JSON 未出力・失敗ジョブ・legacy・証跡なし・非対応 OS、既存名の非再利用とリンク非追従、mkdir と open の間のフォルダ差替えで書かない、ファイル名へのリンク差込みで被害なし、親のリンク要素と Git checkout、ENOSPC／EROFS／EIO で `failed`＋途中ファイル保持、mkdir 失敗、crash 後の `interrupted` と再実行しないこと、同時実行（busy と同じキー 4 並列で 1 フォルダ）、件数・容量上限で拒否し何も消さない、出力・ソースの上限、物理容量、未知 schema を変更しない、HTTP（428/400/201/200/404、session・Origin、エラーに値なし、ログに値なし）、core/重い import なし、既定 GUI にルート・import なし |
+| Unit（Vitest） | `frontend/src/domain/v1/reexport.test.ts` | 応答の形の検証、凍結初期値とラベルを空から始める、1 回だけ送る（If-Match・キー・本文）、BOM の無効化と入力検証、拒否の表示、結果不明で固定・閉じない・同じキーと本文の再確認、完了後は新キー（ABA）、4xx 後の編集で新キー、閉じた後の遅い応答を適用しない、URL に値を出さない |
+| E2E（Playwright、実 FastAPI） | `frontend/e2e/reexport-ec.v1.spec.ts` | 新規 Preset の JSON 既定と未選択警告、キーボードで開く・取消に初期フォーカス・閉じるとボタンへ戻る、凍結初期値、形式の複数選択・BOM 無効化・CRLF・ラベル変更、新しいフォルダの内容（バイト確認）、元フォルダ不変、ジョブ投入・再実行なし、別の設定での再出力は新キー、JSON 未出力と改変 JSON の拒否理由、英語表示、応答喪失で閉じない・再確認は同じキーと本文で 1 フォルダ、アプリ再起動後の記録表示 |
+
+合成の E2E データ: `tools/ui2/synthetic_v1.py` の SyntheticRunner は、入力名が `reexport-` で始まるときだけ共通レンダラで JSON v1 も書く（他の既存 E2E は SRT のみのまま）。
+
+試験件数、最終 HEAD、push／PR CI の URL と結果は Draft PR の本文に記録する。
+
+## 9. 独立レビュー
+
+Draft PR 提出前に、実装と別コンテキストのサブエージェントが差分・制御経路・不変条件・試験をレビューした。担当・範囲・指摘（P0〜P3）・対応・残留事項は Draft PR の本文と #82 に記録する。
+
+## 10. 互換性と変更しないもの
+
+- core の 5 exporter は共通レンダラへ委譲したが、出力バイトは不変（既存 exporter 試験、b2 golden、application golden で確認）。`Exporter.write` は同じバイト列を `write_bytes` で書く。
+- 既定 GUI（`create_app(session_key, repo_root=...)`）は再出力のモジュールもルートも読み込まない（試験済み）。旧 `--next-ui` と CLI は無関係。
+- B5 の API・DB、B6/B7 の制御 DB（スキーマ・行）、ジョブ snapshot、キュー、E-B の作業セットは変更しない。B7 ストアは読取りだけ。
+- 既存 Preset/Policy の revision、初期化済みストア、保存済み作業セット、既存 snapshot、旧 GUI/CLI の既定値は変更していない。新規 Preset の既定形式は以前から `srt, json, md`（JSON を含む）なので既定値の変更は不要だった。追加したのは JSON を外したときの警告表示だけ。
+- D3-B1 の外部アプリ起動 BLOCKED、成果物削除の全 OS 無効、Git checkout への private 出力の防止を維持する。
+
+## 11. 制約・残留課題
+
+- **Windows は BLOCKED**（§4.1）。実装にはハンドル固定の設計・オーナー承認・実機受入が必要。macOS は未検証。
+- Windows 11 実 WebView2、ACL、reparse、OneDrive、長パスの実機受入は [#22](https://github.com/zawa356/Utteran/issues/22) の別ゲート。CI・合成試験の成功を実機確認と混同しない。
+- 作成した直後のフォルダを同じユーザーの別プロセスが移動した場合、ファイルは移動先に存在する（書込みは記述子に固定）。完了時の位置確認で検出し `location_verified: false` と表示する。
+- 失敗・中断時の途中ファイルは削除しない（手動で削除する）。
+- 再出力記録の削除・保持期間・エクスポートは未実装（B5／E-B と共通の owner 未決事項）。上限到達時は新しい再出力を拒否する。元ジョブ履歴を削除しても記録（保存先パス・ラベル変更）は残る。
+- 元の話者 ID の復元、同名話者の分離はできない（§2.1）。
+- E-B の P3（active fence 再試行バックオフ）、CI 最適化、束 F、既定 GUI の切替、正式 Release は範囲外。

@@ -1,5 +1,7 @@
 # Architecture documents — where to start
 
+追補（2026-11-25、0.1.69未リリース）。[`--next-ui-v1` 検証済みJSONからのASRなし再出力](ui3/e-c-reexport.md)。共通レンダラ、独立 private ストア `reexport-v1`、B5/B7 不変。Windows は BLOCKED、実機未受入。
+
 追補（2026-11-24、0.1.68未リリース）。[`--next-ui-v1` 名前付き作業セットの自動保存・復元](ui3/e-b-worksets.md)。独立 private ストア `worksets-v1`、B5/B7 不変。Windows実機未受入。
 
 追補（2026-11-19、0.1.61未リリース）。[`--next-ui-v1` Expert 結果・履歴](ui3/d3a-results-history.md)。既存B7/C2cに接続。Windows実機未受入。
