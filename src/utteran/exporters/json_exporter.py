@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from typing import ClassVar
 
-from utteran.exporters.base import Exporter, display_speaker
+from utteran.exporters._view import render_options, transcript_view
+from utteran.exporters.base import Exporter
 from utteran.types import ExportOptions, PipelineResult
+from utteran_contracts.transcript_export import render_json
 
 
 class JSONExporter(Exporter):
@@ -16,58 +17,4 @@ class JSONExporter(Exporter):
 
     def render(self, result: PipelineResult, options: ExportOptions) -> str:
         """Render all segment and word metadata as JSON."""
-        diarization = result.diarization
-        segments = [
-            {
-                "start": segment.start,
-                "end": segment.end,
-                "speaker": display_speaker(segment.speaker, options),
-                "speaker_confidence": segment.speaker_confidence,
-                "text": segment.text,
-                "words": [
-                    {
-                        "start": word.start,
-                        "end": word.end,
-                        "text": word.text,
-                        "probability": word.probability,
-                    }
-                    for word in segment.words
-                ],
-            }
-            for segment in result.segments
-        ]
-        speakers = list(
-            dict.fromkeys(
-                speaker
-                for segment in result.segments
-                if (speaker := display_speaker(segment.speaker, options)) is not None
-            )
-        )
-        payload = {
-            "schema_version": 1,
-            "input": {
-                "path": str(result.input_path),
-                "duration": result.transcription.duration,
-            },
-            "processing": {
-                "asr": {
-                    "backend": result.transcription.backend,
-                    "model": result.transcription.model_id,
-                    "device": result.transcription.device,
-                },
-                "diarization": (
-                    None
-                    if diarization is None
-                    else {
-                        "backend": diarization.backend,
-                        "model": diarization.model_id,
-                        "device": diarization.device,
-                        "memory": diarization.memory,
-                    }
-                ),
-                "created_at": result.created_at,
-            },
-            "speakers": speakers,
-            "segments": segments,
-        }
-        return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        return render_json(transcript_view(result), render_options(options))

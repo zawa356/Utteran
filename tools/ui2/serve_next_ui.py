@@ -113,6 +113,7 @@ def build_app(
             v1_authority=f"127.0.0.1:{port}",
             v1_store_path=settings_path,
             v1_worksets_path=v1_root / "worksets" / "worksets.sqlite3",
+            v1_reexport_path=v1_root / "reexport" / "reexports.sqlite3",
             enable_v1_jobs=True,
             v1_jobs_runtime=runtime,
             enable_v1_events=True,

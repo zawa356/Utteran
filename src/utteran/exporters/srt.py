@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from utteran.exporters.base import Exporter, display_text, format_timestamp
+from utteran.exporters._view import render_options, transcript_view
+from utteran.exporters.base import Exporter
 from utteran.types import ExportOptions, PipelineResult
+from utteran_contracts.transcript_export import render_srt
 
 
 class SRTExporter(Exporter):
@@ -15,15 +17,4 @@ class SRTExporter(Exporter):
 
     def render(self, result: PipelineResult, options: ExportOptions) -> str:
         """Render SRT with comma millisecond separators."""
-        cues = [
-            "\n".join(
-                [
-                    str(index),
-                    f"{format_timestamp(segment.start, ',')} --> "
-                    f"{format_timestamp(segment.end, ',')}",
-                    display_text(segment.text, segment.speaker, options),
-                ]
-            )
-            for index, segment in enumerate(result.segments, start=1)
-        ]
-        return "\n\n".join(cues) + ("\n" if cues else "")
+        return render_srt(transcript_view(result), render_options(options))

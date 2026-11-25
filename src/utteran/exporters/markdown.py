@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from utteran.exporters.base import Exporter, display_speaker
+from utteran.exporters._view import render_options, transcript_view
+from utteran.exporters.base import Exporter
 from utteran.types import ExportOptions, PipelineResult
+from utteran_contracts.transcript_export import render_md
 
 
 class MarkdownExporter(Exporter):
@@ -15,31 +17,4 @@ class MarkdownExporter(Exporter):
 
     def render(self, result: PipelineResult, options: ExportOptions) -> str:
         """Render metadata followed by transcript paragraphs."""
-        transcription = result.transcription
-        diarization = result.diarization
-        lines = [
-            f"# {result.input_path.stem}",
-            "",
-            "## メタ情報",
-            "",
-            f"- 入力: `{result.input_path}`",
-            f"- 長さ: {transcription.duration:.3f} 秒",
-            f"- 作成日時: {result.created_at}",
-            f"- ASR: {transcription.backend} / {transcription.model_id} / {transcription.device}",
-        ]
-        if diarization is None:
-            lines.append("- 話者分離: 無効")
-        else:
-            lines.append(
-                f"- 話者分離: {diarization.backend} / {diarization.model_id} / {diarization.device}"
-            )
-        lines.extend(["", "## 文字起こし", ""])
-        for segment in result.segments:
-            text = segment.text.strip()
-            label = display_speaker(segment.speaker, options)
-            if options.show_speaker and label:
-                lines.append(f"**{label}**: {text}")
-            else:
-                lines.append(text)
-            lines.append("")
-        return "\n".join(lines).rstrip() + "\n"
+        return render_md(transcript_view(result), render_options(options))

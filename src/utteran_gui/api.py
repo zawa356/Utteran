@@ -163,6 +163,7 @@ def create_app(
     v1_authority: str | None = None,
     v1_store_path: Path | None = None,
     v1_worksets_path: Path | None = None,
+    v1_reexport_path: Path | None = None,
     enable_v1_jobs: bool = False,
     v1_jobs_runtime: Any = None,
     enable_v1_setup: bool = False,
@@ -243,6 +244,17 @@ def create_app(
             # (route registration, mounts, StaticFiles, middleware) runs before any
             # legacy-queue close, DB backup/migration or dispatcher start (G-09).
             app.state.v1_jobs_runtime = v1_runtime
+            # E-C: re-export from the verified JSON (no ASR) with its own private store. Before
+            # the job routes: their POST /jobs/{id}/{action} would otherwise match first.
+            from utteran_gui.reexport_api import register_reexport_routes
+            from utteran_gui.reexport_service import ReexportService
+            from utteran_gui.reexport_store import ReexportStore
+
+            reexports = ReexportService(
+                ReexportStore(v1_reexport_path or resolve_data_paths(repo_root).reexport_store),
+                lambda: _active_job_store(v1_runtime),
+            )
+            register_reexport_routes(v1_app, lambda: reexports)
             register_job_routes(v1_app, v1_runtime)
             if enable_v1_setup:
                 # Same sub-app and same runtime: setup and jobs share one heavy slot.
@@ -742,6 +754,15 @@ def create_app(
         # failure activate() stops what it started and reopens only the queue it closed.
         v1_runtime_to_activate.activate()
     return app
+
+
+def _active_job_store(runtime: Any) -> Any:
+    """The B7 store of an active runtime, read-only use by E-C (inactive: 503)."""
+    from utteran_gui.reexport_store import ReexportError
+
+    if getattr(runtime, "state", None) != "active" or getattr(runtime, "store", None) is None:
+        raise ReexportError("jobs_runtime_inactive", 503)
+    return runtime.store
 
 
 def _default_job_runtime(

@@ -1,5 +1,15 @@
 # AI 作業状態
 
+## 現在地（2026-11-25、束 E-C、0.1.69・未リリース）
+
+- main 基点 `b8463129d5bd213d81a11427a02d58f726a0e056`（0.1.68、E-B 統合済み）。作業ブランチ `claude/eloquent-fermi-nfc18l`（セッション指定）、[#82](https://github.com/zawa356/Utteran/issues/82)。E-B 統合後の main CI は着手時点で実行中（完了待ちなしで着手、オーナー承認済み）。
+- Expert の結果・履歴から、成功ジョブの検証済み JSON（記述子で読み、証跡と照合した同一バイト列）だけを元に、ASR なしで SRT/VTT/TXT/MD/JSON・話者表示・ラベル・BOM・改行を変えて新しい専用フォルダへ再出力する。5 形式の書式化を `utteran_contracts.transcript_export` に共通化（core の出力バイトは不変）。独立 private ストア `reexport-v1`、Idempotency-Key・結果不明の再照合・中断の明示、上限（実測根拠）。
+- POSIX（Linux で検証、macOS 未検証）だけ有効。Windows は出力先を固定した書込みを証明できないため `reexport_platform_unsupported` で拒否（BLOCKED）。
+- 2026-11-25 オーナーレビュー（[PR #83](https://github.com/zawa356/Utteran/pull/83)、P2×3）に対応: Git 除外を実ファイル名・marker 全件で判定、元ジョブのフォルダとその中を名前と identity で拒否（記録の前）、位置確認を表示パスの再 walk と全祖先の identity 照合に変更。Red 回帰を先にコミット（`791826a`）。Windows の fail closed は維持。
+- 同日のオーナー再レビュー（P2-4）に対応: 名前の記録（DB）の後と各ファイルの作成前に、表示パスの到達性と祖先を再確認し、移動を検出したら書かない（`output_moved`）。検査と書込みの不可分性は保証しない（残留として正本 §11）。Windows は後続の E-C2。
+- 2026-11-25 CI 最適化（[#85](https://github.com/zawa356/Utteran/pull/85)、main `57ba960`）を通常 merge で取り込み、新 CI（full 製品ゲート・E2E 3 shard の全件 identity 照合・軽量 push・historical）で再検証する。製品コードの変更なし。
+- [E-C 正本](docs/architecture/ui3/e-c-reexport.md)。HEAD・試験件数・CI・独立レビューは Draft PR に記録する。Windows WebView2 等の実機確認は [#22](https://github.com/zawa356/Utteran/issues/22)。
+
 ## CI最適化（2026-11-25、[#84](https://github.com/zawa356/Utteran/issues/84)）
 
 - main `b846312` から `ci/optimize-quality-gates` を独立。製品版0.1.68を維持。#83との統合順に応じて、後続側が最新mainを取り込んで再検証する。

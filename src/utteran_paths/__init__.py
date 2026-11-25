@@ -123,6 +123,15 @@ class DataPaths:
         )
 
     @property
+    def reexport_store(self) -> Path:
+        """E-C private re-export records. Separate from every other store; created on first use."""
+        return (
+            self.root / "data" / "reexport-v1" / "reexports.sqlite3"
+            if self.root
+            else Path(user_data_dir("utteran")) / "reexport-v1" / "reexports.sqlite3"
+        )
+
+    @property
     def capability_evidence(self) -> Path | None:
         """B4 private smoke evidence (0.1.50). Only below an explicit data root.
 

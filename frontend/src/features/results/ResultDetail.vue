@@ -7,7 +7,7 @@ import { canRerun } from "../../domain/v1/batchJobs";
 import V1Artifacts from "../transcribe/V1Artifacts.vue";
 
 const props = defineProps<{ group: LogicalJob; label: string; history: boolean; hidden: boolean; busy: boolean }>();
-const { board, deletion, rerun } = useCore().v1!;
+const { board, deletion, rerun, reexport } = useCore().v1!;
 const { t, status, reason } = useCodeText();
 
 function plan(attempt: JobV1): void {
@@ -49,6 +49,13 @@ function plan(attempt: JobV1): void {
     </div>
     <div v-if="canRerun(group)" class="u-row">
       <v-btn size="small" variant="outlined" :disabled="busy" data-testid="result-rerun" @click="rerun.openRerun(group)">{{ t("results.rerun") }}</v-btn>
+      <!-- E-C: a finished, succeeded job only; no ASR (the server decides availability). -->
+      <v-btn
+        v-if="group.latest.status === 'succeeded'" size="small" variant="outlined" :disabled="busy"
+        data-testid="result-reexport" @click="reexport.open(group.latest.id)"
+      >
+        {{ t("ec.open") }}
+      </v-btn>
     </div>
     <h3 class="u-subheading">{{ t("results.attempts") }}</h3>
     <p v-if="group.branched" class="text-caption">{{ t("v1.board.branched") }}</p>
