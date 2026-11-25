@@ -1,16 +1,21 @@
 name: CI
 
-# Every quality gate is its own job with no `needs:` edges, so one red gate never
-# hides another (Issue #27: a mypy failure used to stop Linux pytest, the BOM check,
-# and both privacy scans from running at all). A failing job stays red: no
-# `continue-on-error`, `|| true`, or `if: always()` is used to mask a result.
-
+# Product checks run independently (Issue #27). The final job only evaluates
+# the result of each explicitly named job in this run.
 on:
   push:
+    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
+
+# Do not cancel main runs or collapse their pending slots. A full PR run
+# and a branch push live in different workflows and concurrency groups.
+concurrency:
+  group: full-ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   linux-lock-schema:
@@ -103,7 +108,7 @@ jobs:
       - name: Install development dependencies
         run: uv sync --extra dev --extra gui --locked
       - name: Test without models
-        run: uv run --no-sync pytest -m "not requires_model" -rfEs
+        run: uv run --no-sync pytest -m "not requires_model" -rfEs --durations=20
       # Issue #27 PID-file race regression: one green run is not evidence of a
       # fixed race, so the Job Object parent-death test is repeated every run.
       - name: Repeat Job Object parent-death test (PID-file race guard)
@@ -213,29 +218,23 @@ jobs:
           if ($failed) { exit 1 }
           exit 0
 
-  contracts-python-compatibility:
-    name: Contracts and backend integration (Python ${{ matrix.python-version }})
+  contracts-python-3-11:
+    name: Contracts and backend integration (Python 3.11)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: ./.github/actions/contracts-python-compatibility
         with:
-          python-version: ${{ matrix.python-version }}
-          enable-cache: true
-      - run: uv sync --extra dev --extra gui --locked
-      - name: Contract, schema, import boundary, and B7-B9 integration tests (no models)
-        run: uv run --no-sync pytest tests/test_contracts.py tests/test_contracts_schema.py tests/test_contracts_boundary.py tests/test_worker_protocol.py tests/test_capability_inventory.py tests/test_capability_bridge.py tests/test_b4_smoke_evidence.py tests/test_b4_smoke_executor.py tests/test_b4_smoke_b7.py tests/test_b5_settings.py tests/test_b6_control.py tests/test_b7_jobs.py tests/test_b7_api.py tests/test_b7_review_fixes.py tests/test_b8_setup.py tests/test_b8_api.py tests/test_b8_review_fixes.py tests/test_b9_events.py tests/test_b9_review_fixes.py tests/test_backend_foundation_e2e.py
-      - run: uv run --no-sync python -m utteran_contracts.schema --output docs/architecture/b1/contracts.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.capability_schema --output docs/architecture/b4/capabilities.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.preview_schema --output docs/architecture/b5/preview.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.control_schema --output docs/architecture/b6/control.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.job_schema --output docs/architecture/b7/jobs.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.setup_schema --output docs/architecture/b8/setup.schema.json --check
-      - run: uv run --no-sync python -m utteran_contracts.events_schema --output docs/architecture/b9/events.schema.json --check
+          python-version: '3.11'
+
+  contracts-python-3-12:
+    name: Contracts and backend integration (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/contracts-python-compatibility
+        with:
+          python-version: '3.12'
 
   powershell-bom:
     name: PowerShell UTF-8 BOM
@@ -266,6 +265,7 @@ jobs:
   # new relative to trusted history (protected main + the reviewed cutover pinned in
   # tools/public_history_baseline.json) introduces private data, even if a later commit
   # removed it. See docs/architecture/backend/testing-and-operations.md.
+
   privacy-history-delta:
     name: Privacy gate for new commits (blocking)
     runs-on: ubuntu-latest
@@ -299,55 +299,6 @@ jobs:
           --github-event "$GITHUB_EVENT_NAME" --github-event-path "$GITHUB_EVENT_PATH"
           --json output/public-history-delta.json
 
-  privacy-history:
-    name: Privacy audit of reachable history (report only)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          python-version: "3.12"
-      # History is never rewritten by CI; the redacted report records counts and
-      # locations only (see docs/architecture/backend/validation.md).
-      - name: Audit complete reachable history
-        run: >-
-          uv run --no-project python tools/public_history_scan.py
-          --json output/public-history-scan-ci.json
-
-  ui1-frontend-spike:
-    name: UI-1 frontend spike (clean install, typecheck, build, E2E)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: "22"
-      # Investigation spike only (tools/ui1/spike); it is not the product GUI. npm ci
-      # installs exactly the committed lockfiles, and run.mjs exits non-zero when any
-      # scenario fails or the nonce CSP is violated.
-      - name: Install, type-check and build each spike
-        working-directory: tools/ui1/spike
-        run: |
-          set -euo pipefail
-          for app in vue-primevue vue-vuetify react-mui; do
-            (cd "$app" && npm ci --no-audit --no-fund && npm run typecheck && npm run build)
-          done
-      - name: Install pinned Playwright and Chromium
-        working-directory: tools/ui1/spike/e2e
-        run: |
-          npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium
-      - name: Same-condition E2E (7 scenarios x 3 spikes)
-        working-directory: tools/ui1/spike
-        run: node e2e/run.mjs --out=report.json
-
-  # UI-3 frontend on Windows (owner policy 2026-11-09): every phase/fix PR runs the production
-  # frontend's lint, vue-tsc, Vitest and Vite build on windows-latest as well, next to the Linux
-  # ui2-frontend job. Synthetic tests only (fake host/fetch): no real token, OS keyring, user
-  # profile or OS dialog is touched. This is NOT a WebView2 acceptance — native picker, Explorer,
-  # DPI, IME and installer/portable stay in the final manual Windows gate (UI-3/UI-4).
   ui3-frontend-windows:
     name: UI-3 frontend Windows (npm ci, lint, types, unit, build)
     runs-on: windows-latest
@@ -356,13 +307,7 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version-file: frontend/.nvmrc
-      - name: Pin npm (package.json packageManager)
-        run: npm install -g npm@11.21.1 && npm --version
-      - name: Install exactly the committed lockfile
-        run: npm ci --no-fund
+      - uses: ./.github/actions/setup-frontend
       - name: Lint
         run: npm run lint
       - name: Type check (vue-tsc)
@@ -372,30 +317,13 @@ jobs:
       - name: Build into src/utteran_gui/web-next
         run: npm run build
 
-  # UI-2 next frontend (frontend/, served only with `utteran-gui --next-ui`). Independent job:
-  # clean `npm ci` from the committed lockfile, blocking production-dependency audit, lint,
-  # vue-tsc, Vitest, Vite build, Python tests that require the real build, Playwright E2E
-  # through the real FastAPI /launch -> /next/ path, and a wheel installed in a new venv.
-  # Headless Chromium on Linux is NOT a Windows WebView2 acceptance (that stays a UI-4 gate).
-  ui2-frontend:
-    name: UI-2 frontend (npm ci, audit, lint, types, unit, build, E2E, UI-3-0 prototype, wheel)
+
+  frontend-quality:
+    name: Frontend lint, types, unit and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version-file: frontend/.nvmrc
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          python-version: "3.12"
-          enable-cache: true
-      # npm 10 (bundled with Node 22) crashes while resolving vitest's optional peers when
-      # the lockfile is regenerated; the lockfile is produced and installed with this npm.
-      - name: Pin npm (package.json packageManager)
-        run: npm install -g npm@11.21.1 && npm --version
-      - name: Install exactly the committed lockfile
-        working-directory: frontend
-        run: npm ci --no-fund
+      - uses: ./.github/actions/setup-frontend
       - name: Lint
         working-directory: frontend
         run: npm run lint
@@ -405,6 +333,20 @@ jobs:
       - name: Unit and contract tests (Vitest)
         working-directory: frontend
         run: npm test
+      - name: Build into src/utteran_gui/web-next
+        working-directory: frontend
+        run: npm run build
+
+  frontend-bundle-wheel:
+    name: Frontend bundle, prototype isolation and wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-frontend
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
       - name: Build into src/utteran_gui/web-next
         working-directory: frontend
         run: npm run build
@@ -414,30 +356,93 @@ jobs:
         env:
           UTTERAN_UI2_REQUIRE_BUILD: "1"
         run: uv run --no-sync pytest tests/test_ui2_next_ui.py tests/test_ui2_reducer_parity.py -rfEs
-      - name: Install pinned Playwright Chromium
+      - name: Verify the product bundle excludes the prototype
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
-      - name: E2E through /launch -> /next/ (real FastAPI, synthetic services)
-        working-directory: frontend
-        run: npm run e2e
-      # UI-3-0 design prototype (Vite dev server, synthetic data, no backend). Also checks that
-      # the production build above contains no prototype entry, module or text.
-      - name: UI-3-0 prototype E2E (dev-only preview.html; isolation from the production build)
-        working-directory: frontend
-        run: npm run e2e:prototype
+        run: npx playwright test --config playwright.isolation.config.ts
       - name: Build the wheel and serve /next/ from a new isolated venv
         run: |
           set -euo pipefail
           rm -rf dist
           uv build --wheel
           uv run --no-project python tools/ui2/check_wheel_assets.py dist/utteran-*-py3-none-any.whl
+
+  npm-production-audit:
+    name: Frontend npm production audit (blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-frontend
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
       # Policy: the production dependency graph (npm --omit=dev, which includes optional peers)
       # must have no high/critical advisory. tools/npm_audit_gate.py prints every finding and fails
       # on any high/critical one, except an advisory listed in frontend/audit-exceptions.json that
       # the owner approved, that has not expired (<= 31 days) and whose range/severity/installed
       # version are unchanged (Issue #62). A registry/network failure fails this step; it is never
-      # reported as clean. It runs last so that a red audit never hides the results of the steps
-      # above (no continue-on-error, no if: always()); the job still fails when it fails.
+      # reported as clean.
       - name: Audit production dependencies (blocking, high and above)
         working-directory: frontend
         run: npm run audit:prod
+
+  product-e2e-1:
+    name: Product Playwright E2E (1/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/product-e2e
+        with:
+          shard: '1'
+
+  product-e2e-2:
+    name: Product Playwright E2E (2/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/product-e2e
+        with:
+          shard: '2'
+
+  product-e2e-3:
+    name: Product Playwright E2E (3/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/product-e2e
+        with:
+          shard: '3'
+
+  full-product-gate:
+    name: Full product quality gate
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - linux-lock-schema
+      - linux-lint
+      - linux-types
+      - linux-tests
+      - windows-tests
+      - windows-powershell
+      - contracts-python-3-11
+      - contracts-python-3-12
+      - powershell-bom
+      - privacy-worktree
+      - privacy-history-delta
+      - ui3-frontend-windows
+      - frontend-quality
+      - frontend-bundle-wheel
+      - npm-production-audit
+      - product-e2e-1
+      - product-e2e-2
+      - product-e2e-3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Require success from every full CI dependency
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          jq -e -L .github/scripts 'include "full-product-gate"; full_product_gate' <<< "$RESULTS"

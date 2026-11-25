@@ -39,7 +39,7 @@ Priority when sources disagree: code → offline schemas (`docs/architecture/b*/
 even if a later commit removes it; the reviewed cutover in `tools/public_history_baseline.json` changes only by reviewed PR).
 Never mask a failing gate (`continue-on-error`, `|| true`, skipping or deleting tests, broad scan allowlists).
 Every tracked `.ps1` needs a UTF-8 BOM and must be classified in the CI startup allowlist.
-Frontend (`frontend/`, CI job `ui2-frontend`): `npm ci` · `npm run audit:prod` · `lint` · `typecheck` · `test` · `build` · `e2e`.
+Frontend (`frontend/`, full CI): `npm ci` · `npm run audit:prod` · `lint` · `typecheck` · `test` · `build` · `e2e`.
 An audit exception exists only as an owner-approved, ≤31-day, single-advisory entry in `frontend/audit-exceptions.json`
 (`tools/npm_audit_gate.py`); never fill `approved_by`/`approval_url` yourself and never widen it to other advisories.
 
