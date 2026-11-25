@@ -206,7 +206,7 @@ native/                        # 独立 Cargo workspace（製品の pyproject／
 | 32 MiB の上限付き読取り（binding 経由） | 0.036 秒（3.11・3.12） |
 | 128 MiB の排他作成＋書込み＋fsync | 0.22 秒（3.11）／0.27 秒（3.12） |
 | 上記ベンチの RSS 増 | 約 +64 MiB（読取り 32 MiB × Rust と Python の 2 copy） |
-| core の行数 | src 約 1,940 行（うち Windows 604、POSIX 329）、試験 約 1,300 行 |
+| core の行数 | src 約 2,050 行（うち Windows 約 650、POSIX 約 350）、試験 約 1,400 行 |
 
 参考目標（warm 追加 build 3 分以内、native 10 MiB 以内）は満たす。CI の wall／runner-minutes とキャッシュは §9.2。
 
@@ -232,7 +232,21 @@ mkdir 直後の差替え（link→`claim_lost`、非空 dir→`claim_lost`、**�
 `native-poc.yml` は `native/**` と自身の変更時だけ動き、製品の `Full product quality gate`（18 job ID）には関与しない。ubuntu／windows／macos の各 runner で
 fmt・clippy・core 試験（Windows は `windows_only.rs` を実行）・権限依存試験（POSIX）・wheel build・3.11／3.12 の新規 venv 試験・ベンチ、別 job で cargo-deny。
 キャッシュは使わず cold の実測とする（推奨キャッシュ key: OS・arch・`rust-toolchain.toml`・`Cargo.lock` の hash、対象は `~/.cargo/registry` と `native/target`）。
-**実行結果・所要時間・NOT_RUN 項目は Draft PR 本文に記録する。** Windows runner の成功は VM 受入の代用にしない。
+初回成功 run: [45581506834](https://github.com/zawa356/Utteran/actions/runs/45581506834)（HEAD `ccee046`、全 4 job success、起動から完了まで約 1 分 53 秒、job 合計の runner 時間 約 4.9 分）。
+
+| job | wall | core 試験 | 権限依存 | wheel（build／サイズ／native） | binding（3.11・3.12） | ベンチ 32 MiB 読取り／128 MiB 書込み＋flush |
+|---|---|---|---|---|---|---|
+| ubuntu-latest | 48 秒 | 4＋18＋7 PASS | 権限拒否・bind mount（sudo）各 1 PASS | 14 秒／247 KB／`.so` 489 KiB（manylinux_2_34） | 各 7 PASS・1 skip | 0.03 秒／0.60〜0.69 秒 |
+| macos-latest（arm64） | 59 秒 | 4＋17＋7 PASS | 権限拒否 1 PASS | 13 秒／224 KB／`.so` 447 KiB（macosx_11_0） | 各 6 PASS・2 skip | 0.01 秒／0.06〜0.08 秒 |
+| windows-latest | 76 秒 | 4＋17＋**`windows_only` 15** PASS、NOT_RUN 2（`remote`・`non_ntfs`：前提の環境変数なし） | — | 20 秒／154 KB／`.pyd` 311 KiB | 各 6 PASS・2 skip（POSIX 専用） | 0.03 秒／0.52〜0.60 秒 |
+| cargo-deny | 113 秒（うち install 97 秒） | `advisories ok, bans ok, licenses ok, sources ok` | | | | |
+
+Windows runner で PASS した主な項目: 保持中の祖先 3 階層の rename・rmdir 拒否と解放後の成功、既存 DELETE handle による `busy`、writer がいる読取りの `busy`、読取り中の追記が共有違反、
+junction・symlink（`SAFE_FS_REQUIRE` で必須化）・8.3 短縮名（`name_aliased`）・UNC／device 名前空間・SUBST・**per-logon の drive 割当て（P1-1 回帰）**の拒否、ASCII 大小文字違い、Unicode と MAX_PATH 超の長パス、
+子 process の TerminateProcess 後の部分ファイル保持と handle 解放。
+CI で見つかった不具合: (1) NTFS は `FILE_CREATE` で別種の既存 entry を `STATUS_FILE_IS_A_DIRECTORY`／`STATUS_NOT_A_DIRECTORY` と返す → 排他作成では `already_exists` に写像（`6cd069d`、既存 entry は不変だった）。
+(2) subst を使う 2 試験が同じ空き letter を並行に取り合った → 直列化（`ccee046`）。
+**Windows runner の成功は VM 受入の代用にしない。**
 なお `.github/` の変更は `ci-historical.yml` の UI-1 spike・prototype 検査も起動する（既存の判定規則どおり）。
 
 ### 9.3 Windows 11 VM
