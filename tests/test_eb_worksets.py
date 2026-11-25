@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sqlite3
+import stat
 import subprocess
 import sys
 import threading
@@ -328,6 +329,7 @@ def test_delete_needs_cas_never_removes_the_last_and_moves_active(client, tmp_pa
     active = client.put(
         "/api/v1/worksets/active",
         json={"schema_version": 1, "workset_id": second, "view": {"mode": "expert"}},
+        headers={"If-Match": '"1"'},
     ).json()
     assert active["workset_id"] == second and active["view"] == {"mode": "expert"}
     b5 = tmp_path / "b5"
@@ -346,16 +348,34 @@ def test_delete_needs_cas_never_removes_the_last_and_moves_active(client, tmp_pa
     assert (sorted(p.name for p in b5.rglob("*")) if b5.exists() else []) == before
 
 
-def test_active_pointer_is_absolute_and_validated(client):
+def test_active_pointer_is_cas_and_validated(client):
     workset = boot(client)["items"][0]["id"]
+    second = client.post(
+        "/api/v1/worksets",
+        json={"schema_version": 1, "name": "二つ目"},
+        headers={"Idempotency-Key": "synthetic-create-0002"},
+    ).json()["id"]
+    url = "/api/v1/worksets/active"
     body = {"schema_version": 1, "workset_id": workset, "view": {"mode": "expert"}}
-    one = client.put("/api/v1/worksets/active", json=body).json()
-    two = client.put("/api/v1/worksets/active", json=body).json()
-    assert one == two and one["revision"] == 2
-    assert client.get("/api/v1/worksets/active").json() == one
-    bad = client.put("/api/v1/worksets/active", json={**body, "view": {"mode": "debug"}})
+    assert client.put(url, json=body).status_code == 428
+    assert client.put(url, json=body, headers={"If-Match": "1"}).status_code == 400
+    one = client.put(url, json=body, headers={"If-Match": '"1"'})
+    assert one.status_code == 200 and one.headers["ETag"] == '"2"'
+    # The same value again changes nothing, whatever revision the sender knew.
+    two = client.put(url, json=body, headers={"If-Match": '"1"'}).json()
+    assert two == one.json() and two["revision"] == 2
+    assert client.get(url).json() == two and client.get(url).headers["ETag"] == '"2"'
+    # A window chose W2 (rev 2 -> 3); a delayed older request (sent with rev 1) arrives late.
+    newer = {**body, "workset_id": second}
+    assert client.put(url, json=newer, headers={"If-Match": '"2"'}).status_code == 200
+    stale = client.put(url, json={**body, "view": {"mode": "normal"}}, headers={"If-Match": '"2"'})
+    assert stale.status_code == 412 and stale.json()["error"]["code"] == "revision_conflict"
+    assert client.get(url).json()["workset_id"] == second  # never moved back
+    bad = client.put(url, json={**body, "view": {"mode": "debug"}}, headers={"If-Match": '"3"'})
     assert bad.status_code == 422
-    missing = client.put("/api/v1/worksets/active", json={**body, "workset_id": "ws_" + "1" * 32})
+    missing = client.put(
+        url, json={**body, "workset_id": "ws_" + "1" * 32}, headers={"If-Match": '"3"'}
+    )
     assert missing.status_code == 404
 
 
@@ -717,37 +737,125 @@ def test_deletion_returns_space_to_the_file_system(store, clock):
 # ---- input existence check -----------------------------------------------------------------
 
 
-def test_input_status_is_bounded_and_never_touches_network_names(tmp_path, monkeypatch):
+def test_input_status_classifies_local_paths_without_following_links(tmp_path):
     present = tmp_path / "a.wav"
     present.write_bytes(b"\0")
-    states = input_status(
-        [
-            str(present),
-            str(tmp_path / "missing.wav"),
-            str(tmp_path),
-            "relative.wav",
-            "\\\\server\\share\\x.wav",
-            "//server/share/x.wav",
-        ]
-    )
-    assert states == ["file", "missing", "not_file", "unchecked", "unchecked", "unchecked"]
-    seen: list[str] = []
+    paths = [
+        str(present),
+        str(tmp_path / "missing.wav"),
+        str(tmp_path),
+        "relative.wav",
+        "\\\\server\\share\\x.wav",
+        "//server/share/x.wav",
+    ]
+    expected = ["file", "missing", "not_file", "unchecked", "unchecked", "unchecked"]
+    if os.name != "nt":
+        link = tmp_path / "link.wav"
+        link.symlink_to(present)
+        paths += [str(link), str(tmp_path / ".." / tmp_path.name / "a.wav")]
+        expected += ["unchecked", "unchecked"]  # a link is not followed; ".." is not resolved
+    assert input_status(paths) == expected
+
+
+class _NoSystemCall:
+    """Fails the test if any file-system call is attempted for the given path."""
+
+    def __init__(self, monkeypatch, module, marker: str) -> None:
+        self.calls: list[str] = []
+        for name in ("lstat", "stat"):
+            original = getattr(module.os, name)
+
+            def guarded(path, *args, _original=original, **kwargs):
+                if marker in str(path):
+                    self.calls.append(str(path))
+                    raise AssertionError("network path touched")
+                return _original(path, *args, **kwargs)
+
+            monkeypatch.setattr(module.os, name, guarded)
+
+
+def test_input_status_never_stats_a_windows_network_drive(monkeypatch):
     import utteran_gui.worksets_api as module
 
-    original = module.os.stat
+    drives = {"Z:\\": 4, "C:\\": 3, "D:\\": 5, "Q:\\": 1, "R:\\": 0}  # REMOTE FIXED CDROM ...
+    monkeypatch.setattr(module, "_IS_WINDOWS", True)
+    monkeypatch.setattr(module, "_drive_type", lambda root: drives[root])
+    guard = _NoSystemCall(monkeypatch, module, "synthetic-share")
+    states = module.input_status(
+        [
+            "Z:\\synthetic-share\\x.wav",
+            "D:\\synthetic-share\\x.wav",
+            "Q:\\synthetic-share\\x.wav",
+            "R:\\synthetic-share\\x.wav",
+            "\\\\?\\UNC\\synthetic-share\\x.wav",
+        ]
+    )
+    assert states == ["unchecked"] * 5
+    assert guard.calls == []
+    # A fixed drive is read component by component with lstat (links are never followed).
+    seen: list[str] = []
+    regular = os.stat_result((stat.S_IFREG | 0o600, 0, 0, 1, 0, 0, 1, 0, 0, 0))
+    folder = os.stat_result((stat.S_IFDIR | 0o700, 0, 0, 1, 0, 0, 0, 0, 0, 0))
 
-    def slow(path, *args, **kwargs):
-        seen.append(path)
-        if path.endswith("hang.wav"):
-            threading.Event().wait(2)
+    def fake_lstat(path, *args, **kwargs):
+        seen.append(str(path))
+        return regular if str(path).endswith(".wav") else folder
+
+    monkeypatch.setattr(module.os, "lstat", fake_lstat)
+    assert module.input_status(["C:\\synthetic-local\\x.wav"]) == ["file"]
+    assert seen == ["C:\\synthetic-local", "C:\\synthetic-local\\x.wav"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the Windows path is covered by the drive-type test")
+def test_input_status_never_stats_a_network_mount(tmp_path, monkeypatch):
+    import utteran_gui.worksets_api as module
+
+    share = tmp_path / "synthetic-share"
+    share.mkdir()
+    (share / "a.wav").write_bytes(b"\0")
+    for fstype in ("nfs4", "cifs", "fuse.sshfs", "9p"):
+        monkeypatch.setattr(module, "_mounts", lambda f=fstype: [("/", "ext4"), (str(share), f)])
+        guard = _NoSystemCall(monkeypatch, module, "synthetic-share")
+        assert module.input_status([str(share / "a.wav")]) == ["unchecked"], fstype
+        assert guard.calls == []
+    monkeypatch.setattr(module, "_mounts", lambda: [])
+    assert module.input_status([str(tmp_path)]) == ["unchecked"]  # no mount table: unproven
+
+
+def test_input_status_bounds_threads_and_stops_after_the_deadline(tmp_path, monkeypatch):
+    import utteran_gui.worksets_api as module
+
+    present = tmp_path / "a.wav"
+    present.write_bytes(b"\0")
+    release = threading.Event()
+    seen: list[str] = []
+    original = module.os.lstat
+
+    def hanging(path, *args, **kwargs):
+        seen.append(str(path))
+        if str(path).endswith("hang.wav"):
+            release.wait(10)
         return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(module.os, "stat", slow)
-    assert input_status([str(tmp_path / "hang.wav"), str(present)], deadline=0.2) == [
-        "unchecked",
-        "file",
-    ]
-    assert not any(p.startswith("\\\\") for p in seen)
+    monkeypatch.setattr(module.os, "lstat", hanging)
+    before = threading.active_count()
+    hung = [str(tmp_path / "hang.wav"), str(present)]
+    # Every worker slot hangs on one call; later paths of the same request are never started.
+    for _ in range(module.INPUT_STATUS_MAX_WORKERS):
+        assert module.input_status(hung, deadline=0.2) == ["unchecked", "unchecked"]
+    # No slot is free: answered at once, no new thread, no system call.
+    calls = len(seen)
+    assert module.input_status([str(present)], deadline=5) == ["unchecked"]
+    assert len(seen) == calls
+    assert threading.active_count() <= before + module.INPUT_STATUS_MAX_WORKERS
+    assert not any(p == str(present) for p in seen)
+    release.set()
+    for _ in range(100):
+        if module.input_status([str(present)], deadline=1) == ["file"]:
+            break
+        threading.Event().wait(0.05)
+    else:
+        raise AssertionError("worker slots were not released")
 
 
 def test_input_status_api_does_not_echo_paths(client, tmp_path):

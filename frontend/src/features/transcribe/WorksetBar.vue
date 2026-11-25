@@ -163,6 +163,12 @@ onUnmounted(() => {
     </v-alert>
 
     <v-alert v-if="blockText" type="warning" density="compact" closable data-testid="ws-block" @click:close="worksets.dismissOp()">{{ blockText }}</v-alert>
+    <v-alert v-if="s.active.phase === 'error'" type="warning" density="compact" data-testid="ws-active-error">
+      {{ t("eb.activeError") }}
+      <template #append>
+        <v-btn variant="text" size="small" data-testid="ws-active-retry" @click="worksets.retryActive()">{{ t("common.retry") }}</v-btn>
+      </template>
+    </v-alert>
     <ErrorAlert v-if="s.op.phase === 'error' && s.op.error" :error="s.op.error" testid="ws-op-error" />
     <v-alert v-if="s.op.phase === 'unknown'" type="warning" density="compact" data-testid="ws-create-unknown">
       {{ t("eb.createUnknown") }}

@@ -1022,7 +1022,7 @@ export const ja = {
   "eb.defaultName": "作業セット{n}",
   "eb.label": "作業セット",
   "eb.select": "作業セットを選ぶ",
-  "eb.explain": "入力一覧・選択・Preset/Policyの版・共通とファイル別の設定・出力先は自動で保存され、次回起動時に復元されます。入力途中の欄、未適用の変更、ジョブやキューの状態は保存しません。復元してもジョブは投入されません。",
+  "eb.explain": "入力一覧・選択・Preset/Policyの版・共通とファイル別の設定・出力先は自動で保存され、次回起動時に復元されます。入力途中の欄、未適用の変更、ジョブやキューの状態は保存しません。復元してもジョブは投入されません。出力先が「既定の出力先」のままの場合は、復元した時点の既定の出力先を使います。",
   "eb.rowsCount": "入力{count}件",
   "eb.status.loading": "作業セットを読み込み中…",
   "eb.status.offline": "作業セットを読み込めません。この画面の変更は保存されません。",
@@ -1066,7 +1066,7 @@ export const ja = {
   "eb.recheck": "入力を再確認",
   "eb.row.missing": "見つかりません",
   "eb.row.notFile": "ファイルではありません",
-  "eb.recoveryNote": "自動保存は最新の状態だけを上書き保存します。復旧用として、10分以上前の保存状態が最大{n}件残ります。戻すと、現在の状態も復旧用に残ります。",
+  "eb.recoveryNote": "自動保存は最新の状態だけを上書き保存します。復旧用として、10分以上前の保存状態が最大{n}件残ります。戻すと、現在の状態も復旧用に残ります。復旧用の保存状態は全体で32 MiBまでで、超えると古いものから削除されるため、{n}件残ることは保証されません。",
   "eb.recoveryEmpty": "復旧用の保存状態はまだありません。",
   "eb.recoveryItem": "rev {revision}・{time}・入力{count}件",
   "eb.recoveryRestore": "この状態に戻す",
@@ -1093,6 +1093,9 @@ export const ja = {
   "code.store_unavailable": "保存先を利用できません。",
   "code.store_unsafe_path": "保存先の場所が安全ではありません。",
   "code.mode_invalid": "表示モードが正しくありません。",
+  "eb.block.edited_during_switch": "切替中に編集されたため、切り替えを中止しました。編集内容はこの作業セットに保存されます。必要ならもう一度選び直してください。",
+  "eb.block.edited_during_create": "作成中に編集されたため、新しい作業セットは作成しましたが開いていません。編集内容はこの作業セットに保存されます。新しい作業セットは一覧から選べます。",
+  "eb.activeError": "最後に使った作業セットの記録を確定できませんでした（自動で再試行します）。次回起動時に別の作業セットが開く可能性があります。",
 } as const;
 
 export type MessageKey = keyof typeof ja;

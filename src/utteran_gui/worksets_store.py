@@ -512,8 +512,14 @@ class WorksetStore:
             self._compact(db, always=True)
             return self._listing(db)
 
-    def set_active(self, workset_id: str, mode: Any) -> dict[str, Any]:
-        """Remember the last chosen workset and display mode (absolute value, safe to resend)."""
+    def set_active(self, workset_id: str, mode: Any, expected: int) -> dict[str, Any]:
+        """Remember the last chosen workset and display mode under CAS on the pointer revision.
+
+        ``expected`` is the pointer revision the caller last saw (0 = no pointer yet). A request
+        that arrives late (its window already sent a newer choice) no longer matches and is
+        refused with 412, so the pointer never moves back. A value equal to the stored one
+        changes nothing and succeeds whatever ``expected`` is.
+        """
         if mode not in ("normal", "expert"):
             raise WorksetError("mode_invalid", 422, retryable=False)
         if not self.exists():
@@ -521,9 +527,18 @@ class WorksetStore:
         with self._open(write=True) as db:
             self._get(db, workset_id)
             active = self._active(db)
+            if (
+                active is not None
+                and active["workset_id"] == workset_id
+                and active["view"]["mode"] == mode
+            ):
+                return {"schema_version": 1, **active}
+            current = 0 if active is None else active["revision"]
+            if current != expected:
+                raise WorksetError("revision_conflict", 412, retryable=False)
             if active is None:
                 db.execute("INSERT INTO active VALUES (1,?,?,1)", (workset_id, mode))
-            elif active["workset_id"] != workset_id or active["view"]["mode"] != mode:
+            else:
                 db.execute(
                     "UPDATE active SET workset_id=?, mode=?, revision=revision+1",
                     (workset_id, mode),

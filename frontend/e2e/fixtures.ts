@@ -40,7 +40,13 @@ async function resetWorksets(request: APIRequestContext): Promise<void> {
     data: { schema_version: 1, name: "作業セット1", state: EMPTY_WORKSET },
   });
   expect(put.status()).toBe(200);
-  const active = await request.put("/api/v1/worksets/active", { headers: SESSION_HEADER, data: { schema_version: 1, workset_id: keep!.id, view: { mode: "normal" } } });
+  const current = await request.get("/api/v1/worksets/active", { headers: SESSION_HEADER });
+  expect(current.status()).toBe(200);
+  const revision = ((await current.json()) as { revision: number }).revision;
+  const active = await request.put("/api/v1/worksets/active", {
+    headers: { ...SESSION_HEADER, "If-Match": `"${revision}"` },
+    data: { schema_version: 1, workset_id: keep!.id, view: { mode: "normal" } },
+  });
   expect(active.status()).toBe(200);
 }
 

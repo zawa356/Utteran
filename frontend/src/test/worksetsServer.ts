@@ -121,17 +121,36 @@ export function fakeWorksets(options: { exists?: boolean } = {}): FakeWorksets {
       state.applied.push(line("create"));
       return doc(w, 201);
     }
+    const activeWire = () => json(200, { schema_version: 1, workset_id: state.active!.id, view: { mode: state.active!.mode }, revision: state.active!.revision }, { ETag: `"${state.active!.revision}"` });
+    if (path === "/api/v1/worksets/active" && method === "GET") return state.active ? activeWire() : error(404, "workset_not_found");
     if (path === "/api/v1/worksets/active" && method === "PUT") {
       const b = body(init);
       const id = String(b.workset_id);
       if (!state.items.some((i) => i.id === id)) return error(404, "workset_not_found");
       const mode = String((b.view as Json).mode);
-      if (!state.active || state.active.id !== id || state.active.mode !== mode) state.active = { id, mode, revision: (state.active?.revision ?? 0) + 1 };
-      return json(200, { schema_version: 1, workset_id: id, view: { mode }, revision: state.active.revision });
+      if (state.active && state.active.id === id && state.active.mode === mode) return activeWire();
+      const expected = Number(/^"(\d+)"$/.exec(headers(init)["If-Match"] ?? "")?.[1] ?? NaN);
+      if (Number.isNaN(expected)) return error(428, "if_match_required");
+      if (expected !== (state.active?.revision ?? 0)) return error(412, "revision_conflict");
+      state.active = { id, mode, revision: (state.active?.revision ?? 0) + 1 };
+      state.applied.push("active");
+      return activeWire();
     }
     if (path === "/api/v1/worksets/input-status" && method === "POST") {
       const paths = body(init).paths as string[];
       return json(200, { schema_version: 1, items: paths.map((p) => ({ state: state.missing.has(p) ? "missing" : "file" })) });
+    }
+    const restore = /^\/api\/v1\/worksets\/(ws_[0-9a-f]{32})\/recovery\/(\d+)\/restore$/.exec(path);
+    if (restore && method === "POST") {
+      // Synthetic checkpoint: an empty state (enough to tell "restored" from the screen).
+      const w = state.items.find((i) => i.id === restore[1]);
+      if (!w) return error(404, "workset_not_found");
+      if (headers(init)["If-Match"] !== `"${w.revision}"`) return error(412, "revision_conflict");
+      w.state = emptyWire();
+      w.revision += 1;
+      w.updatedAt = now();
+      state.applied.push("restore");
+      return doc(w);
     }
     const match = /^\/api\/v1\/worksets\/(ws_[0-9a-f]{32})(\/recovery)?$/.exec(path);
     const w = match ? state.items.find((i) => i.id === match[1]) : undefined;

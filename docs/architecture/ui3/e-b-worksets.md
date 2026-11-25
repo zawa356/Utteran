@@ -26,7 +26,7 @@
 **保存する:** 入力行の順序、パス、追加元、選択、出力先（継承／個別）、適用済みの行別 override（ASR backend・model・device・language・formats・用語集）、primary 行、Preset／Policy の `{id, revision}`、共通の差分（language／formats。`null` は Preset 継承、`[]` は明示空）、共通の出力先。
 
 - 行別の用語集は「継承（キーなし）」と「明示的な空配列」を区別する。同一の用語集は `glossaries` に 1 回だけ保存し、行は初出順の番号で参照する（正規形なので同じ状態は同じバイト列）。
-- 保存済みの既定出力先に従っているだけの共通出力先は空として保存し、復元時にその時点の既定値へ追従する。
+- 保存済みの既定出力先に従っているだけの共通出力先は空として保存し、復元時にその時点の既定値へ追従する（設定で既定値を変えると、復元後の出力先も変わる。画面の説明文に明記）。個別に選んだ・入力した出力先はそのまま保存する。
 - 表示モードは作業セット本体ではなく、アクティブ参照（`active.view.mode`）に保存する。作業セットの切替では現在の表示モードを維持し、起動時だけ復元する（切替のたびに画面構成が変わらないようにするため）。
 
 **保存しない:** 入力欄の入力途中、未適用の一括変更（stage）、用語集・Preset のダイアログ下書き、Preset の作成／改訂／削除の確認途中、validation／resolution の結果と token、Idempotency-Key と結果不明の送信 intent、AdmissionGate／QueueMutationGate の記録、ジョブ・キュー・SSE・lease・スーパーバイザの状態、ページ内の行 ID・ファイル ID、存在確認の結果。B7 のジョブ・snapshot・キューは B7 が正本。
@@ -45,7 +45,7 @@
 | `GET /worksets/{id}` | 1 件（state を含む） | 200 + `ETag` | `workset_not_found` 404 |
 | `PUT /worksets/{id}` + `If-Match: "n"` `{schema_version, name, state}` | CAS の全置換。内容が同じなら revision を増やさない | 200 + `ETag` | `if_match_required` 428、`if_match_invalid` 400、`revision_conflict` 412、`state_invalid`／`name_invalid` 422、`state_too_large`／`store_quota_exceeded` 413 |
 | `DELETE /worksets/{id}` + `If-Match` | 削除（復旧世代も削除）。active だった場合は後継を同じトランザクションで active にする | 200 一覧 | 412、`workset_last` 409 |
-| `GET` / `PUT /worksets/active` `{schema_version, workset_id, view:{mode}}` | 最後の作業セットと表示モード。絶対値なので再送しても安全 | 200 | `mode_invalid` 422、404 |
+| `GET` / `PUT /worksets/active` + `If-Match: "n"`（未作成は `"0"`） `{schema_version, workset_id, view:{mode}}` | 最後の作業セットと表示モード。参照の revision で CAS する。保存値と同じ値は revision によらず成功し、何も変えない | 200 + `ETag` | `if_match_required` 428、`revision_conflict` 412、`mode_invalid` 422、404 |
 | `GET /worksets/{id}/recovery` | 復旧用保存状態の一覧（state は返さない） | 200 | 404 |
 | `POST /worksets/{id}/recovery/{revision}/restore` + `If-Match` | 復旧用保存状態を現在にする。置き換えた現在の状態も復旧用に残す | 200 + `ETag` | 412、`recovery_not_found` 404 |
 | `POST /worksets/input-status` `{schema_version, paths[≤100]}` | 入力の存在を読取り専用で照会。応答は `file`／`missing`／`not_file`／`unchecked` を同順で返し、パスは返さない | 200 | 422 |
@@ -53,7 +53,12 @@
 - エラー本文は B5 と同形の `{schema_version, error:{code, message_key:"worksets.<code>", request_id, retryable, issues:[]}}`。`retryable` は `store_busy`・`store_unavailable` だけ true。
 - ID は `ws_` と UUID hex。パスへ展開しない。revision は 1 から始まる整数。
 - 作成の Idempotency-Key は B5 の replay とは独立した、このストアの `replays` 表に保存する。同じキーと同じ本文なら同じ作業セットを返す。上限は最新 64 件で、超えた古い記録はこのストアから消す。
-- `input-status` は UNC／`//`／相対パス／NUL を `unchecked` とし、触れない（SMB 認証などの副作用を避けるため）。全体の期限は 3 秒で、期限を過ぎたものも `unchecked`。
+- `input-status` はネットワーク上の場所に一切触れない（SMB／NFS への往復や認証の副作用を避けるため）。ネットワークへ届き得る最初のシステムコールより前に判定し、ローカルと証明できないものは `unchecked` とする（fail closed。`unchecked` は投入を止めない）。
+  - 共通：UNC・デバイス名（`\\server`、`\\?\`、`//`）、相対パス、NUL を名前だけで `unchecked` にする。
+  - Windows：ドライブ文字を `GetDriveTypeW`（ローカルの問合せでドライブを開かない）で判定し、固定・リムーバブル・RAM ディスクだけを確認する。**割当済みネットワークドライブ（`Z:\` など）**、CD/DVD、不明・存在しないルートは `unchecked`。
+  - Linux：パスを含むマウントを `/proc/self/mounts` から名前で特定し、ネットワーク系（nfs、cifs、smb3、9p、sshfs など）と FUSE は `unchecked`。マウント表のない他の POSIX はすべて `unchecked`。`..` を含むなど正規形でないパスも `unchecked`。
+  - 各要素は `lstat` で読み、リンクを辿らない。途中に symlink、junction、マウントポイント（reparse point）があればそこで止めて `unchecked`。
+  - 確認スレッドはプロセス全体で最大 2 本。空きがなければ即座に `unchecked` を返す。期限（3 秒）を過ぎた要求は新しいシステムコールを始めないため、止まった呼出しが占有するのは最大 1 本だけで、繰り返しても増えない。
 - state の検証は Pydantic（`worksets_model.py`）。未知キー、明示的な `null` による継承指定、範囲外の primary、未参照・重複・順序違いの用語集、`schema_version≠1` を拒否する。`job_id`・token などの実行時キーは定義が無いため保存できない。
 
 ## 4. 自動保存と競合モデル（クライアント）
@@ -68,6 +73,8 @@
 - **404:** 別ウィンドウで削除されたものとして扱う。「この画面の内容を新しい作業セットとして保存」を提示する。
 - **世代:** 現在の作業セットが替わるたびに世代番号を進める。前の作業セットへの遅い応答・読取りは新しい作業セットへ書き込まない。
 - **読込み中の編集:** 起動時の読込み中に編集された場合、保存済みの内容が空でなければ置き換えずに競合として提示する。空の新規作業セットなら、入力内容をそのまま保存する。
+- **操作中の編集（PR #81 P1）:** 切替・新規作成・復旧・削除は、保存を確定した時点の画面内容（プロジェクションと名前）を記録する。サーバーの応答を画面に適用する直前に、その内容と変わっていないか、保存中の要求や競合がないかを照合する。変わっていれば適用しない。切替と新規作成では、現在の作業セットを開いたまま「切替を中止した」「作成したが開いていない」と表示し、編集は現在の作業セットに保存する。復旧では、サーバーに戻した状態と画面の編集を競合として提示する。削除では、画面を「削除された作業セット」として残し、新しい作業セットとして保存できるようにする。どの場合も、応答待ちの間に入力・変更した内容を消さない。
+- **active 参照（PR #81 P2）:** 表示モードの変更と作業セットの切替は「この画面が最後に選んだ値」だけを記録する。要求は 1 本ずつ直列に送り、参照の revision で CAS する。応答が失われた要求が後からサーバーに届いても 412 で適用されないため、参照が古い値へ戻らない。結果が不明なときは GET で読み直し、目的の値でなければ 2→5→10→30 秒で再試行する。確定するまでは「未確定」とし、失敗中は警告を表示する（保存済みとは扱わず、ページ離脱時にも確認を出す）。別ウィンドウと競合して 412 が続く場合は、1 回だけ送り直す。2 回目以降は別ウィンドウの後の選択を残す。
 - **他ウィンドウの検出:** フォーカス時と表示時に一覧と現在の作業セットを読み直す。未保存の変更が無いときに新しい revision があれば「別のウィンドウで更新された」と提示する（自動適用しない）。未保存の変更がある場合は次の保存の 412 で検出する。
 - **ページ終了:** 非表示（`visibilitychange`）で即時保存を試みる。未保存なら `beforeunload` で離脱確認を出す。pywebview で確認ダイアログが出るかは [#22](https://github.com/zawa356/Utteran/issues/22) の実機確認項目。戻る／進むは SPA の履歴を使わないため、ページ離脱と同じ扱い。
 - **保存先が読めない場合:** 画面はメモリ上でそのまま使える。「作業セットを読み込めません。この画面の変更は保存されません」と表示し、保存済みとは表示しない。再試行は明示操作。
@@ -79,7 +86,7 @@
 - **スキーマ（`user_version=1`）:** `installation(id, secret)`、`worksets(id PK, revision, name, created_ms, updated_ms, ordinal, state, state_bytes)`、`recovery(workset_id, revision, name, saved_ms, state, state_bytes, PK(workset_id, revision))`、`active(singleton, workset_id, mode, revision)`、`replays(key PK, digest, status, body, created_ms)`。
 - **トランザクション:** すべての書込みは `BEGIN IMMEDIATE`、`synchronous=FULL`、DELETE journal（WAL のサイドファイルを残さない）、`secure_delete=ON`、`auto_vacuum=INCREMENTAL`（作成時に設定）。CAS・容量判定・復旧世代の移動・更新・空きページの返却を 1 トランザクションで行う。
 - **fail closed:** 未知の `user_version` は `store_schema_unsupported`、`quick_check` 失敗・不正な記録・active の不整合は `store_corrupt`。ファイルは変更しない。BUSY／LOCKED は `store_busy`（503、再試行可）、FULL は `store_full`（507）、READONLY は `store_readonly`、IO／OS は `store_unavailable`。どの失敗もロールバックし、自動の空初期化、データ破棄、確定済み状態の上書きはしない。
-- **復旧世代:** 更新で上書きされる直前の状態を、最新の復旧世代が 10 分より古い場合だけ復旧世代として残す（自動保存のたびには残さない）。1 作業セットあたり最大 **2 世代**。復旧世代の合計は最大 **32 MiB** で、超える場合はこのストアの最も古い復旧世代から削除する。現在の状態は削除しない。明示的な復旧の前には必ず現在の状態を残す。作業セットの削除では、その作業セットの復旧世代も同時に削除する（`secure_delete` により空きページにも値を残さない）。
+- **復旧世代:** 更新で上書きされる直前の状態を、最新の復旧世代が 10 分より古い場合だけ復旧世代として残す（自動保存のたびには残さない）。1 作業セットあたり最大 **2 世代**。復旧世代の合計は最大 **32 MiB** で、超える場合はこのストアの最も古い復旧世代から削除する。現在の状態は削除しない。**したがって「2 世代」は上限であり、常に 2 世代残ることは保証しない**（画面の説明にも明記）。明示的な復旧の前には必ず現在の状態を残す。作業セットの削除では、その作業セットの復旧世代も同時に削除する（`secure_delete` により空きページにも値を残さない）。
 - **空きページの返却:** 自動保存は空きページを再利用する。空きページがファイルの 1/4 かつ 1 MiB を超えた場合と削除後に、同じトランザクションで `incremental_vacuum` を行う。Python の sqlite3 は PRAGMA を 1 回の execute で 1 step しか進めないため、1 ページずつの上限付きループで返却する。
 - **バックアップ:** 稼働中の単純なファイルコピーは禁止。`WorksetStore.backup(dest)` が SQLite backup API で一貫したコピー（0600）を作る（試験済み、HTTP には公開しない）。手動の場合はアプリを終了してからコピーするか、`sqlite3 <db> ".backup <dest>"` を使う。
 - **診断・復旧ガイド:** 読めない／未知の形式のストアは自動修復しない。アプリを終了し、上記の方法で退避してから調査する。B5／B7 のストアには影響しない。作業セットのストアを退避・削除すると、次回起動時に新しい「作業セット1」が作られる。
@@ -133,6 +140,11 @@
 
 既存の v1 E2E は、B5/B7 の書込み列を厳密に比較する箇所で `/api/v1/worksets` を除外する。また試験間で共有するサーバーでは、テストの開始時に設定と同様、作業セットを実 API で空の「作業セット1」（Normal）に戻す（`e2e/fixtures.ts`）。作業セットは仕様上、前のページの状態を復元するため。
 
+PR #81 レビュー（P1×1、P2×2）への対応で追加した回帰試験は次のとおり。
+- Vitest：切替・名前変更・新規作成・復旧・削除の応答を保留している間に編集しても内容が残り、保存されること。W1→W2→W3 で W2 の応答が失われ、その要求が後から届いても参照が W3 のままであること。要求が直列であること。失敗を表示して再試行すること。
+- pytest：active の CAS（428／412、遅れた要求で戻らない）。Windows の割当ネットワークドライブ、CD、不明なルート、`\\?\UNC` では `lstat`／`stat` が一度も呼ばれないこと。ネットワーク・FUSE マウント、symlink、`..`。スレッド上限と期限後に打ち切ること。
+- E2E：別の作業セットを開く応答を保留している間に入力を追加すると、追加した入力が残って保存されること。
+
 試験件数、最終 HEAD、push／PR CI の URL と結果は Draft PR の本文に記録する。
 
 ## 9. 互換性と変更しないもの
@@ -144,8 +156,8 @@
 ## 10. 制約・残留課題
 
 - Windows 11 実 WebView2 での自動保存、離脱確認ダイアログ、複数ウィンドウ、IME、DPI、ACL、native picker／D&D は未受入（[#22](https://github.com/zawa356/Utteran/issues/22)）。Chromium は WebView2 の受入ではない。
-- 存在確認は読取り専用の stat。ネットワーク上の場所は確認しない（`unchecked` と表示）。シンボリックリンク先の差し替えや確認後の削除は投入時の B7／worker が最終判断する。
-- 同一作業セットを 2 ウィンドウで編集した場合、後から保存した側に競合を提示する（自動マージはしない）。表示モードの記録は最後に操作した側が勝つ。
+- 存在確認は読取り専用の `lstat`。ネットワーク上の場所、リンク、判定できないドライブ・マウントは確認しない（`unchecked` と表示）。Windows のドライブ種別とリパースポイントの判定は単体試験（`GetDriveTypeW` の注入）と Windows CI の pytest で確認しており、実機の割当ドライブ・DFS・OneDrive での確認は [#22](https://github.com/zawa356/Utteran/issues/22)。確認後の削除や差し替えは、投入時の B7／worker が最終判断する。
+- 同一作業セットを 2 ウィンドウで編集した場合、後から保存した側に競合を提示する（自動マージはしない）。active 参照は、最後に操作した側の値が残る（遅れた古い要求で戻ることはない）。
 - 作成の結果不明は同じキーと本文での明示的な再確認だけ。自動で再送しない。
 - 保存先の暗号化、保持期間、owner による一括削除・エクスポートは未実装（B5 と共通の owner 未決事項）。
 - E-C（ASR なし再出力）、束 F、既定 GUI の切替は範囲外。

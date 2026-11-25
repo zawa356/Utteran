@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FetchLike } from "../../api/http";
 import { parseState } from "../../api/worksets";
 import { createFakeHost } from "../../host/fake";
-import { json } from "../../test/fakeFetch";
+import { deferred, json } from "../../test/fakeFetch";
 import { fakeV1Server, presetWire, V1_POLICY, V1_PRESET } from "../../test/v1Server";
 import { emptyWire, fakeWorksets } from "../../test/worksetsServer";
 import { createCore } from "../core";
@@ -407,5 +407,211 @@ describe("E-B worksets controller", () => {
     expect(core.inputs.replaceAll(rows.slice(0, MAX_INPUTS), 99)).toBe(true);
     expect(core.inputs.store.get().rows).toHaveLength(MAX_INPUTS);
     expect(core.inputs.primary()?.inputPath).toBe(path("99.wav"));
+  });
+});
+
+describe("E-B edits during an awaited operation are never discarded (PR #81 P1)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** Hold the first request matching `line` until `release()`; everything else answers at once. */
+  function hold(ws: ReturnType<typeof fakeWorksets>, match: (line: string) => boolean) {
+    const gate = deferred<void>();
+    const original = ws.handle.bind(ws);
+    let held = false;
+    ws.handle = async (url, init) => {
+      const line = `${init.method ?? "GET"} ${new URL(url, "http://x").pathname}`;
+      if (!held && match(line)) {
+        held = true;
+        await gate.promise;
+      }
+      return original(url, init);
+    };
+    return () => gate.resolve();
+  }
+
+  it("switch: an input added while the other workset is read stays, is saved here, and the switch stops", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    await worksets.create(false);
+    const [first, second] = [ws.items[0]!.id, ws.items[1]!.id];
+    expect(worksets.store.get().current?.id).toBe(second);
+    const release = hold(ws, (l) => l === `GET /api/v1/worksets/${first}`);
+    const switching = worksets.switchTo(first);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(worksets.store.get().op).toMatchObject({ kind: "switch", phase: "pending" });
+    add(core, "typed-while-switching.wav");
+    core.inputs.toggle(core.inputs.store.get().rows[0]!.clientFileId, false);
+    release();
+    expect(await switching).toBe(false);
+    expect(worksets.store.get().current?.id).toBe(second);
+    expect(worksets.store.get().op).toMatchObject({ phase: "error", block: "edited_during_switch" });
+    expect(core.inputs.store.get().rows.map((r) => [r.inputPath, r.selected])).toEqual([[path("typed-while-switching.wav"), false]]);
+    await settle();
+    expect(ws.items[1]!.state.inputs).toEqual([expect.objectContaining({ input_path: path("typed-while-switching.wav"), selected: false })]);
+    expect(ws.items[0]!.state.inputs).toEqual([]);
+    // Choosing again works once nothing changes in between.
+    expect(await worksets.switchTo(first)).toBe(true);
+    expect(core.inputs.store.get().rows).toEqual([]);
+  });
+
+  it("switch: a rename while the other workset is read is kept as well", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    await worksets.create(false);
+    const first = ws.items[0]!.id;
+    const release = hold(ws, (l) => l === `GET /api/v1/worksets/${first}`);
+    const switching = worksets.switchTo(first);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(worksets.rename("途中の名前")).toBe(true);
+    release();
+    expect(await switching).toBe(false);
+    await settle();
+    expect(ws.items[1]!.name).toBe("途中の名前");
+    expect(worksets.store.get().current?.id).toBe(ws.items[1]!.id);
+  });
+
+  it("create: the new workset is created but not opened when the screen changed meanwhile", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    const original = ws.items[0]!.id;
+    const release = hold(ws, (l) => l === "POST /api/v1/worksets");
+    const creating = worksets.create(false);
+    await vi.advanceTimersByTimeAsync(0);
+    add(core, "typed-while-creating.wav");
+    release();
+    expect(await creating).toBe(false);
+    expect(ws.items).toHaveLength(2);
+    expect(worksets.store.get().current?.id).toBe(original);
+    expect(worksets.store.get().op.block).toBe("edited_during_create");
+    expect(core.inputs.store.get().rows.map((r) => r.inputPath)).toEqual([path("typed-while-creating.wav")]);
+    await settle();
+    expect((ws.items[0]!.state.inputs as unknown[]).length).toBe(1);
+    expect(worksets.store.get().items.map((i) => i.id)).toContain(ws.items[1]!.id);
+  });
+
+  it("restore: edits made while the checkpoint is restored stay on screen as an explicit conflict", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    add(core, "saved.wav");
+    await settle();
+    const id = ws.items[0]!.id;
+    const release = hold(ws, (l) => l.endsWith("/restore"));
+    const restoring = worksets.restoreRecovery(1);
+    await vi.advanceTimersByTimeAsync(0);
+    add(core, "typed-while-restoring.wav");
+    release();
+    expect(await restoring).toBe(false);
+    expect(worksets.store.get().conflict?.kind).toBe("remote_changed");
+    expect(core.inputs.store.get().rows.map((r) => r.inputPath)).toEqual([path("saved.wav"), path("typed-while-restoring.wav")]);
+    expect(ws.applied).toContain("restore");
+    worksets.overwriteRemote();
+    await vi.advanceTimersByTimeAsync(0);
+    expect((ws.items.find((w) => w.id === id)!.state.inputs as unknown[]).length).toBe(2);
+  });
+
+  it("delete: edits after the confirmation are not lost; the screen is offered as a new workset", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    await worksets.create(false);
+    const doomed = ws.items[1]!.id;
+    const release = hold(ws, (l) => l === `DELETE /api/v1/worksets/${doomed}`);
+    const removing = worksets.remove(doomed);
+    await vi.advanceTimersByTimeAsync(0);
+    add(core, "typed-while-deleting.wav");
+    release();
+    expect(await removing).toBe(true);
+    expect(ws.items.map((w) => w.id)).not.toContain(doomed);
+    expect(worksets.store.get().conflict?.kind).toBe("deleted");
+    expect(core.inputs.store.get().rows.map((r) => r.inputPath)).toEqual([path("typed-while-deleting.wav")]);
+    await worksets.saveAsNew();
+    await settle();
+    const created = ws.items.find((w) => (w.state.inputs as unknown[]).length === 1);
+    expect(created).toBeDefined();
+    expect(worksets.store.get().current?.id).toBe(created!.id);
+  });
+});
+
+describe("E-B the remembered active workset never moves back (PR #81 P2)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("W1 → W2 → W3 with W2's answer lost and its request applied late: the server keeps W3", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    await worksets.create(false);
+    await worksets.create(false);
+    await vi.advanceTimersByTimeAsync(0);
+    const [w1, w2, w3] = ws.items.map((w) => w.id);
+    await worksets.switchTo(w1!);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ws.active?.id).toBe(w1);
+    // Hold W2's PUT: the client sees no answer; the server receives it only later.
+    const original = ws.handle.bind(ws);
+    let late: (() => Promise<Response>) | null = null;
+    ws.handle = async (url, init) => {
+      if (late === null && init.method === "PUT" && url.endsWith("/api/v1/worksets/active") && String(init.body).includes(w2!)) {
+        late = () => original(url, init);
+        throw new TypeError("synthetic connection loss");
+      }
+      return original(url, init);
+    };
+    await worksets.switchTo(w2!);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(worksets.store.get().active.phase).toBe("error");
+    expect(worksets.hasUnsaved()).toBe(true);
+    await worksets.switchTo(w3!);
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(ws.active?.id).toBe(w3);
+    expect(worksets.store.get().active.phase).toBe("clean");
+    // The old request finally reaches the server: refused by CAS, nothing moves back.
+    const answer = await late!();
+    expect(answer.status).toBe(412);
+    expect(ws.active?.id).toBe(w3);
+    const puts = ws.lines.filter((l) => l === "PUT /api/v1/worksets/active");
+    expect(puts.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("requests are sent one at a time and only the latest wish is confirmed", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    await worksets.create(false);
+    await vi.advanceTimersByTimeAsync(0);
+    const original = ws.handle.bind(ws);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    ws.handle = async (url, init) => {
+      if (init.method === "PUT" && url.endsWith("/active")) {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        inFlight -= 1;
+      }
+      return original(url, init);
+    };
+    core.shell.setMode("expert");
+    await vi.advanceTimersByTimeAsync(600);
+    core.shell.setMode("normal");
+    await vi.advanceTimersByTimeAsync(10);
+    core.shell.setMode("expert");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(maxInFlight).toBe(1);
+    expect(ws.active?.mode).toBe("expert");
+    expect(worksets.store.get().active.phase).toBe("clean");
+  });
+
+  it("a failing pointer write is shown and retried, never reported as saved", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    const busy = json(503, { schema_version: 1, error: { code: "store_busy", message_key: "worksets.store_busy", request_id: "r", retryable: true, issues: [] } });
+    ws.inject.set("PUT /api/v1/worksets/active", { reply: busy });
+    core.shell.setMode("expert");
+    await vi.advanceTimersByTimeAsync(600);
+    expect(worksets.store.get().active).toMatchObject({ phase: "error", error: { code: "store_busy" } });
+    expect(worksets.hasUnsaved()).toBe(true);
+    expect(ws.active?.mode).toBe("normal");
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(ws.active?.mode).toBe("expert");
+    expect(worksets.store.get().active.phase).toBe("clean");
   });
 });

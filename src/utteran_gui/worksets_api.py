@@ -8,12 +8,13 @@ and nothing here logs a request or response body.
 
 from __future__ import annotations
 
+import ntpath
 import os
+import posixpath
 import re
 import stat
 import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
@@ -38,10 +39,12 @@ def _workset_id(value: str) -> str:
     return value
 
 
-def _expected(request: Request) -> int:
+def _expected(request: Request, *, allow_zero: bool = False) -> int:
     value = request.headers.get("if-match")
     if value is None:
         raise WorksetError("if_match_required", 428, retryable=False)
+    if allow_zero and value == '"0"':
+        return 0
     match = _IF_MATCH.fullmatch(value)
     if match is None:
         raise WorksetError("if_match_invalid", 400, retryable=False)
@@ -83,32 +86,179 @@ def _resource(row: Any, status: int = 200, headers: dict[str, str] | None = None
     )
 
 
-def _stat_one(path: str) -> str:
-    # Network/device names are never touched from here (no SMB/credential side effects).
-    if path.startswith(("\\\\", "//")) or "\x00" in path:
-        return "unchecked"
-    if not os.path.isabs(path):
-        return "unchecked"
+# ---- read-only input existence check --------------------------------------------------------
+#
+# Contract: never touch a network location (no SMB/NFS round trip, no credential prompt).
+# Everything is decided *before* the first system call that could reach one, and anything that
+# cannot be proven local is ``unchecked`` (fail closed: ``unchecked`` never blocks a start).
+#
+# - Windows: UNC/device names (``\\server``, ``\\?\``, ``//``) are refused by name; a drive
+#   letter is checked with ``GetDriveTypeW`` (a pure local query) and only fixed, removable and
+#   RAM drives are used. Mapped network drives (``Z:\``), CD/DVD, unknown and absent roots stay
+#   ``unchecked``. Each component is then read with ``lstat`` (does not follow links); a reparse
+#   point (symlink, junction, mount point) anywhere on the way stops the check.
+# - Linux: the mount that holds the path is found by name in ``/proc/self/mounts`` (no symlink
+#   resolution needed because no component checked so far was a link). Network and FUSE file
+#   systems stay ``unchecked``; a symlink component stops the check. Other POSIX systems have no
+#   such table and stay ``unchecked``.
+# - At most ``INPUT_STATUS_MAX_WORKERS`` check threads exist in the whole process. A request that
+#   finds none free answers ``unchecked`` at once; a request past its deadline stops starting new
+#   system calls, so a hung call keeps at most one thread until it returns.
+
+INPUT_STATUS_MAX_WORKERS = 2
+_WORKER_SLOTS = threading.BoundedSemaphore(INPUT_STATUS_MAX_WORKERS)
+_IS_WINDOWS = os.name == "nt"
+_LOCAL_DRIVE_TYPES = frozenset({2, 3, 6})  # DRIVE_REMOVABLE, DRIVE_FIXED, DRIVE_RAMDISK
+_NETWORK_FS = frozenset(
+    {
+        "nfs",
+        "nfs4",
+        "cifs",
+        "smb3",
+        "smbfs",
+        "ncpfs",
+        "afs",
+        "ceph",
+        "glusterfs",
+        "9p",
+        "lustre",
+        "gpfs",
+        "davfs",
+        "coda",
+        "sshfs",
+        "virtiofs",
+        "vboxsf",
+        "prl_fs",
+        "autofs",
+    }
+)
+_REPARSE_POINT = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
+
+
+def _drive_type(root: str) -> int:
+    """``GetDriveTypeW`` of a ``X:\\`` root (local query; never opens the drive)."""
+    import ctypes
+
+    windll: Any = getattr(ctypes, "windll", None)
+    if windll is None:
+        return 0
+    return int(windll.kernel32.GetDriveTypeW(root))
+
+
+def _mounts() -> list[tuple[str, str]]:
+    """``(mount point, fs type)`` of this process; empty when the table cannot be read."""
     try:
-        info = os.stat(path)
-    except FileNotFoundError:
-        return "missing"
-    except NotADirectoryError:
-        return "missing"
-    except (OSError, ValueError):
+        with open("/proc/self/mounts", encoding="utf-8", errors="replace") as table:
+            lines = table.read().splitlines()
+    except OSError:
+        return []
+    result = []
+    for line in lines:
+        parts = line.split()
+        if len(parts) >= 3:
+            # The kernel escapes space, tab, newline and backslash as octal (``\\040``).
+            point = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), parts[1])
+            result.append((point, parts[2]))
+    return result
+
+
+def _local_mount(path: str, mounts: list[tuple[str, str]]) -> bool:
+    best = None
+    for point, fstype in mounts:
+        prefix = point.rstrip("/") + "/"
+        if (path == point or path.startswith(prefix) or point == "/") and (
+            best is None or len(point) > len(best[0])
+        ):
+            best = (point, fstype)
+    if best is None:
+        return False
+    fstype = best[1]
+    return not (fstype in _NETWORK_FS or fstype.startswith("fuse") or fstype.startswith("nfs"))
+
+
+def _paths() -> Any:
+    """Path rules of the platform being checked (``ntpath`` on Windows)."""
+    return ntpath if _IS_WINDOWS else posixpath
+
+
+def _components(path: str) -> list[str]:
+    """Absolute prefixes from the first element below the root to ``path`` itself."""
+    rules = _paths()
+    drive, rest = rules.splitdrive(path)
+    sep = "\\" if _IS_WINDOWS else "/"
+    parts = [p for p in rest.replace("/", sep).split(sep) if p]
+    prefixes = []
+    current = drive + sep
+    for part in parts:
+        current = rules.join(current, part)
+        prefixes.append(current)
+    return prefixes
+
+
+def _check_one(path: str, cancelled: threading.Event, mounts: list[tuple[str, str]]) -> str:
+    rules = _paths()
+    if "\x00" in path or path.startswith(("\\\\", "//")) or not rules.isabs(path):
         return "unchecked"
+    if _IS_WINDOWS:
+        drive = rules.splitdrive(path)[0]
+        if (
+            len(drive) != 2
+            or drive[1] != ":"
+            or _drive_type(drive + "\\") not in _LOCAL_DRIVE_TYPES
+        ):
+            return "unchecked"
+    else:
+        normalized = os.path.normpath(path)
+        if normalized != path.rstrip("/") or not _local_mount(normalized, mounts):
+            return "unchecked"
+    components = _components(path)
+    if not components:
+        return "not_file"
+    info: os.stat_result | None = None
+    for component in components:
+        if cancelled.is_set():
+            return "unchecked"
+        try:
+            info = os.lstat(component)
+        except (FileNotFoundError, NotADirectoryError):
+            return "missing"
+        except (OSError, ValueError):
+            return "unchecked"
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & _REPARSE_POINT:
+            # A link may lead anywhere (also onto a network share): not followed.
+            return "unchecked"
+    assert info is not None
     return "file" if stat.S_ISREG(info.st_mode) else "not_file"
 
 
 def input_status(paths: list[str], deadline: float = INPUT_STATUS_DEADLINE_SECONDS) -> list[str]:
-    """Bounded, read-only existence check of local inputs; unknown stays ``unchecked``."""
-    pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="workset-input-status")
-    try:
-        futures = [pool.submit(_stat_one, path) for path in paths]
-        wait(futures, timeout=deadline)
-        return [f.result() if f.done() and not f.exception() else "unchecked" for f in futures]
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+    """Bounded, read-only existence check of local inputs; anything unproven is ``unchecked``."""
+    results = ["unchecked"] * len(paths)
+    if not paths or not _WORKER_SLOTS.acquire(blocking=False):
+        return results
+    cancelled = threading.Event()
+    finished = threading.Event()
+    lock = threading.Lock()
+    mounts = [] if _IS_WINDOWS else _mounts()
+
+    def work() -> None:
+        try:
+            for index, path in enumerate(paths):
+                if cancelled.is_set():
+                    return
+                state = _check_one(path, cancelled, mounts)
+                with lock:
+                    if not cancelled.is_set():
+                        results[index] = state
+        finally:
+            finished.set()
+            _WORKER_SLOTS.release()
+
+    threading.Thread(target=work, name="workset-input-status", daemon=True).start()
+    finished.wait(deadline)
+    with lock:
+        cancelled.set()
+        return list(results)
 
 
 def register_workset_routes(app: FastAPI, store_path: Path) -> None:
@@ -147,7 +297,10 @@ def register_workset_routes(app: FastAPI, store_path: Path) -> None:
         listing = await run(lambda: store().list())
         if listing["active"] is None:
             raise WorksetError("workset_not_found", 404, retryable=False)
-        return JSONResponse({"schema_version": 1, **listing["active"]})
+        active = listing["active"]
+        return JSONResponse(
+            {"schema_version": 1, **active}, headers={"ETag": f'"{active["revision"]}"'}
+        )
 
     @app.put("/worksets/active")
     async def put_active(request: Request) -> Response:
@@ -161,7 +314,9 @@ def register_workset_routes(app: FastAPI, store_path: Path) -> None:
         ):
             raise WorksetError("contract_validation_failed", 422, retryable=False)
         workset_id = _workset_id(body["workset_id"])
-        return JSONResponse(await run(lambda: store().set_active(workset_id, view["mode"])))
+        expected = _expected(request, allow_zero=True)
+        result = await run(lambda: store().set_active(workset_id, view["mode"], expected))
+        return JSONResponse(result, headers={"ETag": f'"{result["revision"]}"'})
 
     @app.post("/worksets/input-status")
     async def check_inputs(request: Request) -> Response:

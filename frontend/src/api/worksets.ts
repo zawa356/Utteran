@@ -196,6 +196,12 @@ function parseActive(raw: unknown, where = "active"): ActiveWorkset {
   return { worksetId: worksetId(r.workset_id, `${where}.workset_id`), mode: oneOf(view.mode, ["normal", "expert"] as const, `${where}.view.mode`), revision: positive(r.revision, `${where}.revision`) };
 }
 
+function parseActiveBody(raw: unknown): ActiveWorkset {
+  const r = record(raw, "active");
+  version(r, "active");
+  return parseActive(r);
+}
+
 export function parseListing(raw: unknown): WorksetListing {
   const r = record(raw, "worksets");
   version(r, "worksets");
@@ -247,7 +253,9 @@ export interface WorksetsApi {
   /** CAS replace (name + state); the answer's revision and ETag must agree. */
   put(id: string, expectedRevision: number, name: string, state: WorksetStateWire): Promise<WorksetDoc>;
   remove(id: string, expectedRevision: number): Promise<WorksetListing>;
-  setActive(id: string, mode: ViewMode): Promise<ActiveWorkset>;
+  /** CAS on the pointer revision (`If-Match`, 0 = none yet): a late, older request answers 412. */
+  setActive(id: string, mode: ViewMode, expectedRevision: number): Promise<ActiveWorkset>;
+  getActive(): Promise<ActiveWorkset>;
   recovery(id: string): Promise<RecoveryItem[]>;
   restoreRecovery(id: string, revision: number, expectedRevision: number): Promise<WorksetDoc>;
   /** Read-only existence check of local inputs (same order; no path in the answer). */
@@ -300,13 +308,11 @@ export function createWorksetsApi(http: HttpClient): WorksetsApi {
     async remove(id, expectedRevision) {
       return (await http.request({ method: "DELETE", path: `/api/v1/worksets/${checkId(id)}`, headers: { "If-Match": ifMatch(expectedRevision) }, timeoutMs: WORKSET_TIMEOUT_MS }, parseListing)).data;
     },
-    async setActive(id, mode) {
-      const parse = (raw: unknown) => {
-        const r = record(raw, "active");
-        version(r, "active");
-        return parseActive(r);
-      };
-      return (await http.request({ method: "PUT", path: "/api/v1/worksets/active", body: { schema_version: 1, workset_id: checkId(id), view: { mode } }, timeoutMs: WORKSET_TIMEOUT_MS }, parse)).data;
+    async setActive(id, mode, expectedRevision) {
+      return (await http.request({ method: "PUT", path: "/api/v1/worksets/active", body: { schema_version: 1, workset_id: checkId(id), view: { mode } }, headers: { "If-Match": ifMatch(expectedRevision) }, timeoutMs: WORKSET_TIMEOUT_MS }, parseActiveBody)).data;
+    },
+    async getActive() {
+      return (await http.request({ method: "GET", path: "/api/v1/worksets/active" }, parseActiveBody)).data;
     },
     async recovery(id) {
       return (await http.request({ method: "GET", path: `/api/v1/worksets/${checkId(id)}/recovery` }, parseRecovery)).data;

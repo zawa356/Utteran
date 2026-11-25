@@ -1,6 +1,6 @@
 import type { ApiError } from "../../api/errors";
 import { MutationIntent } from "../../api/idempotency";
-import type { InputAvailability, RecoveryItem, ViewMode, WorksetDoc, WorksetLimits, WorksetsApi, WorksetSummary } from "../../api/worksets";
+import type { ActiveWorkset, InputAvailability, RecoveryItem, ViewMode, WorksetDoc, WorksetLimits, WorksetsApi, WorksetSummary } from "../../api/worksets";
 import type { InputCollectionController, InputRow } from "../inputCollection";
 import { toApiError } from "../operation";
 import type { Mode, ShellController } from "../shell";
@@ -33,7 +33,7 @@ import { emptyWorksetState, project, restorePlan, stateKey } from "./worksetProj
 export type SavePhase = "clean" | "dirty" | "saving" | "error" | "unknown" | "conflict";
 export type ConflictKind = "remote_changed" | "deleted" | "edited_during_load";
 export type OpKind = "switch" | "create" | "duplicate" | "rename" | "delete" | "restore" | "start";
-export type OpBlock = "busy_job" | "unsaved" | "conflict" | "op_pending" | "limit" | "name_invalid" | "locked_rows";
+export type OpBlock = "busy_job" | "unsaved" | "conflict" | "op_pending" | "limit" | "name_invalid" | "locked_rows" | "edited_during_switch" | "edited_during_create";
 
 export interface WorksetsState {
   phase: "idle" | "loading" | "ready" | "error";
@@ -48,6 +48,11 @@ export interface WorksetsState {
   op: { kind: OpKind | null; phase: "idle" | "pending" | "error" | "unknown"; error: ApiError | null; block: OpBlock | null };
   check: { phase: "idle" | "pending" | "done" | "error"; missing: number; notFile: number; unchecked: number };
   recovery: { phase: "idle" | "pending" | "done" | "error"; items: readonly RecoveryItem[]; error: ApiError | null };
+  /**
+   * The remembered "last workset + display mode" (restored at the next start). `pending` = this
+   * window's latest choice is not confirmed yet; `error` = it could not be confirmed (retried).
+   */
+  active: { phase: "clean" | "pending" | "error"; error: ApiError | null };
 }
 
 export interface WorksetOptions {
@@ -97,8 +102,14 @@ export class WorksetController {
     op: IDLE_OP,
     check: { phase: "idle", missing: 0, notFile: 0, unchecked: 0 },
     recovery: { phase: "idle", items: [], error: null },
+    active: { phase: "clean", error: null },
   });
 
+  private knownActive: ActiveWorkset | null = null;
+  private desiredActive: { id: string; mode: ViewMode } | null = null;
+  private activeLoop: Promise<void> | null = null;
+  private activeRetryTimer: unknown = null;
+  private activeRetryIndex = 0;
   private baseline: string | null = null;
   private savedName: string | null = null;
   private failedKey: string | null = null;
@@ -113,6 +124,7 @@ export class WorksetController {
   private inflight: Promise<void> | null = null;
   private modeTimer: unknown = null;
   private createIntent: MutationIntent<{ schema_version: 1; name: string; state?: ReturnType<typeof project> }> | null = null;
+  private createMark: string | null = null;
   private disposed = false;
   private readonly unsubscribers: (() => void)[] = [];
   private readonly scheduler: Scheduler;
@@ -152,6 +164,7 @@ export class WorksetController {
     // Without a readable store nothing is saved: any entered state would be lost.
     if (s.phase === "error" || s.phase === "idle") return this.projectionKey() !== stateKey(emptyWorksetState());
     if (s.phase !== "ready" || !s.current) return false;
+    if (s.active.phase !== "clean") return true;
     return s.save.phase !== "clean" || this.projectionKey() !== this.baseline || s.current.name !== this.savedName;
   }
 
@@ -295,18 +308,23 @@ export class WorksetController {
     const s = this.store.get();
     if (s.phase !== "ready" || s.current?.id === id) return false;
     if (!(await this.prepareLeave("switch"))) return false;
-    const generation = ++this.generation;
+    // What the screen holds once the save was confirmed; any edit while the other workset is
+    // read keeps this one open (nothing typed meanwhile is ever replaced).
+    const mark = this.editMark();
     this.store.patch({ op: { ...IDLE_OP, kind: "switch", phase: "pending" } });
     try {
       const doc = await this.api.get(id);
-      if (generation !== this.generation) return false;
+      if (this.disposed) return false;
+      if (this.editedSince(mark)) return this.keepEdits("switch", "edited_during_switch");
+      this.generation += 1;
       this.store.patch({ op: IDLE_OP, outdated: null, conflict: null });
       this.apply(doc);
-      void this.rememberActive();
+      this.requestActive();
       void this.checkInputs();
       return true;
     } catch (error) {
-      if (generation === this.generation) this.store.patch({ op: { ...IDLE_OP, kind: "switch", phase: "error", error: toApiError(error) } });
+      this.store.patch({ op: { ...IDLE_OP, kind: "switch", phase: "error", error: toApiError(error) } });
+      if (this.needsSave()) this.schedule();
       void this.refreshList();
       return false;
     }
@@ -377,14 +395,29 @@ export class WorksetController {
     }
     // Deleting another workset never needs the current one to be saved first.
     const revision = current ? (this.store.get().current?.revision ?? target.revision) : target.revision;
-    const generation = current ? ++this.generation : this.generation;
+    // The confirmed deletion discards what was unsaved at that moment, never later edits.
+    const mark = this.editMark();
     this.store.patch({ op: { ...IDLE_OP, kind: "delete", phase: "pending" } });
     try {
       const listing = await this.api.remove(id, revision);
       this.store.patch({ items: listing.items, limits: listing.limits, op: IDLE_OP });
+      if (!this.activeLoop) this.knownActive = listing.active;
       if (current && listing.active) {
+        if (this.editedSince(mark)) {
+          // Edited while it was being deleted: the screen stays, offered as a new workset.
+          this.clearTimer();
+          this.patchSave({ phase: "conflict", error: null });
+          this.store.patch({ conflict: { kind: "deleted", remote: null } });
+          return true;
+        }
         const doc = await this.api.get(listing.active.worksetId);
-        if (generation !== this.generation) return true;
+        if (this.editedSince(mark)) {
+          this.clearTimer();
+          this.patchSave({ phase: "conflict", error: null });
+          this.store.patch({ conflict: { kind: "deleted", remote: null } });
+          return true;
+        }
+        this.generation += 1;
         this.store.patch({ conflict: null, outdated: null });
         this.apply(doc);
         void this.checkInputs();
@@ -414,18 +447,29 @@ export class WorksetController {
     if (!(await this.prepareLeave("restore"))) return false;
     const s = this.store.get();
     if (!s.current) return false;
-    const generation = ++this.generation;
+    const mark = this.editMark();
     this.store.patch({ op: { ...IDLE_OP, kind: "restore", phase: "pending" } });
     try {
       const doc = await this.api.restoreRecovery(s.current.id, revision, s.current.revision);
-      if (generation !== this.generation) return false;
+      if (this.disposed) return false;
       this.store.patch({ op: IDLE_OP, recovery: { phase: "idle", items: [], error: null } });
+      if (this.editedSince(mark)) {
+        // The server now holds the restored state; this screen keeps its newer edits until the
+        // person chooses (the same conflict as a save from another window).
+        this.clearTimer();
+        this.patchSave({ phase: "conflict", error: null });
+        this.store.patch({ conflict: { kind: "remote_changed", remote: doc } });
+        void this.refreshList();
+        return false;
+      }
+      this.generation += 1;
       this.apply(doc);
       void this.refreshList();
       void this.checkInputs();
       return true;
     } catch (error) {
-      if (generation === this.generation) this.store.patch({ op: { ...IDLE_OP, kind: "restore", phase: "error", error: toApiError(error) } });
+      this.store.patch({ op: { ...IDLE_OP, kind: "restore", phase: "error", error: toApiError(error) } });
+      if (this.needsSave()) this.schedule();
       return false;
     }
   }
@@ -463,6 +507,7 @@ export class WorksetController {
     this.clearTimer();
     this.clearRetry();
     if (this.modeTimer !== null) this.scheduler.clearTimeout(this.modeTimer);
+    if (this.activeRetryTimer !== null) this.scheduler.clearTimeout(this.activeRetryTimer);
     for (const unsubscribe of this.unsubscribers.splice(0)) unsubscribe();
   }
 
@@ -501,19 +546,111 @@ export class WorksetController {
     if (this.modeTimer !== null) this.scheduler.clearTimeout(this.modeTimer);
     this.modeTimer = this.scheduler.setTimeout(() => {
       this.modeTimer = null;
-      void this.rememberActive();
+      this.requestActive();
     }, 500);
   }
 
-  private async rememberActive(): Promise<void> {
+  /** Remember the current workset + mode; only the latest choice of this window is confirmed. */
+  private requestActive(): void {
     const s = this.store.get();
-    if (!s.current) return;
-    const mode: ViewMode = this.shell.store.get().mode satisfies Mode;
-    try {
-      await this.api.setActive(s.current.id, mode);
-    } catch {
-      // Not a data loss: the next switch or mode change sends the absolute value again.
-    }
+    if (!s.current || this.disposed) return;
+    this.desiredActive = { id: s.current.id, mode: this.shell.store.get().mode satisfies Mode };
+    void this.pumpActive();
+  }
+
+  /** Explicit retry after the pointer could not be confirmed. */
+  retryActive(): void {
+    this.activeRetryIndex = 0;
+    this.requestActive();
+  }
+
+  private activeMatches(): boolean {
+    const want = this.desiredActive;
+    const known = this.knownActive;
+    return want === null || (known !== null && known.worksetId === want.id && known.mode === want.mode);
+  }
+
+  /**
+   * One request at a time, always for the latest wish, under CAS on the pointer revision. An
+   * older request whose answer was lost can never be applied after a newer one (412), and an
+   * unknown outcome is read back with GET before anything is sent again.
+   */
+  private pumpActive(): Promise<void> {
+    if (this.activeLoop) return this.activeLoop;
+    const loop = (async () => {
+      let conflicts = 0;
+      if (this.activeRetryTimer !== null) this.scheduler.clearTimeout(this.activeRetryTimer);
+      this.activeRetryTimer = null;
+      while (!this.disposed && !this.activeMatches()) {
+        const target = this.desiredActive!;
+        this.store.patch({ active: { phase: "pending", error: null } });
+        try {
+          this.knownActive = await this.api.setActive(target.id, target.mode, this.knownActive?.revision ?? 0);
+          this.activeRetryIndex = 0;
+          continue;
+        } catch (error) {
+          const e = toApiError(error);
+          if (e.status === 404 || e.status === 422) {
+            // The workset is gone (or the value is refused): nothing valid to remember.
+            if (this.desiredActive === target) this.desiredActive = null;
+            this.store.patch({ active: { phase: "error", error: e } });
+            return;
+          }
+          try {
+            this.knownActive = await this.api.getActive();
+          } catch (readError) {
+            this.store.patch({ active: { phase: "error", error: toApiError(readError) } });
+            this.scheduleActiveRetry();
+            return;
+          }
+          if (e.status === 412) {
+            conflicts += 1;
+            if (conflicts > 1 && this.desiredActive === target) {
+              // Another window keeps choosing: its later choice stands (last explicit action).
+              this.desiredActive = null;
+            }
+            continue;
+          }
+          if (!this.activeMatches()) {
+            this.store.patch({ active: { phase: "error", error: e } });
+            this.scheduleActiveRetry();
+            return;
+          }
+        }
+      }
+      this.store.patch({ active: { phase: "clean", error: null } });
+    })().finally(() => {
+      this.activeLoop = null;
+    });
+    this.activeLoop = loop;
+    return loop;
+  }
+
+  private scheduleActiveRetry(): void {
+    if (this.disposed) return;
+    const delay = RETRY_DELAYS_MS[Math.min(this.activeRetryIndex, RETRY_DELAYS_MS.length - 1)]!;
+    this.activeRetryIndex += 1;
+    this.activeRetryTimer = this.scheduler.setTimeout(() => {
+      this.activeRetryTimer = null;
+      void this.pumpActive();
+    }, delay);
+  }
+
+  /** Projection + name as the screen holds them now (compared around an awaited operation). */
+  private editMark(): string {
+    return `${this.projectionKey()}\u0000${this.store.get().current?.name ?? ""}`;
+  }
+
+  private editedSince(mark: string): boolean {
+    return this.editMark() !== mark || this.inflight !== null || this.store.get().conflict !== null;
+  }
+
+  /** An awaited operation found newer edits: keep this workset and its edits, say so, save them. */
+  private keepEdits(kind: OpKind, block: OpBlock): false {
+    this.store.patch({ op: { ...IDLE_OP, kind, phase: "error", block } });
+    if (this.needsSave()) this.schedule();
+    void this.refreshList();
+    return false;
   }
 
   private needsSave(): boolean {
@@ -717,37 +854,54 @@ export class WorksetController {
     const body = withState ? { schema_version: 1 as const, name, state: this.projection() } : { schema_version: 1 as const, name };
     const intent = new MutationIntent(body);
     this.createIntent = intent;
+    this.createMark = this.editMark();
     return this.sendCreate(intent, withState, replacesDeleted);
   }
 
   private async sendCreate(intent: NonNullable<WorksetController["createIntent"]>, duplicate: boolean, replacesDeleted = false): Promise<boolean> {
     const kind: OpKind = duplicate ? "duplicate" : "create";
-    const generation = ++this.generation;
     this.store.patch({ op: { ...IDLE_OP, kind, phase: "pending" } });
     try {
       const doc = await this.api.create(intent);
       this.createIntent = null;
-      if (generation !== this.generation) return false;
+      if (this.disposed) return false;
       const { state: _state, ...summary } = doc;
       void _state;
-      this.store.patch({ op: IDLE_OP, conflict: null, outdated: null, items: [...this.store.get().items.filter((i) => i.id !== doc.id), summary] });
-      if (replacesDeleted || duplicate) {
-        // The screen already shows this state; only the workset identity changes.
+      this.store.patch({ op: IDLE_OP, items: [...this.store.get().items.filter((i) => i.id !== doc.id), summary] });
+      const mark = this.createMark ?? this.editMark();
+      this.createMark = null;
+      if (replacesDeleted) {
+        // The current workset is gone: the screen (with any later edits) becomes the new one.
+        this.generation += 1;
+        this.store.patch({ conflict: null, outdated: null });
         this.adoptCurrent(doc);
         this.snapshot = this.take();
         if (this.needsSave()) this.schedule();
+      } else if (this.editedSince(mark)) {
+        // Created, but not opened: edits made meanwhile stay in (and are saved to) this workset.
+        return this.keepEdits(kind, "edited_during_create");
       } else {
-        this.apply(doc);
+        this.generation += 1;
+        this.store.patch({ conflict: null, outdated: null });
+        if (duplicate) {
+          // The screen already shows this state; only the workset identity changes.
+          this.adoptCurrent(doc);
+          this.snapshot = this.take();
+        } else {
+          this.apply(doc);
+        }
       }
-      void this.rememberActive();
+      this.requestActive();
       void this.refreshList();
       return true;
     } catch (error) {
       const e = toApiError(error);
-      if (generation === this.generation) {
-        this.store.patch({ op: { ...IDLE_OP, kind, phase: intent.state === "unknown" ? "unknown" : "error", error: e } });
+      this.store.patch({ op: { ...IDLE_OP, kind, phase: intent.state === "unknown" ? "unknown" : "error", error: e } });
+      if (intent.state !== "unknown") {
+        this.createIntent = null;
+        this.createMark = null;
       }
-      if (intent.state !== "unknown") this.createIntent = null;
+      if (this.needsSave()) this.schedule();
       return false;
     }
   }
@@ -756,6 +910,7 @@ export class WorksetController {
     try {
       const listing = await this.api.list();
       this.store.patch({ items: listing.items, limits: listing.limits });
+      if (!this.activeLoop) this.knownActive = listing.active;
     } catch {
       // The list is refreshed again on the next operation or window focus.
     }

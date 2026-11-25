@@ -158,6 +158,36 @@ test("new, rename, switch and delete keep each workset's rows; deleting changes 
   await expect(app.getByTestId("ws-delete")).toHaveClass(/v-list-item--disabled/);
 });
 
+test("an input added while another workset is being opened is kept and saved, never replaced", async ({ app, request, backend }) => {
+  test.setTimeout(60_000);
+  await saved(app);
+  await app.getByTestId("ws-menu").click();
+  await app.getByTestId("ws-new").click();
+  await expect(app.getByTestId("ws-select")).toContainText("作業セット2");
+  await saved(app);
+  const listing = (await (await request.get("/api/v1/worksets", { headers: SESSION_HEADER })).json()) as { items: { id: string; name: string }[] };
+  const first = listing.items.find((i) => i.name === "作業セット1")!.id;
+  const second = listing.items.find((i) => i.name === "作業セット2")!.id;
+  // Hold the read of the other workset until an input was added on this one.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await app.route(`**/api/v1/worksets/${first}`, async (route) => {
+    if (route.request().method() === "GET") await gate;
+    await route.continue();
+  });
+  await app.getByTestId("ws-select").click();
+  await app.getByRole("option", { name: /作業セット1/ }).click();
+  await addTyped(app, input(backend.root, "meeting.wav"));
+  release();
+  await expect(app.getByTestId("ws-block")).toContainText("切り替えを中止しました");
+  await expect(app.getByTestId("ws-select")).toContainText("作業セット2");
+  await expect(app.getByTestId("tx-input-current")).toContainText("meeting.wav");
+  await saved(app);
+  const stored = (await (await request.get(`/api/v1/worksets/${second}`, { headers: SESSION_HEADER })).json()) as { state: { inputs: { input_path: string }[] } };
+  expect(stored.state.inputs.map((i) => i.input_path)).toEqual([input(backend.root, "meeting.wav")]);
+  await app.unroute(`**/api/v1/worksets/${first}`);
+});
+
 test("a restored input that disappeared stays listed as missing and blocks the start until it is back", async ({ app, backend }) => {
   test.setTimeout(60_000);
   const gone = input(backend.root, "later.wav");
