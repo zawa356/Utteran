@@ -73,6 +73,11 @@ export const MAX_NAME = 120;
 
 const IDLE_OP: WorksetsState["op"] = { kind: null, phase: "idle", error: null, block: null };
 
+/** No answer, or an unreadable one: the request may have been (or may still be) applied. */
+export function isUnknownOutcome(error: ApiError): boolean {
+  return error.outcomeUnknown || error.status === null || error.kind === "malformed" || (error.status >= 500 && error.code === null);
+}
+
 export function checkName(name: string): string | null {
   const trimmed = name.trim();
   if (trimmed === "" || trimmed.length > MAX_NAME || /[\u0000-\u001f\u007f]/.test(name)) return null;
@@ -105,6 +110,13 @@ export class WorksetController {
     active: { phase: "clean", error: null },
   });
 
+  /**
+   * PR #81 P2-1: a write whose outcome is unknown was sent under this revision. Until a later
+   * write advanced the revision past it, an equal value is *not* "saved": that old request could
+   * still arrive. It is retired by a fenced write (same content, the revision advances).
+   */
+  private unresolved: { id: string; base: number } | null = null;
+  private activeUnresolved: number | null = null;
   private knownActive: ActiveWorkset | null = null;
   private desiredActive: { id: string; mode: ViewMode } | null = null;
   private activeLoop: Promise<void> | null = null;
@@ -164,8 +176,13 @@ export class WorksetController {
     // Without a readable store nothing is saved: any entered state would be lost.
     if (s.phase === "error" || s.phase === "idle") return this.projectionKey() !== stateKey(emptyWorksetState());
     if (s.phase !== "ready" || !s.current) return false;
-    if (s.active.phase !== "clean") return true;
-    return s.save.phase !== "clean" || this.projectionKey() !== this.baseline || s.current.name !== this.savedName;
+    if (s.active.phase !== "clean" || this.activeUnresolved !== null) return true;
+    return s.save.phase !== "clean" || this.fenceNeeded() || this.projectionKey() !== this.baseline || s.current.name !== this.savedName;
+  }
+
+  /** PR #81 P2-2: a workset transition is in progress; v1 checks and submits must not start. */
+  admissionHeld(): boolean {
+    return this.store.get().op.phase === "pending";
   }
 
   /** Why switching/creating/deleting is refused now (null = allowed after a flush). */
@@ -268,6 +285,7 @@ export class WorksetController {
     this.baseline = stateKey(remote.state);
     this.savedName = remote.name;
     this.failedKey = null;
+    this.settleUnresolved(remote.id, remote.revision);
     this.store.patch({ conflict: null, outdated: null, current: { ...s.current, revision: remote.revision } });
     this.patchSave({ phase: "dirty", error: null });
     void this.runSave();
@@ -564,6 +582,14 @@ export class WorksetController {
     this.requestActive();
   }
 
+  private activeFenceNeeded(): boolean {
+    return this.activeUnresolved !== null && (this.knownActive?.revision ?? 0) === this.activeUnresolved;
+  }
+
+  private settleActive(): void {
+    if (this.activeUnresolved !== null && (this.knownActive?.revision ?? 0) > this.activeUnresolved) this.activeUnresolved = null;
+  }
+
   private activeMatches(): boolean {
     const want = this.desiredActive;
     const known = this.knownActive;
@@ -581,15 +607,23 @@ export class WorksetController {
       let conflicts = 0;
       if (this.activeRetryTimer !== null) this.scheduler.clearTimeout(this.activeRetryTimer);
       this.activeRetryTimer = null;
-      while (!this.disposed && !this.activeMatches()) {
-        const target = this.desiredActive!;
+      while (!this.disposed && (!this.activeMatches() || this.activeFenceNeeded())) {
+        const known = this.knownActive;
+        // Back at the known value with an older request still unresolved: fence it (same value,
+        // CAS, the revision advances) instead of assuming "nothing to send".
+        const target = this.desiredActive ?? (known ? { id: known.worksetId, mode: known.mode } : null);
+        if (target === null) break;
+        const fence = this.activeMatches() && this.activeFenceNeeded();
+        const base = known?.revision ?? 0;
         this.store.patch({ active: { phase: "pending", error: null } });
         try {
-          this.knownActive = await this.api.setActive(target.id, target.mode, this.knownActive?.revision ?? 0);
+          this.knownActive = await this.api.setActive(target.id, target.mode, base, fence);
+          this.settleActive();
           this.activeRetryIndex = 0;
           continue;
         } catch (error) {
           const e = toApiError(error);
+          if (isUnknownOutcome(e)) this.activeUnresolved = base;
           if (e.status === 404 || e.status === 422) {
             // The workset is gone (or the value is refused): nothing valid to remember.
             if (this.desiredActive === target) this.desiredActive = null;
@@ -598,6 +632,7 @@ export class WorksetController {
           }
           try {
             this.knownActive = await this.api.getActive();
+            this.settleActive();
           } catch (readError) {
             this.store.patch({ active: { phase: "error", error: toApiError(readError) } });
             this.scheduleActiveRetry();
@@ -618,7 +653,7 @@ export class WorksetController {
           }
         }
       }
-      this.store.patch({ active: { phase: "clean", error: null } });
+      if (!this.disposed && this.activeMatches() && !this.activeFenceNeeded()) this.store.patch({ active: { phase: "clean", error: null } });
     })().finally(() => {
       this.activeLoop = null;
     });
@@ -642,12 +677,13 @@ export class WorksetController {
   }
 
   private editedSince(mark: string): boolean {
-    return this.editMark() !== mark || this.inflight !== null || this.store.get().conflict !== null;
+    return this.editMark() !== mark || this.inflight !== null || this.store.get().conflict !== null || this.fenceNeeded() || this.options.jobBusy();
   }
 
   /** An awaited operation found newer edits: keep this workset and its edits, say so, save them. */
   private keepEdits(kind: OpKind, block: OpBlock): false {
-    this.store.patch({ op: { ...IDLE_OP, kind, phase: "error", block } });
+    // A v1 admission that started anyway keeps its workset (its session is already frozen).
+    this.store.patch({ op: { ...IDLE_OP, kind, phase: "error", block: this.options.jobBusy() ? "busy_job" : block } });
     if (this.needsSave()) this.schedule();
     void this.refreshList();
     return false;
@@ -656,7 +692,18 @@ export class WorksetController {
   private needsSave(): boolean {
     const s = this.store.get();
     if (!s.current) return false;
-    return this.projectionKey() !== this.baseline || s.current.name !== this.savedName;
+    return this.fenceNeeded() || this.projectionKey() !== this.baseline || s.current.name !== this.savedName;
+  }
+
+  /** An unknown-outcome write may still be applied under the revision this screen holds. */
+  private fenceNeeded(): boolean {
+    const current = this.store.get().current;
+    return !!current && this.unresolved !== null && this.unresolved.id === current.id && this.unresolved.base === current.revision;
+  }
+
+  /** Any revision past the unknown request's base retires it (its If-Match can no longer match). */
+  private settleUnresolved(id: string, revision: number): void {
+    if (this.unresolved && this.unresolved.id === id && revision > this.unresolved.base) this.unresolved = null;
   }
 
   private patchSave(patch: Partial<WorksetsState["save"]>): void {
@@ -719,16 +766,19 @@ export class WorksetController {
     const state = this.projection();
     const key = stateKey(state);
     const name = s.current.name;
-    if (key === this.baseline && name === this.savedName) {
+    const fence = this.fenceNeeded();
+    if (key === this.baseline && name === this.savedName && !fence) {
       this.firstDirtyAt = null;
       this.patchSave({ phase: "clean", error: null });
       return;
     }
-    if (key === this.failedKey) return;
+    if (key === this.failedKey && !fence) return;
     const sent = { id: s.current.id, base: s.current.revision, key, name, generation: this.generation };
     this.patchSave({ phase: "saving" });
     try {
-      const doc = await this.api.put(sent.id, sent.base, name, state);
+      // Equal to the baseline only because the screen went back: the fence still advances the
+      // revision so the older request of unknown outcome is refused if it arrives later.
+      const doc = await this.api.put(sent.id, sent.base, name, state, fence);
       if (sent.generation !== this.generation) return;
       this.saved(doc, key);
     } catch (error) {
@@ -740,6 +790,7 @@ export class WorksetController {
   private saved(doc: WorksetDoc, key: string): void {
     const s = this.store.get();
     if (!s.current) return;
+    this.settleUnresolved(doc.id, doc.revision);
     this.baseline = key;
     this.savedName = doc.name;
     this.failedKey = null;
@@ -765,6 +816,8 @@ export class WorksetController {
       this.patchSave({ phase: "error", error });
       return;
     }
+    // No answer at all (or an unreadable one): the request may still be applied later.
+    if (isUnknownOutcome(error)) this.unresolved = { id: sent.id, base: sent.base };
     // 412 or no answer: the stored version decides (never a blind resend of a new write).
     let remote: WorksetDoc;
     try {
@@ -782,7 +835,8 @@ export class WorksetController {
       return;
     }
     if (sent.generation !== this.generation) return;
-    if (stateKey(remote.state) === sent.key && remote.name === sent.name) {
+    this.settleUnresolved(remote.id, remote.revision);
+    if (stateKey(remote.state) === sent.key && remote.name === sent.name && remote.revision > sent.base) {
       this.saved(remote, sent.key);
       return;
     }
@@ -819,6 +873,8 @@ export class WorksetController {
   }
 
   private adoptCurrent(doc: WorksetDoc): void {
+    if (this.unresolved && this.unresolved.id !== doc.id) this.unresolved = null;
+    this.settleUnresolved(doc.id, doc.revision);
     this.baseline = stateKey(doc.state);
     this.savedName = doc.name;
     this.failedKey = null;
@@ -839,6 +895,8 @@ export class WorksetController {
       this.store.patch({ op: { ...IDLE_OP, kind, phase: "error", block } });
       return false;
     }
+    // From here until the answer is applied, v1 admissions are held (`admissionHeld`).
+    this.store.patch({ op: { ...IDLE_OP, kind, phase: "pending" } });
     if (!(await this.flush())) {
       this.store.patch({ op: { ...IDLE_OP, kind, phase: "error", block: this.store.get().conflict ? "conflict" : "unsaved" } });
       return false;

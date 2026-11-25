@@ -188,6 +188,42 @@ test("an input added while another workset is being opened is kept and saved, ne
   await app.unroute(`**/api/v1/worksets/${first}`);
 });
 
+test("while another workset is being opened, the v1 check cannot start and nothing is validated", async ({ app, request, backend }) => {
+  test.setTimeout(60_000);
+  await libraries(request, "EBX");
+  await app.getByTestId("v1-lib-reload").click();
+  await createPreset(app, "EBX 合成");
+  await choose(app, "v1-policy-select", /EBX CPU/);
+  await addTyped(app, input(backend.root, "meeting.wav"));
+  await app.getByTestId("v1-output-path").locator("input").fill(join(backend.root, "out"));
+  await saved(app);
+  await app.getByTestId("ws-menu").click();
+  await app.getByTestId("ws-new").click();
+  await expect(app.getByTestId("ws-select")).toContainText("作業セット2");
+  await saved(app);
+  const listing = (await (await request.get("/api/v1/worksets", { headers: SESSION_HEADER })).json()) as { items: { id: string; name: string }[] };
+  const first = listing.items.find((i) => i.name === "作業セット1")!.id;
+  const validations: string[] = [];
+  app.on("request", (r) => {
+    if (new URL(r.url()).pathname === "/api/v1/validations") validations.push(r.method());
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await app.route(`**/api/v1/worksets/${first}`, async (route) => {
+    if (route.request().method() === "GET") await gate;
+    await route.continue();
+  });
+  await choose(app, "ws-select", /作業セット1/);
+  await expect(app.getByTestId("v1-block")).toContainText("作業セットの切替");
+  await expect(app.getByTestId("v1-check")).toBeDisabled();
+  release();
+  await expect(app.getByTestId("tx-input-current")).toContainText("meeting.wav");
+  await expect(app.getByTestId("v1-block")).toHaveCount(0);
+  await expect(app.getByTestId("v1-check")).toBeEnabled();
+  expect(validations).toEqual([]);
+  await app.unroute(`**/api/v1/worksets/${first}`);
+});
+
 test("a restored input that disappeared stays listed as missing and blocks the start until it is back", async ({ app, backend }) => {
   test.setTimeout(60_000);
   const gone = input(backend.root, "later.wav");

@@ -21,6 +21,8 @@ const queueGate = useStore(core.v1!.queueGate.store);
 const inputs = useStore(core.inputs.store);
 const form = useStore(core.transcription.store);
 const library = useStore(core.v1!.library.store);
+// E-B: a workset transition holds admissions (the buttons follow it).
+const worksets = useStore(core.v1!.worksets.store);
 const { t, issue } = useCodeText();
 
 const evaluation = computed(() => {
@@ -41,7 +43,7 @@ watch(
 );
 onUnmounted(() => timer && clearInterval(timer));
 const canPrepare = computed(() => {
-  void [s.value, evaluation.value];
+  void [s.value, evaluation.value, worksets.value];
   return batch.canPrepare();
 });
 const stale = computed(() => {
@@ -53,7 +55,7 @@ const expired = computed(() => {
   return batch.isExpired();
 });
 const canSubmit = computed(() => {
-  void [s.value, clock.value, evaluation.value, queueGate.value];
+  void [s.value, clock.value, evaluation.value, queueGate.value, worksets.value];
   return batch.canSubmit();
 });
 const count = computed(() => s.value.prepared?.files.length ?? evaluation.value.count);

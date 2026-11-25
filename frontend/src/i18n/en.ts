@@ -1098,4 +1098,5 @@ export const en: Record<MessageKey, string> = {
   "eb.block.edited_during_switch": "You edited while switching, so the switch was stopped. Your edits are saved to this workset. Choose the other workset again if needed.",
   "eb.block.edited_during_create": "You edited while the new workset was being created, so it was created but not opened. Your edits are saved to this workset. The new workset is in the list.",
   "eb.activeError": "The last-used workset could not be recorded (retrying automatically). Another workset may open at the next start.",
+  "v1.block.workset_busy": "Checks and submissions cannot start until the workset switch, creation, restore or deletion has finished.",
 };

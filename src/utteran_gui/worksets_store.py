@@ -466,8 +466,15 @@ class WorksetStore:
             if db.execute("PRAGMA freelist_count").fetchone()[0] == 0:
                 break
 
-    def update(self, workset_id: str, expected: int, name: Any, state: Any) -> Row:
-        """CAS replace of name + state. An identical body changes nothing (no new revision)."""
+    def update(
+        self, workset_id: str, expected: int, name: Any, state: Any, *, fence: bool = False
+    ) -> Row:
+        """CAS replace of name + state. An identical body changes nothing (no new revision).
+
+        ``fence`` (PR #81 P2-1): advance the revision even for an identical body, so that an
+        earlier request of the same client whose outcome is unknown (sent with the same
+        ``If-Match``) can never be applied afterwards. No recovery checkpoint is taken for it.
+        """
         trimmed = check_name(name)
         text, size = check_state(state)
         if not self.exists():
@@ -477,7 +484,16 @@ class WorksetStore:
             if current.revision != expected:
                 raise WorksetError("revision_conflict", 412, retryable=False)
             if current.name == trimmed and current.state == text:
-                return current
+                if not fence:
+                    return current
+                now = max(self._now_ms(), current.updated_ms)
+                db.execute(
+                    "UPDATE worksets SET revision=?,updated_ms=? WHERE id=?",
+                    (current.revision + 1, now, workset_id),
+                )
+                return Row(
+                    workset_id, current.revision + 1, trimmed, current.created_ms, now, text, size
+                )
             self._quota(db, size, workset_id)
             self._checkpoint(db, current, force=False)
             now = max(self._now_ms(), current.updated_ms)
@@ -512,13 +528,17 @@ class WorksetStore:
             self._compact(db, always=True)
             return self._listing(db)
 
-    def set_active(self, workset_id: str, mode: Any, expected: int) -> dict[str, Any]:
+    def set_active(
+        self, workset_id: str, mode: Any, expected: int, *, fence: bool = False
+    ) -> dict[str, Any]:
         """Remember the last chosen workset and display mode under CAS on the pointer revision.
 
         ``expected`` is the pointer revision the caller last saw (0 = no pointer yet). A request
         that arrives late (its window already sent a newer choice) no longer matches and is
         refused with 412, so the pointer never moves back. A value equal to the stored one
-        changes nothing and succeeds whatever ``expected`` is.
+        changes nothing and succeeds whatever ``expected`` is, unless ``fence``: then the CAS
+        applies and the revision advances, which retires any earlier request of unknown
+        outcome that was sent with the same revision (PR #81 P2-1).
         """
         if mode not in ("normal", "expert"):
             raise WorksetError("mode_invalid", 422, retryable=False)
@@ -527,11 +547,13 @@ class WorksetStore:
         with self._open(write=True) as db:
             self._get(db, workset_id)
             active = self._active(db)
-            if (
+            same = (
                 active is not None
                 and active["workset_id"] == workset_id
                 and active["view"]["mode"] == mode
-            ):
+            )
+            if same and not fence:
+                assert active is not None
                 return {"schema_version": 1, **active}
             current = 0 if active is None else active["revision"]
             if current != expected:

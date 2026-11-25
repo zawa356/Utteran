@@ -106,7 +106,7 @@ export interface V1JobState {
   recent: { phase: "idle" | "pending" | "done" | "error"; items: readonly JobV1[]; error: ApiError | null };
 }
 
-export type V1Block = "busy" | "unknown_unresolved" | "tracking" | "cancel_open";
+export type V1Block = "busy" | "unknown_unresolved" | "tracking" | "cancel_open" | "workset_busy";
 
 /** The shown job at one moment: its id and the target epoch (bumped on every target switch). */
 export interface CancelTarget {
@@ -172,6 +172,8 @@ const hasRowOverrides = (row: InputRow) => Object.entries(row.overrides).some(([
 
 export interface V1JobOptions {
   gate?: QueueMutationGate;
+  /** E-B: true while a workset is being switched/created/restored/deleted (no admission starts). */
+  admissionHeld?: () => boolean;
   scheduler?: Scheduler;
   now?: () => number;
   random?: RandomSource;
@@ -266,6 +268,7 @@ export class V1SingleJobController {
     if (s.step === "unknown") return "unknown_unresolved";
     if (this.switchBlocked() !== null) return "cancel_open";
     if (s.origin === "submitted" && s.tracking === "active") return "tracking";
+    if (this.options.admissionHeld?.()) return "workset_busy";
     return null;
   }
 
@@ -289,7 +292,7 @@ export class V1SingleJobController {
    */
   canSubmit(): boolean {
     const s = this.store.get();
-    return s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired() && this.switchBlocked() === null && !this.gate.busy();
+    return s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired() && this.switchBlocked() === null && !this.gate.busy() && !this.options.admissionHeld?.();
   }
 
   /** Step 1: freeze, validate (B5), resolve (B7). One click = one attempt of each, never resent. */

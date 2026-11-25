@@ -128,7 +128,7 @@ export function fakeWorksets(options: { exists?: boolean } = {}): FakeWorksets {
       const id = String(b.workset_id);
       if (!state.items.some((i) => i.id === id)) return error(404, "workset_not_found");
       const mode = String((b.view as Json).mode);
-      if (state.active && state.active.id === id && state.active.mode === mode) return activeWire();
+      if (state.active && state.active.id === id && state.active.mode === mode && b.fence !== true) return activeWire();
       const expected = Number(/^"(\d+)"$/.exec(headers(init)["If-Match"] ?? "")?.[1] ?? NaN);
       if (Number.isNaN(expected)) return error(428, "if_match_required");
       if (expected !== (state.active?.revision ?? 0)) return error(412, "revision_conflict");
@@ -162,7 +162,7 @@ export function fakeWorksets(options: { exists?: boolean } = {}): FakeWorksets {
     if (expected !== w.revision) return error(412, "revision_conflict");
     if (method === "PUT") {
       const b = body(init);
-      if (canonical(b.state) !== canonical(w.state) || b.name !== w.name) {
+      if (canonical(b.state) !== canonical(w.state) || b.name !== w.name || b.fence === true) {
         w.state = b.state as Json;
         w.name = String(b.name);
         w.revision += 1;

@@ -615,3 +615,181 @@ describe("E-B the remembered active workset never moves back (PR #81 P2)", () =>
     expect(worksets.store.get().active.phase).toBe("clean");
   });
 });
+
+describe("E-B a request of unknown outcome is retired, never assumed obsolete (PR #81 P2-1)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** The first request matching `match` gets no answer; the server receives it only via `late()`. */
+  function lose(ws: ReturnType<typeof fakeWorksets>, match: (url: string, init: RequestInit) => boolean) {
+    const original = ws.handle.bind(ws);
+    let late: (() => Promise<Response>) | null = null;
+    ws.handle = async (url, init) => {
+      if (late === null && match(url, init)) {
+        late = () => original(url, init);
+        throw new TypeError("synthetic connection loss");
+      }
+      return original(url, init);
+    };
+    return () => late!();
+  }
+
+  it("autosave A → B (lost) → back to A: a fenced write advances the revision and the late B is refused", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    add(core, "a.wav");
+    await settle();
+    const id = ws.items[0]!.id;
+    expect(ws.items[0]!.revision).toBe(2); // A
+    const late = lose(ws, (url, init) => init.method === "PUT" && url.endsWith(id));
+    add(core, "b.wav"); // B
+    await settle();
+    expect(worksets.store.get().save.phase).toBe("error"); // GET showed A: not applied (yet)
+    // Back to A before the retry: equal to the baseline, but not "saved".
+    core.inputs.remove([core.inputs.store.get().rows[1]!.clientFileId]);
+    expect(worksets.hasUnsaved()).toBe(true);
+    await vi.advanceTimersByTimeAsync(2100);
+    const fence = ws.lines.filter((l) => l === `PUT /api/v1/worksets/${id}`).length;
+    expect(fence).toBeGreaterThanOrEqual(2);
+    expect(ws.items[0]!.revision).toBe(3); // fenced: same content, new revision
+    expect(worksets.store.get()).toMatchObject({ save: { phase: "clean" }, current: { revision: 3 } });
+    expect(worksets.hasUnsaved()).toBe(false);
+    // The lost B request finally arrives: its If-Match (2) no longer matches.
+    expect((await late()).status).toBe(412);
+    expect((ws.items[0]!.state.inputs as { input_path: string }[]).map((i) => i.input_path)).toEqual([path("a.wav")]);
+  });
+
+  it("flush before a switch never reports clean while such a request is unresolved", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    await worksets.create(false);
+    const [first, second] = [ws.items[0]!.id, ws.items[1]!.id];
+    const late = lose(ws, (url, init) => init.method === "PUT" && url.endsWith(second));
+    add(core, "b.wav");
+    await settle();
+    core.inputs.remove([core.inputs.store.get().rows[0]!.clientFileId]);
+    // Equal to the saved state again, yet not clean: switching stays refused...
+    expect(worksets.hasUnsaved()).toBe(true);
+    expect(await worksets.switchTo(first)).toBe(false);
+    expect(worksets.store.get().op.block).toBe("unsaved");
+    // ...until the fenced write is confirmed.
+    await settle();
+    expect(worksets.store.get().save.phase).toBe("clean");
+    expect(await worksets.switchTo(first)).toBe(true);
+    expect(ws.items[1]!.revision).toBe(2);
+    expect((await late()).status).toBe(412);
+    expect(ws.items[1]!.state.inputs).toEqual([]);
+  });
+
+  it("active W1 → W2 (lost) → back to W1: the pointer is fenced and the late W2 is refused", async () => {
+    const { core, worksets, ws } = setup();
+    await core.start();
+    await worksets.create(false);
+    await vi.advanceTimersByTimeAsync(0);
+    const [w1, w2] = ws.items.map((w) => w.id);
+    await worksets.switchTo(w1!);
+    await vi.advanceTimersByTimeAsync(0);
+    const before = ws.active!.revision;
+    const late = lose(ws, (url, init) => init.method === "PUT" && url.endsWith("/active") && String(init.body).includes(w2!));
+    await worksets.switchTo(w2!);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ws.active?.id).toBe(w1); // GET: not applied (yet)
+    await worksets.switchTo(w1!);
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(ws.active).toMatchObject({ id: w1, revision: before + 1 }); // fenced
+    expect(worksets.store.get().active.phase).toBe("clean");
+    expect(worksets.hasUnsaved()).toBe(false);
+    expect((await late()).status).toBe(412);
+    expect(ws.active?.id).toBe(w1);
+  });
+});
+
+describe("E-B workset transitions and v1 admissions exclude each other (PR #81 P2-2)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function holdGet(ws: ReturnType<typeof fakeWorksets>, match: (line: string) => boolean) {
+    const gate = deferred<void>();
+    const original = ws.handle.bind(ws);
+    let held = false;
+    ws.handle = async (url, init) => {
+      const line = `${init.method ?? "GET"} ${new URL(url, "http://x").pathname}`;
+      if (!held && match(line)) {
+        held = true;
+        await gate.promise;
+      }
+      return original(url, init);
+    };
+    return () => gate.resolve();
+  }
+
+  async function ready() {
+    const s = setup();
+    await s.core.start();
+    await s.core.v1!.library.select("preset", V1_PRESET);
+    await s.core.v1!.library.select("policy", V1_POLICY);
+    s.core.transcription.edit({ outputDir: OUT });
+    add(s.core, "a.wav");
+    await settle();
+    await s.worksets.create(false);
+    add(s.core, "b.wav");
+    await s.core.v1!.library.select("preset", V1_PRESET);
+    await s.core.v1!.library.select("policy", V1_POLICY);
+    await settle();
+    return s;
+  }
+
+  it("while a switch is pending, single and batch checks/submits do not start; nothing is posted", async () => {
+    const { core, worksets, ws, lines } = await ready();
+    const first = ws.items[0]!.id;
+    const release = holdGet(ws, (l) => l === `GET /api/v1/worksets/${first}`);
+    const switching = worksets.switchTo(first);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(worksets.admissionHeld()).toBe(true);
+    expect(core.v1!.job.blockFor()).toBe("workset_busy");
+    expect(core.v1!.batch.canPrepare()).toBe(false);
+    await core.v1!.job.prepare();
+    await core.v1!.batch.prepare();
+    expect(lines.filter((l) => l.startsWith("POST /api/v1/validations"))).toEqual([]);
+    release();
+    expect(await switching).toBe(true);
+    expect(worksets.admissionHeld()).toBe(false);
+    expect(core.v1!.job.blockFor()).toBeNull();
+  });
+
+  it("an admission that is open when the answer arrives stops the switch; the workset stays", async () => {
+    const { core, worksets, ws } = await ready();
+    const [first, second] = [ws.items[0]!.id, ws.items[1]!.id];
+    const release = holdGet(ws, (l) => l === `GET /api/v1/worksets/${first}`);
+    const switching = worksets.switchTo(first);
+    await vi.advanceTimersByTimeAsync(0);
+    core.v1!.job.store.patch({ step: "validating" }); // e.g. started through another path
+    release();
+    expect(await switching).toBe(false);
+    expect(worksets.store.get()).toMatchObject({ current: { id: second }, op: { block: "busy_job" } });
+    expect(core.inputs.store.get().rows.map((r) => r.inputPath)).toEqual([path("b.wav")]);
+  });
+
+  it("the same holds for create and restore: no new workset is opened under an open admission", async () => {
+    const { core, worksets, ws } = await ready();
+    const second = ws.items[1]!.id;
+    let release = holdGet(ws, (l) => l === "POST /api/v1/worksets");
+    const creating = worksets.create(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(core.v1!.job.blockFor()).toBe("workset_busy");
+    core.v1!.job.store.patch({ step: "resolving" });
+    release();
+    expect(await creating).toBe(false);
+    expect(worksets.store.get()).toMatchObject({ current: { id: second }, op: { block: "busy_job" } });
+    core.v1!.job.store.patch({ step: "idle" });
+    worksets.dismissOp();
+    release = holdGet(ws, (l) => l.endsWith("/restore"));
+    const restoring = worksets.restoreRecovery(1);
+    await vi.advanceTimersByTimeAsync(0);
+    core.v1!.job.store.patch({ step: "submitting" });
+    release();
+    expect(await restoring).toBe(false);
+    expect(worksets.store.get().conflict?.kind).toBe("remote_changed"); // server restored; screen kept
+    expect(core.inputs.store.get().rows.map((r) => r.inputPath)).toEqual([path("b.wav")]);
+  });
+});

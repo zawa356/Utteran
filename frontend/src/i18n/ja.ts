@@ -1096,6 +1096,7 @@ export const ja = {
   "eb.block.edited_during_switch": "切替中に編集されたため、切り替えを中止しました。編集内容はこの作業セットに保存されます。必要ならもう一度選び直してください。",
   "eb.block.edited_during_create": "作成中に編集されたため、新しい作業セットは作成しましたが開いていません。編集内容はこの作業セットに保存されます。新しい作業セットは一覧から選べます。",
   "eb.activeError": "最後に使った作業セットの記録を確定できませんでした（自動で再試行します）。次回起動時に別の作業セットが開く可能性があります。",
+  "v1.block.workset_busy": "作業セットの切替・作成・復旧・削除が終わるまで、確認と投入は開始できません。",
 } as const;
 
 export type MessageKey = keyof typeof ja;

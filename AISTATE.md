@@ -5,6 +5,7 @@
 - main 基点 `db67640f997e74c81b4dbf2ffe3abcdf5085731e`（0.1.67、E-A 統合済み）。作業ブランチ `claude/zealous-bell-rn7slw`、[#80](https://github.com/zawa356/Utteran/issues/80)。
 - 名前付き作業セットの自動保存・復元（Normal／Expert 共通）、独立 private ストア `worksets-v1` と `/api/v1/worksets`、CAS・競合・応答喪失の照合、復旧 2 世代、容量上限（実測根拠）を実装。B5/B7 の契約・DB、既定 GUI、CLI は不変。
 - 2026-11-25 オーナーレビュー（P1×1、P2×2）に対応した。操作待ち中の編集を保持し、active 参照を CAS で直列化し、入力確認でネットワーク・リンクに触れずスレッド数を制限した。回帰試験を追加した。
+- 同日の再レビュー（P2×2）に対応した。結果不明の旧要求を fence で失効させ（A→B→A、W1→W2→W1）、作業セットの遷移と v1 投入を相互排他にした。
 - [E-B 正本](docs/architecture/ui3/e-b-worksets.md)。HEAD・試験件数・CI は Draft PR に記録する。Windows WebView2 の実機確認（離脱確認・複数ウィンドウ・IME・ACL）は [#22](https://github.com/zawa356/Utteran/issues/22)。
 
 ## 現在地（2026-11-24、束 E-A、0.1.67・未リリース）

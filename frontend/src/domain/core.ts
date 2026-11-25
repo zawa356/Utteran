@@ -111,8 +111,11 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     const api = createV1ResourcesApi(http);
     const library = new V1LibraryController(api);
     const queueGate = new QueueMutationGate();
-    const job = new V1SingleJobController(api, library.store, inputs.store, transcription.store, { gate: queueGate });
-    const batch = new V1BatchController(api, library.store, inputs.store, transcription.store, { gate: queueGate, fileIdFor: (rowId) => job.fileIdFor(rowId) });
+    // E-B: workset transitions and v1 admissions are mutually exclusive (PR #81 P2-2).
+    let worksetsRef: WorksetController | null = null;
+    const admissionHeld = () => worksetsRef?.admissionHeld() ?? false;
+    const job = new V1SingleJobController(api, library.store, inputs.store, transcription.store, { gate: queueGate, admissionHeld });
+    const batch = new V1BatchController(api, library.store, inputs.store, transcription.store, { gate: queueGate, admissionHeld, fileIdFor: (rowId) => job.fileIdFor(rowId) });
     const board = new V1JobBoardController(api, { gate: queueGate, onVisibilitySettled: () => job.refreshRecentIfLoaded() });
     // After a settled deletion every list is read from the server again (nothing is removed locally).
     const deletion = new V1DeletionController(api, {
@@ -124,6 +127,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
     });
     const rerun = new V1BatchController(api, library.store, inputs.store, transcription.store, {
       gate: queueGate,
+      admissionHeld,
       fileIdFor: (rowId) => job.fileIdFor(rowId),
       onRerunSettled: () => {
         void board.refresh();
@@ -137,6 +141,7 @@ export function createCore(deps: { fetch: FetchLike; host: HostBridge; eventSour
       jobBusy: () => queueGate.busy() || busy.has(job.store.get().step) || busy.has(batch.store.get().step) || busy.has(rerun.store.get().step),
       nameFor: (n) => translate(settings.store.get().saved?.language ?? "ja", "eb.defaultName", { n }),
     });
+    worksetsRef = worksets;
     v1 = { api, queueGate, library, job, batch, rerun, board, deletion, worksets };
   }
   return {

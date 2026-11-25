@@ -120,6 +120,8 @@ export function canRerun(group: LogicalJob): boolean {
 }
 
 export interface V1BatchOptions {
+  /** E-B: true while a workset is being switched/created/restored/deleted (no admission starts). */
+  admissionHeld?: () => boolean;
   /** Refresh shared reads after an accepted rerun or a stale source revision. */
   onRerunSettled?: () => void;
   gate?: QueueMutationGate;
@@ -248,14 +250,14 @@ export class V1BatchController {
 
   canPrepare(): boolean {
     const { step, failedAt, error } = this.store.get();
-    return !this.disposed && !this.busy() && step !== "unknown"
+    return !this.disposed && !this.busy() && step !== "unknown" && !this.options.admissionHeld?.()
       && !(this.rerunSelection.get() && failedAt === "submission" && [404, 410, 412].includes(error?.status ?? 0))
       && this.evaluate().session !== null;
   }
 
   canSubmit(): boolean {
     const s = this.store.get();
-    return !this.disposed && !this.gate.busy() && s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired();
+    return !this.disposed && !this.gate.busy() && !this.options.admissionHeld?.() && s.step === "resolved" && !!s.prepared?.resolution && !this.isStale() && !this.isExpired();
   }
 
   async prepare(): Promise<void> {

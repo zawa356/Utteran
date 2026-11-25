@@ -78,6 +78,15 @@ def _only(body: dict[str, Any], *names: str) -> None:
         raise WorksetError("contract_validation_failed", 422, retryable=False)
 
 
+def _fence(body: dict[str, Any]) -> bool:
+    """Optional ``"fence": true`` only (absent = false; any other value is refused)."""
+    if "fence" not in body:
+        return False
+    if body["fence"] is not True:
+        raise WorksetError("contract_validation_failed", 422, retryable=False)
+    return True
+
+
 def _resource(row: Any, status: int = 200, headers: dict[str, str] | None = None) -> JSONResponse:
     return JSONResponse(
         row.to_wire(),
@@ -314,7 +323,8 @@ def register_workset_routes(app: FastAPI, store_path: Path) -> None:
     @app.put("/worksets/active")
     async def put_active(request: Request) -> Response:
         body = await _json(request, 64 * 1024)
-        _only(body, "workset_id", "view")
+        _only(body, "workset_id", "view", "fence")
+        fence = _fence(body)
         view = body.get("view")
         if (
             not isinstance(view, dict)
@@ -324,7 +334,9 @@ def register_workset_routes(app: FastAPI, store_path: Path) -> None:
             raise WorksetError("contract_validation_failed", 422, retryable=False)
         workset_id = _workset_id(body["workset_id"])
         expected = _expected(request, allow_zero=True)
-        result = await run(lambda: store().set_active(workset_id, view["mode"], expected))
+        result = await run(
+            lambda: store().set_active(workset_id, view["mode"], expected, fence=fence)
+        )
         return JSONResponse(result, headers={"ETag": f'"{result["revision"]}"'})
 
     @app.post("/worksets/input-status")
@@ -352,10 +364,13 @@ def register_workset_routes(app: FastAPI, store_path: Path) -> None:
         selected = _workset_id(workset_id)
         expected = _expected(request)
         body = await _json(request)
-        _only(body, "name", "state")
+        _only(body, "name", "state", "fence")
         if "state" not in body or "name" not in body:
             raise WorksetError("contract_validation_failed", 422, retryable=False)
-        row = await run(lambda: store().update(selected, expected, body["name"], body["state"]))
+        fence = _fence(body)
+        row = await run(
+            lambda: store().update(selected, expected, body["name"], body["state"], fence=fence)
+        )
         return _resource(row)
 
     @app.delete("/worksets/{workset_id}")

@@ -251,10 +251,11 @@ export interface WorksetsApi {
   get(id: string, signal?: AbortSignal): Promise<WorksetDoc>;
   create(intent: MutationIntent<CreateBody>): Promise<WorksetDoc>;
   /** CAS replace (name + state); the answer's revision and ETag must agree. */
-  put(id: string, expectedRevision: number, name: string, state: WorksetStateWire): Promise<WorksetDoc>;
+  /** `fence` advances the revision even for identical content (retires a request of unknown outcome). */
+  put(id: string, expectedRevision: number, name: string, state: WorksetStateWire, fence?: boolean): Promise<WorksetDoc>;
   remove(id: string, expectedRevision: number): Promise<WorksetListing>;
   /** CAS on the pointer revision (`If-Match`, 0 = none yet): a late, older request answers 412. */
-  setActive(id: string, mode: ViewMode, expectedRevision: number): Promise<ActiveWorkset>;
+  setActive(id: string, mode: ViewMode, expectedRevision: number, fence?: boolean): Promise<ActiveWorkset>;
   getActive(): Promise<ActiveWorkset>;
   recovery(id: string): Promise<RecoveryItem[]>;
   restoreRecovery(id: string, revision: number, expectedRevision: number): Promise<WorksetDoc>;
@@ -297,9 +298,9 @@ export function createWorksetsApi(http: HttpClient): WorksetsApi {
         throw error;
       }
     },
-    async put(id, expectedRevision, name, state) {
+    async put(id, expectedRevision, name, state, fence = false) {
       const doc = await docWithEtag({
-        method: "PUT", path: `/api/v1/worksets/${checkId(id)}`, body: { schema_version: 1, name, state },
+        method: "PUT", path: `/api/v1/worksets/${checkId(id)}`, body: fence ? { schema_version: 1, name, state, fence: true } : { schema_version: 1, name, state },
         headers: { "If-Match": ifMatch(expectedRevision) }, timeoutMs: WORKSET_TIMEOUT_MS,
       });
       if (doc.id !== id || doc.revision < expectedRevision) throw new ShapeError("workset.revision");
@@ -308,8 +309,9 @@ export function createWorksetsApi(http: HttpClient): WorksetsApi {
     async remove(id, expectedRevision) {
       return (await http.request({ method: "DELETE", path: `/api/v1/worksets/${checkId(id)}`, headers: { "If-Match": ifMatch(expectedRevision) }, timeoutMs: WORKSET_TIMEOUT_MS }, parseListing)).data;
     },
-    async setActive(id, mode, expectedRevision) {
-      return (await http.request({ method: "PUT", path: "/api/v1/worksets/active", body: { schema_version: 1, workset_id: checkId(id), view: { mode } }, headers: { "If-Match": ifMatch(expectedRevision) }, timeoutMs: WORKSET_TIMEOUT_MS }, parseActiveBody)).data;
+    async setActive(id, mode, expectedRevision, fence = false) {
+      const body = { schema_version: 1, workset_id: checkId(id), view: { mode }, ...(fence ? { fence: true } : {}) };
+      return (await http.request({ method: "PUT", path: "/api/v1/worksets/active", body, headers: { "If-Match": ifMatch(expectedRevision) }, timeoutMs: WORKSET_TIMEOUT_MS }, parseActiveBody)).data;
     },
     async getActive() {
       return (await http.request({ method: "GET", path: "/api/v1/worksets/active" }, parseActiveBody)).data;

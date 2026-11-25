@@ -268,6 +268,52 @@ def test_lost_answer_is_reconciled_by_get_not_by_blind_resend(client):
     assert stored["revision"] == 2 and canonical(stored["state"]) == canonical(body["state"])
 
 
+def test_fence_retires_an_older_request_of_unknown_outcome(client):
+    """PR #81 P2-1: A -> B (answer lost, request still on its way) -> back to A."""
+    workset = boot(client)["items"][0]["id"]
+    url = f"/api/v1/worksets/{workset}"
+    a = {"schema_version": 1, "name": "作業セット1", "state": state(row("/s/a.wav"))}
+    assert client.put(url, json=a, headers={"If-Match": '"1"'}).json()["revision"] == 2
+    b = {**a, "state": state(row("/s/b.wav"))}
+    # The client sent B under rev 2 and got no answer; GET still shows A rev 2. The screen goes
+    # back to A: an identical PUT alone would change nothing and leave B applicable later...
+    assert client.put(url, json=a, headers={"If-Match": '"2"'}).json()["revision"] == 2
+    # ...so the client fences: same content, the revision advances, no recovery checkpoint.
+    before = client.get(f"{url}/recovery").json()["items"]
+    fenced = client.put(url, json={**a, "fence": True}, headers={"If-Match": '"2"'})
+    assert fenced.status_code == 200 and fenced.headers["ETag"] == '"3"'
+    assert client.get(f"{url}/recovery").json()["items"] == before
+    late = client.put(url, json=b, headers={"If-Match": '"2"'})
+    assert late.status_code == 412
+    stored = client.get(url).json()
+    assert stored["revision"] == 3 and stored["state"]["inputs"][0]["input_path"] == "/s/a.wav"
+    assert (
+        client.put(url, json={**a, "fence": False}, headers={"If-Match": '"3"'}).status_code == 422
+    )
+
+
+def test_active_fence_retires_a_late_pointer_request(client):
+    """W1 -> W2 (lost, still on its way) -> W1: the late W2 request must not apply."""
+    w1 = boot(client)["items"][0]["id"]
+    w2 = client.post(
+        "/api/v1/worksets",
+        json={"schema_version": 1, "name": "二つ目"},
+        headers={"Idempotency-Key": "synthetic-create-0002"},
+    ).json()["id"]
+    url = "/api/v1/worksets/active"
+    body = {"schema_version": 1, "workset_id": w1, "view": {"mode": "normal"}}
+    # Same value without fence: nothing changes, so the in-flight W2 (If-Match 1) would win.
+    assert client.put(url, json=body, headers={"If-Match": '"1"'}).json()["revision"] == 1
+    # With fence the CAS applies and the revision advances.
+    stale_fence = client.put(url, json={**body, "fence": True}, headers={"If-Match": '"9"'})
+    assert stale_fence.status_code == 412
+    fenced = client.put(url, json={**body, "fence": True}, headers={"If-Match": '"1"'})
+    assert fenced.status_code == 200 and fenced.json()["revision"] == 2
+    late = client.put(url, json={**body, "workset_id": w2}, headers={"If-Match": '"1"'})
+    assert late.status_code == 412
+    assert client.get(url).json() == {**fenced.json()}
+
+
 def test_identical_put_creates_no_revision(client):
     workset = boot(client)["items"][0]["id"]
     url = f"/api/v1/worksets/{workset}"
