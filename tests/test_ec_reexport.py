@@ -1448,3 +1448,73 @@ def test_owner_p2_3_an_unmoved_destination_is_location_verified(world: World) ->
     assert record["location_verified"] is True
     shown = Path(record["directory"])
     assert (shown / f"{shown.name}.txt").is_file()
+
+
+@POSIX
+def test_rereview_p2_a_destination_moved_into_the_job_directory_after_pinning(
+    world: World,
+) -> None:
+    """Independent re-review P2-a: the destination passes the identity check, then is moved
+    into the job's directory before the new directory is made. Nothing is written in it."""
+    from utteran_gui.reexport_files import Destination, Protected
+
+    job_id = world.finished()
+    job_dir = world.directory(job_id)
+    before = tree(job_dir)
+    parent = world.tmp / "elsewhere"
+    parent.mkdir()
+    info = job_dir.stat()
+    destination = Destination(str(parent), [Protected((info.st_dev, info.st_ino), str(job_dir))])
+    try:
+        parent.rename(job_dir / "moved-in")  # after pinning, before mkdir
+        with pytest.raises(FileError) as caught:
+            create_output(destination, ["n"], "rex", {"txt": b"secret"}, on_claimed=lambda _: None)
+        assert caught.value.code == "output_inside_source"
+    finally:
+        destination.close()
+    assert list((job_dir / "moved-in").iterdir()) == []
+    assert {k: v for k, v in tree(job_dir).items() if not k.startswith("moved-in")} == before
+
+
+@POSIX
+def test_rereview_p2_a_moved_between_mkdir_and_open_writes_no_file(
+    world: World, monkeypatch: Any
+) -> None:
+    from utteran_gui.reexport_files import Destination, Protected
+
+    job_id = world.finished()
+    job_dir = world.directory(job_id)
+    parent = world.tmp / "elsewhere"
+    parent.mkdir()
+    info = job_dir.stat()
+    destination = Destination(str(parent), [Protected((info.st_dev, info.st_ino), str(job_dir))])
+    real_mkdir = os.mkdir
+
+    def mkdir_then_move(name: Any, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
+        real_mkdir(name, mode, dir_fd=dir_fd)
+        parent.rename(job_dir / "moved-in")
+
+    monkeypatch.setattr(os, "mkdir", mkdir_then_move)
+    try:
+        with pytest.raises(PartialOutput) as caught:
+            create_output(destination, ["n"], "rex", {"txt": b"secret"}, on_claimed=lambda _: None)
+        assert caught.value.code == "output_inside_source"
+    finally:
+        destination.close()
+    assert list((job_dir / "moved-in" / "n").iterdir()) == []  # no file, nothing deleted
+
+
+@POSIX
+def test_rereview_p3_git_ignores_an_inherited_git_dir(world: World, monkeypatch: Any) -> None:
+    job_id = world.finished()
+    repo = _repo(world.tmp, "")
+    other = world.tmp / "other"
+    subprocess.run(["git", "init", "-q", str(other)], check=True)
+    (other / ".git" / "info").mkdir(exist_ok=True)
+    (other / ".git" / "info" / "exclude").write_text("*\n")
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    with pytest.raises(ReexportError) as caught:
+        world.run(
+            job_id, world.body(job_id, formats=["txt"], output_parent=str(repo / "transcripts"))
+        )
+    assert caught.value.code == "output_in_repository"

@@ -280,7 +280,19 @@ class ReexportService:
         with self._state:
             self._running.add(key)
         try:
-            return self._execute(job_id, expected, key, body, digest_input)
+            try:
+                return self._execute(job_id, expected, key, body, digest_input)
+            except ReexportError as exc:
+                # A refusal before our record: if another process committed a record for this
+                # key meanwhile, answer from it (a replay), not with the refusal (re-review P3).
+                if exc.status in (409, 412, 413, 422) and self.store.exists():
+                    try:
+                        existing = self.store.by_key(key)
+                    except ReexportError:
+                        existing = None
+                    if existing is not None:
+                        return self._replay(existing, digest_input)
+                raise
         finally:
             with self._state:
                 self._running.discard(key)

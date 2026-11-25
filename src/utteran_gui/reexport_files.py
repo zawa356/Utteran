@@ -125,6 +125,39 @@ def reaches(path: str, expected: list[Identity]) -> bool:
             os.close(descriptor)
 
 
+_MAX_DEPTH = 4096
+
+
+def _ancestry_protected(start: int, protected: set[Identity]) -> bool:
+    """Whether ``start`` or any directory above it (followed through ``..`` from the held
+    descriptor, never by name) is protected. Run right before ``mkdir`` and again on the new
+    directory, so a destination moved *into* the job's directory after it was pinned is
+    caught (independent re-review P2-a). An unreadable chain is treated as protected (fail
+    closed). A bind mount of a sub-directory of a protected directory is not detectable
+    this way (``..`` at a mount root leaves the mount); see e-c-reexport.md §11."""
+    if not protected:
+        return False
+    fds: list[int] = []
+    try:
+        current = start
+        previous: Identity | None = None
+        for _ in range(_MAX_DEPTH):
+            identity = _identity(os.fstat(current))
+            if identity in protected:
+                return True
+            if identity == previous:
+                return False  # ".." of "/" is "/" itself
+            previous = identity
+            fds.append(os.open("..", _flags(_O_DIRECTORY), dir_fd=current))
+            current = fds[-1]
+        return True
+    except OSError:
+        return True
+    finally:
+        for descriptor in fds:
+            os.close(descriptor)
+
+
 def _network(text: str) -> bool:
     return text.startswith("//")
 
@@ -320,6 +353,33 @@ class Written:
 GitCheck = Callable[["_Pinned", str, list[str]], None]
 
 
+#: Inherited variables that would make Git read another repository or ignore list.
+_GIT_VARIABLES = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_NAMESPACE",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+)
+
+
+def _git_environment() -> dict[str, str]:
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in _GIT_VARIABLES and not key.startswith("GIT_CONFIG_")
+    }
+    # GIT_LITERAL_PATHSPECS is not set: check-ignore refuses it (exit 128). Pathspec magic
+    # cannot occur anyway (":" is replaced in every stem) and would fail closed as 128.
+    return environment
+
+
 def output_files(name: str, extensions: Iterable[str]) -> list[str]:
     """Every name created inside a new re-export directory ``name``: the marker and
     ``<name>.<ext>`` per format. The Git check judges exactly these (owner review P2-1)."""
@@ -364,6 +424,7 @@ def git_check(pinned: _Pinned, name: str, files: list[str]) -> None:
                 ["git", "check-ignore", "--no-index", "--quiet", "--", probe],
                 cwd=f"/proc/self/fd/{repository}",
                 pass_fds=(repository,),
+                env=_git_environment(),
                 check=False,
                 capture_output=True,
                 timeout=_GIT_TIMEOUT_SECONDS,
@@ -430,8 +491,8 @@ class Destination:
         self.pinned = _Pinned(self.parent)  # O_NOFOLLOW from "/" (no link at any component)
         # By identity: no pinned component may be a protected directory, whatever its name
         # now (moved, renamed). The held descriptors cannot change identity later.
-        identities = {item.identity for item in guarded}
-        if any(identity in identities for identity in self.pinned.ids):
+        self.protected = {item.identity for item in guarded}
+        if any(identity in self.protected for identity in self.pinned.ids):
             self.close()
             raise FileError("output_inside_source")
 
@@ -477,6 +538,9 @@ def create_output(
             # Before the directory exists, so a refusal leaves nothing behind (again here for
             # a destination checked earlier: the checkout's ignore rules may have changed).
             git(pinned, name, output_files(name, files))
+            # Moved into the job's directory since it was pinned? Checked through "..".
+            if _ancestry_protected(parent_fd, destination.protected):
+                raise FileError("output_inside_source")
             try:
                 os.mkdir(name, 0o700, dir_fd=parent_fd)
             except FileExistsError:
@@ -501,6 +565,10 @@ def create_output(
             if not stat.S_ISDIR(info.st_mode) or info.st_uid != _euid() or entries:
                 # Not the empty directory we made (replaced in between): write nothing.
                 raise PartialOutput("output_claim_lost", claimed)
+            if _ancestry_protected(directory, destination.protected):
+                # Moved into the job's directory between the check and mkdir: no file is
+                # written (the empty directory stays; nothing is deleted).
+                raise PartialOutput("output_inside_source", claimed)
             on_claimed(claimed)
             records: list[tuple[str, str, int]] = []
             try:
