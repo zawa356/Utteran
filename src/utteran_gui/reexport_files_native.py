@@ -88,6 +88,10 @@ def _code(exc: BaseException) -> str:
 
 
 def _norm(path: str) -> str:
+    # By-name check only (the identity check is the real guard): drop a verbatim prefix so
+    # `\\?\C:\x` and `C:\x` compare equal. 8.3 short names are not expanded here.
+    if path.startswith("\\\\?\\"):
+        path = path[4:]
     return os.path.normcase(os.path.normpath(path))
 
 
@@ -138,10 +142,11 @@ def read_verified_json(
                 raise FileError(_SOURCE_CODES.get(_code(exc), "source_unavailable")) from None
             if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
                 raise FileError("source_changed")
-            identity = tuple(chain.identities()[-1])
-            return Source(
-                bytes(data), (int(identity[0]), int(identity[1])), os.path.join(base, name)
-            )
+            try:
+                volume, file_id = chain.identities()[-1]
+            except _native.SafeFsError:
+                raise FileError("source_unavailable") from None
+            return Source(bytes(data), (int(volume), int(file_id)), os.path.join(base, name))
     raise FileError("source_missing")
 
 
@@ -197,7 +202,11 @@ class Destination:
         except _native.SafeFsError as exc:
             raise FileError(_PARENT_CODES.get(_code(exc), "output_parent_invalid")) from None
         self.protected = {item.identity for item in guarded}
-        self.ids = [(int(v), int(f)) for v, f in self.chain.identities()]
+        try:
+            self.ids = [(int(v), int(f)) for v, f in self.chain.identities()]
+        except _native.SafeFsError:
+            self.close()
+            raise FileError("output_parent_unavailable") from None
         if any(identity in self.protected for identity in self.ids):
             self.close()
             raise FileError("output_inside_source")
@@ -272,8 +281,16 @@ def create_output(
 
         records: list[tuple[str, str, int]] = []
         try:
+            chain.verify_held()  # the new directory is still ours and not a reparse point
+        except _native.SafeFsError:
+            on_claimed(claimed)  # record the name first: the empty directory stays
+            raise PartialOutput("output_claim_lost", claimed) from None
+        try:
             chain.write_new_file(REEXPORT_MARKER, (marker + "\n").encode("ascii"))
         except _native.SafeFsError as exc:
+            # Record the name before reporting, so every partial directory is attributable
+            # (as on the POSIX path, where the claim precedes the marker).
+            on_claimed(claimed)
             raise PartialOutput(_write_code(exc), claimed) from None
         on_claimed(claimed)
         for extension, data in files.items():

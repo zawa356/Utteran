@@ -212,3 +212,35 @@ def test_windows_junction_parent_and_held_parent_rename(tmp_path: Path) -> None:
     finally:
         destination.close()
     (tmp_path / "out").rename(tmp_path / "out2")
+
+
+class _FailingMarker:
+    """Delegates to the held chain but fails the marker write (disk full)."""
+
+    def __init__(self, chain: Any) -> None:
+        self._chain = chain
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._chain, name)
+
+    def write_new_file(self, entry: str, data: bytes) -> Any:
+        if entry == ".utteran-reexport":
+            raise __import__("utteran_native_fs").SafeFsError("write_failed", 112)
+        return self._chain.write_new_file(entry, data)
+
+
+def test_failed_marker_write_is_recorded_with_its_directory(world: World, monkeypatch: Any) -> None:
+    """Review P2: a partial directory is always named in the record."""
+    job_id = world.finished()
+    real = native.Destination.__init__
+
+    def init(self: Any, *args: Any, **kwargs: Any) -> None:
+        real(self, *args, **kwargs)
+        self.chain = _FailingMarker(self.chain)
+
+    monkeypatch.setattr(native.Destination, "__init__", init)
+    _, record = world.run(job_id, world.body(job_id))
+    assert record["state"] == "failed" and record["error_code"] == "output_full"
+    assert record["partial"] is True and record["directory"]
+    target = Path(record["directory"])
+    assert target.is_dir() and list(target.iterdir()) == []

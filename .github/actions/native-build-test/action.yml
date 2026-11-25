@@ -79,6 +79,7 @@ runs:
       run: |
         uv sync --extra dev --extra gui --locked
         uv pip install --no-deps "$NATIVE_WHEEL"
+        uv run --no-sync python -c "import utteran_native_fs"
         uv run --no-sync pytest -q -p no:cacheprovider -m "not requires_model" \
           tests/test_ec_reexport_native.py tests/test_ec_reexport.py 2>&1 | tee "$RUNNER_TEMP/product.log"
         # The native module must have been collected, not skipped as missing.

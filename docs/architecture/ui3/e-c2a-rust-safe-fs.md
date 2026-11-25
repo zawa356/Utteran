@@ -324,3 +324,6 @@ binding の `detach` が `Send` データのみを借用すること、`test-hoo
   `uv.lock`・製品 wheel・推論 venv は wheel を含まない。build 機に Rust が必要、利用者には不要。署名／SAC／WDAC は #7。
 - **CI**: `native.yml` を全 PR／main で実行、3 OS を別 job ID にし、固定 4 ID の `Native quality gate`（`ci.yml` の 18 ID は不変）。
 - **Windows の解禁条件**: VM で引継ぎ §5 の必須項目が PASS。W-14 が FAIL／BLOCKED なら `reexport_files_native.supported()` を False に戻す（1 行）。
+- **独立レビュー（E-C2b 差分、P0・P1 なし）**: P2（marker 書込み失敗時に部分フォルダ名が記録されない）→ 失敗時も `on_claimed` してから `PartialOutput`（回帰 `test_failed_marker_write_is_recorded_with_its_directory`）。
+  P3: marker 前の `verify_held()`、名前による内側判定で `\\?\` を除去（8.3 は展開しない。identity 判定が本体）、`identities()` の例外処理、CI で module の import を肯定確認。
+  P3（拒否理由の細分化: exFAT／SMB 等も `output_parent_invalid`）は後続。
