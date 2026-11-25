@@ -47,6 +47,10 @@ The `--next-ui-v1` shape (UI-3 S5-A: real B5/B7 `/api/v1`, synthetic B4 evidence
 uv run python ../tools/ui2/serve_next_ui.py --port 8792 --v1 --data-root <empty folder>
 ```
 
+Full CI runs three file-level shards on independent runners. To check the collection locally, run
+`node scripts/check-e2e-shards.mjs 0 3`. To run and verify one shard, change the first argument to 1, 2, or 3.
+[CI events and checks](../docs/architecture/backend/testing-and-operations.md) describes the corresponding jobs.
+
 `npm run e2e` runs two Playwright projects: `legacy` (`--next-ui`, every existing spec) and `v1` (`e2e/*.v1.spec.ts`,
 a fresh temporary data root per run). `UI2_SCREENSHOTS=1 npm run e2e` additionally writes screenshots (synthetic data) to `test-results/screenshots/`.
 

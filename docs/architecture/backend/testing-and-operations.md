@@ -1,9 +1,28 @@
 # Testing, CI and operations
 
-## CIジョブ（`.github/workflows/ci.yml`）
+## CIの起動条件
 
-Issue #27の是正で、各品質ゲートを**`needs:`の無い独立job**に分けた（PR #34レビュー修正で新規履歴gateを追加し12 job）。1つの赤が他のゲートを隠さない。
-`continue-on-error`・`|| true`・`if: always()`による緑化はしていない。
+| イベント | ワークフローと対象 |
+|---|---|
+| 非mainへのpush（tagを含む） | `ci-light.yml`。push HEADで両privacy blocking、lock・schema 8種、Ruff、mypy（Linux／win32）、PowerShell BOM |
+| PR opened／synchronize／reopened／ready_for_review | `ci.yml`。Draft・forkを含み、PRのmerge候補をfull検証。`ci-historical.yml`は歴史的試作に関係する変更を検証 |
+| mainへのpush | `ci.yml`。統合後のSHAで全製品ゲート |
+| 毎日 18:37 UTC（翌日03:37 JST）／手動 | Actions → Historical checks → Run workflow。全reachable履歴のreport-only監査、UI-1 spike、UI-3-0 prototype UXを実行 |
+
+Historical checksのPR判定は、merge候補の第1親をイベントのbase SHAと照合し、全差分をGitで比較する。
+`tools/ui1/`はUI-1、`frontend/`はUI-3-0、`.github/`は両方を起動する。リネーム両端・削除も判定する。
+比較不能の場合は両方を実行する。製品bundleのprototype隔離は毎fullで実行する。
+
+PRの新runは同一PR番号の古いfullだけを取消す。mainはrun IDで分離する。
+非main pushは毎回独立して両privacy検査を完走させる。force-pushで前のcommitが次のHEADから消える場合もあるため、
+同じbranchでも軽量runを取消さない。PRの旧結果・手動履歴監査・push HEADの軽量成功はfullの証拠に使わない。
+
+## Full CIジョブ（`.github/workflows/ci.yml`）
+
+Issue #27の方針を継承し、製品の検査jobは独立して実行する。固定名の `Full product quality gate` は全依存jobの
+結果を現在runの `needs` からjob IDごとに検証する。期待する18 IDとの完全一致と各 `result == "success"` が条件。
+失敗・取消・skip・未知の結果・IDの欠損や追加を拒否する。各Python版と各shardには独立したjob IDがあり、並列で実行する。
+ゲート判定の回帰テストはリポジトリルートで `jq -ne -L .github/scripts -f .github/scripts/test-full-product-gate.jq` を実行する。
 
 | job | runner | 検査 | 守備範囲外 |
 |---|---|---|---|
@@ -11,13 +30,53 @@ Issue #27の是正で、各品質ゲートを**`needs:`の無い独立job**に�
 | `linux-lint` | ubuntu | `ruff check`、`ruff format --check`（`src tests tools`） | — |
 | `linux-types` | ubuntu | `mypy`（strict）と`mypy --platform win32`（Windows専用分岐を型検査） | `tests/`は対象外（pyprojectの`packages`） |
 | `linux-tests` | ubuntu | `pytest -m "not requires_model"` | モデル・GPU・Windows専用test |
-| `windows-tests` | windows | 同上＋Job Object親死亡testを**毎回20回反復**（PID-file競合の回帰監視） | GPU・実モデル・installer |
+| `windows-tests` | windows | 同上＋Job Object親死亡testを**毎回20回反復**＋B6 concurrent snapshot **10回反復**。本体は `--durations=20` で計測 | GPU・実モデル・installer |
 | `windows-powershell` | windows | 全tracked `.ps1`のPS 5.1 AST parse、安全な起動allowlist | installer統合（下記） |
-| `contracts-python-compatibility` | ubuntu 3.11/3.12 | 契約・境界・B5〜B9・**B7〜B9横断E2E**のtestとschema `--check` | — |
+| `contracts-python-3-11` / `contracts-python-3-12` | ubuntu 3.11/3.12 | 契約・境界・B5〜B9・**B7〜B9横断E2E**のtestとschema `--check` | — |
 | `powershell-bom` | ubuntu | 全tracked `.ps1`のUTF-8 BOM | — |
 | `privacy-worktree` | ubuntu | tracked fileのscan、blocking 1件以上で失敗 | 履歴 |
 | `privacy-history-delta` | ubuntu | **新規commit全系列**のprivate data検出で失敗（下記。`fetch-depth: 0`） | 信頼済み履歴（protected main＋レビュー済みcutover） |
-| `privacy-history` | ubuntu | 全reachable履歴のredacted report（`fetch-depth: 0`、**report only**。合否はdelta gateが持つ） | history rewriteはしない |
+| `ui3-frontend-windows` | windows | lockfileからのnpm ci、lint、型、Vitest、Vite build | WebView2 |
+| `frontend-quality` | ubuntu | lint、型、Vitest、Vite build | ブラウザー統合 |
+| `frontend-bundle-wheel` | ubuntu | 実bundle必須Python tests、prototype隔離、wheelの新規venvからのserve | prototype UX |
+| `npm-production-audit` | ubuntu | 本番依存の既存blocking audit。失効・例外範囲、registryエラーも検査 | — |
+| `product-e2e-1` / `product-e2e-2` / `product-e2e-3` | ubuntu | Playwrightのファイル単位shard、実FastAPI、合成サービス | WebView2 |
+| `full-product-gate` | ubuntu | 全製品jobの成功を集約 | 定期監査・歴史的試作 |
+
+### 再実行と計測
+
+`frontend/`で `npm run e2e` を実行すると製品E2E全件を直列で再現できる。CIと同じ収集照合は
+`node scripts/check-e2e-shards.mjs 0 3`、個別shardは先頭引数を 1〜3 に変更する。
+CIではrunnerごとに異なるloopback portと合成データrootを使い、各specを同じrunnerの1 workerに保持する。
+全件identity・各shardの収集と実行の一致、空shard、失敗を検査する。reportはrunner内に残しuploadしない。
+npm cacheはOS・architecture・Node／npm pin・lockfileに紐付くdownload cacheのみ。npm ciとuvのlocked installは常に実行する。
+
+基準のWindows pytestでは本体が約6分42秒〜10分47秒、競合反復の合計が約38〜52秒だった。
+反復だけを別runnerに移す効果が小さいため、今回は単一Windows jobを維持する。新しいdurationsの計測を、
+順序・子process・排他に配慮したファイル単位の分割を検討する材料にする。
+失敗時はActionsでRe-run failed jobsを選ぶ。baseが更新されたときは最新mainを取り込み、
+新しいPR候補でfullを実行する。SHA・所要時間・runner-minutesの実測はIssue #84のDraft PRに記録する。
+
+### Required checksの移行（オーナー操作）
+
+保護APIは403で設定未確認。ブランチ保護とrulesetは変更していない。オーナーはSettingsの
+Branches／Rulesetsでmainに適用されるrequired status checks、checkの発行元、最新baseを要求する設定、bypass対象を確認する。
+Draftのまま、このPRの最新head・base・merge SHAが示す候補でfullが成功したことを確認する。
+既存requiredを維持したままGitHub Actions発行元の `Full product quality gate` を追加し、最新baseを要求する。
+新gateが必須になったことを確かめてから、設定されている場合に限り、置き換え対象の旧UI-2一括checkと
+report-only・歴史的試作の旧required設定を外す。差分に該当する歴史的試作は、オーナーがPRの結果を確認する。
+両privacy blockingの既存required設定は維持できる。lightのcheck名は `Light /` で始まる。
+
+| 状況 | 判定 |
+|---|---|
+| Draft／Ready、reopen、fork | 通常のpull_request権限で対象候補をfull検査。fork側の承認待ちは未完了 |
+| synchronize／force-push | 新headでfull。旧headのfullや軽量push結果を使用しない |
+| base更新 | 最新baseの要件で候補更新を強制し、再度full |
+| label変更／manual／schedule | fullの代替経路を作らない |
+| skip／cancel／fail | Latest候補のfull successを待つ |
+| 同時実行 | main、別PR、軽量push、監査の結果を互いに取り消さない |
+
+この移行でrequired checkの最新候補への適用を確認するまで、Draft軽量化は導入しない。
 
 ### 新規履歴privacy gate（`privacy-history-delta`）
 
@@ -65,8 +124,8 @@ JSON reportも同じ内容で、artifactとしてはuploadしていない。full
 **信頼の限界**: PRはworkflow・gate・baselineそのものを書き換えられるので、CIだけでは完全には防げない。
 次の運用が必要になる（ownerの設定事項）。
 
-- mainのbranch protectionで`privacy-history-delta`をrequired status checkにする
-- `.github/workflows/ci.yml`、`tools/public_history_*.py`、`tools/public_history_baseline.json`、
+- mainのbranch protectionでブロッキングcheck `Privacy gate for new commits (blocking)` をrequired status checkにする
+- `.github/workflows/ci*.yml`、`tools/public_history_*.py`、`tools/public_history_baseline.json`、
   `tools/public_scan_reviewed_media.json`の変更をセキュリティレビュー必須にする（CODEOWNERS等）
 - baselineの変更（cutoverの移動、bot addressの追加）は信頼範囲を広げる操作として扱い、理由をPRに残す
 

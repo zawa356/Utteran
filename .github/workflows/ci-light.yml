@@ -1,0 +1,139 @@
+name: Lightweight push CI
+
+# Match the lightweight job commands in ci.yml. Distinct check names keep a
+# branch-HEAD push result separate from full checks on the PR merge candidate.
+on:
+  push:
+    branches-ignore: [main]
+    tags: ['**']
+
+permissions:
+  contents: read
+
+jobs:
+  linux-lock-schema:
+    name: 'Light / Linux lock and offline schemas'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install development dependencies
+        run: uv sync --extra dev --extra gui --locked
+      - name: Check lockfile
+        run: uv lock --check
+      - name: Check offline contract schema
+        run: uv run --no-sync python -m utteran_contracts.schema --output docs/architecture/b1/contracts.schema.json --check
+      - name: Check offline worker schema
+        run: uv run --no-sync python -m utteran_contracts.worker_schema --output docs/architecture/b3/worker.schema.json --check
+      - name: Check offline capability schema
+        run: uv run --no-sync python -m utteran_contracts.capability_schema --output docs/architecture/b4/capabilities.schema.json --check
+      - name: Check offline B5 preview schema
+        run: uv run --no-sync python -m utteran_contracts.preview_schema --output docs/architecture/b5/preview.schema.json --check
+      - name: Check offline B6 control schema
+        run: uv run --no-sync python -m utteran_contracts.control_schema --output docs/architecture/b6/control.schema.json --check
+      - name: Check offline B7 job schema
+        run: uv run --no-sync python -m utteran_contracts.job_schema --output docs/architecture/b7/jobs.schema.json --check
+      - name: Check offline B8 setup schema
+        run: uv run --no-sync python -m utteran_contracts.setup_schema --output docs/architecture/b8/setup.schema.json --check
+      - name: Check offline B9 events schema
+        run: uv run --no-sync python -m utteran_contracts.events_schema --output docs/architecture/b9/events.schema.json --check
+
+  linux-lint:
+    name: 'Light / Linux Ruff lint and format'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install development dependencies
+        run: uv sync --extra dev --extra gui --locked
+      - name: Lint
+        run: uv run --no-sync ruff check src tests tools
+      - name: Check formatting
+        run: uv run --no-sync ruff format --check src tests tools
+
+  linux-types:
+    name: 'Light / Linux mypy (linux and win32 platforms)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install development dependencies
+        run: uv sync --extra dev --extra gui --locked
+      - name: Type check (linux platform)
+        run: uv run --no-sync mypy
+      # Windows-only branches (Job Objects, Win32 ctypes) are skipped by the
+      # linux-platform check above; this checks them against the win32 stubs.
+      - name: Type check (win32 platform)
+        run: uv run --no-sync mypy --platform win32
+
+  powershell-bom:
+    name: 'Light / PowerShell UTF-8 BOM'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      - name: Check PowerShell UTF-8 BOM (stdlib only)
+        run: uv run --no-project python tools/check_powershell_bom.py
+
+  privacy-worktree:
+    name: 'Light / Privacy scan of tracked files'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      # Prints counts only; matched values are never printed or written.
+      - name: Reject new private data in tracked files
+        run: >-
+          uv run --no-project python tools/public_history_scan.py
+          --worktree --fail-on-findings
+
+  # Blocking counterpart of the report-only audit below: fails when ANY commit that is
+  # new relative to trusted history (protected main + the reviewed cutover pinned in
+  # tools/public_history_baseline.json) introduces private data, even if a later commit
+  # removed it. See docs/architecture/backend/testing-and-operations.md.
+
+  privacy-history-delta:
+    name: 'Light / Privacy gate for new commits (blocking)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      # Make every comparison commit present; a failed fetch fails the job, and the
+      # gate itself fails closed on any missing SHA or shallow history.
+      - name: Fetch protected main and the event's commits
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            git fetch --no-tags origin "$PUSH_BEFORE"
+          fi
+          echo "event=$EVENT_NAME ref=$GITHUB_REF sha=$GITHUB_SHA main=$(git rev-parse refs/remotes/origin/main)"
+      - name: Reject private data introduced by new commits
+        run: >-
+          uv run --no-project python tools/public_history_delta.py
+          --github-event "$GITHUB_EVENT_NAME" --github-event-path "$GITHUB_EVENT_PATH"
+          --json output/public-history-delta.json

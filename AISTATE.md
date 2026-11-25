@@ -7,7 +7,15 @@
 - POSIX（Linux で検証、macOS 未検証）だけ有効。Windows は出力先を固定した書込みを証明できないため `reexport_platform_unsupported` で拒否（BLOCKED）。
 - 2026-11-25 オーナーレビュー（[PR #83](https://github.com/zawa356/Utteran/pull/83)、P2×3）に対応: Git 除外を実ファイル名・marker 全件で判定、元ジョブのフォルダとその中を名前と identity で拒否（記録の前）、位置確認を表示パスの再 walk と全祖先の identity 照合に変更。Red 回帰を先にコミット（`791826a`）。Windows の fail closed は維持。
 - 同日のオーナー再レビュー（P2-4）に対応: 名前の記録（DB）の後と各ファイルの作成前に、表示パスの到達性と祖先を再確認し、移動を検出したら書かない（`output_moved`）。検査と書込みの不可分性は保証しない（残留として正本 §11）。Windows は後続の E-C2。
+- 2026-11-25 CI 最適化（[#85](https://github.com/zawa356/Utteran/pull/85)、main `57ba960`）を通常 merge で取り込み、新 CI（full 製品ゲート・E2E 3 shard の全件 identity 照合・軽量 push・historical）で再検証する。製品コードの変更なし。
 - [E-C 正本](docs/architecture/ui3/e-c-reexport.md)。HEAD・試験件数・CI・独立レビューは Draft PR に記録する。Windows WebView2 等の実機確認は [#22](https://github.com/zawa356/Utteran/issues/22)。
+
+## CI最適化（2026-11-25、[#84](https://github.com/zawa356/Utteran/issues/84)）
+
+- main `b846312` から `ci/optimize-quality-gates` を独立。製品版0.1.68を維持。#83との統合順に応じて、後続側が最新mainを取り込んで再検証する。
+- 非main pushを軽量化。全PRとmainの製品ゲートはfull。製品Playwrightを3 runnerに分割し、UI-2品質・実bundle/wheel・npm auditを独立化した。Windows pytestと競合反復は維持。
+- PR #85のP2-1に対応。Python互換2件と製品E2E 3件に固定job IDを割り当て、full gateは18 IDと全結果を照合する。
+- [CI運用の正本](docs/architecture/backend/testing-and-operations.md)に定期監査、各check、required checksのオーナー操作を記録。実行証跡と実測はDraft PRを参照。
 
 ## 現在地（2026-11-24、束 E-B、0.1.68・未リリース）
 
