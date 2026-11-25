@@ -279,7 +279,11 @@ fn nt_open_at(parent: &File, name: &str, o: &NtOpen) -> Result<File> {
         RootDirectory: parent.as_raw_handle() as HANDLE,
         ObjectName: &us,
         // Win32 semantics: case-insensitive lookup (the kernel default anyway).
-        Attributes: OBJ_CASE_INSENSITIVE,
+        // OBJ_DONT_REPARSE (0x1000, Windows 10 1709+): fail with
+        // STATUS_REPARSE_POINT_ENCOUNTERED instead of following any reparse point met
+        // during this lookup. Defence in depth next to FILE_OPEN_REPARSE_POINT; its effect
+        // on a RootDirectory that itself became a reparse point is a VM item (W-14).
+        Attributes: OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
         // NULL: the new object inherits the parent's inheritable ACEs.
         SecurityDescriptor: std::ptr::null(),
         SecurityQualityOfService: std::ptr::null(),
@@ -311,6 +315,8 @@ fn nt_open_at(parent: &File, name: &str, o: &NtOpen) -> Result<File> {
     // SAFETY: success: `h` is a new handle owned by us alone.
     Ok(File::from(unsafe { OwnedHandle::from_raw_handle(h as _) }))
 }
+
+const OBJ_DONT_REPARSE: u32 = 0x0000_1000;
 
 const DIR_ACCESS: u32 = FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
 /// No FILE_SHARE_DELETE: pins the directory against rename/delete while held.

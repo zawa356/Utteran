@@ -268,9 +268,48 @@ fn bind_mount_below_leaf_is_refused_by_mount_id() {
     assert!(leaf_meta.mount_id.is_some(), "statx STATX_MNT_ID available");
     let r = chain.push_existing(&name("b"));
     assert_eq!(code(r), ErrorCode::CrossesVolume);
+    // The generic Dir API applies the same boundary (owner review P2-1).
+    assert_eq!(
+        code(chain.leaf().open_dir(&name("b"))),
+        ErrorCode::CrossesVolume
+    );
+    // Residual (documented): walking the bind target by its own absolute path is a
+    // fresh walk, so the alias is not recognisable as the job directory by this crate.
     // Same st_dev: only the mount id tells them apart.
     let bind = DirChain::open_absolute(&path_str(&fx.path("out/b"))).unwrap();
     let bm = bind.leaf().metadata().unwrap();
     assert_eq!(bm.identity.volume, leaf_meta.identity.volume);
     assert_ne!(bm.mount_id, leaf_meta.mount_id);
+}
+
+/// Requires root. A regular file bind-mounted over a name is refused for reading.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires root for mount --bind"]
+fn file_bind_mount_is_refused_for_reading() {
+    assert_eq!(rustix_euid(), 0);
+    let fx = Fixture::new();
+    fx.mkdirs("job");
+    fx.mkdirs("out");
+    fx.write("job/private.json", b"{\"secret\":1}");
+    fx.write("out/src.json", b"{}");
+    let st = std::process::Command::new("mount")
+        .arg("--bind")
+        .arg(fx.path("job/private.json"))
+        .arg(fx.path("out/src.json"))
+        .status()
+        .unwrap();
+    assert!(st.success());
+    struct Umount(std::path::PathBuf);
+    impl Drop for Umount {
+        fn drop(&mut self) {
+            let _ = std::process::Command::new("umount").arg(&self.0).status();
+        }
+    }
+    let _guard = Umount(fx.path("out/src.json"));
+    let chain = fx.chain("out");
+    assert_eq!(
+        code(chain.leaf().read_file(&name("src.json"), 100)),
+        ErrorCode::CrossesVolume
+    );
 }

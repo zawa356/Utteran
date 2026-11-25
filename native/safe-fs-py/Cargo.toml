@@ -1,6 +1,6 @@
 [package]
 name = "utteran-safe-fs-py"
-description = "E-C2a PoC: thin PyO3 binding over utteran-safe-fs (abi3, CPython 3.11+)"
+description = "Thin PyO3 binding over utteran-safe-fs (abi3, CPython 3.11+)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [lib]
-name = "utteran_safe_fs_poc"
+name = "utteran_native_fs"
 crate-type = ["cdylib"]
 
 [dependencies]

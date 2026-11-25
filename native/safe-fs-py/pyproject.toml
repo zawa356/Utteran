@@ -1,12 +1,12 @@
-# E-C2a PoC wheel. Independent of the product (../../pyproject.toml is untouched).
+# Internal wheel (E-C2b, #87). Built by maturin; not on PyPI and not in uv.lock.
 [build-system]
 requires = ["maturin==1.16.0"]
 build-backend = "maturin"
 
 [project]
-name = "utteran-safe-fs-poc"
-version = "0.0.0"
-description = "E-C2a PoC binding for utteran-safe-fs (not a product dependency)"
+name = "utteran-native-fs"
+version = "0.1.70"
+description = "Utteran internal native file-safety layer (PyO3 binding over utteran-safe-fs)"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 classifiers = ["Private :: Do Not Upload"]

@@ -84,7 +84,7 @@
 |---|---|---|
 | Linux | 対応（Cloud Linux の pytest・E2E で検証） | `open`/`mkdir`/`stat` の `dir_fd`、`O_NOFOLLOW`、`O_DIRECTORY`、`fdopendir` が揃う |
 | macOS | 同じ判定で有効になるが**未検証**（CI なし） | 機能判定（`supported()`）は同じ条件 |
-| Windows | **BLOCKED**（`reexport_platform_unsupported`、可否表示と実行の両方で拒否） | Python 標準の `os` に `dir_fd` 相対の作成がなく、パスで開き直すたびに junction／reparse point／親の差替えを辿り得る。保持したハンドルからの相対作成（`NtCreateFile` の RootDirectory 等）と `FILE_SHARE_DELETE` なしの親固定は設計可能だが、実機での証明がない（#59 と同じ課題）。安全性を緩めず fail closed とし、実装方式はオーナー確認・実機受入（#22）の後とする |
+| Windows | **0.1.70 から対応（ローカル NTFS のみ、VM 受入待ち）**。内部 wheel `utteran_native_fs` が無ければ従来どおり `reexport_platform_unsupported` | Rust core（[E-C2a ADR](e-c2a-rust-safe-fs.md)）の `utteran_gui/reexport_files_native.py`。全祖先を `FILE_SHARE_DELETE` なしで保持（rename／削除不可）、新規フォルダは作成と同時に open、marker を最初に書き、各ファイル前に保持 handle と到達性を再確認、排他作成。Git は祖先に `.git` があれば常に拒否（`.gitignore` を見ない）。UNC・SMB・SUBST／per-logon の drive・FAT/exFAT/ReFS・reparse point は拒否。フォルダの flush は不可、ACL は親から継承 |
 
 ## 5. 入力・出力の上限と実測
 
@@ -232,7 +232,7 @@ Draft PR 提出前に、実装と別コンテキストのサブエージェン�
 
 ## 11. 制約・残留課題
 
-- **Windows は BLOCKED**（§4.1）。実装にはハンドル固定の設計・オーナー承認・実機受入が必要。macOS は未検証。
+- **Windows は 0.1.70 で有効（§4.1）だが Windows 11 実機の受入は未完了**（[VM 引継ぎ](e-c2a-windows-vm-handoff.md)）。保持中の新規フォルダの reparse 化（W-14）で問題が見つかれば無効に戻す。macOS は未検証。
 - Windows 11 実 WebView2、ACL、reparse、OneDrive、長パスの実機受入は [#22](https://github.com/zawa356/Utteran/issues/22) の別ゲート。CI・合成試験の成功を実機確認と混同しない。
 - 作成した直後のフォルダ、保存先、その祖先を同じユーザーの別プロセスが移動・改名・差替えした場合、ファイルは書込みに使ったディレクトリ（移動先）に存在する（書込みは記述子に固定）。完了時の位置確認で検出し `location_verified: false` と表示する。位置確認は時点の観測で、確認の後の移動は検出しない。
 - **検査と書込みは不可分ではない**（オーナー再レビュー P2-4）: POSIX では同じユーザーのプロセスによる任意の rename を防げない。書込みの直前（各ファイルの作成前）に到達性と祖先を確認するが、その確認の直後から、そのファイルの作成・書込み中・最後のファイルの後までの間に保存先や祖先が移動された場合は防げない。最後のファイルの後の移動は完了後の位置確認で `location_verified: false` として報告する（防止ではなく報告）。ファイル作成と確認の間の短い区間で移動された場合は、そのファイル 1 つが移動先に書かれ得る（排他作成のため上書きはしない）。空ディレクトリへの差替え、bind mount も同様に検出できない場合がある。絶対的な保証が必要な場合は、対象の制限か fail closed の設計（オーナー判断）が必要。

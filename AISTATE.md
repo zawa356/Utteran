@@ -1,10 +1,10 @@
 # AI 作業状態
 
-## E-C2a 技術検証（2026-11-25、[#86](https://github.com/zawa356/Utteran/issues/86)、製品版据置）
+## E-C2a 採用・E-C2b Windows 再出力（2026-11-25、[#86](https://github.com/zawa356/Utteran/issues/86)／[#87](https://github.com/zawa356/Utteran/issues/87)、0.1.70・未リリース）
 
-- main `57ba960` から独立し、E-C1 統合後の main `f859a5d`（0.1.69）を通常 merge で同期。`native/` に Rust workspace（core `utteran-safe-fs`、PyO3 binding `utteran-safe-fs-py`）と PoC 専用 CI `native-poc.yml`。製品の pyproject・uv.lock・既存 CI・GUI は不変。
-- 推奨: 自前の薄い core（POSIX＝rustix、Windows＝windows-sys の NtCreateFile 相対）。fs_at は FILE_SHARE_DELETE 固定、cap-std は Windows の dir 作成がパス操作のため不採用。
-- Linux で試験・wheel（abi3、3.11/3.12）・実測を確認。Windows は runner で自動試験、**VM 受入は未実施**（[引継ぎ](docs/architecture/ui3/e-c2a-windows-vm-handoff.md)）。[ADR](docs/architecture/ui3/e-c2a-rust-safe-fs.md)。HEAD・CI は Draft PR。
+- Draft [#88](https://github.com/zawa356/Utteran/pull/88)、branch `claude/focused-keller-9b6u6q`（main `f859a5d` を merge 済み）。オーナーが Rust 方式を採用し、同じ Draft で製品組込みまで実施。
+- `native/`（core `utteran-safe-fs`、wheel `utteran-native-fs`）。Windows の再出力だけを `reexport_files_native.py` へ接続（ローカル NTFS、Git は常に拒否）。Linux/macOS は E-C1 の Python 実装のまま。
+- `build.ps1`／`gui.spec` が wheel を build・同梱、`native.yml` を全 PR／main で実行（固定 4 ID の gate）。Windows VM 受入は Codex へ引継ぎ中（[手順](docs/architecture/ui3/e-c2a-windows-vm-handoff.md)）。W-14 等が FAIL なら Windows を無効に戻す。[ADR §13](docs/architecture/ui3/e-c2a-rust-safe-fs.md)。
 
 ## 現在地（2026-11-25、束 E-C、0.1.69・未リリース）
 

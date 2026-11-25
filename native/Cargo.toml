@@ -1,11 +1,11 @@
-# E-C2a (Issue #86) PoC workspace. Not part of the product build:
-# nothing in pyproject.toml, uv.lock or the product CI depends on it.
+# Native workspace (E-C2a #86 / E-C2b #87). Built separately from the product:
+# the GUI bundles the utteran-native-fs wheel; pyproject.toml and uv.lock do not list it.
 [workspace]
 resolver = "3"
 members = ["safe-fs", "safe-fs-py"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.70"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"

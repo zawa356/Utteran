@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 import pytest
-import utteran_safe_fs_poc as sf
+import utteran_native_fs as sf
 
 
 def chain_of(p: Path) -> sf.DirChain:

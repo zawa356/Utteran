@@ -268,7 +268,7 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
 name = "utteran-safe-fs"
-version = "0.0.0"
+version = "0.1.70"
 dependencies = [
  "rustix",
  "sha2",
@@ -279,7 +279,7 @@ dependencies = [
 
 [[package]]
 name = "utteran-safe-fs-py"
-version = "0.0.0"
+version = "0.1.70"
 dependencies = [
  "pyo3",
  "utteran-safe-fs",

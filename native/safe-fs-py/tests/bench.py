@@ -15,7 +15,7 @@ import tempfile
 import time
 from pathlib import Path
 
-import utteran_safe_fs_poc as sf
+import utteran_native_fs as sf
 
 
 def rss_peak_mib() -> float | None:

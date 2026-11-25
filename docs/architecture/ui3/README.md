@@ -1,6 +1,6 @@
 # UI-3-0 — 第5案で設計確定した隔離プロトタイプ
 
-追補（2026-11-25、製品版据置・PoC）。[E-C2a Rust 共通安全ファイル操作基盤の技術検証（ADR）](e-c2a-rust-safe-fs.md)と[Windows 11 VM 引継ぎ](e-c2a-windows-vm-handoff.md)（#86）。`native/` の独立 workspace、製品非接続。Windows VM は未実施。
+追補（2026-11-25、0.1.70 未リリース）。[E-C2a Rust 共通安全ファイル操作基盤（ADR、採用・§13 で E-C2b 組込み）](e-c2a-rust-safe-fs.md)と[Windows 11 VM 引継ぎ](e-c2a-windows-vm-handoff.md)（#86／#87）。Windows の再出力を Rust core で有効化、VM 受入待ち。
 
 追補（2026-11-25、0.1.69 未リリース）。[束 E-C 検証済み JSON からの ASR なし再出力](e-c-reexport.md)。Windows は安全な書込みを証明できないため BLOCKED、実機は未受入。
 

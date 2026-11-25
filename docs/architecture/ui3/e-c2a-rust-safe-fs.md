@@ -6,7 +6,7 @@ Issue [#86](https://github.com/zawa356/Utteran/issues/86)（親 [#82](https://gi
 採用方式・最終 API・配布方式はオーナー承認事項で、本書は判断材料と推奨を示す。
 
 - 基点 main: `57ba960f58b38dcd37a1b06ee0599ca9b2da1a1f`（#85 統合済み）。作業中に E-C1 [PR #83](https://github.com/zawa356/Utteran/pull/83) が main `f859a5d6345f4a824de5c43f6b8f1baa77688d78`（0.1.69）に統合されたため、通常 merge で同期した（索引 3 文書の追記の衝突のみ、両方を残して解消）。本 PoC は E-C1 の製品コードを変更・import しない。製品版は main の 0.1.69 のまま。
-- 成果物: [`native/`](../../../native/)（独立 Cargo workspace）、PoC 専用 CI [`.github/workflows/native-poc.yml`](../../../.github/workflows/native-poc.yml)、Windows VM 引継ぎ [e-c2a-windows-vm-handoff.md](e-c2a-windows-vm-handoff.md)。
+- 成果物: [`native/`](../../../native/)（独立 Cargo workspace）、PoC 専用 CI [`.github/workflows/native.yml`](../../../.github/workflows/native.yml)、Windows VM 引継ぎ [e-c2a-windows-vm-handoff.md](e-c2a-windows-vm-handoff.md)。
 - 最終 HEAD・CI run・各 OS の試験件数は Draft PR 本文に記録する（本書の数値は記載時点の実測）。
 
 ## 1. 結論（推奨）
@@ -229,7 +229,7 @@ mkdir 直後の差替え（link→`claim_lost`、非空 dir→`claim_lost`、**�
 
 ### 9.2 GitHub Actions（PoC 専用 workflow）
 
-`native-poc.yml` は `native/**` と自身の変更時だけ動き、製品の `Full product quality gate`（18 job ID）には関与しない。ubuntu／windows／macos の各 runner で
+`native.yml` は `native/**` と自身の変更時だけ動き、製品の `Full product quality gate`（18 job ID）には関与しない。ubuntu／windows／macos の各 runner で
 fmt・clippy・core 試験（Windows は `windows_only.rs` を実行）・権限依存試験（POSIX）・wheel build・3.11／3.12 の新規 venv 試験・ベンチ、別 job で cargo-deny。
 キャッシュは使わず cold の実測とする（推奨キャッシュ key: OS・arch・`rust-toolchain.toml`・`Cargo.lock` の hash、対象は `~/.cargo/registry` と `native/target`）。
 初回成功 run: [45581506834](https://github.com/zawa356/Utteran/actions/runs/45581506834)（HEAD `ccee046`、全 4 job success、起動から完了まで約 1 分 53 秒、job 合計の runner 時間 約 4.9 分）。
@@ -305,3 +305,22 @@ binding の `detach` が `Send` データのみを借用すること、`test-hoo
 3. Windows は VM 受入 PASS の項目だけを解禁し、他は `reexport_platform_unsupported` を維持。Git は全拒否から。
 4. 内部 wheel を `gui` 実行環境・PyInstaller・portable・installer に組み込み、配布物の受入（Windows VM）を行う。Rust toolchain を利用者・推論環境に要求しない。
 5. 両実装が同等と確認でき次第、Python POSIX 実装を回帰比較用の試験側へ移し、長期の二重実装を避ける（削除はオーナー承認後）。
+
+## 13. 採用決定と E-C2b（#87）の組込み（2026-11-25）
+
+オーナーが本方式を採用（[決定](https://github.com/zawa356/Utteran/pull/88#issuecomment-7162210189)）。同じ Draft で #87 の製品組込みまで進めた（0.1.70）。
+
+- **製品経路**: Windows の再出力だけを `utteran_gui/reexport_files_native.py`（Rust core）へ接続。service は `sys.platform == "win32"` で選ぶ。
+  API・固定コード・SHA 照合・上限・冪等性・記録は E-C1 と同じ。違いは (1) marker を記録（`on_claimed`）より先に書く（新規フォルダを空のまま置かない、W-14 の緩和）、
+  (2) Git は保持祖先に `.git` があれば常に拒否、(3) 各ファイル前に `verify_held()`＋`verify_reachable()`。wheel が無ければ `reexport_platform_unsupported`（パス操作への fallback なし）。
+- **Linux／macOS は E-C1 の Python 実装を維持**。Rust core は同等の拒否・検出を持つが、E-C1 の `..` による祖先照合と、保持 fd を `/proc/self/fd` で Git に渡す
+  `.gitignore` 判定は core に相当 API がない（raw fd を公開しない方針と両立させる設計が要る）。同等以上と示せていない経路は切り替えない。統合は後続判断。
+- **前回レビュー P2-1**（mount 境界）: `Dir::open_dir`・`Dir::read_file`・`push_*` の全てで volume と mount id の一致を要求し、Linux で mount id が取れない場合は拒否。
+  回帰 `bind_mount_below_leaf_is_refused_by_mount_id`（直接 `open_dir` を含む）と `file_bind_mount_is_refused_for_reading`。絶対パスで bind 先を直接 walk した alias は
+  検出できない（新しい walk の始点だから）。Linux 製品経路は E-C1 のままなので、この残留は E-C1 §11 と同じ。
+- **P2-2**（VM 受入条件）: 引継ぎ文書を改訂（W-07・W-12・W-13 を必須化、W-14 の手順と判定、W-08 の手順、LASTEXITCODE 確認）。
+- **P3**: `ReadOutcome` の `Debug` は長さだけ。Windows の lookup に `OBJ_DONT_REPARSE` を追加（効果の確認は VM）。
+- **配布**: `build.ps1` が maturin で wheel を build し build venv に入れ、`gui.spec` は Windows で module が無ければ build を止めて hidden import に加える。
+  `uv.lock`・製品 wheel・推論 venv は wheel を含まない。build 機に Rust が必要、利用者には不要。署名／SAC／WDAC は #7。
+- **CI**: `native.yml` を全 PR／main で実行、3 OS を別 job ID にし、固定 4 ID の `Native quality gate`（`ci.yml` の 18 ID は不変）。
+- **Windows の解禁条件**: VM で引継ぎ §5 の必須項目が PASS。W-14 が FAIL／BLOCKED なら `reexport_files_native.supported()` を False に戻す（1 行）。

@@ -24,13 +24,38 @@ impl std::fmt::Debug for Dir {
     }
 }
 
+/// Children reached from a held directory must stay on its volume and, on Linux, its
+/// mount (bind mounts share `st_dev`; only the mount id tells them apart). On Linux a
+/// missing mount id on either side cannot be verified and is refused (fail closed).
+fn same_mount(parent: &Metadata, child: &Metadata) -> Result<()> {
+    if parent.identity.volume != child.identity.volume {
+        return Err(Error::new(ErrorCode::CrossesVolume));
+    }
+    match (parent.mount_id, child.mount_id) {
+        (Some(a), Some(b)) if a != b => Err(Error::new(ErrorCode::CrossesVolume)),
+        (Some(_), Some(_)) => Ok(()),
+        _ if cfg!(target_os = "linux") => Err(Error::new(ErrorCode::CrossesVolume)),
+        _ => Ok(()),
+    }
+}
+
 /// Bytes read from a file plus the metadata observed before and after the read.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// `Debug` prints only the length (contents may be private).
+#[derive(Clone, PartialEq, Eq)]
 pub struct ReadOutcome {
     /// Exactly the bytes that were read through the handle.
     pub bytes: Vec<u8>,
     /// Metadata of the handle (equal before and after the read).
     pub metadata: Metadata,
+}
+
+impl std::fmt::Debug for ReadOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReadOutcome")
+            .field("len", &self.bytes.len())
+            .field("metadata", &self.metadata)
+            .finish()
+    }
 }
 
 impl Dir {
@@ -51,7 +76,9 @@ impl Dir {
 
     /// Open an existing child directory (no-follow, directories only).
     pub fn open_dir(&self, name: &Name) -> Result<Dir> {
-        sys::open_dir_at(&self.file, name.as_str()).map(Dir::new)
+        let child = sys::open_dir_at(&self.file, name.as_str()).map(Dir::new)?;
+        same_mount(&self.metadata()?, &child.metadata()?)?;
+        Ok(child)
     }
 
     /// Create a new child directory exclusively and return its handle.
@@ -89,6 +116,8 @@ impl Dir {
     pub fn read_file(&self, name: &Name, max_bytes: u64) -> Result<ReadOutcome> {
         let mut f = sys::open_file_read_at(&self.file, name.as_str())?;
         let before = sys::metadata(&f)?;
+        // A file bind-mounted over the name is on another mount.
+        same_mount(&self.metadata()?, &before)?;
         if before.kind != FileKind::File {
             return Err(Error::new(ErrorCode::NotARegularFile));
         }
@@ -305,18 +334,10 @@ impl DirChain {
     }
 
     fn same_mount(&self, m: &Metadata) -> Result<()> {
-        let Some(leaf) = self.leaf_meta() else {
-            return Err(Error::new(ErrorCode::Io));
-        };
-        if leaf.identity.volume != m.identity.volume {
-            return Err(Error::new(ErrorCode::CrossesVolume));
+        match self.leaf_meta() {
+            Some(leaf) => same_mount(leaf, m),
+            None => Err(Error::new(ErrorCode::Io)),
         }
-        if let (Some(a), Some(b)) = (leaf.mount_id, m.mount_id) {
-            if a != b {
-                return Err(Error::new(ErrorCode::CrossesVolume));
-            }
-        }
-        Ok(())
     }
 
     /// Descend into an existing child directory of the leaf. Unlike the initial

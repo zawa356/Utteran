@@ -1,4 +1,4 @@
-//! Thin PyO3 binding over `utteran-safe-fs` (E-C2a PoC). No logic lives here:
+//! Thin PyO3 binding over `utteran-safe-fs` (#86/#87). No logic lives here:
 //! every method converts arguments, releases the GIL, calls the core and maps the
 //! fixed error code to `SafeFsError(code, os_code)`. Paths and names are never
 //! included in exception messages.
@@ -11,7 +11,7 @@ use pyo3::types::{PyBytes, PyDict};
 use utteran_safe_fs as core;
 
 create_exception!(
-    utteran_safe_fs_poc,
+    utteran_native_fs,
     SafeFsError,
     PyException,
     "Fixed-code error: args = (code: str, os_code: int | None)."
@@ -81,7 +81,7 @@ fn capabilities(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
 
 /// Held directory chain. All operations act on the leaf. Use as a context manager
 /// or call `close()`; handles are also released when the object is collected.
-#[pyclass(module = "utteran_safe_fs_poc")]
+#[pyclass(module = "utteran_native_fs")]
 struct DirChain {
     inner: Option<core::DirChain>,
 }
@@ -263,7 +263,7 @@ impl DirChain {
 }
 
 #[pymodule]
-fn utteran_safe_fs_poc(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn utteran_native_fs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(capabilities, m)?)?;
     m.add_class::<DirChain>()?;
     m.add("SafeFsError", m.py().get_type::<SafeFsError>())?;

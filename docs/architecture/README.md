@@ -1,6 +1,6 @@
 # Architecture documents — where to start
 
-追補（2026-11-25、製品版据置・PoC）。[E-C2a Rust 共通安全ファイル操作基盤の ADR・PoC 記録](ui3/e-c2a-rust-safe-fs.md)（#86）。`native/` は製品の build・依存・CI gate に含まれない。採用はオーナー判断、製品組込みは #87。
+追補（2026-11-25、0.1.70 未リリース）。[E-C2a Rust 共通安全ファイル操作基盤の ADR](ui3/e-c2a-rust-safe-fs.md)（#86 採用、§13 で #87 の Windows 再出力を組込み）。wheel は `uv.lock` に入れず build で同梱、`native.yml` は独立 gate。Windows VM 受入待ち。
 
 追補（2026-11-25、0.1.69未リリース）。[`--next-ui-v1` 検証済みJSONからのASRなし再出力](ui3/e-c-reexport.md)。共通レンダラ、独立 private ストア `reexport-v1`、B5/B7 不変。Windows は BLOCKED、実機未受入。
 
