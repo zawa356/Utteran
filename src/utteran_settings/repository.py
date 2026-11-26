@@ -275,8 +275,9 @@ class Repository:
         else nothing is written and ``kept`` is recorded. Never edits or deletes anything.
         """
         endpoint = "/api/v1/setup-defaults"
-        body = {"preset": preset.to_wire(), "policy": policy.to_wire()}
-        digest = hmac.new(self._secret, canonical(body).encode(), hashlib.sha256).hexdigest()
+        # The key is already unique per plan: bind the record to the key only, so a repeat
+        # after an upgrade (different serialisation) still gets the recorded answer.
+        digest = hmac.new(self._secret, key.encode(), hashlib.sha256).hexdigest()
         scope = (self._installation, "POST", endpoint, key)
         with self._transaction() as db:
             row = db.execute(

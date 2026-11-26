@@ -153,7 +153,8 @@ def single_cuda_gpu() -> nvml.NvmlGpu | None:
     past smoke ran on from metadata alone, so the evidence scope stays unknown (no ready).
     Only one NVIDIA GPU with neither variable set is accepted: ordinal 0 is that GPU.
     """
-    if any(os.environ.get(name) for name in CUDA_ENVIRONMENT):
+    # Present at all (even empty: CUDA_VISIBLE_DEVICES="" hides every GPU) -> not provable.
+    if any(name in os.environ for name in CUDA_ENVIRONMENT):
         return None
     info = nvml.snapshot()
     if info is None or len(info.gpus) != 1:

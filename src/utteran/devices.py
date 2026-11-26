@@ -187,11 +187,13 @@ class ProbeOutcome:
 # Budget (PR #91 P3): at most ONE retry per pass and only while the pass is young (the retry
 # must end within RETRY_WINDOW_SECONDS of the pass start), so the legacy outer bounds still
 # hold: a 1-GPU pass is 9 probes x 20 s = 180 s at worst without retries; one early retry
-# keeps the cold case (the first CUDA probes) inside ~200 s. This module is shared by the
-# legacy CLI/`/api/environment` and the new diagnostics, so both get this behaviour.
+# (finishing by 70 s) keeps it at <= 9 x 20 + 20 = 200 s only in the all-timeout case that
+# already reaches the legacy ceiling; the cold first-probes case stays well inside it.
+# This module is shared by the legacy CLI/`/api/environment` and the new diagnostics,
+# so both get this behaviour.
 RETRYABLE_TIMEOUT_PROBES = frozenset({"ctranslate2_cuda_count", "ctranslate2_cuda", "torch_cuda"})
 MAX_TIMEOUT_RETRIES_PER_PASS = 1
-RETRY_WINDOW_SECONDS = 100.0
+RETRY_WINDOW_SECONDS = 70.0
 
 
 @dataclass(frozen=True)

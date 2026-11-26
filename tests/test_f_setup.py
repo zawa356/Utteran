@@ -917,7 +917,8 @@ def test_real_cli_timeout_is_retried_through_the_adapter(tmp_path, monkeypatch) 
     with pytest.raises(CliTimeout):
         cli.run_json("cuda", ["devices", "--json"], timeout=0.01)
     _TimeoutProcess.calls = 0
-    service = SetupDiagnostics(cli)
+    # Real ratio of timeout to budget (both scaled down): the second run must still happen.
+    service = SetupDiagnostics(cli, runtime_timeout=0.05)
     service.probes = DiagnosticProbes(
         gpu=lambda: gpu("nvidia"),
         memory=lambda: hardware.MemoryReport(None, None),
@@ -928,7 +929,6 @@ def test_real_cli_timeout_is_retried_through_the_adapter(tmp_path, monkeypatch) 
     monkeypatch.setattr(
         cli, "profile_info", lambda name: type("I", (), {"exists": name == "cuda"})()
     )
-    monkeypatch.setattr("utteran_gui.setup_diagnostics.RUNTIME_TIMEOUT", 0.01)
     service.refresh(runtime=True, force_runtime=True)
     assert service.wait(5)
     runtime = service.snapshot()["runtime"]
@@ -1344,15 +1344,18 @@ def test_smoke_attests_only_ordinal_zero_of_the_single_gpu(monkeypatch) -> None:
 def test_vram_peak_is_the_maximum_sample_and_unknown_without_samples(monkeypatch) -> None:
     from utteran.capabilities import smoke as smoke_module
 
-    samples = iter([100, 900, 300] + [200] * 100)
-    monkeypatch.setattr(nvml, "process_used_memory", lambda uuid, pid=None, lib=None: next(samples))
+    samples = iter([100, 900, 300] + [200] * 1000)
+    opened: list[int] = []
+    monkeypatch.setattr(nvml.UsageSampler, "__enter__", lambda self: (opened.append(1), self)[1])
+    monkeypatch.setattr(nvml.UsageSampler, "__exit__", lambda self, *exc: None)
+    monkeypatch.setattr(nvml.UsageSampler, "read", lambda self: next(samples))
     monkeypatch.setattr(smoke_module._VramPeak, "INTERVAL", 0.001)
     with smoke_module._VramPeak(GPU_A[0]) as sampler:
         import time as _time
 
         _time.sleep(0.05)
-    assert sampler.peak == 900
-    monkeypatch.setattr(nvml, "process_used_memory", lambda uuid, pid=None, lib=None: None)
+    assert sampler.peak == 900 and opened == [1]  # one NVML session for all samples
+    monkeypatch.setattr(nvml.UsageSampler, "read", lambda self: None)
     with smoke_module._VramPeak(GPU_A[0]) as none:
         pass
     assert none.peak is None  # WDDM N/A / not measurable -> unknown
@@ -1388,3 +1391,81 @@ def test_a_payload_probe_timeout_is_not_rerun_by_the_diagnostics(tmp_path) -> No
     assert service.wait(5)
     assert len(calls) == 1
     assert service.snapshot()["runtime"]["reason_code"] == "probe_timeout"
+
+
+def test_real_timeout_to_budget_ratio_allows_the_cold_rerun(tmp_path) -> None:
+    import time as _time
+
+    calls: list[int] = []
+
+    def runtime(profile: str, refresh: bool) -> dict[str, Any]:
+        calls.append(1)
+        if len(calls) == 1:
+            _time.sleep(0.05)  # the whole run used its full timeout
+            raise subprocess.TimeoutExpired("devices", 0.05)
+        return devices_json(True)
+
+    service = diagnostics(tmp_path, runtime, runtime_timeout=0.05)  # default budget formula
+    service.refresh(runtime=True)
+    assert service.wait(5)
+    assert len(calls) == 2 and service.snapshot()["runtime"]["attempts"] == 2
+
+
+def test_an_empty_cuda_visibility_variable_is_not_unset(monkeypatch) -> None:
+    from utteran.capabilities import fingerprints
+
+    monkeypatch.setattr(nvml, "load_nvml", lambda: FakeNvml([GPU_A]))
+    monkeypatch.delenv("CUDA_DEVICE_ORDER", raising=False)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    assert fingerprints.hardware_fingerprint("cuda") is None
+
+
+def test_a_held_heavy_slot_without_a_live_executor_blocks_the_probe(http) -> None:
+    runtime = http.app.state.v1_jobs_runtime
+    http.diagnostics.probes = DiagnosticProbes(
+        gpu=lambda: gpu("nvidia"),
+        memory=lambda: hardware.MemoryReport(None, None),
+        disk=lambda _p: hardware.DiskReport(None),
+        vcredist=lambda: VcRedist("present"),
+        runtime=lambda p, r: pytest.fail("must not probe beside a possibly live child"),
+    )
+    http.diagnostics.cli = Cli(Path("."), ("cuda",))
+    runtime.store.active_job = lambda: ("setup_" + "1" * 32, 3)  # e.g. ChildUnconfirmed lease
+    started = http.post("/api/v1/setup-diagnostics/refresh", json={"schema_version": 1})
+    assert started.status_code == 202
+    assert http.diagnostics.wait(5)
+    assert http.get("/api/v1/setup-diagnostics").json()["runtime"]["reason_code"] == "setup_running"
+
+
+def test_defaults_view_never_creates_the_settings_store_and_rejects_a_bad_record(tmp_path) -> None:
+    from utteran_gui import setup_defaults
+
+    class Op:
+        status = "succeeded"
+        plan_ref = type("R", (), {"id": "plan_" + "e" * 32})()
+
+    class Content:
+        apply_defaults = True
+        verification = object()
+
+    class Store:
+        def get_setup(self, _id: str) -> Any:
+            return Op()
+
+        def get_plan_content(self, _id: str) -> Any:
+            return Content()
+
+    missing = tmp_path / "none" / "resources.sqlite3"
+    view = setup_defaults.defaults_view(Store(), missing, "setup_x")  # type: ignore[arg-type]
+    assert view["state"] == "pending" and not missing.parent.exists()
+    repo = _repo(tmp_path)
+    repo.create_defaults_if_empty("setup-defaults-" + "e" * 32, *_writes())
+    path = tmp_path / "settings" / "resources.sqlite3"
+    import sqlite3 as _sqlite
+
+    with _sqlite.connect(path) as db:
+        db.execute("UPDATE replays SET body='{}' WHERE endpoint='/api/v1/setup-defaults'")
+    from utteran_settings.errors import SettingsError
+
+    with pytest.raises(SettingsError):
+        setup_defaults.defaults_view(Store(), path, "setup_x")  # type: ignore[arg-type]

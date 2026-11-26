@@ -220,11 +220,12 @@ class _VramPeak:
 
         self.uuid = uuid
         self.peak: int | None = None
+        self._reader: nvml.UsageSampler | None = None
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def _sample(self) -> None:
-        value = nvml.process_used_memory(self.uuid)
+        value = self._reader.read() if self._reader is not None else None
         if value is not None and (self.peak is None or value > self.peak):
             self.peak = value
 
@@ -235,6 +236,8 @@ class _VramPeak:
                 return
 
     def __enter__(self) -> _VramPeak:
+        # One NVML session for all samples (init/shutdown per read is slow on Windows).
+        self._reader = nvml.UsageSampler(self.uuid).__enter__()
         self._thread.start()
         return self
 
@@ -242,6 +245,8 @@ class _VramPeak:
         self._stop.set()
         self._thread.join(timeout=5)
         self._sample()  # one more read right before unload
+        if self._reader is not None:
+            self._reader.__exit__()
 
 
 def _peak_rss_bytes() -> int | None:

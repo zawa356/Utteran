@@ -44,7 +44,9 @@ RUNTIME_TIMEOUT = 300.0
 # this stage reruns the whole CLI only when the *process* timed out (cold interpreter/DLLs),
 # never because the payload reports a probe timeout (that was already retried inside).
 RUNTIME_RETRIES = 1
-RUNTIME_BUDGET = 600.0  # total wall-clock bound, retries included
+# Total wall-clock bound, retries included: room for both runs plus slack (a second run is
+# started only if a full RUNTIME_TIMEOUT still fits before the deadline).
+RUNTIME_BUDGET = (RUNTIME_RETRIES + 1) * RUNTIME_TIMEOUT + 60.0
 
 Phase = Literal["idle", "running", "completed", "failed"]
 Tri = bool | None
@@ -250,11 +252,13 @@ class SetupDiagnostics:
         probes: DiagnosticProbes | None = None,
         busy_profile: Callable[[], str | None] = lambda: None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-        runtime_budget: float = RUNTIME_BUDGET,
+        runtime_budget: float | None = None,
         venv_build_supported: bool | None = None,
         gate: Any = None,
+        runtime_timeout: float | None = None,
     ) -> None:
         self.cli = cli
+        self.runtime_timeout = RUNTIME_TIMEOUT if runtime_timeout is None else runtime_timeout
         # Shared with the dispatcher (execution_gate.ExecutionGate): set by the setup routes.
         self.gate = gate
         # Same rule as the planner (setup.ps1 is Windows-only); injectable for synthetic worlds.
@@ -270,13 +274,18 @@ class SetupDiagnostics:
         )
         self.busy_profile = busy_profile
         self.clock = clock
-        self.runtime_budget = runtime_budget
+        # Default: both runs of the configured timeout plus slack (see RUNTIME_BUDGET).
+        self.runtime_budget = (
+            (RUNTIME_RETRIES + 1) * self.runtime_timeout + 60.0
+            if runtime_budget is None
+            else runtime_budget
+        )
         self._lock = threading.Lock()
         self._state = _State()
 
     def _devices(self, profile: str, refresh: bool) -> dict[str, Any]:
         arguments = ["devices", "--json", *(["--refresh"] if refresh else [])]
-        return as_json_dict(self.cli.run_json(profile, arguments, timeout=RUNTIME_TIMEOUT))
+        return as_json_dict(self.cli.run_json(profile, arguments, timeout=self.runtime_timeout))
 
     # ------------------------------------------------------------------ read
 
@@ -451,7 +460,7 @@ class SetupDiagnostics:
                 first = (report.reason_code or "completed", time.monotonic() - started)
             report = replace(report, first_attempt=first)
             process_timeout = report.reason_code == "probe_timeout" and report.probes == ()
-            if not process_timeout or time.monotonic() + RUNTIME_TIMEOUT > deadline:
+            if not process_timeout or time.monotonic() + self.runtime_timeout > deadline:
                 return report
         return report
 

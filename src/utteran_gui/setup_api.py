@@ -137,8 +137,22 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
         if diagnostics is None:
             raise SetupApiError("diagnostics_unavailable", 503)
         executor = runtime.setup_executor
+
         # A profile being built or verified is not probed concurrently (heavy slot owner).
-        diagnostics.busy_profile = lambda: None if executor is None else executor.active_operation
+        def busy() -> str | None:
+            # Not only the live executor: a heavy-slot lease left by an unconfirmed child or
+            # a recovery_required operation also means a process may still use the venv.
+            active = None if executor is None else executor.active_operation
+            if active is not None:
+                return str(active)
+            holder = getattr(runtime.store, "active_job", None)
+            try:
+                lease = holder() if callable(holder) else None
+            except Exception:
+                return "slot_unknown"  # cannot tell: do not probe
+            return None if lease is None else str(lease[0])
+
+        diagnostics.busy_profile = busy
         # The atomic guard: the same gate the dispatcher holds for every job/setup dispatch.
         diagnostics.gate = runtime.execution_gate
         return diagnostics

@@ -43,10 +43,17 @@ def defaults_view(
     operation, content = _plan(store, operation_id)
     if not content.apply_defaults or content.verification is None:
         return {"schema_version": 1, "state": "not_applicable", "preset": None, "policy": None}
-    recorded = Repository(settings_path).defaults_state(_key(operation.plan_ref.id))
+    if not settings_path.is_file():
+        recorded = None  # GET never creates the settings store
+    else:
+        recorded = Repository(settings_path).defaults_state(_key(operation.plan_ref.id))
     if recorded is None:
         state = "pending" if operation.status == "succeeded" else "waiting"
         return {"schema_version": 1, "state": state, "preset": None, "policy": None}
+    if recorded.get("state") not in {"created", "kept"}:
+        from utteran_settings.errors import SettingsError
+
+        raise SettingsError("store_corrupt")
     return {
         "schema_version": 1,
         "state": recorded["state"],

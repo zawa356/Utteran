@@ -166,6 +166,51 @@ def free_memory(uuid: str, lib: Any | None = None) -> int | None:
         return None
 
 
+def _used_in_session(lib: Any, uuid: str, pid: int) -> int | None:
+    handle = _handle_by_uuid(lib, uuid)
+    call = getattr(lib, "nvmlDeviceGetComputeRunningProcesses_v3", None)
+    if handle is None or call is None:
+        return None
+    entries = (_ProcessV3 * 64)()
+    count = ctypes.c_uint(64)
+    if call(handle, ctypes.byref(count), entries) != _SUCCESS:
+        return None
+    for entry in entries[: int(count.value)]:
+        if int(entry.pid) == pid:
+            used = int(entry.usedGpuMemory)
+            return None if used in (NOT_AVAILABLE, 0) else used
+    return None
+
+
+class UsageSampler:
+    """One NVML session for repeated reads of this process's VRAM on one GPU."""
+
+    def __init__(self, uuid: str, lib: Any | None = None) -> None:
+        self.uuid = uuid
+        self.lib = lib if lib is not None else load_nvml()
+        self.session: _Session | None = None
+
+    def __enter__(self) -> UsageSampler:
+        if self.lib is not None:
+            try:
+                self.session = _Session(self.lib).__enter__()
+            except Exception:
+                self.session = None
+        return self
+
+    def read(self) -> int | None:
+        if self.session is None or not self.session.active:
+            return None
+        try:
+            return _used_in_session(self.lib, self.uuid, os.getpid())
+        except Exception:
+            return None
+
+    def __exit__(self, *exc: object) -> None:
+        if self.session is not None:
+            self.session.__exit__()
+
+
 def process_used_memory(uuid: str, pid: int | None = None, lib: Any | None = None) -> int | None:
     """GPU memory this process uses on that GPU, or ``None`` (e.g. WDDM reports N/A)."""
     lib = lib if lib is not None else load_nvml()
