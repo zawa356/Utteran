@@ -109,6 +109,8 @@ jobs:
         run: uv sync --extra dev --extra gui --locked
       - name: Test without models
         timeout-minutes: 16
+        env:
+          PYTHONUNBUFFERED: "1"
         # Keep the running test and blocked threads visible if a child hangs.
         run: uv run --no-sync pytest -m "not requires_model" -v -rfEs --durations=20 -o faulthandler_timeout=120
       # Issue #27 PID-file race regression: one green run is not evidence of a

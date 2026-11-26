@@ -337,7 +337,9 @@ class ProductionStepAdapter:
         return {
             key: value
             for key, value in env.items()
-            if key.upper() not in {"UTTERAN_MODEL_DIR", "UTTERAN_NATIVE_DIR"}
+            # Windows PowerShell must build its own module search path. A GUI
+            # launched from pwsh can inherit incompatible PowerShell 7 modules.
+            if key.upper() not in {"UTTERAN_MODEL_DIR", "UTTERAN_NATIVE_DIR", "PSMODULEPATH"}
         }
 
     def profile_command(self, profile: str, arguments: list[str]) -> list[str]:

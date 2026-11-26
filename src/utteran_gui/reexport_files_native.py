@@ -73,14 +73,15 @@ _MARKER_LIMIT = 256
 
 
 def supported() -> bool:
-    """The native module is present and, on Windows, reports the handle guarantees this
-    path relies on (held ancestors pinned, atomic directory creation)."""
-    if _native is None:
+    """Windows stays disabled pending all mandatory VM acceptance items.
+
+    A loaded wheel enables the POSIX regression path only.
+    """
+    # #22: every mandatory Windows VM acceptance item must pass before release.
+    # W-07/W-11..14/W-23 remain unverified; a wheel alone cannot enable this path.
+    if sys.platform == "win32" or _native is None:
         return False
-    if sys.platform != "win32":
-        return True  # used on POSIX only by the regression tests
-    caps = _native.capabilities()
-    return bool(caps["ancestors_pinned"] == "enforced" and caps["dir_creation"] == "atomic")
+    return True  # used on POSIX only by the regression tests
 
 
 def _code(exc: BaseException) -> str:

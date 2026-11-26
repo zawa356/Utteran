@@ -105,7 +105,9 @@ class SyntheticSetupRunner:
         capture_status: bool,
         stdin: bytes | None = None,
     ) -> ChildResult:
-        child = subprocess.Popen([sys.executable, "-c", "pass"])
+        # The server watches its stdin for fixture shutdown. A Windows child
+        # must not inherit that pipe while another thread is blocked reading it.
+        child = subprocess.Popen([sys.executable, "-c", "pass"], stdin=subprocess.DEVNULL)
         on_spawn(child)
         child.wait()
         status: str | None = None

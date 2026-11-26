@@ -956,7 +956,9 @@ def test_reviewed_speech_resource_is_available_without_a_tests_tree(tmp_path, mo
     assert digest == hashlib.sha256(fixture.read_bytes()).hexdigest()
 
 
-@pytest.mark.parametrize("data", [b"corrupt waveform", b"x" * (1024 * 1024 + 1)])
+@pytest.mark.parametrize(
+    "data", [b"corrupt waveform", b"x" * (1024 * 1024 + 1)], ids=["corrupt", "oversized"]
+)
 def test_product_speech_resource_rejects_wrong_bytes_without_writing(tmp_path, monkeypatch, data):
     from utteran.capabilities import smoke
 

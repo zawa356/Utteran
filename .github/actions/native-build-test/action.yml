@@ -81,7 +81,7 @@ runs:
         uv pip install --no-deps "$NATIVE_WHEEL"
         uv run --no-sync python -c "import utteran_native_fs"
         uv run --no-sync pytest -q -p no:cacheprovider -m "not requires_model" \
-          tests/test_ec_reexport_native.py tests/test_ec_reexport.py 2>&1 | tee "$RUNNER_TEMP/product.log"
+          tests/test_ec_reexport_native.py tests/test_ec_reexport.py tests/test_ec_windows_gate.py 2>&1 | tee "$RUNNER_TEMP/product.log"
         # The native module must have been collected, not skipped as missing.
         if grep -q "could not import 'utteran_native_fs'" "$RUNNER_TEMP/product.log"; then
           echo "native module missing in the product environment"; exit 1

@@ -31,6 +31,17 @@ from utteran_gui.reexport_store import ReexportError
 WINDOWS = sys.platform == "win32"
 
 
+@pytest.fixture(autouse=True)
+def exercise_unreleased_native_layer(monkeypatch: Any, request: Any) -> None:
+    """Keep low-level Windows coverage while the product API remains disabled.
+
+    This test-only override is never used by the API refusal regression or the
+    capability assertion. Rust core and POSIX coverage remain unchanged.
+    """
+    if WINDOWS and request.node.name != "test_native_layer_is_supported_and_selected_on_windows":
+        monkeypatch.setattr(native, "supported", lambda: True)
+
+
 @pytest.fixture
 def world(tmp_path: Path, monkeypatch: Any) -> World:
     monkeypatch.setattr(reexport_service, "reexport_files", native)
@@ -45,7 +56,7 @@ def _json_of(world: World, job_id: str) -> Path:
 
 
 def test_native_layer_is_supported_and_selected_on_windows() -> None:
-    assert native.supported() is True
+    assert native.supported() is (not WINDOWS)
     if WINDOWS:
         assert importlib.util.find_spec("utteran_native_fs") is not None
         assert reexport_service.reexport_files is native

@@ -557,10 +557,23 @@ function Invoke-ProfileSetup {
         Write-Warning "python was not found on PATH. Install Python 3.11/3.12 or let uv manage it."
     }
     else {
-        $PythonVersion = & $PythonCommand.Source --version 2>&1
-        Write-Host $PythonVersion
-        if ($PythonVersion -notmatch "Python 3\.(11|12)\.") {
-            Write-Warning "utteran supports Python 3.11 and 3.12."
+        try {
+            $PythonVersion = & $PythonCommand.Source --version 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "python could not report a version. uv will select a supported Python."
+            }
+            else {
+                Write-Host $PythonVersion
+                if ($PythonVersion -notmatch "Python 3\.(11|12)\.") {
+                    Write-Warning "utteran supports Python 3.11 and 3.12."
+                }
+            }
+        }
+        catch {
+            # The Windows Store alias may exist without Python installed. In PS 5.1
+            # its stderr becomes a terminating error under ErrorActionPreference=Stop.
+            # This is an advisory probe; the locked uv sync below remains mandatory.
+            Write-Warning "python could not be started. uv will select a supported Python."
         }
     }
 

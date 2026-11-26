@@ -202,6 +202,32 @@ pub(crate) fn open_root(path: &str) -> Result<(File, String, Vec<String>)> {
     let root = File::from(unsafe { OwnedHandle::from_raw_handle(h as _) });
     ensure_volume_root(&root)?;
     ensure_local_disk(&root)?;
+    // A local DOS mapping can shadow a global drive letter. The shown path must
+    // name the same volume root; all data access still uses the global handle.
+    let mut shown = wide(&format!(r"\\?\{letter}:\"));
+    shown.push(0);
+    // SAFETY: NUL-terminated input and flags as above; the returned handle is owned.
+    let visible = unsafe {
+        CreateFileW(
+            shown.as_ptr(),
+            FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if visible == INVALID_HANDLE_VALUE {
+        return Err(bad());
+    }
+    // SAFETY: successful CreateFileW returned a handle exclusively owned here.
+    let visible = File::from(unsafe { OwnedHandle::from_raw_handle(visible as _) });
+    let visible_identity = metadata(&visible).map_err(|_| bad())?.identity;
+    let global_identity = metadata(&root).map_err(|_| bad())?.identity;
+    if visible_identity != global_identity {
+        return Err(bad());
+    }
     Ok((root, root_path, comps))
 }
 

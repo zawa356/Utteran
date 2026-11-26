@@ -158,6 +158,7 @@ def test_worker_writes_speaker_labels_through_existing_export_and_resume(
     import json
 
     from test_application import SyntheticASR, normalize
+    from utteran.memory import MemoryReadings
     from utteran.models.catalog import get_model
     from utteran.models.manager import ModelManager
     from utteran.types import CancelToken, DiarizationResult, SpeakerTurn
@@ -196,6 +197,12 @@ def test_worker_writes_speaker_labels_through_existing_export_and_resume(
     monkeypatch.setattr("utteran.worker_runtime.create_asr_backend", lambda *a, **kw: asr)
     monkeypatch.setattr("utteran.worker_runtime.offline_preflight", lambda _config: None)
     monkeypatch.setattr("utteran.pipeline.normalize_audio", normalize)
+    # The backend is synthetic: host RAM pressure must not decide this export test.
+    # Keep the real memory guard, with a deterministic ample observation.
+    monkeypatch.setattr(
+        "utteran.memory.read_memory",
+        lambda _device: MemoryReadings(system_available_bytes=16 * 1024**3),
+    )
     monkeypatch.setattr("utteran.diarization.pyannote.PyannoteBackend", Diarization)
     payload = worker_request.model_dump(mode="json")
     payload["settings"]["diarization"].update(enabled=True, model=community.MODEL)
