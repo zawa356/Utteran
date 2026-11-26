@@ -1,5 +1,7 @@
 # Engine adapters — 共通の実行契約（正本）
 
+追補（0.1.72、束G）。[現行の実行範囲と証拠](../ui3/g-multiprofile.md) を参照。B3 は管理下のローカル ASR と pyannote を実行する。Windows native は専用 stdin と variant ごとの経路を照合する。下記の 0.1.52 表は基盤実装当時の記録。
+
 更新: 2026-11-16 JST（開発版`0.1.53`・未リリース。0.1.52=束A1、0.1.53=束A2）。プログラム全体は[../program/roadmap-2026-11-16.md](../program/roadmap-2026-11-16.md)。
 
 > 本書は「どのエンジンが何を受け付け、B3 workerが何を実行するか」を決める**唯一の表**と、

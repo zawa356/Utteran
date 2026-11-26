@@ -30,6 +30,7 @@ from utteran_control.store import IdempotencyScope
 from utteran_gui.job_admission import ResolutionTokens
 from utteran_gui.job_runtime import JobRuntime, RuntimeStateError
 from utteran_gui.settings_api import _body, _key, _match
+from utteran_gui.setup_defaults import DefaultsRefused
 from utteran_gui.setup_planner import PlanRejected, SetupObservation, build_plan
 from utteran_settings.errors import SettingsError
 from utteran_settings.inheritance import safe_contract_issues
@@ -87,6 +88,8 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
             raise SetupApiError(exc.code.value, exc.status) from None
         except RuntimeStateError as exc:
             raise SetupApiError(exc.code, 503) from None
+        except DefaultsRefused as exc:
+            raise SetupApiError(exc.code, exc.status) from None
 
     async def guarded(handler: Callable[[], Awaitable[Response]]) -> Response:
         try:
@@ -127,6 +130,65 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
         if not _SETUP_ID.fullmatch(value):
             raise SetupApiError("resource_not_found", 404)
         return value
+
+    diagnostics = runtime.setup.diagnostics
+
+    def diagnostics_service() -> Any:
+        if diagnostics is None:
+            raise SetupApiError("diagnostics_unavailable", 503)
+        executor = runtime.setup_executor
+
+        # A profile being built or verified is not probed concurrently (heavy slot owner).
+        def busy() -> str | None:
+            # Not only the live executor: a heavy-slot lease left by an unconfirmed child or
+            # a recovery_required operation also means a process may still use the venv.
+            active = None if executor is None else executor.active_operation
+            if active is not None:
+                return str(active)
+            holder = getattr(runtime.store, "active_job", None)
+            try:
+                lease = holder() if callable(holder) else None
+            except Exception:
+                return "slot_unknown"  # cannot tell: do not probe
+            return None if lease is None else str(lease[0])
+
+        diagnostics.busy_profile = busy
+        # The atomic guard: the same gate the dispatcher holds for every job/setup dispatch.
+        diagnostics.gate = runtime.execution_gate
+        return diagnostics
+
+    @app.get("/setup-diagnostics")
+    async def get_diagnostics() -> Response:
+        service = diagnostics_service()
+        return json(200, service.snapshot(), {"Cache-Control": "no-store"})
+
+    @app.post("/setup-diagnostics/refresh")
+    async def refresh_diagnostics(request: Request) -> Response:
+        # Starts one background pass (single-flight) and returns at once: never waits for
+        # a probe. Body: {"schema_version": 1, "runtime": bool, "force": bool}.
+        async def handler() -> Response:
+            body = await _body(request)
+            if (
+                not isinstance(body, dict)
+                or body.get("schema_version") != 1
+                or set(body) - {"schema_version", "runtime", "force"}
+                or not isinstance(body.get("runtime", True), bool)
+                or not isinstance(body.get("force", False), bool)
+            ):
+                raise SetupApiError("contract_validation_failed", 422)
+            service = diagnostics_service()
+            view = service.refresh(
+                runtime=bool(body.get("runtime", True)), force_runtime=bool(body.get("force"))
+            )
+            return json(202, view, {"Cache-Control": "no-store"})
+
+        return await guarded(handler)
+
+    def probe_idle() -> None:
+        # A diagnostics runtime probe holds the profile venv (DLLs) outside the heavy slot:
+        # a setup that may rebuild or verify that venv does not start meanwhile.
+        if diagnostics is not None and diagnostics.runtime_busy():
+            raise SetupApiError("diagnostics_running", 409)
 
     @app.post("/setup-plans")
     async def create_plan(request: Request) -> Response:
@@ -208,6 +270,7 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
                 if replay is not None:
                     return replay
                 payload = SetupStart.model_validate(body)
+                probe_idle()
                 return repo.start_operation(
                     scope, digest, payload, fingerprint=observe().fingerprint
                 )
@@ -231,11 +294,35 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
         view = await call(lambda: store().get_setup(identifier))
         return json(200, view.to_wire(), {"ETag": f'"{view.revision}"'})
 
+    @app.get("/setup-operations/{operation_id}/defaults")
+    async def get_defaults(operation_id: str) -> Response:
+        # Read-only: whether this setup asked for defaults and what was recorded (PR #91 P2-1).
+        from utteran_gui.setup_defaults import defaults_view
+
+        identifier = setup_id_of(operation_id)
+        view = await call(lambda: defaults_view(store(), runtime.settings_path, identifier))
+        return json(200, view, {"Cache-Control": "no-store"})
+
     @app.post("/setup-operations/{operation_id}/{action}")
     async def setup_action(operation_id: str, action: str, request: Request) -> Response:
-        if action not in {"retry", "resume", "cancel"}:
+        if action not in {"retry", "resume", "cancel", "defaults"}:
             raise SetupApiError("resource_not_found", 404)
         identifier = setup_id_of(operation_id)
+        if action == "defaults":
+            # Idempotent by construction (one B5 transaction keyed by the plan): no
+            # Idempotency-Key or If-Match is needed; a repeat returns the recorded answer.
+            from utteran_gui.setup_defaults import apply_defaults
+
+            async def create() -> Response:
+                body = await _body(request)
+                if body != {"schema_version": 1}:
+                    raise SetupApiError("contract_validation_failed", 422)
+                view = await call(
+                    lambda: apply_defaults(store(), runtime.settings_path, identifier)
+                )
+                return json(200, view, {"Cache-Control": "no-store"})
+
+            return await guarded(create)
 
         async def handler() -> Response:
             key = _key(request)
@@ -255,6 +342,7 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
 
             def work() -> Any:
                 repo = store()
+                probe_idle()
                 observation = observe()
                 method = repo.retry_setup if action == "retry" else repo.resume_setup
                 return method(

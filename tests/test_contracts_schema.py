@@ -53,6 +53,10 @@ def test_phase_a_wire_shape_matches_implemented_subset() -> None:
             # Compare their conditional semantics separately, never globally drop allOf.
             actual.pop("allOf")
             expected.pop("allOf")
+        if name == "WhisperCppSettings":
+            # Bundle G adds an optional explicit native route to newer presets.
+            variant = normalize(actual["properties"].pop("variant"))
+            assert variant == {"type": "string", "enum": ["vulkan", "openvino", "openvino_vulkan"]}
         assert normalize(actual) == normalize(expected), name
 
 

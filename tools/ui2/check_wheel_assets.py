@@ -24,6 +24,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 import utteran_gui
 from utteran_gui.api import create_app
+from utteran.capabilities.smoke import write_speech_fixture
 
 package = Path(utteran_gui.__file__).resolve()
 assert Path(sys.prefix).resolve() in package.parents, "utteran_gui was not imported from the venv"
@@ -31,6 +32,10 @@ bundle = package.parent / "web-next"
 assert (bundle / "index.html").is_file(), "web-next/index.html missing from the installed wheel"
 
 root = Path.cwd()
+assert not (root / "tests").exists()
+speech = root / "product-smoke.wav"
+write_speech_fixture(speech)
+assert speech.stat().st_size == 826446
 legacy = TestClient(create_app("wheel-probe-session", repo_root=root))
 assert legacy.get("/next/").status_code == 404
 assert "nonce" not in legacy.get("/").headers["content-security-policy"]

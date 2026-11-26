@@ -1,0 +1,88 @@
+name: Native build and test
+description: >-
+  Build and test the native safe-fs workspace on the current runner, build the internal
+  abi3 wheel, test it from fresh 3.11/3.12 venvs, then run the product re-export tests
+  against the native layer (E-C2b, #87).
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      with:
+        python-version: "3.12"
+        enable-cache: true
+    - name: Install the pinned Rust toolchain (native/rust-toolchain.toml)
+      shell: bash
+      working-directory: native
+      run: |
+        rustup toolchain install 1.97.0 --profile minimal --component clippy,rustfmt
+        rustc --version
+    - name: Format and lint
+      shell: bash
+      working-directory: native
+      run: |
+        cargo fmt --check
+        cargo clippy -p utteran-safe-fs --all-targets --locked -- -D warnings
+        PYO3_CROSS_PYTHON_VERSION=3.11 cargo clippy -p utteran-safe-fs-py --locked -- -D warnings
+        if cargo tree -e features -p utteran-safe-fs-py --locked | grep -q 'test-hooks'; then
+          echo "test-hooks reached the binding feature set"; exit 1
+        fi
+    - name: Core tests
+      shell: bash
+      working-directory: native
+      env:
+        # Facilities every GitHub Windows runner has: a missing one fails instead of NOT_RUN.
+        SAFE_FS_REQUIRE: ${{ runner.os == 'Windows' && 'junction,symlink,subst' || '' }}
+      run: |
+        cargo test -p utteran-safe-fs --locked -- --nocapture 2>&1 | tee "$RUNNER_TEMP/core-tests.log"
+        if grep -q 'NOT_RUN' "$RUNNER_TEMP/core-tests.log"; then
+          grep 'NOT_RUN' "$RUNNER_TEMP/core-tests.log" | sort | uniq -c
+        fi
+    - name: Privilege-dependent POSIX tests
+      if: runner.os != 'Windows'
+      shell: bash
+      working-directory: native
+      run: |
+        BIN=$(cargo test -p utteran-safe-fs --locked --test unix_races --no-run --message-format=json \
+          | jq -r 'select(.executable != null) | .executable')
+        # `--exact` with a renamed test would run nothing and exit 0: require "1 passed".
+        run_one() {
+          "$@" 2>&1 | tee "$RUNNER_TEMP/one.log"
+          grep -q 'test result: ok. 1 passed' "$RUNNER_TEMP/one.log"
+        }
+        run_one "$BIN" --ignored --exact permission_denied_is_reported
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          run_one sudo "$BIN" --ignored --exact bind_mount_below_leaf_is_refused_by_mount_id
+          run_one sudo "$BIN" --ignored --exact file_bind_mount_is_refused_for_reading
+        fi
+    - name: Build the abi3 wheel and test it from fresh venvs (3.11, 3.12)
+      shell: bash
+      working-directory: native
+      run: |
+        uv python install 3.11 3.12
+        uvx --from maturin==1.16.0 maturin build --release --locked \
+          -m safe-fs-py/Cargo.toml -o dist -i "$(uv python find 3.11)"
+        ls -l dist
+        WHEEL=$(ls "$PWD"/dist/*.whl)
+        TESTS="$PWD/safe-fs-py/tests"
+        for v in 3.11 3.12; do
+          VENV="$RUNNER_TEMP/venv-$v"
+          uv venv -q -p "$v" "$VENV"
+          if [ "$RUNNER_OS" = "Windows" ]; then PY="$VENV/Scripts/python.exe"; else PY="$VENV/bin/python"; fi
+          uv pip install -q --python "$PY" "$WHEEL" pytest==8.4.2
+          (cd "$RUNNER_TEMP" && "$PY" -m pytest -q -p no:cacheprovider "$TESTS/test_binding.py")
+        done
+        echo "NATIVE_WHEEL=$WHEEL" >> "$GITHUB_ENV"
+    - name: Product re-export tests on the native layer
+      # Linux and Windows are the product CI platforms; macOS has no product job.
+      if: runner.os != 'macOS'
+      shell: bash
+      run: |
+        uv sync --extra dev --extra gui --locked
+        uv pip install --no-deps "$NATIVE_WHEEL"
+        uv run --no-sync python -c "import utteran_native_fs"
+        uv run --no-sync pytest -q -p no:cacheprovider -m "not requires_model" \
+          tests/test_ec_reexport_native.py tests/test_ec_reexport.py tests/test_ec_windows_gate.py 2>&1 | tee "$RUNNER_TEMP/product.log"
+        # The native module must have been collected, not skipped as missing.
+        if grep -q "could not import 'utteran_native_fs'" "$RUNNER_TEMP/product.log"; then
+          echo "native module missing in the product environment"; exit 1
+        fi

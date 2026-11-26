@@ -41,7 +41,8 @@ class FasterWhisperBackend(ASRBackend):
 
     name: ClassVar[str] = "faster-whisper"
 
-    def __init__(self) -> None:
+    def __init__(self, *, local_only: bool = False) -> None:
+        self._local_only = local_only
         self._model: Any | None = None
         self._model_id = ""
         self._device = ""
@@ -89,7 +90,22 @@ class FasterWhisperBackend(ASRBackend):
         )
 
         selection = select_faster_whisper_device(device, compute_type)
-        runtime_model = find_runtime_model(self.name, model_id)
+        runtime_model: Path | None
+        if self._local_only:
+            directory = Path(model_id)
+            if not directory.is_absolute() or not all(
+                (directory / part).is_file()
+                for part in (
+                    "model.bin",
+                    "tokenizer.json",
+                    "config.json",
+                    "preprocessor_config.json",
+                )
+            ):
+                raise ModelNotFoundError("managed faster-whisper model incomplete")
+            runtime_model = directory
+        else:
+            runtime_model = find_runtime_model(self.name, model_id)
         model_source = str(runtime_model) if runtime_model is not None else model_id
         selected_device = selection.device
         device_index = selection.device_index
@@ -112,7 +128,7 @@ class FasterWhisperBackend(ASRBackend):
                 compute_type=selected_compute_type,
                 cpu_threads=cpu_threads,
                 num_workers=num_workers,
-                local_files_only=not Path(model_source).exists(),
+                local_files_only=self._local_only or not Path(model_source).exists(),
             )
         except Exception as exc:
             if device == "auto" and selected_device == "cuda" and not _is_model_error(exc):
@@ -151,6 +167,20 @@ class FasterWhisperBackend(ASRBackend):
                     exc,
                     record_backend_failure(self.name, "モデル読み込み", exc),
                 )
+        if self._local_only:
+            if self._model is None:
+                raise BackendUnavailableError("CTranslate2 model did not load")
+            replica = self._model.model
+            accepted_compute = {selected_compute_type}
+            if (selected_device, selected_compute_type) == ("cpu", "int8"):
+                accepted_compute.add("int8_float32")
+            if (
+                replica.device != selected_device
+                or replica.compute_type not in accepted_compute
+                or (selected_device == "cuda" and tuple(replica.device_index) != (device_index,))
+            ):
+                self.unload()
+                raise BackendUnavailableError("CTranslate2 runtime route mismatch")
         load_duration = time.perf_counter() - load_started
         self._model_id = model_id
         self._device = f"cuda:{device_index}" if selected_device == "cuda" else selected_device

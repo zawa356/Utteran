@@ -43,6 +43,7 @@ class WorkerErrorCode(StrEnum):
     VALIDATION_TIMEOUT = "validation_timeout"
     CANCELLED = "cancelled"
     CORE_FAILURE = "core_failure"
+    OUT_OF_MEMORY = "out_of_memory"
     INVALID_CONTEXT = "invalid_context"
     UNSUPPORTED_SETTING = "unsupported_setting"
     MODEL_MISSING = "model_missing"

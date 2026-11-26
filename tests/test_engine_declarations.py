@@ -93,20 +93,19 @@ def test_unknown_engine_is_refused_not_defaulted(name: str) -> None:
         engine_for_family(name)
 
 
-# Recipe flags as shipped before the declarations existed (0.1.51): deriving them from
-# the table must not change a byte of the B4 catalogue or any evidence fingerprint.
+# Explicit matrix: private native IPC enables only the three verified GPU recipes.
 SHIPPED = {
     "fw-cpu": (True, True, True),
     "fw-cuda": (True, True, True),
     "wc-cpu": (False, True, True),
-    "wc-vulkan": (False, True, True),
-    "wc-ov": (False, True, True),
-    "wc-ov-vk": (False, True, True),
+    "wc-vulkan": (True, True, True),
+    "wc-ov": (True, True, True),
+    "wc-ov-vk": (True, True, True),
     "genai-ov": (False, True, False),
 }
 
 
-def test_recipes_are_derived_without_changing_shipped_flags() -> None:
+def test_recipe_capability_matrix() -> None:
     assert {
         r.id: (r.worker_supported, r.word_timestamps, r.non_space_diarization) for r in RECIPES
     } == SHIPPED
@@ -123,7 +122,11 @@ def test_every_recipe_fits_its_engine_declaration() -> None:
         assert recipe.worker_supported == (recipe.id in engine.worker.recipes)
     known = {r.id for r in RECIPES}
     assert worker_recipes() <= known
-    assert worker_recipes() == WORKER_RECIPES == {"fw-cpu", "fw-cuda"}
+    assert (
+        worker_recipes()
+        == WORKER_RECIPES
+        == {"fw-cpu", "fw-cuda", "wc-vulkan", "wc-ov", "wc-ov-vk"}
+    )
     for engine in ENGINE_DECLARATIONS:
         declared = {
             r.requested_route.native_variant for r in RECIPES if r.backend == engine.engine
@@ -234,12 +237,12 @@ def test_worker_refusals_follow_the_declaration(settings_data: dict[str, Any]) -
     fw = get_engine("faster-whisper")
     assert worker_refusals(fw, plain, recipe_id="fw-cpu") == ()
     assert worker_refusals(fw, plain, recipe_id="wc-cpu") == ("worker_backend_unsupported",)
-    for name in ("whisper-cpp", "openvino-genai"):
-        assert worker_refusals(get_engine(name), plain) == ("worker_backend_unsupported",)
+    assert worker_refusals(get_engine("whisper-cpp"), plain, recipe_id="wc-vulkan") == ()
+    assert worker_refusals(get_engine("openvino-genai"), plain) == ("worker_backend_unsupported",)
     diarized = ProcessingSettings.model_validate(
         {**settings_data, "diarization": {**settings_data["diarization"], "enabled": True}}
     )
-    assert worker_refusals(fw, diarized, recipe_id="fw-cpu") == ("worker_diarization_unsupported",)
+    assert worker_refusals(fw, diarized, recipe_id="fw-cpu") == ()
     glossary = _settings(settings_data, glossary=["x"])
     assert worker_refusals(fw, glossary, recipe_id="fw-cpu") == ()
     assert "worker_glossary_unsupported" in worker_refusals(get_engine("whisper-cpp"), glossary)
@@ -307,9 +310,7 @@ def test_b3_refuses_engines_closed_in_the_declaration(
     assert offline == []
 
 
-def test_b3_refuses_diarization_until_the_declaration_opens_it(
-    tmp_path: Path, offline: list[Any]
-) -> None:
+def test_b3_refuses_unbound_diarization_model(tmp_path: Path, offline: list[Any]) -> None:
     model = tmp_path / "model"
     model.mkdir()
     model_files(model)

@@ -793,12 +793,15 @@ def _default_job_runtime(
             # Presence only; the value is never read into the control store.
             return bool(tokens is not None and tokens.status().configured)
 
+        from utteran_gui.setup_diagnostics import SetupDiagnostics
+
         components = SetupComponents(
             observer=SetupObserver(
                 cli, models_root=paths.models, credential_present=credential_present
             ),
             adapter=ProductionStepAdapter(cli),
             runner=ProcessChildRunner(popen_factory),
+            diagnostics=SetupDiagnostics(cli),
         )
     return JobRuntime(
         store_path=paths.control_store,

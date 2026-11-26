@@ -61,6 +61,7 @@ JobErrorCode = Literal[
     "invalid_sequence",
     "id_mismatch",
     "worker_crash",
+    "out_of_memory",
     "unexpected_eof",
     "io_timeout",
     "process_timeout",

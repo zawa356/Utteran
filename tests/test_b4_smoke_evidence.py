@@ -251,7 +251,11 @@ def test_record_round_trip_and_value_free_content(settings, directory) -> None:
     assert read_evidence(directory, scope, now=NOW + timedelta(hours=1)) == record(scope)
     # No settings body, prompt, path or transcript; digests only.
     assert "initial_prompt" not in raw and str(directory) not in raw and "tiny" not in raw
-    assert set(json.loads(raw)) == set(SmokeEvidence.model_fields)
+    assert set(json.loads(raw)) == set(SmokeEvidence.model_fields) - {
+        "diarization_observed",
+        "diarization_required_memory_bytes",
+        "diarization_available_memory_bytes",
+    }
     if os.name != "nt":
         assert path.stat().st_mode & 0o077 == 0
     assert sorted(p.name for p in directory.iterdir()) == [f"{scope}.json"]
@@ -605,3 +609,88 @@ assert not {'ctranslate2','faster_whisper','torch'} & set(sys.modules)
         timeout=30,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("diar_required", "diar_available", "runnable", "selected", "reason"),
+    [
+        (None, None, "ready", False, "memory_unknown"),
+        (900_000_000, 2_000_000_000, "ready", False, "memory_limit"),
+        (600_000_000, 450_000_000, "blocked", False, "memory_insufficient"),
+        (600_000_000, 2_000_000_000, "ready", True, None),
+    ],
+)
+def test_diarization_budget_is_separate_under_a_policy_cap(
+    settings, directory, diar_required, diar_available, runnable, selected, reason
+):
+    from test_capability_inventory import policy
+    from utteran.capabilities.evaluator import make_inventory
+    from utteran.capabilities.resolver import resolve
+
+    settings = settings.model_copy(
+        update={"diarization": settings.diarization.model_copy(update={"enabled": True})}
+    )
+    base = collected(
+        settings,
+        smoke_version=2,
+        diarization_device="cpu",
+        diarization_device_index=0,
+        diarization_model=settings.diarization.model,
+        diarization_fingerprint=digest("diar synthetic"),
+    )
+    fields = {"diarization_observed": "cpu"}  # legacy record without diar memory
+    if diar_required is not None:
+        fields.update(
+            diarization_required_memory_bytes=diar_required,
+            diarization_available_memory_bytes=diar_available,
+        )
+    write_evidence(directory, record(scope_for(settings, base), **fields))
+    merged = overlay(settings, base, directory)
+    inv = make_inventory((merged,), settings, "worker", revision=1, now=NOW)
+    plain = resolve(inv, policy(), now=NOW)
+    assert plain.alternatives[0].candidate.runnable == runnable
+    if reason in {"memory_unknown", "memory_insufficient"}:
+        assert reason in plain.alternatives[0].reason_codes
+    capped = resolve(inv, policy(max_memory_bytes=700_000_000), now=NOW)
+    assert (capped.selected is not None) == selected
+    if reason is not None:
+        assert reason in capped.alternatives[0].reason_codes
+
+
+def test_diarization_free_memory_is_rechecked_on_its_own_device(settings, directory):
+    settings = settings.model_copy(
+        update={
+            "diarization": settings.diarization.model_copy(
+                update={"enabled": True, "device_preference": "cuda"}
+            )
+        }
+    )
+    base = collected(
+        settings,
+        smoke_version=2,
+        diarization_device="cuda",
+        diarization_device_index=0,
+        diarization_model=settings.diarization.model,
+        diarization_fingerprint=digest("diar synthetic"),
+    )
+    write_evidence(
+        directory,
+        record(
+            scope_for(settings, base),
+            diarization_observed="cuda",
+            diarization_required_memory_bytes=600,
+            diarization_available_memory_bytes=1000,
+        ),
+    )
+    (merged,) = apply_smoke_evidence(
+        (base,),
+        settings,
+        now=NOW,
+        directory=directory,
+        fingerprints=fixed,
+        memory_available={"cpu": 8_000_000_000, "cuda": 500}.get,
+    )
+    outcome = candidate(settings, merged)
+    assert outcome.runnable == "blocked" and "memory_insufficient" in issue_codes(outcome)
+    assert merged.diarization_available_memory_bytes == 500
+    assert merged.available_memory_bytes == 8_000_000_000

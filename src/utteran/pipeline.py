@@ -63,8 +63,10 @@ class BackendPool:
         *,
         asr_backend: ASRBackend | None = None,
         diarization_backend: DiarizationBackend | None = None,
+        sequential_models: bool = False,
     ) -> None:
         self._token_provider = token_provider
+        self._sequential_models = sequential_models
         self._asr = asr_backend
         self._diarization = diarization_backend
         self._provided_diarization = diarization_backend
@@ -90,6 +92,12 @@ class BackendPool:
         self._asr_key = key
         logging.getLogger(__name__).info("ASRバックエンドをロード: %s/%s/%s/%s", *key)
         return self._asr
+
+    def release_asr_for_diarization(self) -> None:
+        if self._sequential_models and self._asr is not None:
+            self._asr.unload()
+            self._asr = None
+            self._asr_key = None
 
     def diarization(self, config: Config) -> DiarizationBackend:
         """Return a loaded diarization backend matching the effective settings."""
@@ -662,6 +670,7 @@ def _diarize_with_memory_guard(
     calibration_store: CalibrationStore,
 ) -> DiarizationResult:
     """Apply preflight policy and one auto-only CPU retry for runtime OOM."""
+    pool.release_asr_for_diarization()
     requested = config.diarization.device
     selected = _resolve_diarization_device(config, pool)
     minutes = _wav_minutes(audio_path)

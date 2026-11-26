@@ -25,7 +25,7 @@ from utteran.capabilities.evaluator import digest, evidence_fingerprint, make_in
 from utteran.capabilities.evidence import apply_smoke_evidence, evidence_directory
 from utteran.capabilities.recipes import RECIPES
 from utteran.config import EnvironmentTokenProvider
-from utteran.models.catalog import list_models
+from utteran.models.catalog import get_model, list_models
 from utteran.models.manager import ModelManager, _missing_required_files
 from utteran.native import NativeBuilder
 from utteran.profiles import PROFILE_EXTRAS
@@ -38,6 +38,7 @@ from utteran_contracts.capabilities import (
     InventorySnapshot,
     ReasonCode,
 )
+from utteran_contracts.engines import get_engine
 from utteran_paths import resolve_data_paths
 
 InventoryProvider = Callable[[InventoryRefreshRequest, datetime], tuple[DeploymentInventory, ...]]
@@ -117,7 +118,15 @@ def collect_managed_deployments(
         profile, profile_root, repo_root / "uv.lock"
     )
     dependency_versions: dict[str, str | None] = {}
-    for name in ("utteran", "faster-whisper", "ctranslate2", "torch", "openvino", "openvino-genai"):
+    for name in (
+        "utteran",
+        "faster-whisper",
+        "ctranslate2",
+        "torch",
+        "pyannote-audio",
+        "openvino",
+        "openvino-genai",
+    ):
         try:
             dependency_versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
@@ -133,41 +142,90 @@ def collect_managed_deployments(
     native = NativeBuilder(native_root)
     native_status = native.status()
     manager = ModelManager(model_root, token_provider=EnvironmentTokenProvider())
+    diar_device = None
+    diar_fingerprint = None
+    diar_supported = True
+    if settings.diarization.enabled:
+        from utteran.diarization.community import ASSETS, MODEL, REVISION, SDK_VERSION
+
+        preferred = settings.diarization.device_preference
+        diar_device = (
+            {"intel": "xpu", "cuda": "cuda"}.get(profile, "cpu")
+            if preferred == "auto"
+            else preferred
+        )
+        diar_supported = (
+            diar_device == "cpu" or (diar_device, profile) in {("xpu", "intel"), ("cuda", "cuda")}
+        ) and (diar_device != "xpu" or platform.system() == "Windows")
+        path = manager.managed_path(get_model(MODEL, backend="pyannote"))
+        if (
+            diar_supported
+            and settings.diarization.model == MODEL
+            and dependency_versions["pyannote-audio"] == SDK_VERSION
+            and all((path / file).is_file() for file in ("config.yaml", *ASSETS))
+        ):
+            diar_fingerprint = digest(
+                (REVISION, _file_identity(path), dependency_versions["torch"])
+            )
     result: list[DeploymentInventory] = []
     for recipe in RECIPES:
         # Join the registered recipe to its actual backend catalog, rather than
         # creating arbitrary backend/native/device combinations.
+        engine = get_engine(recipe.backend)
         for model in list_models(backend=recipe.backend):
             path = manager.managed_path(model)
             present = path.is_dir()
             missing = _missing_required_files(model, path)
             files_fp = _file_identity(path) if present else None
+            if recipe.backend == "whisper-cpp" and settings.asr.vad.enabled:
+                vad = get_model("whisper-cpp-vad:silero-v6.2.0")
+                vad_path = manager.managed_path(vad) / (vad.artifact_filename or "")
+                if vad_path.is_file():
+                    files_fp = digest((files_fp, _file_identity(vad_path)))
+                else:
+                    missing = (*missing, "vad")
+            if recipe.requested_route.native_variant in {"openvino", "openvino_vulkan"}:
+                stem = Path(model.artifact_filename or "").stem
+                if not all(
+                    (path / f"{stem}-encoder-openvino.{ext}").is_file() for ext in ("xml", "bin")
+                ):
+                    missing = (*missing, "ir")
             variant = recipe.requested_route.native_variant
             native_ok = variant is not None and native_status["runnable"].get(variant) is True
             # Manifest and executable identities are separate from runtime evidence.
-            native_fp = digest(native_status["manifest"]) if native_ok else None
+            native_fp = (
+                digest(native_status["manifest"]["backends"][variant]) if native_ok else None
+            )
             if native_ok:
-                executable = native_status["manifest"]["backends"][variant]["executable"]
-                native_fp = digest((native_fp, _file_identity(Path(executable))))
+                assert variant is not None
+                executable = (
+                    native.worker_executable(native_status["manifest"], variant)
+                    if execution_path == "worker"
+                    else Path(native_status["manifest"]["backends"][variant]["executable"])
+                )
+                native_ok = executable is not None
+                if executable is not None:
+                    libraries = tuple(
+                        path
+                        for path in sorted(executable.parent.iterdir())
+                        if path.suffix.casefold() in {".dll", ".so"} and path.is_file()
+                    )
+                    native_fp = digest(
+                        (native_fp, [_file_identity(path) for path in (executable, *libraries)])
+                    )
+                else:
+                    native_fp = None
             local_complete = (
                 present
                 and not missing
-                and all(
-                    (path / name).is_file()
-                    for name in (
-                        "model.bin",
-                        "config.json",
-                        "tokenizer.json",
-                        "preprocessor_config.json",
-                    )
-                )
+                and all((path / name).is_file() for name in engine.worker.required_model_files)
             )
             identity = ExecutionIdentity.model_validate(
                 dict(
                     recipe_id=recipe.id,
                     recipe_revision=recipe.revision,
                     adapter_version="b4.1",
-                    smoke_version=1,
+                    smoke_version=2,
                     profile_id=profile,
                     profile_generation=generation,
                     profile_fingerprint=profile_fp,
@@ -190,18 +248,12 @@ def collect_managed_deployments(
                     execution_path=execution_path,
                     local_complete_model=local_complete,
                     input_count=1,
-                    diarization_device=(
-                        settings.diarization.device_preference
-                        if settings.diarization.device_preference != "auto"
-                        else "cpu"
-                    )
-                    if settings.diarization.enabled
-                    else None,
+                    diarization_device=diar_device,
                     diarization_device_index=0 if settings.diarization.enabled else None,
                     diarization_model=settings.diarization.model
                     if settings.diarization.enabled
                     else None,
-                    diarization_fingerprint=None,
+                    diarization_fingerprint=diar_fingerprint,
                 )
             )
             fp = evidence_fingerprint(identity, settings)
@@ -234,6 +286,8 @@ def collect_managed_deployments(
                     "supported" if native_ok else "native_missing",
                 ),
             ]
+            if settings.diarization.enabled and (not diar_supported or diar_fingerprint is None):
+                facts.append(("diarization", "model-files", "failed", "component_missing"))
             observations = tuple(
                 CapabilityObservation.model_validate(
                     dict(
@@ -283,6 +337,7 @@ def local_provider(
         now=now,
         directory=evidence_directory(paths),
         fingerprints=_fingerprints.current_fingerprints,
+        memory_available=_fingerprints.available_memory,
     )
 
 

@@ -6,17 +6,26 @@ import hashlib
 import importlib.util
 import json
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, get_args
 
 from pydantic import BaseModel, ValidationError
 
 from utteran import application
+from utteran.asr.registry import create_asr_backend
 from utteran.config import Config, EnvironmentTokenProvider
 from utteran.config_adapter import ConfigAdaptationError, ExecutionContext, adapt_settings
-from utteran.errors import CancelledError, DependencyError, ModelNotFoundError
+from utteran.errors import (
+    CancelledError,
+    DependencyError,
+    MemoryBudgetError,
+    ModelNotFoundError,
+    VramExhaustedError,
+)
 from utteran.models.catalog import list_models
+from utteran.pipeline import BackendPool
 from utteran.types import CancelToken, ProgressEvent
 from utteran_contracts.engines import get_engine
 from utteran_contracts.worker import WorkerArtifact, WorkerErrorCode, WorkerRequest
@@ -108,6 +117,7 @@ def explicit_config(request: WorkerRequest) -> Config:
         cfg.ffmpeg.path is not None
         or cfg.general.native_dir is not None
         or cfg.general.venv_dir is not None
+        or cfg.asr.whisper_cpp.vad_model is not None
         or cfg.general.raw_subprocess_logs
         or cfg.general.default_profile not in {None, request.profile}
     ):
@@ -122,23 +132,50 @@ def explicit_config(request: WorkerRequest) -> Config:
         raise ProtocolError(WorkerErrorCode.INVALID_CONTEXT)
     # adapt_settings normalized cfg.asr.model to the checked ID; execution loads only the
     # frozen local directory (offline_preflight then verifies it on disk).
-    return bind_local_model(cfg, model_dir)
+    cfg = bind_local_model(cfg, model_dir)
+    if cfg.diarization.enabled:
+        from utteran.diarization.community import MODEL
+        from utteran.models.catalog import get_model
+        from utteran.models.manager import ModelManager
+
+        if cfg.diarization.model != MODEL or cfg.diarization.device not in {"cpu", "cuda", "xpu"}:
+            raise ProtocolError(WorkerErrorCode.UNSUPPORTED_SETTING)
+        from utteran_paths import resolve_data_paths
+
+        diar_model = ModelManager(resolve_data_paths().models).managed_path(
+            get_model(MODEL, backend="pyannote")
+        )
+        if not diar_model.is_dir():
+            raise ProtocolError(WorkerErrorCode.MODEL_MISSING)
+        cfg.diarization.model = str(diar_model)
+        if cfg.diarization.device in {"cuda", "xpu"}:
+            cfg.diarization.device += ":0"
+        cfg.diarization.memory_guard = "auto"
+    return cfg
 
 
 def offline_preflight(config: Config) -> None:
     """Refuse anything the engine declaration does not let the worker execute.
 
-    The declaration (utteran_contracts.engines) is the single list of worker routes:
-    whisper.cpp passes prompt/input as native argv and pyannote may resolve remote
-    components, so both stay closed there until proven otherwise.
+    The declaration is the list of implemented worker routes. Adapter load
+    verifies the local asset and execution device before inference.
     """
     try:
         engine = get_engine(config.asr.backend)
     except ValueError:
         raise ProtocolError(WorkerErrorCode.UNSUPPORTED_SETTING) from None
     worker = engine.worker
-    if worker.status != "implemented" or (config.diarization.enabled and not worker.diarization):
+    if worker.status != "implemented" or (
+        config.diarization.enabled
+        and (not worker.diarization or not Path(config.diarization.model).is_absolute())
+    ):
         raise ProtocolError(WorkerErrorCode.UNSUPPORTED_SETTING)
+    if engine.native_variants:
+        from utteran.capabilities.recipes import get_recipe
+
+        allowed = {get_recipe(recipe).requested_route.native_variant for recipe in worker.recipes}
+        if config.asr.whisper_cpp.variant not in allowed:
+            raise ProtocolError(WorkerErrorCode.UNSUPPORTED_SETTING)
     if (
         engine.runtime_module is not None
         and importlib.util.find_spec(engine.runtime_module) is None
@@ -165,6 +202,14 @@ def artifact(path: Path) -> WorkerArtifact:
         for block in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(block)
     return WorkerArtifact(path=str(path), size=path.stat().st_size, sha256=digest.hexdigest())
+
+
+@contextmanager
+def _close_pool(pool: BackendPool) -> Iterator[None]:
+    try:
+        yield
+    finally:
+        pool.close()
 
 
 def execute(
@@ -196,16 +241,32 @@ def execute(
             fraction=fraction,
         )
 
-    outcome = application.execute_single(
-        prepared.input_path,
-        prepared.config,
-        progress=progress,
-        cancel=cancel,
-        token_provider=EnvironmentTokenProvider(),
-        resume=request.resume,
-        force=request.force,
-        output_stem=request.context.output_stem,
+    token_provider = EnvironmentTokenProvider()
+    asr = create_asr_backend(
+        config.asr.backend,
+        config,
+        private_model=(request.context.asr_model, Path(config.asr.model)),
     )
+    diarization = None
+    if config.diarization.enabled:
+        from utteran.diarization.pyannote import PyannoteBackend
+
+        diarization = PyannoteBackend(offline=True)
+    pool = BackendPool(
+        token_provider, asr_backend=asr, diarization_backend=diarization, sequential_models=True
+    )
+    with _close_pool(pool):
+        outcome = application.execute_single(
+            prepared.input_path,
+            prepared.config,
+            progress=progress,
+            cancel=cancel,
+            token_provider=token_provider,
+            resume=request.resume,
+            force=request.force,
+            output_stem=request.context.output_stem,
+            backend_pool=pool,
+        )
     # Execution finished and core's finally blocks released locks before completion.
     if not outcome.job_id or not outcome.output_paths:
         raise ProtocolError(WorkerErrorCode.ARTIFACT_INVALID)
@@ -232,6 +293,8 @@ def error_code(error: Exception) -> WorkerErrorCode:
         return error.code
     if isinstance(error, CancelledError):
         return WorkerErrorCode.CANCELLED
+    if isinstance(error, (VramExhaustedError, MemoryBudgetError, MemoryError)):
+        return WorkerErrorCode.OUT_OF_MEMORY
     if isinstance(error, ModelNotFoundError):
         return WorkerErrorCode.MODEL_MISSING
     if isinstance(error, DependencyError):

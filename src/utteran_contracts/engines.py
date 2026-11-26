@@ -94,7 +94,7 @@ def _worker(
         status=status,
         blocker=blocker,
         recipes=recipes,
-        diarization=False,
+        diarization=status == "implemented",
         required_model_files=files,
     )
 
@@ -147,9 +147,7 @@ ENGINE_DECLARATIONS: tuple[EngineDeclaration, ...] = (
         structured_adapter=True,
         cancel_granularity="process",
         progress_granularity="percent",
-        # The native CLI receives the prompt and input path as argv, visible to other
-        # local processes; the worker keeps this route closed until that is addressed.
-        worker=_worker("not_implemented", "native_argv_privacy"),
+        worker=_worker("implemented", "none", ("wc-vulkan", "wc-ov-vk", "wc-ov")),
     ),
     EngineDeclaration(
         engine="openvino-genai",
@@ -183,10 +181,8 @@ DIARIZATION_DECLARATIONS: tuple[DiarizationEngineDeclaration, ...] = (
         requires_word_timestamps=True,
         cancel_granularity="stage",
         progress_granularity="stage",
-        # Pipeline.from_pretrained can resolve transitive remote components; the worker
-        # does not run it until a fully local load is proven.
-        worker="not_implemented",
-        worker_blocker="offline_load_unverified",
+        worker="implemented",
+        worker_blocker="none",
     ),
 )
 

@@ -1,5 +1,35 @@
 # AI 作業状態
 
+## Windows統合受入（2026-11-26、0.1.72・未リリース）
+
+- #22の統合指示を正本に、#93（#91を含む）へ#88をmerge。別cloneの`codex/windows-integration-acceptance`、統合`587484a`、修正`e4b886a`。元PR/mainは変更していない。
+- Windows pytest巨大ID・合成試験RAM依存・SetupのPython alias/PSModulePath・Windows合成E2E stdin停滞を修正。CPU実Setup/B4・4成功ジョブ・全5形式・取消retry・再起動照合・再検証の既定値保全を確認。実GUI操作はBLOCKED。
+- [受入表と再開手順](docs/architecture/ui3/windows-integration-acceptance.md)。Windows nativeは必須VM受入未完了のため無効（wheelがあってもunsupported/no writes）。Rust lib check/clippyは成功、実test/wheelはMSVC不足、installerはInno不足。GPU実機はNOT_RUN。
+- 最終HEADとFull/Native CIは統合Draft PRで追跡。Ready/merge/tag/Release/既定切替なし。#89/#55等を継続。
+
+## 現在地（2026-11-26、束G、0.1.72・未リリース）
+
+- [#92](https://github.com/zawa356/Utteran/issues/92)。[#91](https://github.com/zawa356/Utteran/pull/91) 固定 HEAD `357dac29f5b676e8c429736abf5c1c64d521d559` から `codex/g-multiprofile` を分岐。Draft の base は `claude/admiring-brown-nv1ghq`。
+- Windows Intel の Vulkan＋XPU を優先し、native IPC、管理下の offline pyannote、B4 実経路照合、B8 と新 GUI を接続。メモリだけ不明な場合は警告。残留 lease と NVML sampler の競合を修正。
+- [束G 仕様と実機受入](docs/architecture/ui3/g-multiprofile.md)。Windows VM・GPU・実モデルは NOT_RUN。正式配布は #8、総合受入は #22。CI は最終 Draft PR の checks を参照。
+
+
+- [#93 オーナーレビュー](https://github.com/zawa356/Utteran/pull/93#pullrequestreview-6067330147) の P2 3件に対応。B4合成音声の製品同梱、話者分離の段階別メモリ証拠と上限判定、community-1資産の保全と空のデータ領域への復旧を追加。開発版は 0.1.72。Windows の配布 payload と Intel 実機の受入は #22。
+
+## 現在地（2026-11-25、束F、0.1.71・未リリース）
+
+- main 基点 `f859a5d`（0.1.69）。作業ブランチ `claude/admiring-brown-nv1ghq`（セッション指定）。[#90](https://github.com/zawa356/Utteran/issues/90)・[#89](https://github.com/zawa356/Utteran/issues/89)。PR #88（0.1.70）とは独立、そのブランチは不変。
+- `--next-ui-v1` の［セットアップ］ページ: 環境診断 → 標準/カスタム → 計画（read-only）→ 確認後に開始 → 進捗・取消・再試行・再開・復元 → 初回のみ既定 Preset/Policy → readiness 確認 → 通常の B7 投入。
+- B8 `capability_smoke` が B4 smoke 子を heavy slot・journal で起動し証拠を記録。`/api/v1/readiness-checks`（推論なし）、`/api/v1/setup-diagnostics`（single-flight・timeout 1 回再試行）。#89: CUDA probe の timeout 再試行と nvidia-smi 番号の推測対応の廃止。fw-cuda の identity・VRAM は NVML、取れなければ unknown。
+- 未実施: Windows 実機・NVIDIA GPU・実モデル取得・実 VC++（[§8 手順](docs/architecture/ui3/f-setup.md)、#22）。話者分離付き v1 実行は後続 Issue 提案（worker の offline pyannote・diarization 証拠が必要）。
+- [束F 正本](docs/architecture/ui3/f-setup.md)。HEAD・試験件数・CI・独立レビューは Draft PR に記録する。
+
+## E-C2a 採用・E-C2b Windows 再出力（2026-11-25、[#86](https://github.com/zawa356/Utteran/issues/86)／[#87](https://github.com/zawa356/Utteran/issues/87)、0.1.70・未リリース）
+
+- Draft [#88](https://github.com/zawa356/Utteran/pull/88)、branch `claude/focused-keller-9b6u6q`（main `f859a5d` を merge 済み）。オーナーが Rust 方式を採用し、同じ Draft で製品組込みまで実施。
+- `native/`（core `utteran-safe-fs`、wheel `utteran-native-fs`）。Windows の再出力だけを `reexport_files_native.py` へ接続（ローカル NTFS、Git は常に拒否）。Linux/macOS は E-C1 の Python 実装のまま。
+- `build.ps1`／`gui.spec` が wheel を build・同梱、`native.yml` を全 PR／main で実行（固定 4 ID の gate）。Windows VM 受入は Codex へ引継ぎ中（[手順](docs/architecture/ui3/e-c2a-windows-vm-handoff.md)）。W-14 等が FAIL なら Windows を無効に戻す。[ADR §13](docs/architecture/ui3/e-c2a-rust-safe-fs.md)。
+
 ## 現在地（2026-11-25、束 E-C、0.1.69・未リリース）
 
 - main 基点 `b8463129d5bd213d81a11427a02d58f726a0e056`（0.1.68、E-B 統合済み）。作業ブランチ `claude/eloquent-fermi-nfc18l`（セッション指定）、[#82](https://github.com/zawa356/Utteran/issues/82)。E-B 統合後の main CI は着手時点で実行中（完了待ちなしで着手、オーナー承認済み）。

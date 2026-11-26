@@ -22,7 +22,9 @@ more than a tidier install folder, so onedir wins here.
 
 from __future__ import annotations
 
+import importlib.util
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 from PyInstaller.utils.win32.versioninfo import (
@@ -82,8 +84,15 @@ version_info = VSVersionInfo(
 # what PyInstaller's dependency walker actually decided to collect.
 FORBIDDEN_MODULES = ("utteran", "torch", "faster_whisper", "pyannote", "ctranslate2")
 
+# E-C2b (#87): the internal native wheel, imported lazily by reexport_files_native (so
+# PyInstaller cannot see it). A Windows build without it would ship re-export disabled.
+_NATIVE = importlib.util.find_spec("utteran_native_fs") is not None
+if sys.platform == "win32" and not _NATIVE:
+    raise SystemExit("utteran_native_fs is not installed in the build environment (build.ps1)")
+
 hidden_imports = (
-    collect_submodules("uvicorn")
+    (["utteran_native_fs"] if _NATIVE else [])
+    + collect_submodules("uvicorn")
     + collect_submodules("webview")
     + collect_submodules("fastapi")
     + collect_submodules("keyring")

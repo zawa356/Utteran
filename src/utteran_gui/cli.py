@@ -33,6 +33,10 @@ class CliError(RuntimeError):
     """A profile CLI could not be launched or returned invalid JSON."""
 
 
+class CliTimeout(CliError):
+    """The profile CLI outlived its timeout and was tree-killed (still a ``CliError``)."""
+
+
 @dataclass(frozen=True)
 class ProfileInfo:
     name: str
@@ -219,7 +223,7 @@ class CliAdapter:
         except subprocess.TimeoutExpired:
             self._tree_killer(process)
             stdout, stderr = process.communicate()
-            raise CliError(f"CLI timed out after {timeout:g}s: {' '.join(arguments)}") from None
+            raise CliTimeout(f"CLI timed out after {timeout:g}s: {' '.join(arguments)}") from None
         return subprocess.CompletedProcess(
             process.args, cast(int, process.returncode), stdout, stderr
         )

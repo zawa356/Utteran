@@ -16,7 +16,7 @@ from pydantic import AwareDatetime, Field, StrictBool, StrictInt, StrictStr
 
 from utteran_contracts.base import Contract, VersionedContract
 from utteran_contracts.control import Reason, Revision, Status
-from utteran_contracts.settings import Ref
+from utteran_contracts.settings import ProcessingSettings, Ref
 
 ProfileKind = Literal["cpu", "cuda", "intel", "vulkan"]
 PROFILE_KINDS: tuple[ProfileKind, ...] = ("cpu", "cuda", "intel", "vulkan")
@@ -31,6 +31,9 @@ ModelRef = Annotated[
 AgreementId = Annotated[StrictStr, Field(pattern=r"^hf-gated:[A-Za-z0-9][A-Za-z0-9_./-]{0,199}$")]
 CredentialId = Literal["hf_token"]
 ByteCount = Annotated[StrictInt, Field(ge=0)]
+
+# Fixed CLI status for the managed community-1 verify/download subprocess.
+COMMUNITY_ASSETS_MISMATCH_EXIT = 5
 
 PlanState = Literal["proposed", "approved", "consumed", "expired"]
 ChangeAction = Literal["create", "reuse", "rebuild", "verify"]
@@ -49,6 +52,7 @@ StepKind = Literal[
     "native_build",
     "ir_build",
     "smoke",
+    "capability_smoke",
     "register",
 ]
 StepRecovery = Literal["rerun", "verified_reuse", "manager_resume"]
@@ -60,6 +64,7 @@ StepReason = Literal[
     "launch_failed",
     "process_failed",
     "verification_failed",
+    "community_assets_mismatch",
     "credential_required",
     "agreement_required",
     "network_error",
@@ -67,12 +72,21 @@ StepReason = Literal[
     "interrupted",
     "cancelled",
     "superseded",
+    # capability_smoke (B4 evidence) outcomes, grouped; never the raw child output.
+    "smoke_model_incomplete",
+    "smoke_backend_unavailable",
+    "smoke_out_of_memory",
+    "smoke_route_unverified",
+    "smoke_unsupported",
+    "smoke_failed",
 ]
 EvidenceKind = Literal[
     "profile_manifest_verified",
     "manager_verified",
     "credential_checked",
     "smoke_output_present",
+    "capability_evidence_recorded",
+    "native_asset_verified",
 ]
 WaitingReason = Literal[
     "credential_required", "agreement_required", "inventory_changed", "approval_expired"
@@ -81,10 +95,12 @@ SetupErrorCode = Literal[
     "launch_failed",
     "process_failed",
     "verification_failed",
+    "community_assets_mismatch",
     "network_error",
     "preflight_invalid",
     "executor_failed",
     "unsupported_step",
+    "smoke_failed",
 ]
 # Fixed refusal codes for plan creation (HTTP 409/422; see docs/architecture/b8/api.md).
 PlanRejection = Literal[
@@ -96,7 +112,17 @@ PlanRejection = Literal[
     "diarization_model_mismatch",
     "venv_build_platform_unsupported",
     "profile_rebuild_unsupported",
+    "verification_unsupported",
+    "defaults_require_verification",
 ]
+# B4 recipes a setup can verify with the explicit smoke child (utteran.capabilities.smoke).
+VerificationRecipe = Literal["fw-cpu", "fw-cuda", "wc-vulkan", "wc-ov", "wc-ov-vk"]
+NATIVE_VERIFICATION_RECIPES = MappingProxyType(
+    {"vulkan": "wc-vulkan", "openvino": "wc-ov", "openvino_vulkan": "wc-ov-vk"}
+)
+VERIFICATION_RECIPES: MappingProxyType[str, str] = MappingProxyType(
+    {"cpu": "fw-cpu", "cuda": "fw-cuda", "intel": "wc-vulkan", "vulkan": "wc-vulkan"}
+)
 
 PLAN_TTL_SECONDS = 24 * 3600
 APPROVAL_TTL_SECONDS = 24 * 3600
@@ -191,6 +217,23 @@ SETUP_MODELS: MappingProxyType[str, SetupModel] = MappingProxyType(
                 1632087572,
                 False,
             ),
+            SetupModel("whisper-cpp", "base", "GGML", "ggerganov/whisper.cpp", 147951465, False),
+            SetupModel(
+                "whisper-cpp",
+                "large-v3-turbo-q5_0",
+                "GGML",
+                "ggerganov/whisper.cpp",
+                574041195,
+                False,
+            ),
+            SetupModel(
+                "whisper-cpp-vad",
+                "silero-v6.2.0",
+                "GGML VAD",
+                "ggml-org/whisper-vad",
+                885159,
+                False,
+            ),
             SetupModel(
                 "pyannote",
                 "pyannote/speaker-diarization-community-1",
@@ -208,12 +251,14 @@ PROFILE_BACKENDS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
     {
         "cpu": frozenset({"faster-whisper", "pyannote"}),
         "cuda": frozenset({"faster-whisper", "pyannote"}),
-        "intel": frozenset({"faster-whisper", "whisper-cpp", "openvino-genai", "pyannote"}),
-        "vulkan": frozenset({"faster-whisper", "whisper-cpp", "pyannote"}),
+        "intel": frozenset(
+            {"faster-whisper", "whisper-cpp", "whisper-cpp-vad", "openvino-genai", "pyannote"}
+        ),
+        "vulkan": frozenset({"faster-whisper", "whisper-cpp", "whisper-cpp-vad", "pyannote"}),
     }
 )
 # Backends the B8 executor can set up end to end (no native build / IR generation yet).
-EXECUTABLE_BACKENDS: frozenset[str] = frozenset({"faster-whisper", "pyannote"})
+EXECUTABLE_BACKENDS = frozenset({"faster-whisper", "whisper-cpp", "whisper-cpp-vad", "pyannote"})
 ASR_BACKENDS: frozenset[str] = frozenset({"faster-whisper", "whisper-cpp", "openvino-genai"})
 
 
@@ -221,9 +266,20 @@ ASR_BACKENDS: frozenset[str] = frozenset({"faster-whisper", "whisper-cpp", "open
 
 
 class SetupPlanRequest(VersionedContract):
+    nonnullable_optional = frozenset({"verification_settings", "apply_defaults"})
+
     profile_kind: ProfileKind
     model_refs: Annotated[tuple[ModelRef, ...], Field(min_length=1, max_length=MAX_MODEL_REFS)]
     diarization_enabled: StrictBool
+    # F-A: the effective settings a job will run with. When present the plan ends with a
+    # ``capability_smoke`` step that records B4 evidence for exactly these settings
+    # (ASR only; the evidence scope binds the whole settings value). Private: the plan
+    # view exposes only its digest.
+    verification_settings: ProcessingSettings | None = None
+    # PR #91 P2-1: the person's intent "first setup: create the common defaults from the
+    # verified settings if the settings store is empty". Stored in the hashed plan so a
+    # reload, a retry or a second window recovers it; a re-verification never sets it.
+    apply_defaults: StrictBool | None = None
 
 
 class ApprovalRequest(VersionedContract):
@@ -272,8 +328,24 @@ class SetupStep(Contract):
     target: Annotated[StrictStr, Field(min_length=1, max_length=240)] | None
 
 
+class PlanVerification(Contract):
+    """Stored (private) verification target of a plan; never returned as is."""
+
+    recipe_id: VerificationRecipe
+    model_ref: ModelRef
+    settings: ProcessingSettings
+
+
+class PlanVerificationView(Contract):
+    recipe_id: VerificationRecipe
+    model_ref: ModelRef
+    settings_sha256: Digest
+
+
 class PlanContent(VersionedContract):
     """Hashed plan body (``plan_hash`` = SHA-256 of its canonical JSON)."""
+
+    nonnullable_optional = frozenset({"verification", "apply_defaults"})
 
     profile_kind: ProfileKind
     model_refs: tuple[ModelRef, ...]
@@ -285,9 +357,13 @@ class PlanContent(VersionedContract):
     preserved_environment_ids: tuple[ProfileKind, ...]
     required_agreements: tuple[AgreementId, ...]
     missing_credentials: tuple[CredentialId, ...]
+    verification: PlanVerification | None = None
+    apply_defaults: StrictBool | None = None
 
 
 class SetupPlan(VersionedContract):
+    nonnullable_optional = frozenset({"verification", "apply_defaults"})
+
     id: PlanId
     revision: Revision
     state: PlanState
@@ -305,6 +381,8 @@ class SetupPlan(VersionedContract):
     preserved_environment_ids: tuple[ProfileKind, ...]
     required_agreements: tuple[AgreementId, ...]
     missing_credentials: tuple[CredentialId, ...]
+    verification: PlanVerificationView | None = None
+    apply_defaults: StrictBool | None = None
 
 
 class Approval(VersionedContract):
@@ -377,6 +455,8 @@ PUBLIC_MODELS: tuple[type[Contract], ...] = (
     Estimate,
     SetupChange,
     SetupStep,
+    PlanVerification,
+    PlanVerificationView,
     PlanContent,
     SetupPlan,
     Approval,

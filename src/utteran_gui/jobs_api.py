@@ -126,6 +126,18 @@ def register_job_routes(app: FastAPI, runtime: JobRuntime) -> None:
 
         return await guarded(request, handler)
 
+    @app.post("/readiness-checks")
+    async def readiness(request: Request) -> Response:
+        # F-A: read-only readiness of one effective settings value (no token, no smoke).
+        from utteran_gui.setup_readiness import check_readiness
+
+        async def handler() -> Response:
+            body = await _body(request)
+            view = await call(lambda: check_readiness(parts()[1], body))
+            return json(200, view, {"Cache-Control": "no-store"})
+
+        return await guarded(request, handler)
+
     @app.get("/jobs")
     async def list_jobs(request: Request) -> Response:
         cursor = request.query_params.get("cursor")

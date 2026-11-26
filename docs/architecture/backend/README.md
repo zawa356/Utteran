@@ -5,6 +5,10 @@
 追補: 2026-11-12 JST、開発版 **0.1.51**（UI-3 S5-A: `--next-ui-v1`の新UIがB5/B7の単一ジョブ経路を使う。B5 store初回並行openの競合修正。下表のB5行と[ui3/s5a](../ui3/s5a-v1-single-job.md)）。
 追補: 2026-11-16 JST、開発版 **0.1.52**（束A1: backend固有分岐をエンジン宣言表へ一本化。workerの実行範囲と下表の状態は不変。[engine-adapters](engine-adapters.md)）。
 
+## 追補（2026-11-25、0.1.71未リリース、束F）
+
+B8 の承認済み setup に検証設定を付けると、最後の `capability_smoke` ステップが既存 B4 smoke 子を B8 の heavy slot・journal で起動し、private evidence を記録する（下表の「B4登録は拒否」「setup成功はB4 readyに昇格しない」を更新: 昇格ではなく、B4 evaluator が従来どおり証拠を読んで判定する）。`POST /api/v1/readiness-checks`（推論なし）と `GET/POST /api/v1/setup-diagnostics`（single-flight・非同期）を追加。fw-cuda の runtime/hardware fingerprint と VRAM を NVML から取得（取れなければ unknown）。CUDA 実機・Windows 実機は未受入。[ui3/f-setup](../ui3/f-setup.md)。
+
 ## 追補（2026-11-17、0.1.56未リリース、現行main）
 
 束A1/A2/C1/C2a/C2bを[#49](https://github.com/zawa356/Utteran/pull/49)〜[#53](https://github.com/zawa356/Utteran/pull/53)でmainへ統合。HEAD `c5af76726f913e4044f6e73492fee851c2acdd8c`、[最終main CI](https://github.com/zawa356/Utteran/actions/runs/44033681672)は初回success。以下のB1〜B9統合表は先行基盤の履歴。現行のv1 runtimeは**layout v7**（C2aでjob_visibilityを追加）、一覧のETag・形式別成果物照合は[#52](https://github.com/zawa356/Utteran/pull/52)の修正を含む。

@@ -264,6 +264,77 @@ class Repository:
             )
             return status, headers, result
 
+    def create_defaults_if_empty(
+        self, key: str, preset: PresetWrite, policy: PolicyWrite
+    ) -> dict[str, Any]:
+        """束F (PR #91 P2-1): one Preset + one Policy, only into an empty store, atomically.
+
+        One ``BEGIN IMMEDIATE``: the replay of ``key`` (one per setup plan) is read first, so
+        any repeat - a reload, a lost answer, a second window - gets the first answer back;
+        otherwise both resources are created only if neither collection has a live resource,
+        else nothing is written and ``kept`` is recorded. Never edits or deletes anything.
+        """
+        endpoint = "/api/v1/setup-defaults"
+        # The key is already unique per plan: bind the record to the key only, so a repeat
+        # after an upgrade (different serialisation) still gets the recorded answer.
+        digest = hmac.new(self._secret, key.encode(), hashlib.sha256).hexdigest()
+        scope = (self._installation, "POST", endpoint, key)
+        with self._transaction() as db:
+            row = db.execute(
+                "SELECT digest,body FROM replays WHERE "
+                "installation=? AND method=? AND endpoint=? AND key=?",
+                scope,
+            ).fetchone()
+            if row is not None:
+                if not hmac.compare_digest(row[0], digest):
+                    raise SettingsError("idempotency_conflict", 409)
+                try:
+                    recorded = json.loads(row[1])
+                    if not isinstance(recorded, dict):
+                        raise ValueError
+                except (ValueError, TypeError):
+                    raise SettingsError("store_corrupt") from None
+                return {**recorded, "replayed": True}
+            live = db.execute(
+                "SELECT COUNT(*) FROM records r WHERE r.deleted=0 AND r.revision="
+                "(SELECT MAX(s.revision) FROM records s WHERE s.kind=r.kind AND s.id=r.id)"
+            ).fetchone()[0]
+            if live:
+                result: dict[str, Any] = {"state": "kept", "preset": None, "policy": None}
+            else:
+                created_preset = self._append(db, "presets", "pre_" + uuid4().hex, 1, preset)
+                created_policy = self._append(
+                    db, "execution-policies", "pol_" + uuid4().hex, 1, policy
+                )
+                assert created_preset is not None and created_policy is not None
+                result = {
+                    "state": "created",
+                    "preset": {"id": created_preset.id, "revision": 1},
+                    "policy": {"id": created_policy.id, "revision": 1},
+                }
+            db.execute(
+                "INSERT INTO replays VALUES (?,?,?,?,?,?,?,?)",
+                (*scope, digest, 200, canonical({}), canonical(result)),
+            )
+            return {**result, "replayed": False}
+
+    def defaults_state(self, key: str) -> dict[str, Any] | None:
+        """Read-only: the recorded answer of ``create_defaults_if_empty`` for ``key``."""
+        scope = (self._installation, "POST", "/api/v1/setup-defaults", key)
+        with self._transaction(write=False) as db:
+            row = db.execute(
+                "SELECT body FROM replays WHERE "
+                "installation=? AND method=? AND endpoint=? AND key=?",
+                scope,
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            result = json.loads(row[0])
+        except ValueError:
+            raise SettingsError("store_corrupt") from None
+        return result if isinstance(result, dict) else None
+
     def list(self, kind: Kind, cursor: str | None = None, *, limit: int = 100) -> dict[str, Any]:
         if not 1 <= limit <= 100:
             raise SettingsError("cursor_invalid", 400)

@@ -269,9 +269,10 @@ def _synthetic_core(monkeypatch: pytest.MonkeyPatch, backend: SyntheticASR) -> l
 
     def runner(*args: Any, **kwargs: Any) -> PipelineOutcome:
         loaded.append(args[1].asr.model)
-        return original(*args, **kwargs, asr_backend=backend)
+        return original(*args, **kwargs)
 
     monkeypatch.setattr(application, "execute_single", runner)
+    monkeypatch.setattr(worker_runtime, "create_asr_backend", lambda *a, **kw: backend)
     return loaded
 
 

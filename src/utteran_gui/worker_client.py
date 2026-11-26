@@ -188,12 +188,9 @@ class WorkerClient:
             raise WorkerClientError(WorkerErrorCode.MALFORMED_MESSAGE) from None
         raw = encode_record(request, REQUEST_LIMIT)
         command = self.command(request.profile)
-        environment = self.adapter.environment(request.profile)
-        for key in ("PYTHONPATH", "PYTHONHOME"):
-            environment.pop(key, None)
-        environment.update(
-            HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1"
-        )
+        from utteran_gui.capability_transport import bridge_environment
+
+        environment = bridge_environment(request.profile, self.adapter.environment(request.profile))
         kwargs = build_popen_kwargs(cwd=self.adapter.repo_root, env=environment)
         kwargs.update(
             stdin=subprocess.PIPE, text=False, encoding=None, errors=None, bufsize=-1, shell=False

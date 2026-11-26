@@ -30,7 +30,6 @@ from utteran_contracts.control import OperationStatus, ProcessIdentity, ReasonCo
 from utteran_contracts.setup import (
     APPROVAL_TTL_SECONDS,
     PLAN_TTL_SECONDS,
-    SETUP_MODELS,
     Approval,
     ApprovalRequest,
     EvidenceKind,
@@ -162,11 +161,6 @@ def plan_hash(content: PlanContent) -> str:
     return hashlib.sha256(canonical(content.to_wire()).encode()).hexdigest()
 
 
-def required_credentials(model_refs: Collection[str]) -> frozenset[str]:
-    gated = any(SETUP_MODELS[ref].gated for ref in model_refs if ref in SETUP_MODELS)
-    return frozenset({"hf_token"}) if gated else frozenset()
-
-
 class SetupControlStore(JobControlStore):
     """B7 store opened at layout v4 (setup plans / approvals / operations)."""
 
@@ -288,6 +282,15 @@ class SetupControlStore(JobControlStore):
             state = "expired"  # computed; a GET never writes
         wire = content.to_wire()
         wire.pop("schema_version")
+        if content.verification is not None:
+            # The stored settings may hold a prompt: the public view carries a digest only.
+            wire["verification"] = {
+                "recipe_id": content.verification.recipe_id,
+                "model_ref": content.verification.model_ref,
+                # Keyed (installation secret): a plain hash of a mostly known template
+                # would let a short prompt be confirmed by guessing.
+                "settings_sha256": self._digest(content.verification.settings.to_wire()),
+            }
         try:
             return SetupPlan.model_validate(
                 {
@@ -411,7 +414,7 @@ class SetupControlStore(JobControlStore):
                 raise ControlError(E.AGREEMENT_UNKNOWN)
             if required - accepted:
                 raise ControlError(E.AGREEMENT_REQUIRED)  # never assumed on the user's behalf
-            if required_credentials(content.model_refs) - set(credentials):
+            if content.required_agreements and "hf_token" not in credentials:
                 raise ControlError(E.CREDENTIAL_REQUIRED)
             now = self._clock()
             plan_expiry = datetime.fromisoformat(row[7].replace("Z", "+00:00"))
@@ -737,7 +740,7 @@ class SetupControlStore(JobControlStore):
         known = {content.inventory_fingerprint, *(v for v in (last[0] if last else None,) if v)}
         if fingerprint not in known:
             raise ControlError(E.REAPPROVAL_REQUIRED)
-        if required_credentials(content.model_refs) - set(credentials):
+        if content.required_agreements and "hf_token" not in credentials:
             raise ControlError(E.CREDENTIAL_REQUIRED)
         return (*link, content)
 

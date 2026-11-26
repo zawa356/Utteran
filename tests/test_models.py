@@ -500,3 +500,70 @@ def test_preflight_classifies_missing_model_agreement(
     monkeypatch.setattr("huggingface_hub.hf_hub_download", gated_file)
     with pytest.raises(ModelAgreementError, match="利用条件"):
         ModelManager(tmp_path / "models", StaticTokenProvider("hf_valid")).check_access(entry)
+
+
+@pytest.mark.parametrize("state", ["verified", "partial", "wrong_revision"])
+def test_pinned_community_verify_and_download_leave_existing_bytes_untouched(
+    tmp_path, monkeypatch, state
+):
+    import hashlib
+
+    from utteran.diarization import community
+    from utteran.errors import CommunityAssetsMismatchError
+
+    class NeverToken(TokenProvider):
+        def get_token(self):
+            pytest.fail("existing asset check should be offline and token-free")
+
+    monkeypatch.setattr(
+        "utteran.models.manager._download_hub_entry", lambda *a, **kw: pytest.fail("download")
+    )
+    manager = ModelManager(tmp_path, token_provider=NeverToken())
+    entry = get_model(community.MODEL)
+    path = manager.managed_path(entry)
+    path.mkdir(parents=True)
+    data = b"pipeline: {name: pyannote.audio.pipelines.SpeakerDiarization}\nparams: {}\n"
+    data = data.ljust(444, b" ")
+    src = b"synthetic component"
+    name = "embedding/pytorch_model.bin"
+    config = path / "config.yaml"
+    config.write_bytes(data)
+    monkeypatch.setattr(
+        community,
+        "_CONFIG_BLOB",
+        hashlib.sha1(b"blob 444\0" + data, usedforsecurity=False).hexdigest(),
+    )
+    monkeypatch.setattr(community, "ASSETS", {name: (len(src), hashlib.sha256(src).hexdigest())})
+    if state != "partial":
+        asset = path / name
+        asset.parent.mkdir()
+        asset.write_bytes(src if state == "verified" else src.upper())
+    before = {item: item.read_bytes() for item in path.rglob("*") if item.is_file()}
+
+    verified = manager.verify(entry, managed_only=True)
+    if state == "verified":
+        assert verified.ok and not verified.community_assets_mismatch
+        assert manager.download(entry, managed_only=True) == path
+    else:
+        assert not verified.ok and verified.community_assets_mismatch
+        with pytest.raises(CommunityAssetsMismatchError):
+            manager.download(entry, managed_only=True)
+    assert {item: item.read_bytes() for item in path.rglob("*") if item.is_file()} == before
+
+
+def test_managed_cli_reports_conflict_and_clean_root_recovery(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from utteran.cli import app
+    from utteran.diarization.community import MODEL
+    from utteran_contracts.setup import COMMUNITY_ASSETS_MISMATCH_EXIT
+
+    monkeypatch.setenv("UTTERAN_MODEL_DIR", str(tmp_path))
+    entry = get_model(MODEL)
+    path = ModelManager(tmp_path).managed_path(entry)
+    path.mkdir(parents=True)
+    (path / "config.yaml").write_bytes(b"old synthetic asset")
+    result = CliRunner().invoke(app, ["models", "verify", entry.key, "--managed-only"])
+    assert result.exit_code == COMMUNITY_ASSETS_MISMATCH_EXIT
+    assert "新しいデータ領域" in result.output
+    assert (path / "config.yaml").read_bytes() == b"old synthetic asset"

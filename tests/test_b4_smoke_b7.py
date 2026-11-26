@@ -298,3 +298,16 @@ refresh_inventory(request, now=datetime.now(UTC))
     assert completed.returncode == 0, completed.stderr
     after = {p.as_posix(): p.read_bytes() for p in w.root.rglob("*") if p.is_file()}
     assert after == before
+
+
+def test_verified_asr_memory_loss_warns_and_known_shortage_blocks_prestart(world, monkeypatch):
+    w, env = world
+    source = env.file()
+    refused(env, source)
+    assert w.smoke().outcome == "passed"
+    monkeypatch.setattr(fingerprint_module, "available_memory", lambda _device: None)
+    snapshot = accepted(env, source)
+    assert "memory_unknown" in snapshot.resolved.reason_codes
+    assert env.admission.prestart_check(snapshot) is None
+    monkeypatch.setattr(fingerprint_module, "available_memory", lambda _device: 0)
+    assert env.admission.prestart_check(snapshot) == "candidate_unavailable"

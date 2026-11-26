@@ -175,6 +175,25 @@ class ProbeOutcome:
     duration_seconds: float
     detail: str | None = None
     cached: bool = False
+    # #89: 2 when a timed-out probe was run once more in the same pass.
+    attempts: int = 1
+
+
+# #89: probes whose first, cold run can exceed the per-probe timeout while the CUDA driver,
+# cuBLAS/cuDNN or torch DLLs are loaded from disk for the first time (a second run of the
+# same probe then succeeds). Only a *timeout* is retried, once per probe, within a fixed
+# number of retries per detection pass. An error or a definite answer is never retried.
+#
+# Budget (PR #91 P3): at most ONE retry per pass and only while the pass is young (the retry
+# must end within RETRY_WINDOW_SECONDS of the pass start), so the legacy outer bounds still
+# hold: a 1-GPU pass is 9 probes x 20 s = 180 s at worst without retries; one early retry
+# (finishing by 70 s) keeps it at <= 9 x 20 + 20 = 200 s only in the all-timeout case that
+# already reaches the legacy ceiling; the cold first-probes case stays well inside it.
+# This module is shared by the legacy CLI/`/api/environment` and the new diagnostics,
+# so both get this behaviour.
+RETRYABLE_TIMEOUT_PROBES = frozenset({"ctranslate2_cuda_count", "ctranslate2_cuda", "torch_cuda"})
+MAX_TIMEOUT_RETRIES_PER_PASS = 1
+RETRY_WINDOW_SECONDS = 70.0
 
 
 @dataclass(frozen=True)
@@ -566,13 +585,28 @@ def _detect_isolated_runtimes(
     outcomes: list[ProbeOutcome] = []
     position = 0
     total = 7
+    retries = MAX_TIMEOUT_RETRIES_PER_PASS
+    pass_started = time.monotonic()
 
     def execute(name: str, label: str, *, argument: str | None = None) -> _ProbeRun:
-        nonlocal position
+        nonlocal position, retries
         position += 1
         if progress is not None:
             progress(ProbeProgress(name, label, position, total, "started"))
         run = run_isolated_probe(name, label, timeout_seconds, argument=argument)
+        young = time.monotonic() - pass_started + timeout_seconds <= RETRY_WINDOW_SECONDS
+        if (
+            run.outcome.status == "timeout"
+            and name in RETRYABLE_TIMEOUT_PROBES
+            and retries > 0
+            and young
+        ):
+            retries -= 1
+            _LOGGER.info("Device probe %s timed out; retrying once", name)
+            if progress is not None:
+                progress(ProbeProgress(name, label, position, total, "started"))
+            again = run_isolated_probe(name, label, timeout_seconds, argument=argument)
+            run = _ProbeRun(replace(again.outcome, attempts=2), again.result)
         outcomes.append(run.outcome)
         if progress is not None:
             progress(ProbeProgress(name, label, position, total, cast(Any, run.outcome.status)))
@@ -671,8 +705,15 @@ def _combine_ctranslate2(
     )
     count = int(count_run.result.get("count", 0)) if count_run.result is not None else 0
     devices: list[AcceleratorDevice] = []
+    # nvidia-smi enumerates in PCI order and ignores CUDA_VISIBLE_DEVICES, while CUDA's
+    # ordinal follows CUDA_DEVICE_ORDER (FASTEST_FIRST by default): the indices of the two
+    # are not the same thing. Only a single visible device matched to a single reported
+    # GPU is unambiguous (#89); otherwise name and memory stay unknown, never guessed.
+    unambiguous = count == 1 and len(cuda_runs) == 1 and len(metadata) == 1
     for index, run in enumerate(cuda_runs):
-        name, memory = metadata.get(index, (f"NVIDIA CUDA {index}", None))
+        name, memory = (
+            next(iter(metadata.values())) if unambiguous else (f"NVIDIA CUDA {index}", None)
+        )
         compute_types = (
             tuple(str(item) for item in run.result.get("compute_types", ()))
             if run.result is not None
@@ -937,6 +978,7 @@ def _cached_outcome(raw: dict[str, Any]) -> ProbeOutcome:
         float(raw.get("duration_seconds", 0.0)),
         None if raw.get("detail") is None else str(raw["detail"]),
         bool(raw.get("cached", False)),
+        int(raw.get("attempts", 1)) if isinstance(raw.get("attempts", 1), int) else 1,
     )
 
 

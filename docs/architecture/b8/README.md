@@ -49,6 +49,14 @@ Linux/macOSではvenv作成（setup.ps1）が不可のため`venv_build_platform
 実GPU・実ダウンロード・実smokeは未実施。`ProcessChildRunner`は実Python子processで`shell=False`・
 出力非保持のみ検証。
 
+### 追補（2026-11-25、0.1.71、束F）
+
+| step | 実行手段 | 成功条件 |
+|---|---|---|
+| `capability_smoke` | profile python `-I -B -m utteran.capabilities.smoke run`（stdin に私的 request、B4 bridge と同じ環境 allowlist） | exit 0 **かつ** 子の固定 outcome が `passed`（B4 private evidence を子が記録）。readiness は B4 evaluator が読取時に判定 |
+
+`SetupPlanRequest.verification_settings`（任意、ASR のみ・cpu/cuda）があるときだけ計画される。plan の公開 view は設定の SHA-256 のみ。話者分離ありの plan は CLI `smoke` の後に `capability_smoke` を置く。詳細 [ui3/f-setup](../ui3/f-setup.md)。
+
 ## 受入規則の対応
 
 - Plan/Approvalなしで資源を変更しない: plan作成はstat/manifest読取のみ（テストでprocess起動0・FS不変）。
