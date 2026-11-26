@@ -30,6 +30,7 @@ from utteran_control.store import IdempotencyScope
 from utteran_gui.job_admission import ResolutionTokens
 from utteran_gui.job_runtime import JobRuntime, RuntimeStateError
 from utteran_gui.settings_api import _body, _key, _match
+from utteran_gui.setup_defaults import DefaultsRefused
 from utteran_gui.setup_planner import PlanRejected, SetupObservation, build_plan
 from utteran_settings.errors import SettingsError
 from utteran_settings.inheritance import safe_contract_issues
@@ -87,6 +88,8 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
             raise SetupApiError(exc.code.value, exc.status) from None
         except RuntimeStateError as exc:
             raise SetupApiError(exc.code, 503) from None
+        except DefaultsRefused as exc:
+            raise SetupApiError(exc.code, exc.status) from None
 
     async def guarded(handler: Callable[[], Awaitable[Response]]) -> Response:
         try:
@@ -136,6 +139,8 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
         executor = runtime.setup_executor
         # A profile being built or verified is not probed concurrently (heavy slot owner).
         diagnostics.busy_profile = lambda: None if executor is None else executor.active_operation
+        # The atomic guard: the same gate the dispatcher holds for every job/setup dispatch.
+        diagnostics.gate = runtime.execution_gate
         return diagnostics
 
     @app.get("/setup-diagnostics")
@@ -275,11 +280,35 @@ def register_setup_routes(app: FastAPI, runtime: JobRuntime) -> None:
         view = await call(lambda: store().get_setup(identifier))
         return json(200, view.to_wire(), {"ETag": f'"{view.revision}"'})
 
+    @app.get("/setup-operations/{operation_id}/defaults")
+    async def get_defaults(operation_id: str) -> Response:
+        # Read-only: whether this setup asked for defaults and what was recorded (PR #91 P2-1).
+        from utteran_gui.setup_defaults import defaults_view
+
+        identifier = setup_id_of(operation_id)
+        view = await call(lambda: defaults_view(store(), runtime.settings_path, identifier))
+        return json(200, view, {"Cache-Control": "no-store"})
+
     @app.post("/setup-operations/{operation_id}/{action}")
     async def setup_action(operation_id: str, action: str, request: Request) -> Response:
-        if action not in {"retry", "resume", "cancel"}:
+        if action not in {"retry", "resume", "cancel", "defaults"}:
             raise SetupApiError("resource_not_found", 404)
         identifier = setup_id_of(operation_id)
+        if action == "defaults":
+            # Idempotent by construction (one B5 transaction keyed by the plan): no
+            # Idempotency-Key or If-Match is needed; a repeat returns the recorded answer.
+            from utteran_gui.setup_defaults import apply_defaults
+
+            async def create() -> Response:
+                body = await _body(request)
+                if body != {"schema_version": 1}:
+                    raise SetupApiError("contract_validation_failed", 422)
+                view = await call(
+                    lambda: apply_defaults(store(), runtime.settings_path, identifier)
+                )
+                return json(200, view, {"Cache-Control": "no-store"})
+
+            return await guarded(create)
 
         async def handler() -> Response:
             key = _key(request)

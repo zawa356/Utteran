@@ -4,7 +4,7 @@ import type { ProfileKind, StepProgressView } from "../../api/setup";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore, useI18n } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
-import { ASR_MODELS, isTerminal, VERIFIABLE_PROFILES, verifyRefusal, WORKER_MODELS } from "../../domain/v1/setup";
+import { ASR_MODELS, isTerminal, readinessKey, VERIFIABLE_PROFILES, verifyRefusal, WORKER_MODELS } from "../../domain/v1/setup";
 import type { MessageKey } from "../../i18n";
 import { ja } from "../../i18n/ja";
 
@@ -66,7 +66,12 @@ const canStart = computed(
     (plan.value.requiredAgreements.length === 0 || choice.value.agreementAccepted) &&
     state.value.start.phase !== "pending",
 );
-const readiness = computed(() => state.value.readiness.data);
+// Shown only for the Preset/Policy revisions it was computed for (a later selection hides it).
+const readiness = computed(() =>
+  state.value.readiness.key !== null && state.value.readiness.key === readinessKey(library.value.preset.item, library.value.policy.item)
+    ? state.value.readiness.data
+    : null,
+);
 const verifiable = computed(() => readiness.value?.candidates.find((c) => c.verifiable) ?? null);
 
 onMounted(() => {
@@ -299,7 +304,14 @@ onMounted(() => {
         <v-alert v-if="op.status === 'succeeded'" type="success" density="compact" data-testid="fsetup-succeeded">{{ t("fs.op.succeeded") }}</v-alert>
         <p v-if="state.defaults.phase === 'created'" data-testid="fsetup-defaults-created">{{ t("fs.defaults.created") }}</p>
         <p v-if="state.defaults.phase === 'kept'" data-testid="fsetup-defaults-kept">{{ t("fs.defaults.kept") }}</p>
-        <ErrorAlert v-if="state.defaults.phase === 'error' && state.defaults.error" :error="state.defaults.error" :title="t('fs.defaults.failed')" testid="fsetup-defaults-error" />
+        <ErrorAlert
+          v-if="state.defaults.phase === 'error' && state.defaults.error"
+          :error="state.defaults.error"
+          :title="t('fs.defaults.failed')"
+          testid="fsetup-defaults-error"
+          :retry-label="t('fs.defaults.retry')"
+          :on-retry="() => setup.retryDefaults()"
+        />
       </section>
 
       <!-- 5. readiness -->

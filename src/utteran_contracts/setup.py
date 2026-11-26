@@ -107,6 +107,7 @@ PlanRejection = Literal[
     "venv_build_platform_unsupported",
     "profile_rebuild_unsupported",
     "verification_unsupported",
+    "defaults_require_verification",
 ]
 # B4 recipes a setup can verify with the explicit smoke child (utteran.capabilities.smoke).
 VerificationRecipe = Literal["fw-cpu", "fw-cuda"]
@@ -237,7 +238,7 @@ ASR_BACKENDS: frozenset[str] = frozenset({"faster-whisper", "whisper-cpp", "open
 
 
 class SetupPlanRequest(VersionedContract):
-    nonnullable_optional = frozenset({"verification_settings"})
+    nonnullable_optional = frozenset({"verification_settings", "apply_defaults"})
 
     profile_kind: ProfileKind
     model_refs: Annotated[tuple[ModelRef, ...], Field(min_length=1, max_length=MAX_MODEL_REFS)]
@@ -247,6 +248,10 @@ class SetupPlanRequest(VersionedContract):
     # (ASR only; the evidence scope binds the whole settings value). Private: the plan
     # view exposes only its digest.
     verification_settings: ProcessingSettings | None = None
+    # PR #91 P2-1: the person's intent "first setup: create the common defaults from the
+    # verified settings if the settings store is empty". Stored in the hashed plan so a
+    # reload, a retry or a second window recovers it; a re-verification never sets it.
+    apply_defaults: StrictBool | None = None
 
 
 class ApprovalRequest(VersionedContract):
@@ -312,7 +317,7 @@ class PlanVerificationView(Contract):
 class PlanContent(VersionedContract):
     """Hashed plan body (``plan_hash`` = SHA-256 of its canonical JSON)."""
 
-    nonnullable_optional = frozenset({"verification"})
+    nonnullable_optional = frozenset({"verification", "apply_defaults"})
 
     profile_kind: ProfileKind
     model_refs: tuple[ModelRef, ...]
@@ -325,10 +330,11 @@ class PlanContent(VersionedContract):
     required_agreements: tuple[AgreementId, ...]
     missing_credentials: tuple[CredentialId, ...]
     verification: PlanVerification | None = None
+    apply_defaults: StrictBool | None = None
 
 
 class SetupPlan(VersionedContract):
-    nonnullable_optional = frozenset({"verification"})
+    nonnullable_optional = frozenset({"verification", "apply_defaults"})
 
     id: PlanId
     revision: Revision
@@ -348,6 +354,7 @@ class SetupPlan(VersionedContract):
     required_agreements: tuple[AgreementId, ...]
     missing_credentials: tuple[CredentialId, ...]
     verification: PlanVerificationView | None = None
+    apply_defaults: StrictBool | None = None
 
 
 class Approval(VersionedContract):

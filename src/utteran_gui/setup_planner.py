@@ -14,7 +14,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from utteran_contracts.setup import (
     ASR_BACKENDS,
@@ -38,6 +38,7 @@ _STATUS: dict[str, int] = {
     "asr_model_required": 422,
     "diarization_model_mismatch": 422,
     "verification_unsupported": 422,
+    "defaults_require_verification": 422,
 }
 
 
@@ -307,7 +308,11 @@ def build_plan(request: SetupPlanRequest, observation: SetupObservation) -> Plan
         if p.exists and (p.name != request.profile_kind or profile.compatible is True)
     )
     size = None if unknown_size else download
-    extra = {} if verification is None else {"verification": verification}
+    extra: dict[str, Any] = {} if verification is None else {"verification": verification}
+    if request.apply_defaults:
+        if verification is None:
+            raise PlanRejected("defaults_require_verification")
+        extra["apply_defaults"] = True  # absent otherwise: older plan hashes are unchanged
     return PlanContent(
         **extra,  # absent (not null) without verification: earlier plan hashes are unchanged
         schema_version=1,

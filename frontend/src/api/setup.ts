@@ -115,6 +115,28 @@ export interface ReadinessCandidate {
   verifiable: boolean;
 }
 
+export interface SetupDefaults {
+  state: "pending" | "waiting" | "created" | "kept" | "not_applicable";
+  preset: { id: string; revision: number } | null;
+  policy: { id: string; revision: number } | null;
+}
+
+function ref(value: unknown, where: string): { id: string; revision: number } | null {
+  if (value === null || value === undefined) return null;
+  const r = record(value, where);
+  return { id: str(r.id, `${where}.id`), revision: int(r.revision, `${where}.revision`) };
+}
+
+export function parseDefaults(raw: unknown): SetupDefaults {
+  const r = record(raw, "defaults");
+  version(r, "defaults");
+  return {
+    state: oneOf(r.state, ["pending", "waiting", "created", "kept", "not_applicable"] as const, "defaults.state"),
+    preset: ref(r.preset, "defaults.preset"),
+    policy: ref(r.policy, "defaults.policy"),
+  };
+}
+
 export interface Readiness {
   state: "ready" | "not_ready";
   reasonCodes: string[];
@@ -300,6 +322,10 @@ export interface SetupApi {
   listOperations(signal?: AbortSignal): Promise<SetupOperation[]>;
   act(op: SetupOperation, action: "retry" | "resume" | "cancel", intent: MutationIntent<JsonObject>): Promise<SetupOperation>;
   readiness(body: JsonObject, signal?: AbortSignal): Promise<Readiness>;
+  /** GET: read only. */
+  getDefaults(operationId: string): Promise<SetupDefaults>;
+  /** POST: idempotent on the server (one transaction keyed by the plan); safe to repeat. */
+  applyDefaults(operationId: string): Promise<SetupDefaults>;
 }
 
 const MAX_PAGES = 20;
@@ -369,6 +395,12 @@ export function createSetupApi(http: HttpClient): SetupApi {
       return items;
     },
     act: (op, action, intent) => write(`${opPath(op.id)}/${action}`, intent, parseOperation, { "If-Match": ifMatch(op.revision) }),
+    async getDefaults(id) {
+      return (await http.request({ method: "GET", path: `${opPath(id)}/defaults` }, parseDefaults)).data;
+    },
+    async applyDefaults(id) {
+      return (await http.request({ method: "POST", path: `${opPath(id)}/defaults`, body: { schema_version: 1 }, timeoutMs: SETUP_WRITE_TIMEOUT_MS }, parseDefaults)).data;
+    },
     async readiness(body, signal) {
       return (await http.request({ method: "POST", path: "/api/v1/readiness-checks", body, timeoutMs: 120_000, signal }, parseReadiness)).data;
     },

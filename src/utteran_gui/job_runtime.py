@@ -90,6 +90,10 @@ class JobRuntime:
         self.last_compaction: Any = None
         self.state: Literal["inactive", "active"] = "inactive"
         self.store: JobControlStore | None = None
+        from utteran_gui.execution_gate import ExecutionGate
+
+        # 束F: one gate for the dispatcher and the setup diagnostics' runtime probe.
+        self.execution_gate = ExecutionGate()
         self.admission: JobAdmission | None = None
         self.dispatcher: JobDispatcher | None = None
         # C2c: deletion plans/executions, only on a layout v8 store (None otherwise).
@@ -177,6 +181,7 @@ class JobRuntime:
                     lease_seconds=self.lease_seconds,
                     poll_interval=self.poll_interval,
                     setup=executor,
+                    gate=self.execution_gate,
                 )
                 deletion = None
                 if hasattr(store, "complete_deletion"):

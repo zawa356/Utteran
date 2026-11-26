@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../../api/errors";
 import type { MutationIntent } from "../../api/idempotency";
-import type { Diagnostics, Readiness, SetupApi, SetupOperation, SetupPlan } from "../../api/setup";
+import type { Diagnostics, Readiness, SetupApi, SetupDefaults, SetupOperation, SetupPlan } from "../../api/setup";
 import type { JsonObject, PolicyV1, PresetV1, V1ResourcesApi } from "../../api/v1Resources";
-import { DIARIZATION_REF, defaultSettings, planRequest, SetupController, verifyRefusal } from "./setup";
+import { DIARIZATION_REF, defaultSettings, planRequest, readinessKey, SetupController, verifyRefusal } from "./setup";
 
 const OP = "setup_" + "ab".repeat(16);
 const PLAN = "plan_" + "cd".repeat(16);
@@ -66,6 +66,25 @@ function operation(status: string, extra: Partial<SetupOperation> = {}): SetupOp
 }
 
 class FakeSetup implements SetupApi {
+  /** Synthetic server defaults: pending until applied; `existing` = the store already has settings. */
+  defaultsState: SetupDefaults["state"] = "pending";
+  existing = false;
+  applyFails = 0;
+  async getDefaults() {
+    this.calls.push("getDefaults");
+    return { state: this.defaultsState, preset: null, policy: null } as SetupDefaults;
+  }
+  async applyDefaults() {
+    this.calls.push("applyDefaults");
+    if (this.applyFails > 0) {
+      this.applyFails -= 1;
+      throw new ApiError({ kind: "unavailable", status: 503, code: "store_busy", retryable: true });
+    }
+    if (this.defaultsState === "pending") this.defaultsState = this.existing ? "kept" : "created";
+    return this.defaultsState === "created"
+      ? { state: "created" as const, preset: { id: "pre_1", revision: 1 }, policy: { id: "pol_1", revision: 1 } }
+      : { state: this.defaultsState, preset: null, policy: null };
+  }
   calls: string[] = [];
   intents: MutationIntent<JsonObject>[] = [];
   diag = diagnostics();
@@ -159,8 +178,8 @@ function make(selection: { preset: PresetV1 | null; policy: PolicyV1 | null } = 
     selection: () => chosen,
     onDefaults: (preset, policy) => {
       defaults.push(preset.id, policy.id);
-      chosen.preset = preset;
-      chosen.policy = policy;
+      chosen.preset = { ...preset, name: "x", settings: defaultSettings("large-v3-turbo") };
+      chosen.policy = { ...policy, name: "x", mode: "auto", allowedProfileIds: ["cuda"], objective: "balanced", fallback: "none" };
     },
     pollMs: 1e9,
   });
@@ -246,26 +265,85 @@ describe("SetupController", () => {
     expect(api.calls).not.toContain("approve");
   });
 
-  it("after the first success creates defaults once (derived keys), selects them and checks readiness", async () => {
-    const { api, resources, controller, defaults } = make();
+  it("the plan carries the defaults intent; after success the server creates them once and they are selected", async () => {
+    const { api, controller, defaults } = make();
     await controller.createPlan();
+    expect(api.intents[0]!.body.apply_defaults).toBe(true);
     await controller.confirmAndStart();
     api.ops = [operation("running"), operation("succeeded")];
     await controller.poll();
-    expect(controller.store.get().operation?.status).toBe("running");
     await controller.poll();
     expect(controller.store.get().defaults.phase).toBe("created");
-    expect(resources.created.map((c) => c.kind)).toEqual(["presets", "execution-policies"]);
-    expect(new Set(resources.created.map((c) => c.key))).toEqual(new Set(["ui2-" + "ab".repeat(16)]));
-    expect((resources.created[1]!.body.allowed_profile_ids as string[])).toEqual(["cuda"]);
     expect(defaults).toEqual(["pre_1", "pol_1"]);
-    expect(api.calls.at(-1)).toBe("readiness");
+    expect(api.calls.filter((c) => c === "applyDefaults")).toHaveLength(1);
     const readinessBody = api.intents.at(-1)!.body;
     expect(readinessBody.policy_ref).toEqual({ id: "pol_1", revision: 1 });
-    // The same terminal answer again does not create or check twice.
     api.ops = [operation("succeeded")];
     await controller.poll();
-    expect(resources.created).toHaveLength(2);
+    expect(api.calls.filter((c) => c === "applyDefaults")).toHaveLength(1);
+  });
+
+  it("existing settings (from any screen) are kept: the server answers kept and nothing is selected", async () => {
+    const { api, controller, defaults } = make();
+    api.existing = true;
+    await controller.createPlan();
+    await controller.confirmAndStart();
+    api.ops = [operation("succeeded")];
+    await controller.poll();
+    expect(controller.store.get().defaults.phase).toBe("kept");
+    expect(defaults).toEqual([]);
+  });
+
+  it("a failed or lost defaults answer can be retried (the step is not marked finished)", async () => {
+    const { api, controller, defaults } = make();
+    api.applyFails = 1;
+    await controller.createPlan();
+    await controller.confirmAndStart();
+    api.ops = [operation("succeeded")];
+    await controller.poll();
+    expect(controller.store.get().defaults.phase).toBe("error");
+    await controller.retryDefaults();
+    expect(controller.store.get().defaults.phase).toBe("created");
+    expect(defaults).toEqual(["pre_1", "pol_1"]);
+  });
+
+  it("a setup that succeeded while the screen was closed is found and its defaults are finished", async () => {
+    const { api, controller, defaults } = make();
+    api.list = [operation("succeeded", { updatedAt: "2026-11-25T05:00:00Z" })];
+    await controller.recover();
+    expect(controller.store.get().operation?.status).toBe("succeeded");
+    expect(defaults).toEqual(["pre_1", "pol_1"]);
+    // Already applied (or not requested): opening again only reads.
+    const again = make();
+    again.api.list = [operation("succeeded")];
+    again.api.defaultsState = "created";
+    await again.controller.recover();
+    expect(again.api.calls).toEqual(["list", "getDefaults"]);
+    expect(again.controller.store.get().operation).toBeNull();
+  });
+
+  it("a re-verification never asks for defaults", async () => {
+    const preset: PresetV1 = { id: "pre_s", revision: 2, name: "s", settings: defaultSettings("large-v3") };
+    const { api, controller } = make({ preset, policy: null });
+    await controller.prepareVerification("cpu");
+    expect("apply_defaults" in api.intents[0]!.body).toBe(false);
+  });
+
+  it("a readiness answer for an older selection or an older check is never shown", async () => {
+    const preset: PresetV1 = { id: "pre_a", revision: 1, name: "a", settings: defaultSettings("large-v3") };
+    const policy: PolicyV1 = { id: "pol_a", revision: 1, name: "p", mode: "auto", allowedProfileIds: ["cpu"], objective: "balanced", fallback: "none" };
+    const { api, controller, chosen } = make({ preset, policy });
+    let release!: () => void;
+    api.readiness = async () => {
+      await new Promise<void>((r) => (release = r));
+      return { state: "ready", reasonCodes: [], selected: null, candidates: [] };
+    };
+    const pending = controller.checkReadiness();
+    chosen.preset = { ...preset, revision: 2 };
+    release();
+    await pending;
+    expect(controller.store.get().readiness.data).toBeNull();
+    expect(readinessKey(chosen.preset, policy)).toBe("pre_a@2|pol_a@1");
   });
 
   it("a queued setup behind paused dispatch shows the queue; resuming is one explicit CAS write", async () => {
@@ -291,28 +369,6 @@ describe("SetupController", () => {
     await controller.loadDiagnostics();
     expect(controller.store.get().plan.plan).not.toBeNull();
     expect(controller.store.get().choice.profile).toBe("cuda");
-  });
-
-  it("after a reload the first success still creates the defaults from the plan's verified model", async () => {
-    const { api, resources, controller } = make();
-    api.getPlan = async () => plan({ verification: { recipeId: "fw-cuda", modelRef: "faster-whisper:large-v3", settingsSha256: "f".repeat(64) } });
-    api.list = [operation("running")];
-    await controller.recover();
-    api.ops = [operation("succeeded")];
-    await controller.poll();
-    expect(controller.store.get().defaults.phase).toBe("created");
-    expect(((resources.created[0]!.body.settings as JsonObject).asr as JsonObject).model).toBe("large-v3");
-  });
-
-  it("keeps existing settings untouched after a later setup", async () => {
-    const { api, resources, controller } = make();
-    resources.presets = [{ id: "pre_x", revision: 3, name: "mine", settings: defaultSettings("large-v3") }];
-    await controller.createPlan();
-    await controller.confirmAndStart();
-    api.ops = [operation("succeeded")];
-    await controller.poll();
-    expect(controller.store.get().defaults.phase).toBe("kept");
-    expect(resources.created).toEqual([]);
   });
 
   it("failure → retry sends one new intent; an unknown action outcome re-reads instead of resending", async () => {

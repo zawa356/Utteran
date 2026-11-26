@@ -469,6 +469,10 @@
       "additionalProperties": false,
       "description": "Hashed plan body (``plan_hash`` = SHA-256 of its canonical JSON).",
       "properties": {
+        "apply_defaults": {
+          "title": "Apply Defaults",
+          "type": "boolean"
+        },
         "changes": {
           "items": {
             "$ref": "#/$defs/SetupChange"
@@ -1204,6 +1208,10 @@
     "SetupPlan": {
       "additionalProperties": false,
       "properties": {
+        "apply_defaults": {
+          "title": "Apply Defaults",
+          "type": "boolean"
+        },
         "changes": {
           "items": {
             "$ref": "#/$defs/SetupChange"
@@ -1352,6 +1360,10 @@
     "SetupPlanRequest": {
       "additionalProperties": false,
       "properties": {
+        "apply_defaults": {
+          "title": "Apply Defaults",
+          "type": "boolean"
+        },
         "diarization_enabled": {
           "title": "Diarization Enabled",
           "type": "boolean"

@@ -37,9 +37,14 @@ VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
 NVIDIA_DRIVER_URL = "https://www.nvidia.com/Download/index.aspx"
 VCREDIST_KEY = r"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
 VCREDIST_DLLS = ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")
-RUNTIME_TIMEOUT = 200.0  # same outer bound as /api/environment (devices --json)
-RUNTIME_RETRIES = 1  # one more pass only after a timeout (never on a definite answer)
-RUNTIME_BUDGET = 420.0  # total wall-clock bound for the runtime stage, retries included
+# One `devices --json` run: a 1-GPU pass is <= ~200 s at worst (see utteran.devices); 300 s
+# leaves room for a few more GPUs on this new path (the legacy /api/environment keeps 200 s).
+RUNTIME_TIMEOUT = 300.0
+# Division of labour (PR #91 P3): utteran.devices retries a single slow probe inside the run;
+# this stage reruns the whole CLI only when the *process* timed out (cold interpreter/DLLs),
+# never because the payload reports a probe timeout (that was already retried inside).
+RUNTIME_RETRIES = 1
+RUNTIME_BUDGET = 600.0  # total wall-clock bound, retries included
 
 Phase = Literal["idle", "running", "completed", "failed"]
 Tri = bool | None
@@ -112,9 +117,14 @@ class RuntimeReport:
     cuda_device_count: int | None = None
     attempts: int = 0
     probes: tuple[tuple[str, str], ...] = ()  # (fixed probe name, completed/timeout/error)
+    # The first attempt of this pass (kept when a retry follows): fixed status + seconds.
+    first_attempt: tuple[str, float] | None = None
 
     def to_wire(self) -> dict[str, Any]:
         return {
+            "first_attempt": None
+            if self.first_attempt is None
+            else {"status": self.first_attempt[0], "seconds": round(self.first_attempt[1], 1)},
             "profile": self.profile,
             "reason_code": self.reason_code,
             "ctranslate2_cuda": self.ctranslate2_cuda,
@@ -187,6 +197,7 @@ def recommend(gpu: hardware.GpuReport, runtime: RuntimeReport | None) -> dict[st
             reasons.append("diarization_cuda_unconfirmed")
         return {"profile": "cuda", "reason_codes": reasons, "confident": True}
     nvidia = [a for a in gpu.adapters if a.vendor == "nvidia"]
+    # (runtime comes from the cuda profile only; None/unknown keeps the NVIDIA recommendation)
     if gpu.error is not None:
         return {"profile": "cpu", "reason_codes": ["gpu_detection_unknown"], "confident": False}
     if nvidia:
@@ -241,8 +252,11 @@ class SetupDiagnostics:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         runtime_budget: float = RUNTIME_BUDGET,
         venv_build_supported: bool | None = None,
+        gate: Any = None,
     ) -> None:
         self.cli = cli
+        # Shared with the dispatcher (execution_gate.ExecutionGate): set by the setup routes.
+        self.gate = gate
         # Same rule as the planner (setup.ps1 is Windows-only); injectable for synthetic worlds.
         self.venv_build_supported = (
             os.name == "nt" if venv_build_supported is None else venv_build_supported
@@ -324,6 +338,10 @@ class SetupDiagnostics:
         self._state.phase = "running"
         self._state.started_at = self.clock()
         self._state.finished_at = None
+        if runtime:
+            # A new runtime pass never shows (or recommends from) the previous pass's answer.
+            self._state.runtime = None
+            self._state.runtime_phase = "idle"
         thread = threading.Thread(
             target=self._run,
             args=(self._state.generation, runtime, force_runtime),
@@ -384,26 +402,42 @@ class SetupDiagnostics:
         with self._lock:
             return self._state.phase == "running" or self._state.pending_force
 
-    def _runtime_profile(self) -> str | None:
-        for name in ("cuda", "cpu"):
-            try:
-                info = self.cli.profile_info(name)
-            except CliError:
-                continue
-            if info.exists:
-                return name
-        return None
+    def _runtime_profile(self) -> tuple[str | None, str | None]:
+        """Only the ``cuda`` profile answers "can CUDA run": a CPU venv has no CUDA runtime,
+        so its CTranslate2 saying "no CUDA" is not evidence about the GPU (PR #91 P2-4)."""
+        try:
+            info = self.cli.profile_info("cuda")
+        except CliError:
+            return None, "cuda_profile_missing"
+        if not info.exists:
+            return None, "cuda_profile_missing"
+        if getattr(info, "compatible", True) is False:
+            return None, "cuda_profile_incompatible"
+        return "cuda", None
 
     def _runtime_stage(self, generation: int, force: bool) -> RuntimeReport:
-        profile = self._runtime_profile()
+        profile, missing = self._runtime_profile()
         if profile is None:
-            return RuntimeReport(None, "profile_missing")
+            return RuntimeReport(None, missing)
         if self.busy_profile() is not None:
             return RuntimeReport(profile, "setup_running")
+        gate = self.gate
+        if gate is not None and not gate.try_acquire("probe"):
+            # A job or setup holds the heavy slot (and maybe the GPU / this venv): not now.
+            return RuntimeReport(profile, "execution_running")
+        try:
+            return self._probe(generation, profile, force)
+        finally:
+            if gate is not None:
+                gate.release("probe")
+
+    def _probe(self, generation: int, profile: str, force: bool) -> RuntimeReport:
         self._apply(generation, runtime_phase="running")
         deadline = time.monotonic() + self.runtime_budget
         report = RuntimeReport(profile, "probe_failed")
+        first: tuple[str, float] | None = None
         for attempt in range(1, RUNTIME_RETRIES + 2):
+            started = time.monotonic()
             try:
                 payload = self.probes.runtime(profile, force and attempt == 1)
                 report = parse_devices(profile, payload, attempt)
@@ -412,9 +446,12 @@ class SetupDiagnostics:
                 # before the generic failure so the cold-start retry really happens (#89).
                 report = RuntimeReport(profile, "probe_timeout", attempts=attempt)
             except (CliError, OSError, subprocess.SubprocessError, ValueError):
-                return RuntimeReport(profile, "probe_failed", attempts=attempt)
-            # Only a timeout is retried (cold driver/DLL load); a definite answer is final.
-            if report.reason_code != "probe_timeout" or time.monotonic() >= deadline:
+                report = RuntimeReport(profile, "probe_failed", attempts=attempt)
+            if first is None:
+                first = (report.reason_code or "completed", time.monotonic() - started)
+            report = replace(report, first_attempt=first)
+            process_timeout = report.reason_code == "probe_timeout" and report.probes == ()
+            if not process_timeout or time.monotonic() + RUNTIME_TIMEOUT > deadline:
                 return report
         return report
 

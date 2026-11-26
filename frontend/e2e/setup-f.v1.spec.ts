@@ -59,7 +59,7 @@ test("F-01 standard GPU setup on a clean root: plan → confirm → progress →
   await expect(app.getByTestId("fsetup-vcredist")).toContainText("導入済み");
   await expect(app.getByTestId("fsetup-standard-summary")).toContainText("NVIDIA CUDA");
   await expect(app.getByTestId("fsetup-standard-summary")).toContainText("large-v3-turbo");
-  await expect(app.getByTestId("fsetup-runtime-reason")).toContainText("実行環境がまだない");
+  await expect(app.getByTestId("fsetup-runtime-reason")).toContainText("CUDA 用の実行環境がまだない");
   await app.getByTestId("fsetup-plan").click();
   await expect(app.getByTestId("fsetup-review")).toBeVisible();
   await expect(app.getByTestId("fsetup-changes")).toContainText("実行環境 cuda を新しく作成");
@@ -96,7 +96,8 @@ test("F-01 standard GPU setup on a clean root: plan → confirm → progress →
 });
 
 test("F-02 detection: the first runtime probe times out, the retry answers; VC++ missing is shown with the official source", async ({ app, backend }) => {
-  trigger(backend.root, "profile-cpu");
+  // CUDA is judged from the cuda profile only (a CPU venv never answers for the GPU).
+  trigger(backend.root, "profile-cuda");
   trigger(backend.root, "runtime-timeout");
   trigger(backend.root, "vcredist-missing");
   await openSetup(app);
@@ -165,4 +166,32 @@ test("F-05 diarization needs a token and the agreement; without them nothing can
   await expect(app.getByTestId("fsetup-credential-missing")).toBeVisible();
   await expect(app.getByTestId("fsetup-agreement-missing")).toBeVisible();
   await expect(app.getByTestId("fsetup-start")).toBeDisabled();
+});
+
+test("F-06 a first setup that succeeded while the setup page was closed still gets its defaults (server, once)", async ({ app, backend, request }) => {
+  trigger(backend.root, "hold-download");
+  await openSetup(app);
+  await detect(app);
+  await app.getByTestId("fsetup-plan").click();
+  await startPlan(app);
+  await expect(app.getByTestId("fsetup-operation")).toHaveAttribute("data-status", "running", { timeout: 20_000 });
+  // Leave the page and finish the setup without it.
+  await app.getByTestId("nav-settings").click();
+  const { unlinkSync } = await import("node:fs");
+  unlinkSync(`${backend.root}/setup/hold-download`);
+  await expect.poll(async () => {
+    const list = (await (await request.get("/api/v1/setup-operations", { headers: AUTH })).json()) as { items: { status: string }[] };
+    return list.items[0]?.status;
+  }, { timeout: 20_000 }).toBe("succeeded");
+  expect(((await (await request.get("/api/v1/presets", { headers: AUTH })).json()) as { items: unknown[] }).items).toHaveLength(0);
+  await app.reload();
+  await expect(app.getByTestId("app-ready")).toBeVisible();
+  await openSetup(app);
+  await expect(app.getByTestId("fsetup-defaults-created")).toBeVisible();
+  await expect(app.getByTestId("fsetup-ready-yes")).toBeVisible();
+  await app.reload();
+  await expect(app.getByTestId("app-ready")).toBeVisible();
+  await openSetup(app);
+  await expect(app.getByTestId("fsetup-defaults-created")).toHaveCount(0); // read only, nothing more
+  expect(((await (await request.get("/api/v1/presets", { headers: AUTH })).json()) as { items: unknown[] }).items).toHaveLength(1);
 });

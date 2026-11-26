@@ -183,8 +183,15 @@ class ProbeOutcome:
 # cuBLAS/cuDNN or torch DLLs are loaded from disk for the first time (a second run of the
 # same probe then succeeds). Only a *timeout* is retried, once per probe, within a fixed
 # number of retries per detection pass. An error or a definite answer is never retried.
+#
+# Budget (PR #91 P3): at most ONE retry per pass and only while the pass is young (the retry
+# must end within RETRY_WINDOW_SECONDS of the pass start), so the legacy outer bounds still
+# hold: a 1-GPU pass is 9 probes x 20 s = 180 s at worst without retries; one early retry
+# keeps the cold case (the first CUDA probes) inside ~200 s. This module is shared by the
+# legacy CLI/`/api/environment` and the new diagnostics, so both get this behaviour.
 RETRYABLE_TIMEOUT_PROBES = frozenset({"ctranslate2_cuda_count", "ctranslate2_cuda", "torch_cuda"})
-MAX_TIMEOUT_RETRIES_PER_PASS = 2
+MAX_TIMEOUT_RETRIES_PER_PASS = 1
+RETRY_WINDOW_SECONDS = 100.0
 
 
 @dataclass(frozen=True)
@@ -577,6 +584,7 @@ def _detect_isolated_runtimes(
     position = 0
     total = 7
     retries = MAX_TIMEOUT_RETRIES_PER_PASS
+    pass_started = time.monotonic()
 
     def execute(name: str, label: str, *, argument: str | None = None) -> _ProbeRun:
         nonlocal position, retries
@@ -584,7 +592,13 @@ def _detect_isolated_runtimes(
         if progress is not None:
             progress(ProbeProgress(name, label, position, total, "started"))
         run = run_isolated_probe(name, label, timeout_seconds, argument=argument)
-        if run.outcome.status == "timeout" and name in RETRYABLE_TIMEOUT_PROBES and retries > 0:
+        young = time.monotonic() - pass_started + timeout_seconds <= RETRY_WINDOW_SECONDS
+        if (
+            run.outcome.status == "timeout"
+            and name in RETRYABLE_TIMEOUT_PROBES
+            and retries > 0
+            and young
+        ):
             retries -= 1
             _LOGGER.info("Device probe %s timed out; retrying once", name)
             if progress is not None:

@@ -145,17 +145,34 @@ def cpu_model() -> str | None:
     return None
 
 
-def cuda_hardware_fingerprint() -> str | None:
+def single_cuda_gpu() -> nvml.NvmlGpu | None:
+    """The one GPU CUDA ordinal 0 must be, or ``None`` when that is not provable.
+
+    PR #91 P2-2: with several NVIDIA GPUs, or with ``CUDA_VISIBLE_DEVICES`` /
+    ``CUDA_DEVICE_ORDER`` set, the CUDA ordinal of a later run cannot be tied to the GPU a
+    past smoke ran on from metadata alone, so the evidence scope stays unknown (no ready).
+    Only one NVIDIA GPU with neither variable set is accepted: ordinal 0 is that GPU.
+    """
+    if any(os.environ.get(name) for name in CUDA_ENVIRONMENT):
+        return None
     info = nvml.snapshot()
-    if info is None or not info.gpus:
+    if info is None or len(info.gpus) != 1:
+        return None
+    return info.gpus[0]
+
+
+def cuda_hardware_fingerprint() -> str | None:
+    gpu = single_cuda_gpu()
+    if gpu is None:
         return None
     return digest(
         {
             "kind": "cuda-host",
-            "version": 1,
+            "version": 2,
             "machine": platform.machine(),
-            "gpus": [[g.uuid, g.name, g.memory_total] for g in info.gpus],
-            "environment": _cuda_environment(),
+            # Bound to the one GPU by UUID: a replaced or added GPU is a different scope.
+            "gpu": [gpu.uuid, gpu.name, gpu.memory_total],
+            "ordinal": 0,
         }
     )
 

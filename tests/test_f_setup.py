@@ -514,7 +514,7 @@ def test_no_profile_and_running_setup_skip_the_runtime_probe(tmp_path) -> None:
     service = diagnostics(tmp_path, runtime, profiles=())
     service.refresh(runtime=True)
     assert service.wait(5)
-    assert service.snapshot()["runtime"]["reason_code"] == "profile_missing"
+    assert service.snapshot()["runtime"]["reason_code"] == "cuda_profile_missing"
     busy = diagnostics(tmp_path, runtime, busy_profile=lambda: "setup_x")
     busy.refresh(runtime=True)
     assert busy.wait(5)
@@ -602,7 +602,7 @@ def test_devices_retries_a_timed_out_cuda_probe_once_per_pass(monkeypatch) -> No
     monkeypatch.setattr(devices.importlib.util, "find_spec", lambda name: object())
     reports = devices._detect_isolated_runtimes(20.0, None)
     assert calls.count("ctranslate2_cuda_count") == 2  # timeout -> one retry -> success
-    assert calls.count("torch_cuda") == 2  # retried once, still timeout -> unknown
+    assert calls.count("torch_cuda") == 1  # the one retry of this pass was already used
     assert reports.ctranslate2.cuda_device_count == 1
     count = next(o for o in reports.outcomes if o.name == "ctranslate2_cuda_count")
     assert (count.status, count.attempts) == ("completed", 2)
@@ -976,3 +976,415 @@ def test_setup_start_is_refused_while_a_runtime_probe_runs(http) -> None:
     )
     assert refused.status_code == 409
     assert refused.json()["error"]["code"] == "diagnostics_running"
+
+
+# --------------------------------------------------------------------------- PR #91 owner review
+
+
+def _repo(tmp_path: Path):
+    from utteran_settings.repository import Repository
+
+    return Repository(tmp_path / "settings" / "resources.sqlite3")
+
+
+def _writes(model: str = "large-v3-turbo"):
+    from utteran_contracts.settings import PolicyWrite, PresetWrite
+
+    preset = PresetWrite.model_validate(
+        {"schema_version": 1, "name": "Setup", "settings": asr_settings(model).to_wire()}
+    )
+    policy = PolicyWrite.model_validate(
+        {
+            "schema_version": 1,
+            "name": "Setup cpu",
+            "mode": "auto",
+            "fixed_candidate_id": None,
+            "allowed_profile_ids": ["cpu"],
+            "objective": "balanced",
+            "max_memory_bytes": None,
+            "fallback": "none",
+            "execution_deadline_seconds": None,
+        }
+    )
+    return preset, policy
+
+
+def test_defaults_are_one_atomic_pair_into_an_empty_store_and_replayed(tmp_path) -> None:
+    repo = _repo(tmp_path)
+    first = repo.create_defaults_if_empty("setup-defaults-" + "a" * 32, *_writes())
+    assert first["state"] == "created" and not first["replayed"]
+    again = repo.create_defaults_if_empty("setup-defaults-" + "a" * 32, *_writes())
+    assert again["replayed"] and again["preset"] == first["preset"]
+    assert (
+        len(repo.list("presets")["items"]) == 1
+        and len(repo.list("execution-policies")["items"]) == 1
+    )
+    other = repo.create_defaults_if_empty("setup-defaults-" + "b" * 32, *_writes())
+    assert other["state"] == "kept"  # a second setup never adds or edits defaults
+    assert repo.defaults_state("setup-defaults-" + "b" * 32)["state"] == "kept"  # type: ignore[index]
+    assert repo.defaults_state("setup-defaults-" + "c" * 32) is None
+
+
+def test_defaults_keep_a_preset_made_elsewhere_and_never_create_half_a_pair(tmp_path) -> None:
+    repo = _repo(tmp_path)
+    preset, policy = _writes()
+    repo.post("/api/v1/presets", "elsewhere-key-0000001", preset.to_wire(), payload=preset)
+    result = repo.create_defaults_if_empty("setup-defaults-" + "d" * 32, preset, policy)
+    assert result["state"] == "kept"
+    assert repo.list("execution-policies")["items"] == []
+
+
+def test_concurrent_defaults_for_two_plans_create_exactly_one_pair(tmp_path) -> None:
+    repo = _repo(tmp_path)
+    results: list[str] = []
+    barrier = threading.Barrier(4)
+
+    def worker(n: int) -> None:
+        barrier.wait()
+        results.append(
+            repo.create_defaults_if_empty(f"setup-defaults-{n:032d}", *_writes())["state"]
+        )
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    assert sorted(results) == ["created", "kept", "kept", "kept"]
+    assert len(repo.list("presets")["items"]) == 1
+
+
+def _verify_plan_body(apply_defaults: bool | None = True) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "schema_version": 1,
+        "profile_kind": "cpu",
+        "model_refs": [TURBO],
+        "diarization_enabled": False,
+        "verification_settings": asr_settings().to_wire(),
+    }
+    if apply_defaults is not None:
+        body["apply_defaults"] = apply_defaults
+    return body
+
+
+def _run_setup_over_http(http, body: dict[str, Any], key: str) -> str:
+    created = http.post(
+        "/api/v1/setup-plans", json=body, headers={"Idempotency-Key": f"plan-{key}"}
+    )
+    assert created.status_code == 201, created.text
+    plan = created.json()
+    approved = http.post(
+        f"/api/v1/setup-plans/{plan['id']}/approve",
+        json={"schema_version": 1, "plan_hash": plan["plan_hash"], "accepted_agreement_ids": []},
+        headers={"Idempotency-Key": f"apr-{key}", "If-Match": f'"{plan["revision"]}"'},
+    )
+    assert approved.status_code == 201, approved.text
+    approval = approved.json()
+    started = http.post(
+        "/api/v1/setup-operations",
+        json={
+            "schema_version": 1,
+            "plan_ref": {"id": plan["id"], "revision": approval["plan_revision"]},
+            "approval_id": approval["id"],
+        },
+        headers={"Idempotency-Key": f"start-{key}"},
+    )
+    assert started.status_code == 202, started.text
+    return str(started.json()["id"])
+
+
+def test_http_defaults_follow_the_plan_intent_and_survive_a_lost_answer(http) -> None:
+    op_id = _run_setup_over_http(http, _verify_plan_body(True), "f-def-000000001")
+    runtime = http.app.state.v1_jobs_runtime
+    view = http.get(f"/api/v1/setup-operations/{op_id}/defaults").json()
+    assert view["state"] == "waiting"
+    assert (
+        http.post(
+            f"/api/v1/setup-operations/{op_id}/defaults", json={"schema_version": 1}
+        ).status_code
+        == 409
+    )
+    store = runtime.store
+    queue = http.get("/api/v1/queue").json()
+    resumed = http.patch(
+        "/api/v1/queue/control",
+        json={"schema_version": 1, "dispatch": "running"},
+        headers={"If-Match": f'"{queue["revision"]}"', "Idempotency-Key": "queue-f-def-0000001"},
+    )
+    assert resumed.status_code == 200, resumed.text
+    candidate = store.next_dispatchable()
+    assert candidate is not None
+    runtime.setup_executor.dispatch(*candidate, current_owner())
+    assert store.get_setup(op_id).status == "succeeded"
+    assert http.get(f"/api/v1/setup-operations/{op_id}/defaults").json()["state"] == "pending"
+    before = http.get("/api/v1/presets").json()["items"]
+    first = http.post(f"/api/v1/setup-operations/{op_id}/defaults", json={"schema_version": 1})
+    # This harness's settings store already holds a Preset and a Policy: they are kept as is
+    # (the "created" path into an empty store is covered by the repository tests and F-01).
+    assert first.status_code == 200 and first.json()["state"] == "kept"
+    assert http.get("/api/v1/presets").json()["items"] == before
+    # The answer was "lost": asking again returns the same pair, nothing new is written.
+    second = http.post(f"/api/v1/setup-operations/{op_id}/defaults", json={"schema_version": 1})
+    assert second.json() == first.json()
+    assert http.get(f"/api/v1/setup-operations/{op_id}/defaults").json()["state"] == "kept"
+
+
+def test_http_verification_plans_never_create_defaults(http) -> None:
+    op_id = _run_setup_over_http(http, _verify_plan_body(None), "f-def-000000002")
+    assert (
+        http.get(f"/api/v1/setup-operations/{op_id}/defaults").json()["state"] == "not_applicable"
+    )
+    refused = http.post(f"/api/v1/setup-operations/{op_id}/defaults", json={"schema_version": 1})
+    assert (
+        refused.status_code == 409 and refused.json()["error"]["code"] == "defaults_not_requested"
+    )
+
+
+def test_defaults_intent_needs_a_verification(tmp_path) -> None:
+    world = World(tmp_path)
+    world.install("cpu")
+    with pytest.raises(PlanRejected) as caught:
+        build_plan(
+            SetupPlanRequest(
+                schema_version=1,
+                profile_kind="cpu",
+                model_refs=(TURBO,),
+                diarization_enabled=False,
+                apply_defaults=True,
+            ),
+            world.observer.observe(),
+        )
+    assert caught.value.code == "defaults_require_verification"
+
+
+# P2-3: one atomic gate for dispatch and runtime probe
+
+
+def test_gate_orders_probe_and_dispatch_both_ways(tmp_path) -> None:
+    from utteran_gui.execution_gate import ExecutionGate
+    from utteran_gui.job_dispatcher import JobDispatcher
+
+    gate = ExecutionGate()
+    entered, release = threading.Event(), threading.Event()
+
+    def runtime(profile: str, refresh: bool) -> dict[str, Any]:
+        entered.set()
+        release.wait(5)
+        return devices_json(True)
+
+    service = diagnostics(tmp_path, runtime, gate=gate)
+    service.refresh(runtime=True)
+    assert entered.wait(5) and gate.holder == "probe"
+
+    class Store:
+        def next_dispatchable(self):
+            return ("setup_" + "0" * 32, 1)
+
+    class Setup:
+        calls = 0
+
+        def dispatch(self, *args: Any) -> bool:
+            Setup.calls += 1
+            assert gate.holder == "dispatch"
+            return True
+
+    dispatcher = JobDispatcher(
+        Store(),  # type: ignore[arg-type]
+        prestart=lambda snapshot: None,
+        runner=None,  # type: ignore[arg-type]
+        owner=current_owner(),
+        job_dir=tmp_path,
+        setup=Setup(),
+        gate=gate,
+    )
+    assert dispatcher.run_once() is False and Setup.calls == 0  # queued setup waits
+    release.set()
+    assert service.wait(5) and gate.holder is None
+    assert dispatcher.run_once() is True and Setup.calls == 1 and gate.holder is None
+    # The other order: while a dispatch holds the gate, a probe does not start.
+    assert gate.try_acquire("dispatch")
+    blocked = diagnostics(tmp_path, lambda p, r: pytest.fail("must not probe"), gate=gate)
+    blocked.refresh(runtime=True)
+    assert blocked.wait(5)
+    assert blocked.snapshot()["runtime"]["reason_code"] == "execution_running"
+    gate.release("dispatch")
+
+
+def test_gate_is_released_when_the_probe_or_the_dispatch_raises(tmp_path) -> None:
+    from utteran_gui.execution_gate import ExecutionGate
+    from utteran_gui.job_dispatcher import JobDispatcher
+
+    gate = ExecutionGate()
+
+    def boom(profile: str, refresh: bool) -> dict[str, Any]:
+        raise OSError("synthetic")
+
+    service = diagnostics(tmp_path, boom, gate=gate)
+    service.refresh(runtime=True)
+    assert service.wait(5) and gate.holder is None
+
+    class Store:
+        def next_dispatchable(self):
+            return ("setup_" + "0" * 32, 1)
+
+    class Setup:
+        def dispatch(self, *args: Any) -> bool:
+            raise RuntimeError("synthetic")
+
+    dispatcher = JobDispatcher(
+        Store(),  # type: ignore[arg-type]
+        prestart=lambda snapshot: None,
+        runner=None,  # type: ignore[arg-type]
+        owner=current_owner(),
+        job_dir=tmp_path,
+        setup=Setup(),
+        gate=gate,
+    )
+    with pytest.raises(RuntimeError):
+        dispatcher.run_once()
+    assert gate.holder is None
+
+
+# P2-4: CUDA is judged from the cuda profile only
+
+
+def test_cpu_profile_only_keeps_the_nvidia_recommendation(tmp_path) -> None:
+    def runtime(profile: str, refresh: bool) -> dict[str, Any]:
+        raise AssertionError("a cpu venv must not answer for CUDA")
+
+    service = diagnostics(tmp_path, runtime, profiles=("cpu",))
+    service.refresh(runtime=True)
+    assert service.wait(5)
+    view = service.snapshot()
+    assert view["runtime"]["reason_code"] == "cuda_profile_missing"
+    assert view["recommendation"]["profile"] == "cuda"
+    assert "runtime_not_confirmed" in view["recommendation"]["reason_codes"]
+
+
+def test_an_incompatible_cuda_profile_is_not_probed(tmp_path) -> None:
+    class StaleCli(Cli):
+        def profile_info(self, name: str) -> Any:
+            return type("Info", (), {"exists": name == "cuda", "compatible": False})()
+
+    service = SetupDiagnostics(
+        StaleCli(tmp_path),
+        probes=DiagnosticProbes(
+            gpu=lambda: gpu("nvidia"),
+            memory=lambda: hardware.MemoryReport(None, None),
+            disk=lambda _p: hardware.DiskReport(None),
+            vcredist=lambda: VcRedist("present"),
+            runtime=lambda p, r: pytest.fail("must not probe"),
+        ),
+    )
+    service.refresh(runtime=True)
+    assert service.wait(5)
+    assert service.snapshot()["runtime"]["reason_code"] == "cuda_profile_incompatible"
+
+
+def test_a_new_runtime_pass_never_shows_the_previous_answer(tmp_path) -> None:
+    answers = iter([devices_json(False), devices_json(True)])
+    gate_open = threading.Event()
+
+    def runtime(profile: str, refresh: bool) -> dict[str, Any]:
+        value = next(answers)
+        if value["ctranslate2"]["cuda_devices"][0]["usable"]:
+            gate_open.wait(5)
+        return value
+
+    service = diagnostics(tmp_path, runtime)
+    service.refresh(runtime=True)
+    assert service.wait(5)
+    assert service.snapshot()["recommendation"]["profile"] == "cpu"  # cuda profile said no
+    service.refresh(runtime=True, force_runtime=True)
+    during = service.snapshot()
+    assert during["runtime"] is None and during["recommendation"]["profile"] == "cuda"
+    gate_open.set()
+    assert service.wait(5)
+    assert service.snapshot()["runtime"]["first_attempt"]["status"] == "completed"
+
+
+# P2-2: CUDA evidence bound to one provable GPU
+
+
+def test_cuda_hardware_identity_only_for_one_gpu_without_visibility_variables(monkeypatch) -> None:
+    from utteran.capabilities import fingerprints
+
+    current = {"lib": FakeNvml([GPU_A])}
+    monkeypatch.setattr(nvml, "load_nvml", lambda: current["lib"])
+    for name in fingerprints.CUDA_ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
+    one = fingerprints.hardware_fingerprint("cuda")
+    assert one is not None
+    current["lib"] = FakeNvml([GPU_B])  # GPU replaced: a different scope
+    assert fingerprints.hardware_fingerprint("cuda") not in {None, one}
+    current["lib"] = FakeNvml([GPU_A, GPU_B])  # ordinal no longer provable: unknown
+    assert fingerprints.hardware_fingerprint("cuda") is None
+    current["lib"] = FakeNvml([GPU_A])
+    monkeypatch.setenv("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+    assert fingerprints.hardware_fingerprint("cuda") is None
+
+
+def test_smoke_attests_only_ordinal_zero_of_the_single_gpu(monkeypatch) -> None:
+    from utteran.capabilities import fingerprints
+    from utteran.capabilities import smoke as smoke_module
+
+    monkeypatch.setattr(nvml, "load_nvml", lambda: FakeNvml([GPU_A]))
+    for name in fingerprints.CUDA_ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(nvml, "cuda_ordinal_uuid", lambda ordinal: GPU_A[0])
+    assert smoke_module._attested_gpu(0) == GPU_A[0]
+    assert smoke_module._attested_gpu(1) is None
+    monkeypatch.setattr(nvml, "cuda_ordinal_uuid", lambda ordinal: GPU_B[0])  # swapped
+    assert smoke_module._attested_gpu(0) is None
+    monkeypatch.setattr(nvml, "load_nvml", lambda: FakeNvml([GPU_A, GPU_B]))
+    monkeypatch.setattr(nvml, "cuda_ordinal_uuid", lambda ordinal: GPU_A[0])
+    assert smoke_module._attested_gpu(0) is None
+
+
+def test_vram_peak_is_the_maximum_sample_and_unknown_without_samples(monkeypatch) -> None:
+    from utteran.capabilities import smoke as smoke_module
+
+    samples = iter([100, 900, 300] + [200] * 100)
+    monkeypatch.setattr(nvml, "process_used_memory", lambda uuid, pid=None, lib=None: next(samples))
+    monkeypatch.setattr(smoke_module._VramPeak, "INTERVAL", 0.001)
+    with smoke_module._VramPeak(GPU_A[0]) as sampler:
+        import time as _time
+
+        _time.sleep(0.05)
+    assert sampler.peak == 900
+    monkeypatch.setattr(nvml, "process_used_memory", lambda uuid, pid=None, lib=None: None)
+    with smoke_module._VramPeak(GPU_A[0]) as none:
+        pass
+    assert none.peak is None  # WDDM N/A / not measurable -> unknown
+
+
+def test_devices_never_retries_late_in_a_pass(monkeypatch) -> None:
+    from utteran import devices
+
+    calls: list[str] = []
+
+    def probe(name, label, timeout, *, argument=None):
+        calls.append(name)
+        if name == "ctranslate2_cuda_count":
+            return devices._ProbeRun(devices.ProbeOutcome(name, label, "timeout", timeout), None)
+        return devices._ProbeRun(devices.ProbeOutcome(name, label, "completed", 0.1), {})
+
+    monkeypatch.setattr(devices, "run_isolated_probe", probe)
+    monkeypatch.setattr(devices.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(devices, "RETRY_WINDOW_SECONDS", 10.0)  # a 20 s retry would not fit
+    devices._detect_isolated_runtimes(20.0, None)
+    assert calls.count("ctranslate2_cuda_count") == 1
+
+
+def test_a_payload_probe_timeout_is_not_rerun_by_the_diagnostics(tmp_path) -> None:
+    calls: list[int] = []
+
+    def runtime(profile: str, refresh: bool) -> dict[str, Any]:
+        calls.append(1)
+        return devices_json(None)  # devices.py already retried inside; reported timeout
+
+    service = diagnostics(tmp_path, runtime)
+    service.refresh(runtime=True)
+    assert service.wait(5)
+    assert len(calls) == 1
+    assert service.snapshot()["runtime"]["reason_code"] == "probe_timeout"

@@ -18,12 +18,13 @@ PR #88（0.1.70、Windows VM 受入待ち）とは独立。対象は `--next-ui-
  5. キューが一時停止中なら［キューの実行を再開］（起動時は自動再開しない既存仕様）
  6. B8 executor（B7 と同じ dispatcher・heavy slot・fence・journal）
     venv_sync → credential_preflight → model_download → [smoke（話者分離時のみ）] → capability_smoke
- 7. 成功後: Preset/Policy が 1 件も無い場合だけ既定値を作成・選択（キーは operation id 由来）
+ 7. 成功後: POST /api/v1/setup-operations/{id}/defaults（plan の apply_defaults、B5 で 1 transaction の
+    create-if-empty、plan id ごとに 1 回だけ記録）→ created なら選択、kept なら何もしない
  8. POST /api/v1/readiness-checks              選択中の Preset/Policy で B7 が受け付けるか（推論なし）
  9. 通常の B7 経路（execution-resolutions → jobs）
 ```
 
-- 初回と追加／修復の区別: 既定値の作成は「B5 に Preset も Policy も無い」ときだけ。追加 setup・失敗・取消・中断では設定を変更しない（E2E F-03）。
+- 初回と追加／修復の区別（PR #91 P2-1 で server 側へ移した）: 標準/カスタムの plan は `apply_defaults: true` を hash 対象の plan に保存し、再検証の plan は持たない。成功した operation について server が B5 の 1 transaction で「Preset も Policy も無いときだけ両方作成、あれば何もしない（kept）」を行い、その結果を plan id のキーで記録する。片方だけの作成、二重作成、既存資産の変更は起きない。応答喪失・再読込・別画面からの再要求は同じ記録を返す。画面を閉じている間に成功した場合は、次に画面を開いたとき `GET .../defaults` が `pending` のものだけ POST する（表示時の書込みはその場合だけ）。失敗時は［既定値の作成を再試行］（E2E F-01/F-03/F-06、Vitest、pytest）。DB layout の変更なし（plan 本文の任意 field と B5 replay 行のみ）。
 - Setup 成功と実行 ready は別表示。ready は B4 evaluator が証拠を読んで判定したときだけ（`fs.ready.*`）。
 - 再起動・再読込: 画面は `GET /setup-operations` から最新の未完了 operation を復元し、`GET /setup-operations/{id}` を読むだけで追従する（E2E F-04）。
 - 再検証: readiness が `smoke_missing`（未検証・期限切れ・設定変更）のとき［この設定で検証を実行］で、選択中 Preset の設定そのものを検証する plan を作る（同じ確認→開始）。話者分離付き・faster-whisper 以外・worker が読めないモデルは理由付きで無効。
@@ -47,21 +48,21 @@ PR #88（0.1.70、Windows VM 受入待ち）とは独立。対象は `--next-ui-
 | 証拠 | 取得元（新規 `utteran/capabilities/nvml.py`、ctypes・読取のみ） | 取れない場合 |
 |---|---|---|
 | runtime fingerprint (fw-cuda) | パッケージ版＋CUDA wheel 版＋NVML driver 版・CUDA driver API 版＋`CUDA_VISIBLE_DEVICES`/`CUDA_DEVICE_ORDER` | `None` → unknown |
-| hardware fingerprint (fw-cuda) | NVML の **GPU 集合**（UUID・名前・総メモリ、UUID 順）＋上記環境変数 | `None` → unknown |
-| ordinal ↔ 安定 identity | smoke 子の中で CUDA driver API `cuDeviceGetUuid(ordinal)` → NVML 集合に含まれる場合だけ採用（番号の推測なし） | VRAM を unknown にする |
+| hardware fingerprint (fw-cuda) | **NVIDIA GPU が 1 台かつ `CUDA_VISIBLE_DEVICES`/`CUDA_DEVICE_ORDER` 未設定のときだけ**、その GPU の UUID・名前・総メモリ（ordinal 0 = その GPU） | 複数 GPU・変数設定・NVML 不可 → `None` → unknown |
+| ordinal ↔ 安定 identity | smoke 子の中で CUDA driver API `cuDeviceGetUuid(0)` がその 1 台の UUID と一致した場合だけ VRAM を記録 | 不一致・ordinal≠0 → VRAM unknown |
 | available VRAM | smoke 直前の NVML free（その UUID） | unknown |
-| required VRAM | 推論後・解放前の NVML per-process 使用量（その UUID・自 PID） | WDDM 等で N/A → unknown |
+| required VRAM | load〜推論〜解放直前を 100 ms 間隔（最大 6000 回）で NVML per-process 使用量を標本化した最大値。**短尺 fixture の下限値**で長時間音声の保証ではない | 標本なし（WDDM 等で N/A）→ unknown |
 
-残る限界: hardware fingerprint は GPU 集合に束縛し、ordinal の対応は smoke 時の attestation で確認する（集合・ドライバー・環境変数が同じなら CUDA の列挙順は同じという前提。多 GPU 機は実機確認が必要）。Windows WDDM では per-process 使用量が N/A になり得るため、**fw-cuda が ready になるかは実機でしか分からない**。合成試験の成功を GPU 成功とは扱わない。
+範囲の限定（PR #91 P2-2）: 以前は GPU 集合の hash だけで束縛しており、同じ集合のまま ordinal が別 GPU に変わると過去の証拠が再採用され得た。今回は単一 GPU に限定し UUID に束縛したため、GPU の交換・追加・可視性変数の設定で scope が変わるか unknown になる。**多 GPU 機の fw-cuda は当面 ready にならない**（後続で、証拠の ordinal↔UUID を refresh/prestart で再照合する設計が必要）。Windows WDDM では per-process 使用量が N/A になり得るため、fw-cuda が ready になるかは実機でしか分からない。合成試験の成功を GPU 成功とは扱わない。
 
 ## 4. 検出の安定化（#89）
 
 - 原因の切り分け（コード調査）: 初回の重い処理は CTranslate2 の CUDA 列挙（`get_cuda_device_count`）・`get_supported_compute_types`・torch CUDA の初回 import（cuBLAS/cuDNN/torch DLL のコールド読込）。各 probe は 20 秒で打ち切られ、timeout は cache されないため 2 回目（OS のファイル cache が温まった後）は成功し得る。これは仮説で、NVIDIA 実機の実ログでは未確認。
-- `devices.py`: `ctranslate2_cuda_count`/`ctranslate2_cuda`/`torch_cuda` の **timeout だけを 1 回再試行**（1 pass で最大 2 回、`ProbeOutcome.attempts`）。エラー・確定値は再試行しない。timeout は従来どおり cache しない・unknown のまま。
+- `devices.py`: `ctranslate2_cuda_count`/`ctranslate2_cuda`/`torch_cuda` の **timeout だけを 1 回再試行**（**1 pass で 1 回まで、pass 開始から 100 秒以内に終わる場合だけ**、`ProbeOutcome.attempts`）。エラー・確定値は再試行しない。timeout は従来どおり cache しない・unknown のまま。**このモジュールは旧 CLI `utteran devices` と旧 `/api/environment`（外側 200 秒）にも共通**で、両者もこの再試行を行う。1 GPU の最悪は再試行なしで 9 probe×20 秒＝180 秒、早期の 1 回の再試行込みでも概ね 200 秒に収まるよう制限した（P3）。
 - `nvidia-smi` の index と CUDA ordinal を同一視していた表示を廃止。CUDA 1 台・NVIDIA 1 台の一意な場合だけ名前・メモリを対応させる。
-- GUI 側 `setup_diagnostics.py`: OS 段（CIM の GPU・driver 版、メモリ、ディスク、VC++）→ runtime 段（profile がある場合のみ `devices --json`）。背景 1 スレッドの single-flight（並行要求は合流）、世代番号で古い結果の上書きを防止、runtime の timeout は総時間 420 秒内で 1 回だけ再実行（2 回目は cache 利用可）、setup 実行中は probe しない、timeout は「GPU なし」「CPU 確定」にしない。
+- GUI 側 `setup_diagnostics.py`: OS 段（CIM の GPU・driver 版、メモリ、ディスク、VC++）→ runtime 段（**cuda profile が存在し互換の場合だけ** `devices --json`。CPU 用 venv の「CUDA なし」は GPU の可否として扱わず、NVIDIA を OS が報告していれば推奨は cuda（未確認）のまま。P2-4）。新しい runtime pass の開始時に前回の結果を消す。外側の再実行は CLI プロセス自体の timeout のときだけ（1 回、各 300 秒、総 600 秒）で、payload 内の probe timeout は devices.py が既に再試行しているので再実行しない。最初の試行の状態・秒数を `first_attempt` に残す。背景 1 スレッドの single-flight（並行要求は合流）、世代番号で古い結果の上書きを防止、runtime の timeout は総時間 420 秒内で 1 回だけ再実行（2 回目は cache 利用可）、setup 実行中は probe しない、timeout は「GPU なし」「CPU 確定」にしない。
 - 実行中に来た強制再検出は捨てず、現在の pass の後に 1 回だけ実行する（`rerun_pending`）。CLI の timeout は adapter が `CliTimeout`（`CliError` の派生）に変換するため、それを捕捉して再試行する。再試行の判定は CUDA 系 probe の timeout だけ。
-- runtime probe の実行中（保留中を含む）は setup の開始・retry・resume を 409 `diagnostics_running` で拒否する（probe が profile venv の DLL を保持しているため）。逆に setup 実行中は probe しない。残留: probe は heavy slot の外で走るため、実行中の B7 ジョブと GPU を取り合い得る（旧 `/api/environment` と同じ扱い。実機で影響を確認）。
+- 排他（PR #91 P2-3）: プロセス内の共有 `ExecutionGate` を、B7/B8 dispatcher が 1 回の dispatch（job または setup、子 process を含む）の間、runtime probe がその全体の間だけ保持する。双方とも try-acquire なので確認と開始が不可分で、probe 中に queue の setup/job は dispatch されず（次の周回で再試行）、job/setup の実行中に probe は始まらない（`execution_running`）。queue pause 中に登録→probe 開始→dispatch 再開の順でも並行しない。API の 409 `diagnostics_running` は早期の分かりやすい拒否として残すが、保証は gate による。B7 ジョブ実行中の重い probe もこれで保留される。
 - 旧 `/api/wizard/hardware` と `/api/environment` は変更しない（旧 GUI 維持）。重複 probe の解消は新 GUI の診断経路のみ。
 
 ## 5. VC++・ドライバーの診断と修復導線
@@ -97,6 +98,19 @@ PR #88（0.1.70、Windows VM 受入待ち）とは独立。対象は `--next-ui-
 | W-F7 | ダウンロード中に GUI を終了→再起動 | interrupted/recovery の表示、［再開］で verify-first により再取得しない |
 | W-F8 | 話者分離をオン（トークン・同意あり／なし） | なし: 開始不可。あり: 導入と動作確認まで完了。v1 キューでは話者分離付きジョブは拒否される |
 | W-F9 | 証拠ファイルの確認 | `<root>\cache\capability-evidence-v1\*.json` にパス・prompt・文字起こし・トークンが無い |
+
+## 9a. オーナーレビュー（PR #91、2026-11-26）への対応
+
+| 指摘 | 対応 |
+|---|---|
+| P2-1 既定値作成の復旧 | §1。server 側の原子的 create-if-empty（B5 1 transaction）＋ plan に永続化した `apply_defaults`、plan id キーの記録・再照合、閉じている間の成功を次回表示で完了、失敗時の再試行 |
+| P2-2 CUDA 証拠の束縛 | §3。単一 GPU・可視性変数なしに限定して UUID に束縛、smoke の ordinal 0 attestation、VRAM は有界標本化の最大値（下限値）、測定不能は unknown |
+| P2-3 診断と setup の競合 | §4。共有 ExecutionGate（dispatcher と probe の try-acquire）、固定 barrier で両方向の交差順序と例外時の解放を回帰 |
+| P2-4 CPU profile の外挿 | §4。cuda profile のみで判定、不在・不互換は理由付き unknown、新 pass で古い結果を消す |
+| P3 retry の重なり | §4。devices.py は 1 pass 1 回・100 秒窓、診断は process timeout のみ再実行、旧 CLI/API への影響を明記、`first_attempt` |
+| P3 readiness の古い応答 | 応答に Preset/Policy の revision キーと世代を持たせ、選択変更・新しい確認の後に届いた応答は表示しない |
+| P3 CUDA＋話者分離 | 後続 Issue に分離（PR 本文参照）。#89 は実 GPU の cold/refresh 確認が残るため未解決のまま |
+| P3 main 統合 | #88 統合後に最新 main を取り込み、版・lock・AISTATE・変更履歴の競合を整理し両機能を維持する（今回は未実施） |
 
 ## 9. 独立レビューへの対応（2026-11-25）
 

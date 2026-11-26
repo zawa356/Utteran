@@ -192,16 +192,56 @@ def write_fixture(path: Path) -> str:
 
 
 def _attested_gpu(ordinal: int) -> str | None:
-    """UUID of the CUDA ordinal this process runs on, only if NVML reports that same GPU.
+    """UUID of the GPU this smoke runs on, only where that is provable (PR #91 P2-2).
 
-    The link comes from the CUDA driver API in this very process (no index guessing).
-    Without it the VRAM values stay unknown, so the evaluator keeps the candidate unknown.
+    Accepted only for ordinal 0 on a host with exactly one NVIDIA GPU and no CUDA
+    visibility/order variables (``fingerprints.single_cuda_gpu``), and only when the CUDA
+    driver API in this very process reports that same UUID for the ordinal. Otherwise the
+    VRAM values stay unknown, so the evaluator keeps the candidate unknown (never ready).
     """
-    uuid = nvml.cuda_ordinal_uuid(ordinal)
-    info = nvml.snapshot()
-    if uuid is None or info is None or uuid not in {gpu.uuid for gpu in info.gpus}:
+    from utteran.capabilities.fingerprints import single_cuda_gpu
+
+    expected = single_cuda_gpu()
+    if ordinal != 0 or expected is None:
         return None
-    return uuid
+    return expected.uuid if nvml.cuda_ordinal_uuid(ordinal) == expected.uuid else None
+
+
+class _VramPeak:
+    """Bounded sampling of this process's VRAM on one GPU (every 100 ms, at most 6000
+    samples). The maximum seen is a lower bound of the true peak for this short fixture,
+    not a guarantee for long audio; no sample at all (e.g. WDDM N/A) means unknown."""
+
+    INTERVAL = 0.1
+    LIMIT = 6000
+
+    def __init__(self, uuid: str) -> None:
+        import threading
+
+        self.uuid = uuid
+        self.peak: int | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _sample(self) -> None:
+        value = nvml.process_used_memory(self.uuid)
+        if value is not None and (self.peak is None or value > self.peak):
+            self.peak = value
+
+    def _run(self) -> None:
+        for _ in range(self.LIMIT):
+            self._sample()
+            if self._stop.wait(self.INTERVAL):
+                return
+
+    def __enter__(self) -> _VramPeak:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=5)
+        self._sample()  # one more read right before unload
 
 
 def _peak_rss_bytes() -> int | None:
@@ -238,9 +278,10 @@ class FasterWhisperSmokeRuntime:
         if gpu_uuid is not None:
             available = nvml.free_memory(gpu_uuid)
         gpu_used: int | None = None
+        sampler = _VramPeak(gpu_uuid) if gpu_uuid is not None else contextlib.nullcontext()
         backend = FasterWhisperBackend()
         target = "cpu" if device == "cpu" else f"cuda:{device_index}"
-        with measure_peak() as monitor:
+        with measure_peak() as monitor, sampler:
             try:
                 backend.load(str(model_dir), target, compute_type)
             except VramExhaustedError:
@@ -279,10 +320,9 @@ class FasterWhisperSmokeRuntime:
             observed_device = getattr(replica, "device", None)
             observed_indices = getattr(replica, "device_index", None)
             observed_compute = getattr(replica, "compute_type", None)
-            if gpu_uuid is not None:
-                # Before unload: this process's own allocation on the attested GPU (NVML
-                # reports N/A under some drivers, e.g. Windows WDDM -> unknown, not guessed).
-                gpu_used = nvml.process_used_memory(gpu_uuid)
+        if isinstance(sampler, _VramPeak):
+            # NVML reports N/A under some drivers (e.g. Windows WDDM) -> unknown, not guessed.
+            gpu_used = sampler.peak
         peak = max((v for v in (monitor.peak_bytes, _peak_rss_bytes()) if v), default=None)
         backend.unload()
         import ctranslate2

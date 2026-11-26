@@ -39,6 +39,10 @@ export const DIARIZATION_REF = "pyannote:pyannote/speaker-diarization-community-
 export const VERIFIABLE_PROFILES: readonly ProfileKind[] = ["cpu", "cuda"];
 export const POLL_MS = 1000;
 
+export interface ResourceRef {
+  id: string;
+  revision: number;
+}
 export type SetupMode = "standard" | "custom" | "verify";
 export type Phase = "idle" | "pending" | "done" | "error";
 
@@ -60,7 +64,8 @@ export interface SetupState {
   operationError: ApiError | null;
   action: { phase: Phase; error: ApiError | null };
   defaults: { phase: "idle" | "pending" | "created" | "kept" | "error"; error: ApiError | null };
-  readiness: { phase: Phase; data: Readiness | null; error: ApiError | null; target: "defaults" | "selection" | null };
+  /** `key` = the Preset/Policy revisions the answer is for (PR #91 P3: never shown for another). */
+  readiness: { phase: Phase; data: Readiness | null; error: ApiError | null; key: string | null };
   /** Settings of the planned verification (kept in memory only, for the defaults/readiness). */
   verifiedSettings: JsonObject | null;
   /**
@@ -96,7 +101,7 @@ export function verifyRefusal(settings: JsonObject | null): string | null {
   return null;
 }
 
-export function planRequest(choice: SetupChoice, settings: JsonObject): JsonObject {
+export function planRequest(choice: SetupChoice, settings: JsonObject, applyDefaults = false): JsonObject {
   const refs = [choice.primary, ...choice.models.filter((m) => m !== choice.primary)].map((m) => `faster-whisper:${m}`);
   if (choice.diarization) refs.push(DIARIZATION_REF);
   return {
@@ -105,16 +110,13 @@ export function planRequest(choice: SetupChoice, settings: JsonObject): JsonObje
     model_refs: refs,
     diarization_enabled: choice.diarization,
     verification_settings: settings,
+    ...(applyDefaults ? { apply_defaults: true } : {}),
   };
 }
 
-/** A deterministic intent for the post-setup defaults: same operation → same key. */
-function derivedIntent(operationId: string, body: JsonObject): MutationIntent<JsonObject> {
-  const hex = operationId.replace(/^setup_/, "");
-  return new MutationIntent(body, (bytes) => {
-    for (let i = 0; i < bytes.length; i += 1) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16) || 0;
-    return bytes;
-  });
+/** Identity of a readiness answer: exact Preset and Policy revisions (null when incomplete). */
+export function readinessKey(preset: { id: string; revision: number } | null, policy: { id: string; revision: number } | null): string | null {
+  return preset && policy ? `${preset.id}@${preset.revision}|${policy.id}@${policy.revision}` : null;
 }
 
 export function isTerminal(op: SetupOperation | null): boolean {
@@ -132,7 +134,7 @@ export class SetupController {
     operationError: null,
     action: idle,
     defaults: idle,
-    readiness: { phase: "idle", data: null, error: null, target: null },
+    readiness: { phase: "idle", data: null, error: null, key: null },
     verifiedSettings: null,
     queue: { dispatch: null, revision: null, ahead: 0, phase: "idle", error: null },
   });
@@ -147,6 +149,7 @@ export class SetupController {
   private finished = new Set<string>();
   /** The person chose a profile themselves: a later detection never replaces it. */
   private profileTouched = false;
+  private readinessGeneration = 0;
   private disposed = false;
 
   constructor(
@@ -156,7 +159,7 @@ export class SetupController {
       /** The selected Preset/Policy of the screen (re-verification, readiness). */
       selection?: () => { preset: PresetV1 | null; policy: PolicyV1 | null };
       /** After defaults were created, the screen reloads and selects them. */
-      onDefaults?: (preset: PresetV1, policy: PolicyV1) => Promise<void> | void;
+      onDefaults?: (preset: ResourceRef, policy: ResourceRef) => Promise<void> | void;
       pollMs?: number;
       /** The app-wide queue write lease (shared with the job board and single job). */
       gate?: QueueMutationGate;
@@ -276,7 +279,9 @@ export class SetupController {
       settings = defaultSettings(choice.primary);
     }
     if (!this.planIntent || state.plan.phase !== "error" || !state.plan.unknown) {
-      this.planIntent = new MutationIntent(planRequest(choice, settings));
+      // First setup / additional setup: ask the server to create defaults if (and only if)
+      // the settings store is empty. A re-verification never does.
+      this.planIntent = new MutationIntent(planRequest(choice, settings, state.mode !== "verify"));
     }
     // A replayed (unknown-outcome) intent keeps its own body: remember exactly what it verifies.
     const sent = this.planIntent.body.verification_settings as JsonObject;
@@ -326,7 +331,7 @@ export class SetupController {
         approval_id: approval.id,
       });
       const op = await this.api.start(this.startIntent);
-      this.store.patch({ start: { phase: "done", error: null, unknown: false }, operation: op, operationError: null, defaults: idle, readiness: { phase: "idle", data: null, error: null, target: null } });
+      this.store.patch({ start: { phase: "done", error: null, unknown: false }, operation: op, operationError: null, defaults: idle, readiness: { phase: "idle", data: null, error: null, key: null } });
       await this.loadQueue();
       this.schedule();
       return true;
@@ -359,7 +364,17 @@ export class SetupController {
       if (pick && (!current || isTerminal(current) || current.id !== pick.id || pick.revision > current.revision || pick.status !== current.status)) {
         this.store.patch({ operation: pick, operationError: null });
         this.schedule();
+        return;
       }
+      if (pick || current) return;
+      // A setup that succeeded while this screen was closed: if it asked for defaults that
+      // were never applied, show it and finish that step (read first; write only if pending).
+      const done = items.filter((op) => op.status === "succeeded").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+      if (!done) return;
+      const view = await this.api.getDefaults(done.id);
+      if (view.state !== "pending") return;
+      this.store.patch({ operation: done, operationError: null });
+      await this.settle(done);
     } catch (error) {
       this.store.patch({ operationError: toApiError(error) });
     }
@@ -390,9 +405,12 @@ export class SetupController {
 
   private async settle(op: SetupOperation): Promise<void> {
     if (this.finished.has(op.id)) return;
-    this.finished.add(op.id);
-    if (op.status !== "succeeded") return;
-    await this.applyDefaults(op);
+    if (op.status !== "succeeded") {
+      this.finished.add(op.id);
+      return;
+    }
+    // Marked finished only after the defaults step settled, so an error can be retried.
+    if (await this.applyDefaults(op)) this.finished.add(op.id);
     await this.checkReadiness();
   }
 
@@ -447,53 +465,37 @@ export class SetupController {
 
   // ---------------------------------------------------------------- defaults / readiness
 
-  private async applyDefaults(op: SetupOperation): Promise<void> {
-    let settings = this.store.get().verifiedSettings;
-    if (settings === null && this.store.get().mode !== "verify") {
-      // After a reload the plan is read back: only a template-based plan (standard/custom)
-      // can create defaults, and its settings are the template with the verified model.
-      try {
-        const plan = await this.api.getPlan(op.planId);
-        const model = plan.verification?.modelRef.replace(/^faster-whisper:/, "");
-        settings = model ? defaultSettings(model) : null;
-      } catch {
-        settings = null;
-      }
-    }
-    if (this.store.get().mode === "verify" || !settings) {
-      this.store.patch({ defaults: { phase: "kept", error: null } });
-      return;
-    }
+  /**
+   * PR #91 P2-1: the server creates the defaults (one B5 transaction, create-if-empty, keyed
+   * by the plan). The intent was stored in the plan (`apply_defaults`), so this works after a
+   * reload, a lost answer or from another window, never leaves half a pair and never changes
+   * an existing Preset/Policy. Re-verification plans never ask for it.
+   */
+  async applyDefaults(op: SetupOperation): Promise<boolean> {
     this.store.patch({ defaults: { phase: "pending", error: null } });
     try {
-      const [presets, policies] = await Promise.all([this.resources.listAll("presets"), this.resources.listAll("execution-policies")]);
-      if (presets.items.length > 0 || policies.items.length > 0 || presets.truncated || policies.truncated) {
+      let view = await this.api.getDefaults(op.id);
+      if (view.state === "pending") view = await this.api.applyDefaults(op.id);
+      if (view.state === "created" && view.preset && view.policy) {
+        this.store.patch({ defaults: { phase: "created", error: null } });
+        await this.hooks.onDefaults?.(view.preset, view.policy);
+      } else if (view.state === "kept") {
         this.store.patch({ defaults: { phase: "kept", error: null } });
-        return;
+      } else {
+        this.store.patch({ defaults: idle });
       }
-      const preset = (await this.resources.create(
-        "presets",
-        derivedIntent(op.id, { schema_version: 1, name: `Setup ${String((settings.asr as JsonObject).model)}`, settings }),
-      )) as PresetV1;
-      const policy = (await this.resources.create(
-        "execution-policies",
-        derivedIntent(op.id, {
-          schema_version: 1,
-          name: `Setup ${op.profileKind}`,
-          mode: "auto",
-          fixed_candidate_id: null,
-          allowed_profile_ids: [op.profileKind],
-          objective: "balanced",
-          max_memory_bytes: null,
-          fallback: "none",
-          execution_deadline_seconds: null,
-        }),
-      )) as PolicyV1;
-      this.store.patch({ defaults: { phase: "created", error: null } });
-      await this.hooks.onDefaults?.(preset, policy);
+      return true;
     } catch (error) {
+      // Nothing is assumed: the person can try again (the server answer is idempotent).
       this.store.patch({ defaults: { phase: "error", error: toApiError(error) } });
+      return false;
     }
+  }
+
+  async retryDefaults(): Promise<void> {
+    const op = this.store.get().operation;
+    if (op?.status !== "succeeded" || this.store.get().defaults.phase === "pending") return;
+    if (await this.applyDefaults(op)) await this.checkReadiness();
   }
 
   /** Read-only: would a job with these settings be admitted now? (no smoke, no token) */
@@ -501,16 +503,21 @@ export class SetupController {
     const selection = this.hooks.selection?.() ?? { preset: null, policy: null };
     const policy = selection.policy;
     const settings = selection.preset?.settings ?? null;
-    if (!policy || !settings) {
-      this.store.patch({ readiness: { phase: "idle", data: null, error: null, target: null } });
+    const key = readinessKey(selection.preset, policy);
+    const generation = ++this.readinessGeneration;
+    if (!policy || !settings || key === null) {
+      this.store.patch({ readiness: { phase: "idle", data: null, error: null, key: null } });
       return;
     }
-    this.store.patch({ readiness: { phase: "pending", data: null, error: null, target: "selection" } });
+    this.store.patch({ readiness: { phase: "pending", data: null, error: null, key } });
     try {
       const data = await this.api.readiness({ schema_version: 1, settings, policy_ref: { id: policy.id, revision: policy.revision } });
-      this.store.patch({ readiness: { phase: "done", data, error: null, target: "selection" } });
+      // A newer check (or a selection change) supersedes this answer: never show it.
+      if (generation !== this.readinessGeneration || readinessKey(this.hooks.selection?.().preset ?? null, this.hooks.selection?.().policy ?? null) !== key) return;
+      this.store.patch({ readiness: { phase: "done", data, error: null, key } });
     } catch (error) {
-      this.store.patch({ readiness: { phase: "error", data: null, error: toApiError(error), target: "selection" } });
+      if (generation !== this.readinessGeneration) return;
+      this.store.patch({ readiness: { phase: "error", data: null, error: toApiError(error), key } });
     }
   }
 
