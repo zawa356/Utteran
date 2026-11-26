@@ -32,6 +32,9 @@ AgreementId = Annotated[StrictStr, Field(pattern=r"^hf-gated:[A-Za-z0-9][A-Za-z0
 CredentialId = Literal["hf_token"]
 ByteCount = Annotated[StrictInt, Field(ge=0)]
 
+# Fixed CLI status for the managed community-1 verify/download subprocess.
+COMMUNITY_ASSETS_MISMATCH_EXIT = 5
+
 PlanState = Literal["proposed", "approved", "consumed", "expired"]
 ChangeAction = Literal["create", "reuse", "rebuild", "verify"]
 ChangeKind = Literal["profile", "model", "native", "ir"]
@@ -61,6 +64,7 @@ StepReason = Literal[
     "launch_failed",
     "process_failed",
     "verification_failed",
+    "community_assets_mismatch",
     "credential_required",
     "agreement_required",
     "network_error",
@@ -91,6 +95,7 @@ SetupErrorCode = Literal[
     "launch_failed",
     "process_failed",
     "verification_failed",
+    "community_assets_mismatch",
     "network_error",
     "preflight_invalid",
     "executor_failed",

@@ -27,6 +27,7 @@ import wave
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from importlib.resources import files
 from pathlib import Path
 from typing import Annotated, Literal, Protocol, cast, get_args
 
@@ -130,6 +131,8 @@ class RuntimeReport:
     available_memory_bytes: int | None
     route: tuple[str, str] | None = None
     diarization_device: str | None = None
+    diarization_required_memory_bytes: int | None = None
+    diarization_available_memory_bytes: int | None = None
 
 
 class SmokeFailure(Exception):
@@ -181,6 +184,22 @@ def fixture_bytes() -> bytes:
         sample = value * envelope // (1600 * 5)
         frames += int(sample).to_bytes(2, "little", signed=True)
     return bytes(frames)
+
+
+def write_speech_fixture(path: Path) -> str:
+    """Copy the reviewed product resource through a bounded, digest-checked read."""
+    source = files("utteran.capabilities").joinpath("fixtures", "japanese_reference.wav")
+    with source.open("rb") as fixture:
+        data = fixture.read(1024 * 1024 + 1)
+    if len(data) > 1024 * 1024:
+        raise ValueError("speech fixture exceeds limit")
+    blob = b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+    if hashlib.sha1(blob, usedforsecurity=False).hexdigest() != (
+        "e8fb29d27fc133bf8a5e956c81033f8e9df1f34d"
+    ):
+        raise ValueError("speech fixture digest mismatch")
+    path.write_bytes(data)
+    return hashlib.sha256(data).hexdigest()
 
 
 def write_fixture(path: Path) -> str:
@@ -304,6 +323,9 @@ class FasterWhisperSmokeRuntime:
         sampler = _VramPeak(gpu_uuid) if gpu_uuid is not None else contextlib.nullcontext()
         backend = FasterWhisperBackend(local_only=True)
         target = "cpu" if device == "cpu" else f"cuda:{device_index}"
+        word_timestamps = settings is not None and (
+            settings.asr.word_timestamps != "never" or settings.diarization.enabled
+        )
         with measure_peak() as monitor, sampler:
             try:
                 backend.load(str(model_dir), target, compute_type)
@@ -318,8 +340,7 @@ class FasterWhisperSmokeRuntime:
             except Exception:
                 raise SmokeFailure("model_load_failed") from None
             try:
-                # VAD off: a VAD that removes the whole fixture would skip the model,
-                # so encoder and decoder are guaranteed to run. No prompt, no words.
+                # Exercise the effective options on the reviewed speech fixture.
                 result = backend.transcribe(
                     audio,
                     ASROptions(
@@ -338,11 +359,13 @@ class FasterWhisperSmokeRuntime:
                         beam_size=beam_size,
                         condition_on_previous_text=settings is not None
                         and settings.asr.condition_on_previous_text,
-                        word_timestamps=settings is not None,
+                        word_timestamps=word_timestamps,
                     ),
                 )
                 duration = float(result.duration)
-                if settings is not None and not _has_words(result):
+                if settings is not None and (
+                    not result.segments or (word_timestamps and not _has_words(result))
+                ):
                     raise SmokeFailure("inference_failed")
                 del result  # never retained, logged or printed
             except (VramExhaustedError, MemoryError):
@@ -444,8 +467,10 @@ def _diarization_smoke(
     settings: ProcessingSettings,
     model_root: Path,
 ) -> RuntimeReport:
+    from utteran.capabilities.fingerprints import available_memory
     from utteran.diarization.pyannote import PyannoteBackend
     from utteran.errors import ModelNotFoundError, VramExhaustedError
+    from utteran.memory import measure_peak, read_process_tree_memory
     from utteran.types import DiarizationOptions
 
     device = identity.diarization_device
@@ -460,27 +485,59 @@ def _diarization_smoke(
     )
     target = device if device == "cpu" else f"{device}:0"
     backend = PyannoteBackend(offline=True)
+    # Sample after ASR unload. Only compare readings in the same memory domain.
+    gpu_uuid = _attested_gpu(0) if device == "cuda" else None
+    available = available_memory(device)
+    baseline = (
+        read_process_tree_memory(os.getpid())
+        if device == "cpu"
+        else nvml.process_used_memory(gpu_uuid)
+        if gpu_uuid is not None
+        else None
+    )
+    cpu_memory = (
+        measure_peak() if baseline is not None and device == "cpu" else contextlib.nullcontext()
+    )
+    gpu_memory = (
+        _VramPeak(gpu_uuid)
+        if baseline is not None and gpu_uuid is not None
+        else contextlib.nullcontext()
+    )
     try:
-        backend.load(str(model), target)
-        result = backend.diarize(
-            audio,
-            DiarizationOptions(
-                num_speakers=settings.diarization.num_speakers,
-                min_speakers=settings.diarization.min_speakers,
-                max_speakers=settings.diarization.max_speakers,
-            ),
-        )
-        if not result.turns or not result.exclusive_turns or result.device != target:
-            raise SmokeFailure("inference_failed")
+        with cpu_memory as cpu_monitor, gpu_memory:
+            backend.load(str(model), target)
+            result = backend.diarize(
+                audio,
+                DiarizationOptions(
+                    num_speakers=settings.diarization.num_speakers,
+                    min_speakers=settings.diarization.min_speakers,
+                    max_speakers=settings.diarization.max_speakers,
+                ),
+            )
+            if not result.turns or not result.exclusive_turns or result.device != target:
+                raise SmokeFailure("inference_failed")
     except (MemoryError, VramExhaustedError):
         raise SmokeFailure("out_of_memory") from None
     except ModelNotFoundError:
         raise SmokeFailure("model_load_failed") from None
     finally:
         backend.unload()
-    # Keep the ASR memory evidence. The worker measures the diarization device
-    # again at its stage boundary, after ASR has unloaded.
-    return replace(report, diarization_device=device)
+    peak = (
+        cpu_monitor.peak_bytes
+        if cpu_monitor is not None
+        else gpu_memory.peak
+        if isinstance(gpu_memory, _VramPeak)
+        else None
+    )
+    required = (
+        peak - baseline if peak is not None and baseline is not None and peak > baseline else None
+    )
+    return replace(
+        report,
+        diarization_device=device,
+        diarization_required_memory_bytes=required,
+        diarization_available_memory_bytes=available,
+    )
 
 
 # --------------------------------------------------------------------------- orchestration
@@ -597,21 +654,10 @@ def run_smoke(
     audio = work_dir / FIXTURE_NAME
     use_speech = isinstance(runtime, FasterWhisperSmokeRuntime)
     if use_speech:
-        # Existing reviewed, synthetic TTS fixture. Verify the known Git blob before use.
-        source = repo_root / "tests" / "fixtures" / "benchmark" / "japanese_reference.wav"
         try:
-            with source.open("rb") as fixture:
-                data = fixture.read(1024 * 1024)
-        except OSError:
+            fixture_sha = write_speech_fixture(audio)
+        except (OSError, ValueError):
             return SmokeResult("recipe_unavailable", "none")
-        blob = b"blob " + str(len(data)).encode("ascii") + b"\0" + data
-        if (
-            hashlib.sha1(blob, usedforsecurity=False).hexdigest()
-            != "e8fb29d27fc133bf8a5e956c81033f8e9df1f34d"
-        ):
-            return SmokeResult("recipe_unavailable", "none")
-        audio.write_bytes(data)
-        fixture_sha = hashlib.sha256(data).hexdigest()
     else:
         fixture_sha = write_fixture(audio)
     remove_temporaries(directory)
@@ -699,6 +745,8 @@ def run_smoke(
         encoder_device_index_observed=encoder_index,
         decoder_device_index_observed=decoder_index,
         diarization_observed=report.diarization_device,
+        diarization_required_memory_bytes=report.diarization_required_memory_bytes,
+        diarization_available_memory_bytes=report.diarization_available_memory_bytes,
         required_memory_bytes=report.required_memory_bytes,
         available_memory_bytes=report.available_memory_bytes,
     )

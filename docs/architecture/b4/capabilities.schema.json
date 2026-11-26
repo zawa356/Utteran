@@ -622,6 +622,32 @@
           ],
           "default": null
         },
+        "diarization_available_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diarization Available Memory Bytes"
+        },
+        "diarization_required_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diarization Required Memory Bytes"
+        },
         "identity": {
           "$ref": "#/$defs/ExecutionIdentity"
         },

@@ -30,7 +30,6 @@ from utteran_contracts.control import OperationStatus, ProcessIdentity, ReasonCo
 from utteran_contracts.setup import (
     APPROVAL_TTL_SECONDS,
     PLAN_TTL_SECONDS,
-    SETUP_MODELS,
     Approval,
     ApprovalRequest,
     EvidenceKind,
@@ -160,11 +159,6 @@ class AcceptedSetup:
 
 def plan_hash(content: PlanContent) -> str:
     return hashlib.sha256(canonical(content.to_wire()).encode()).hexdigest()
-
-
-def required_credentials(model_refs: Collection[str]) -> frozenset[str]:
-    gated = any(SETUP_MODELS[ref].gated for ref in model_refs if ref in SETUP_MODELS)
-    return frozenset({"hf_token"}) if gated else frozenset()
 
 
 class SetupControlStore(JobControlStore):
@@ -420,7 +414,7 @@ class SetupControlStore(JobControlStore):
                 raise ControlError(E.AGREEMENT_UNKNOWN)
             if required - accepted:
                 raise ControlError(E.AGREEMENT_REQUIRED)  # never assumed on the user's behalf
-            if required_credentials(content.model_refs) - set(credentials):
+            if content.required_agreements and "hf_token" not in credentials:
                 raise ControlError(E.CREDENTIAL_REQUIRED)
             now = self._clock()
             plan_expiry = datetime.fromisoformat(row[7].replace("Z", "+00:00"))
@@ -746,7 +740,7 @@ class SetupControlStore(JobControlStore):
         known = {content.inventory_fingerprint, *(v for v in (last[0] if last else None,) if v)}
         if fingerprint not in known:
             raise ControlError(E.REAPPROVAL_REQUIRED)
-        if required_credentials(content.model_refs) - set(credentials):
+        if content.required_agreements and "hf_token" not in credentials:
             raise ControlError(E.CREDENTIAL_REQUIRED)
         return (*link, content)
 

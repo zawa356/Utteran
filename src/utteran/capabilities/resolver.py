@@ -61,12 +61,17 @@ def resolve(inventory: InventorySnapshot, policy: Policy, *, now: datetime) -> R
         if policy.allowed_profile_ids and identity.profile_id not in policy.allowed_profile_ids:
             reasons.append("profile_not_allowed")
             policy_blocked = True
-        memory = candidate.deployment.required_memory_bytes
-        if policy.max_memory_bytes is not None:
-            if memory is None:
-                reasons.append("memory_unknown")
+        memory_cap = policy.max_memory_bytes
+        if memory_cap is not None:
+            peaks = [candidate.deployment.required_memory_bytes]
+            if inventory.settings.diarization.enabled:
+                peaks.append(candidate.deployment.diarization_required_memory_bytes)
+            if any(peak is None for peak in peaks):
+                if "memory_unknown" not in reasons:
+                    reasons.append("memory_unknown")
                 policy_blocked = True
-            elif memory > policy.max_memory_bytes:
+            # Models are used sequentially. Each measured stage must fit the cap.
+            if any(peak is not None and peak > memory_cap for peak in peaks):
                 reasons.append("memory_limit")
                 policy_blocked = True
         # No bounded execution-time evidence is supported by B4. Smoke and a

@@ -101,6 +101,8 @@ class SmokeEvidence(Contract):
     decoder_device_index_observed: Index
     required_memory_bytes: Annotated[StrictInt, Field(ge=1)] | None
     available_memory_bytes: Annotated[StrictInt, Field(ge=0)] | None
+    diarization_required_memory_bytes: Annotated[StrictInt, Field(ge=1)] | None = None
+    diarization_available_memory_bytes: Annotated[StrictInt, Field(ge=0)] | None = None
     fixture_sha256: Digest
     checksum: Digest
 
@@ -422,25 +424,37 @@ def _merge(
         if identity.hardware_fingerprint is not None
         else _observation("hardware", "unknown", "not_observed", scope, record)
     )
-    required, available = record.required_memory_bytes, record.available_memory_bytes
-    if available_now is not None:
-        current = available_now(identity.device) if required is not None else None
-        if required is not None and available is not None and available < required:
-            current = available if current is None else min(available, current)
-        available = current
-    if required is None or available is None:
-        memory = _observation("memory", "unknown", "memory_unknown", scope, record)
-    elif required > available:
+
+    def available_for(device: str, required: int | None, observed: int | None) -> int | None:
+        if available_now is None:
+            return observed
+        current = available_now(device) if required is not None else None
+        if required is not None and observed is not None and observed < required:
+            return observed if current is None else min(observed, current)
+        return current
+
+    required = record.required_memory_bytes
+    available = available_for(identity.device, required, record.available_memory_bytes)
+    budgets = [(required, available)]
+    diar_required = None
+    diar_available = None
+    diar_device = identity.diarization_device
+    added = {o.kind: o for o in (smoke, runtime, hardware)}
+    if diar_device is not None:
+        if diar_device == record.diarization_observed and identity.diarization_fingerprint:
+            added["diarization"] = _observation("diarization", "passed", "supported", scope, record)
+            diar_required = record.diarization_required_memory_bytes
+            diar_available = available_for(
+                diar_device, diar_required, record.diarization_available_memory_bytes
+            )
+        budgets.append((diar_required, diar_available))
+    if any(needed is not None and free is not None and needed > free for needed, free in budgets):
         memory = _observation("memory", "failed", "memory_insufficient", scope, record)
+    elif any(needed is None or free is None for needed, free in budgets):
+        memory = _observation("memory", "unknown", "memory_unknown", scope, record)
     else:
         memory = _observation("memory", "passed", "supported", scope, record)
-    added = {o.kind: o for o in (smoke, runtime, hardware, memory)}
-    if (
-        identity.diarization_device is not None
-        and identity.diarization_fingerprint is not None
-        and identity.diarization_device == record.diarization_observed
-    ):
-        added["diarization"] = _observation("diarization", "passed", "supported", scope, record)
+    added["memory"] = memory
     kept = tuple(
         o.model_copy(update={"fingerprint": scope}) if o.fingerprint == old_scope else o
         for o in deployment.observations
@@ -451,6 +465,8 @@ def _merge(
         observations=kept + tuple(added.values()),
         required_memory_bytes=required,
         available_memory_bytes=available,
+        diarization_required_memory_bytes=diar_required,
+        diarization_available_memory_bytes=diar_available,
         benchmark=deployment.benchmark,
     )
 

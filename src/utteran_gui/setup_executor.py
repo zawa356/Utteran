@@ -31,6 +31,7 @@ from typing import Any, Literal, Protocol
 
 from utteran_contracts.control import OwnerIdentity, ProcessIdentity
 from utteran_contracts.setup import (
+    COMMUNITY_ASSETS_MISMATCH_EXIT,
     SETUP_MODELS,
     EvidenceKind,
     PlanContent,
@@ -757,7 +758,14 @@ class SetupExecutor:
         if managed_only:
             args.append("--managed-only")
         argv = self.adapter.profile_command(profile, args)
-        return self._child(run, step, argv, profile=profile).exit_code == 0
+        result = self._child(run, step, argv, profile=profile)
+        if managed_only and SETUP_MODELS[ref].gated:
+            self._check_community_assets(run, step, result)
+        return result.exit_code == 0
+
+    def _check_community_assets(self, run: _Run, step: SetupStep, result: ChildResult) -> None:
+        if result.exit_code == COMMUNITY_ASSETS_MISMATCH_EXIT:
+            self._fail(run, step, "community_assets_mismatch", "community_assets_mismatch")
 
     def _model(
         self,
@@ -782,7 +790,10 @@ class SetupExecutor:
         if managed_only:
             args.append("--managed-only")
         download = self.adapter.profile_command(profile, args)
-        if self._child(run, step, download, profile=profile).exit_code != 0:
+        result = self._child(run, step, download, profile=profile)
+        if managed_only and SETUP_MODELS[ref].gated:
+            self._check_community_assets(run, step, result)
+        if result.exit_code != 0:
             self._fail(run, step, "process_failed", "process_failed")
         # Manager resume only; a partial copy is never accepted: verify again after download.
         if not self._verify_model(run, step, profile, ref, managed_only=managed_only):

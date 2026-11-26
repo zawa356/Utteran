@@ -6,6 +6,9 @@
 - Windows Intel の Vulkan＋XPU を優先し、native IPC、管理下の offline pyannote、B4 実経路照合、B8 と新 GUI を接続。メモリだけ不明な場合は警告。残留 lease と NVML sampler の競合を修正。
 - [束G 仕様と実機受入](docs/architecture/ui3/g-multiprofile.md)。Windows VM・GPU・実モデルは NOT_RUN。正式配布は #8、総合受入は #22。CI は最終 Draft PR の checks を参照。
 
+
+- [#93 オーナーレビュー](https://github.com/zawa356/Utteran/pull/93#pullrequestreview-6067330147) の P2 3件に対応。B4合成音声の製品同梱、話者分離の段階別メモリ証拠と上限判定、community-1資産の保全と空のデータ領域への復旧を追加。開発版は 0.1.72。Windows の配布 payload と Intel 実機の受入は #22。
+
 ## 現在地（2026-11-25、束F、0.1.71・未リリース）
 
 - main 基点 `f859a5d`（0.1.69）。作業ブランチ `claude/admiring-brown-nv1ghq`（セッション指定）。[#90](https://github.com/zawa356/Utteran/issues/90)・[#89](https://github.com/zawa356/Utteran/issues/89)。PR #88（0.1.70）とは独立、そのブランチは不変。

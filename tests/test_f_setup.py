@@ -1505,3 +1505,61 @@ def test_nvml_identity_survives_unavailable_memory():
     observed = nvml.snapshot(lib)
     assert observed is not None and observed.gpus == (nvml.NvmlGpu(GPU_A[0], GPU_A[1], None),)
     assert nvml.free_memory(GPU_A[0], lib) is None
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_managed_community_reuse_or_conflict_never_reads_token_or_downloads(tmp_path, conflict):
+    from utteran_contracts.setup import COMMUNITY_ASSETS_MISMATCH_EXIT
+
+    world = SmokeWorld(tmp_path)
+    world.install("cpu")
+    _model_ok(world, TURBO)
+    _model_ok(world, PYA)
+    if conflict:
+        world.fail[f"models verify {PYA}"] = COMMUNITY_ASSETS_MISMATCH_EXIT
+    settings = asr_settings()
+    settings = settings.model_copy(
+        update={"diarization": settings.diarization.model_copy(update={"enabled": True})}
+    )
+    req = verify_request("cpu", TURBO, PYA, settings=settings)
+    store = make_store(tmp_path / "ops.sqlite3")
+    op = queued_setup(store, world, req)
+    _run(store, world)
+    view = store.get_setup(op.body["id"])
+    if conflict:
+        assert view.status == "failed"
+        assert view.error is not None and view.error.code == "community_assets_mismatch"
+        assert any(step.reason_code == "community_assets_mismatch" for step in view.steps)
+    else:
+        assert view.status == "succeeded"
+    assert all("download" not in call and "token-status" not in call for call in world.calls)
+
+
+def test_new_root_community_download_requires_consent_and_credential(tmp_path):
+    from test_b8_setup import E, approve, plan, start
+    from utteran_control.errors import ControlError
+
+    world = SmokeWorld(tmp_path)
+    world.install("cpu")
+    settings = asr_settings()
+    settings = settings.model_copy(
+        update={"diarization": settings.diarization.model_copy(update={"enabled": True})}
+    )
+    store = make_store(tmp_path / "ops.sqlite3")
+    request = verify_request("cpu", TURBO, PYA, settings=settings)
+    planned = plan(store, world, request)
+    with pytest.raises(ControlError) as denied:
+        approve(store, world, planned)
+    assert denied.value.code is E.AGREEMENT_REQUIRED
+    agreements = tuple(planned.body["required_agreements"])
+    with pytest.raises(ControlError) as denied:
+        approve(store, world, planned, agreements)
+    assert denied.value.code is E.CREDENTIAL_REQUIRED
+    assert not world.calls
+
+    world.credential = True
+    approval = approve(store, world, planned, agreements)
+    op = start(store, world, approval)
+    _run(store, world)
+    assert store.get_setup(op.body["id"]).status == "succeeded"
+    assert any("download" in call and PYA in call for call in world.calls)

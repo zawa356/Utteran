@@ -19,6 +19,13 @@ Intel 推奨は OS の物理検出から始め、Vulkan・OpenVINO・XPU の run
 - smoke scope v2 には profile/lock/runtime、OS/driver とデバイス、モデルと native 一式のファイル識別、話者分離資産、完全な設定を含める。旧 scope の証拠では実行できない。VAD と必要な単語時刻を含め、レビュー済みの合成日本語音声で実行する。成功した実経路と設定が一致した場合に限り、メモリだけが取得不能なら `memory_unknown` の警告付きで実行できる。計測できる CPU/NVML 空き容量は refresh・prestart でも比較する。既知の不足、route/identity 不一致、期限切れや必須証拠不足は拒否する。短尺計測はピークの下限で、代表長尺で確認する。OOM は固定エラーで返す。
 - NativeBuilder の variant ごとの manifest、実行パス解決、現在の local build を流用する。承認済み B8 が MSVC Build Tools／Vulkan SDK／VC++ runtime／Intel driver 等の既存前提に従ってビルドし、必要な場合だけ IR を準備する。一般利用向けの署名・検証済み CI 成果物の取得は [#8](https://github.com/zawa356/Utteran/issues/8)・[#7](https://github.com/zawa356/Utteran/issues/7) で扱う。whisper.cpp は MIT、community-1 は CC-BY-4.0 と gated 利用条件が適用される。
 
+
+## PR #93 オーナーレビュー対応
+
+- B4 はレビュー済みの合成日本語 WAV を製品パッケージから読み、上限と Git blob digest を照合する。wheel の隔離試験では `tests/` がない作業ディレクトリでこのリソースを使用する。installer と portable は既存の `src/utteran` 配置から同じ WAV を取得する。Windows の配布 payload 全体は #88 との統合候補で確認する。
+- ASR と話者分離の短尺メモリ証拠を別々に扱う。計測できる CPU/NVML の空きは B4 refresh と起動前に各デバイスで確認する。上限未設定ではメモリだけ不明なら警告付きで実行できる。明示的な `max_memory_bytes` は各段階の短尺必要量が既知で上限内の場合に限り満たす。段階ごとに解放するため、測定値は加算しない。XPU の容量を空きと扱わず、未計測の必要量は不明とする。短尺測定は長尺時の使用量を保証しない。
+- 既存の community-1 が固定版の検証を通れば、トークン・同意を要求せず再利用する。不一致・部分取得は `community_assets_mismatch` で停止し、既存ファイルを保全する。新しい空のディレクトリを `UTTERAN_DATA_ROOT` に指定して開発用 GUI を起動し、利用条件とトークンを用意して Setup の取得を承認する。詳しい root の条件は [G-09](g09-next-ui-v1-startup.md#2-開発用data-rootの条件-next-ui-v1のみ) を参照する。
+
 ## 総合受入（[#22](https://github.com/zawa356/Utteran/issues/22)）
 
 1. Windows VM で専用マーカー付きの新規 root を用意する。旧 root の設定・モデル・成果物の検証前後の状態を比較する。既定 GUI と CLI の起動、VC++／driver／toolchain 不足の表示を確認する。#88 の VM 固有の競合・ファイルシステム試験も実施する。

@@ -333,12 +333,25 @@ def evaluate_candidate(
             issues.append(SelectionIssue(kind=kind, code=code))
             blocked |= observation.state == "failed"
 
-    if deployment.required_memory_bytes is None or deployment.available_memory_bytes is None:
-        if not any(issue.kind == "memory" and issue.code == "memory_unknown" for issue in issues):
-            issues.append(SelectionIssue(kind="memory", code="memory_unknown"))
-    elif deployment.required_memory_bytes > deployment.available_memory_bytes:
-        issues.append(SelectionIssue(kind="memory", code="memory_insufficient"))
-        blocked = True
+    budgets = [(deployment.required_memory_bytes, deployment.available_memory_bytes)]
+    if settings.diarization.enabled and identity.smoke_version == 2:
+        budgets.append(
+            (
+                deployment.diarization_required_memory_bytes,
+                deployment.diarization_available_memory_bytes,
+            )
+        )
+    for required_bytes, available_bytes in budgets:
+        if required_bytes is None or available_bytes is None:
+            code = "memory_unknown"
+        elif required_bytes > available_bytes:
+            code = "memory_insufficient"
+            blocked = True
+        else:
+            continue
+        issue = SelectionIssue(kind="memory", code=code)
+        if issue not in issues:
+            issues.append(issue)
     memory_warning = identity.smoke_version == 2 and any(
         o.kind == "memory"
         and o.source == "smoke"

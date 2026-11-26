@@ -75,6 +75,7 @@ from utteran.diarization_quality import (
 )
 from utteran.errors import (
     CancelledError,
+    CommunityAssetsMismatchError,
     ConfigurationError,
     HuggingFaceAuthenticationError,
     HuggingFaceTokenMissingError,
@@ -1010,7 +1011,7 @@ def models_verify(
 ) -> None:
     """Verify required files and sizes for installed models."""
     try:
-        manager = _model_manager()
+        manager = ModelManager() if managed_only and identifier else _model_manager()
         entries = (
             [get_model(identifier)]
             if identifier is not None
@@ -1030,6 +1031,8 @@ def models_verify(
     console.print(table)
     if not results:
         console.print("検証対象の導入済みモデルはありません。")
+    if any(result.community_assets_mismatch for result in results):
+        _exit_expected(CommunityAssetsMismatchError())
     if any(not result.ok for result in results):
         raise typer.Exit(code=1)
 

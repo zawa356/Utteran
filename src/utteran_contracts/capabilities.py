@@ -222,6 +222,8 @@ class DeploymentInventory(Contract):
     observations: tuple[CapabilityObservation, ...]
     required_memory_bytes: Annotated[StrictInt, Field(ge=1)] | None
     available_memory_bytes: Annotated[StrictInt, Field(ge=0)] | None
+    diarization_required_memory_bytes: Annotated[StrictInt, Field(ge=1)] | None = None
+    diarization_available_memory_bytes: Annotated[StrictInt, Field(ge=0)] | None = None
     benchmark: BenchmarkEvidence | None = None
 
     @model_validator(mode="after")

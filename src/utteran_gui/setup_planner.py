@@ -137,18 +137,9 @@ class SetupObserver:
         models = []
         for ref, model in sorted(SETUP_MODELS.items()):
             folder = self.models_root / model.backend / model.managed_component
-            required = (
-                "config.yaml",
-                "embedding/pytorch_model.bin",
-                "segmentation/pytorch_model.bin",
-                "plda/plda.npz",
-                "plda/xvec_transform.npz",
-            )
-            present = (
-                all((folder / name).is_file() for name in required)
-                if model.gated
-                else folder.is_dir()
-            )
+            # Occupied gated locations (including partial files and links) are
+            # verification-only. The profile's managed verifier checks the pinned bytes.
+            present = os.path.lexists(folder) if model.gated else folder.is_dir()
             models.append((ref, present))
         try:
             present = bool(self.credential_present())
