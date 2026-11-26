@@ -10,7 +10,7 @@ import { wizardSummary } from "../../domain/wizard";
  * S1 hand-over to the real (legacy) setup wizard: a read-only status and a link to `/`.
  * Nothing here starts the wizard, a setup job or the v1 setup (S4/S5).
  */
-const { wizard } = useCore();
+const { wizard, apiMode, shell } = useCore();
 const state = useStore(wizard.store);
 const { t } = useI18n();
 const summary = computed(() => (state.value.data ? wizardSummary(state.value.data) : null));
@@ -20,11 +20,22 @@ const summaryText = computed(() => {
   if (summary.value === "not_started") return t("setup.notStarted");
   return t("setup.loading");
 });
-onMounted(() => void wizard.load());
+// 束F: in v1-dev the B8 setup replaces the hand-over (the legacy wizard is closed there: 409).
+onMounted(() => {
+  if (apiMode !== "v1-dev") void wizard.load();
+});
 </script>
 
 <template>
-  <v-card :title="t('setup.title')" class="u-card" data-testid="setup-card">
+  <v-card v-if="apiMode === 'v1-dev'" :title="t('setup.title')" class="u-card" data-testid="setup-card-v1">
+    <v-card-text class="u-stack">
+      <p>{{ t("fs.cardBody") }}</p>
+      <div class="u-row">
+        <v-btn variant="outlined" data-testid="setup-open-v1" @click="shell.navigate('setup')">{{ t("fs.cardOpen") }}</v-btn>
+      </div>
+    </v-card-text>
+  </v-card>
+  <v-card v-else :title="t('setup.title')" class="u-card" data-testid="setup-card">
     <v-card-text class="u-stack">
       <p>{{ t("setup.body") }}</p>
       <p v-if="state.load.phase !== 'error'" role="status" class="text-body-2" data-testid="setup-status">

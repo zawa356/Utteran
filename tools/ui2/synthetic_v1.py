@@ -57,15 +57,18 @@ READY_MODEL = "large-v3-turbo"
 FP = digest("synthetic S5-A identity only")
 
 
-def _deployment(settings: ProcessingSettings, now: datetime) -> DeploymentInventory:
-    recipe = get_recipe("fw-cpu")
+def _deployment(
+    settings: ProcessingSettings, now: datetime, *, profile: str = "cpu", smoke: bool = True
+) -> DeploymentInventory:
+    recipe_id = "fw-cuda" if profile == "cuda" else "fw-cpu"
+    recipe = get_recipe(recipe_id)
     identity = ExecutionIdentity.model_validate(
         dict(
-            recipe_id="fw-cpu",
+            recipe_id=recipe_id,
             recipe_revision=1,
             adapter_version="b4.1",
             smoke_version=1,
-            profile_id="cpu",
+            profile_id=profile,
             profile_generation="synthetic-generation-1",
             profile_fingerprint=FP,
             platform="Linux",
@@ -97,7 +100,8 @@ def _deployment(settings: ProcessingSettings, now: datetime) -> DeploymentInvent
             actual[component] = identity.device
     measured = {k: v if v != "backend-default" else "unknown" for k, v in actual.items()}
     observations = []
-    for kind in ("hardware", "runtime", "venv", "model", "native", "smoke", "memory"):
+    kinds = ("hardware", "runtime", "venv", "model", "native", "smoke", "memory")
+    for kind in kinds if smoke else tuple(k for k in kinds if k != "smoke"):
         data: dict[str, Any] = dict(
             kind=kind,
             state="passed",
@@ -113,6 +117,8 @@ def _deployment(settings: ProcessingSettings, now: datetime) -> DeploymentInvent
                 encoder_observed=measured["encoder"],
                 decoder_observed=measured["decoder"],
             )
+            if identity.device == "cuda":
+                data.update(encoder_device_index_observed=0, decoder_device_index_observed=0)
         observations.append(CapabilityObservation.model_validate(data))
     return DeploymentInventory(
         identity=identity,
@@ -123,12 +129,32 @@ def _deployment(settings: ProcessingSettings, now: datetime) -> DeploymentInvent
 
 
 class SyntheticProvider:
-    def __init__(self, model_dir: Path) -> None:
+    def __init__(
+        self,
+        model_dir: Path,
+        verified: dict[str, str] | None = None,
+        profiles: Any = None,
+    ) -> None:
         self.model_dir = model_dir
+        # 束F setup E2E: ready only for settings a synthetic setup verified (digest -> profile);
+        # an installed but unverified profile yields a candidate without smoke (smoke_missing).
+        self.verified = verified
+        self.profiles = profiles
+
+    def _deployments(self, settings: ProcessingSettings, now: datetime) -> tuple[Any, ...]:
+        if self.verified is None:
+            return (_deployment(settings, now),) if settings.asr.model == READY_MODEL else ()
+        from synthetic_setup import settings_digest
+
+        profile = self.verified.get(settings_digest(settings))
+        if profile is not None:
+            return (_deployment(settings, now, profile=profile),)
+        installed = [p for p in ("cuda", "cpu") if self.profiles and self.profiles(p)]
+        return tuple(_deployment(settings, now, profile=p, smoke=False) for p in installed)
 
     def resolve(self, settings: ProcessingSettings, policy: Policy, *, revision: int):
         now = datetime.now(UTC)
-        deployments = (_deployment(settings, now),) if settings.asr.model == READY_MODEL else ()
+        deployments = self._deployments(settings, now)
         inventory = make_inventory(deployments, settings, "worker", revision=revision, now=now)
         selection = resolve(inventory, policy, now=now)
         models = {a.candidate.id: str(self.model_dir) for a in selection.alternatives if a.eligible}
@@ -232,15 +258,30 @@ def prepare_root(root: Path) -> dict[str, Path]:
 
 
 def synthetic_v1_runtime(
-    root: Path, legacy_queue: OperationQueue, *, hold_slow_launch: bool = False
+    root: Path,
+    legacy_queue: OperationQueue,
+    *,
+    hold_slow_launch: bool = False,
+    setup_credential: Any = None,
 ) -> tuple[JobRuntime, Path]:
     layout = prepare_root(root)
     settings_path = root / "settings" / "resources.sqlite3"
+    setup = None
+    provider = SyntheticProvider(layout["model"])
+    if setup_credential is not None:
+        from synthetic_setup import synthetic_setup
+
+        setup, verified = synthetic_setup(root, setup_credential)
+        cli = setup.adapter.cli
+        provider = SyntheticProvider(
+            layout["model"], verified, lambda name: cli.profile_info(name).exists
+        )
     runtime = JobRuntime(
         store_path=root / "control" / "operations.sqlite3",
         settings_path=settings_path,
         legacy_queue=legacy_queue,
-        provider=SyntheticProvider(layout["model"]),
+        provider=provider,
+        setup=setup,
         runner=SyntheticRunner(
             layout["output"], root / "release-slow-launch" if hold_slow_launch else None
         ),

@@ -1,5 +1,13 @@
 # AI 作業状態
 
+## 現在地（2026-11-25、束F、0.1.71・未リリース）
+
+- main 基点 `f859a5d`（0.1.69）。作業ブランチ `claude/admiring-brown-nv1ghq`（セッション指定）。[#90](https://github.com/zawa356/Utteran/issues/90)・[#89](https://github.com/zawa356/Utteran/issues/89)。PR #88（0.1.70）とは独立、そのブランチは不変。
+- `--next-ui-v1` の［セットアップ］ページ: 環境診断 → 標準/カスタム → 計画（read-only）→ 確認後に開始 → 進捗・取消・再試行・再開・復元 → 初回のみ既定 Preset/Policy → readiness 確認 → 通常の B7 投入。
+- B8 `capability_smoke` が B4 smoke 子を heavy slot・journal で起動し証拠を記録。`/api/v1/readiness-checks`（推論なし）、`/api/v1/setup-diagnostics`（single-flight・timeout 1 回再試行）。#89: CUDA probe の timeout 再試行と nvidia-smi 番号の推測対応の廃止。fw-cuda の identity・VRAM は NVML、取れなければ unknown。
+- 未実施: Windows 実機・NVIDIA GPU・実モデル取得・実 VC++（[§8 手順](docs/architecture/ui3/f-setup.md)、#22）。話者分離付き v1 実行は後続 Issue 提案（worker の offline pyannote・diarization 証拠が必要）。
+- [束F 正本](docs/architecture/ui3/f-setup.md)。HEAD・試験件数・CI・独立レビューは Draft PR に記録する。
+
 ## 現在地（2026-11-25、束 E-C、0.1.69・未リリース）
 
 - main 基点 `b8463129d5bd213d81a11427a02d58f726a0e056`（0.1.68、E-B 統合済み）。作業ブランチ `claude/eloquent-fermi-nfc18l`（セッション指定）、[#82](https://github.com/zawa356/Utteran/issues/82)。E-B 統合後の main CI は着手時点で実行中（完了待ちなしで着手、オーナー承認済み）。

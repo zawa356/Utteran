@@ -16,7 +16,7 @@ from pydantic import AwareDatetime, Field, StrictBool, StrictInt, StrictStr
 
 from utteran_contracts.base import Contract, VersionedContract
 from utteran_contracts.control import Reason, Revision, Status
-from utteran_contracts.settings import Ref
+from utteran_contracts.settings import ProcessingSettings, Ref
 
 ProfileKind = Literal["cpu", "cuda", "intel", "vulkan"]
 PROFILE_KINDS: tuple[ProfileKind, ...] = ("cpu", "cuda", "intel", "vulkan")
@@ -49,6 +49,7 @@ StepKind = Literal[
     "native_build",
     "ir_build",
     "smoke",
+    "capability_smoke",
     "register",
 ]
 StepRecovery = Literal["rerun", "verified_reuse", "manager_resume"]
@@ -67,12 +68,20 @@ StepReason = Literal[
     "interrupted",
     "cancelled",
     "superseded",
+    # capability_smoke (B4 evidence) outcomes, grouped; never the raw child output.
+    "smoke_model_incomplete",
+    "smoke_backend_unavailable",
+    "smoke_out_of_memory",
+    "smoke_route_unverified",
+    "smoke_unsupported",
+    "smoke_failed",
 ]
 EvidenceKind = Literal[
     "profile_manifest_verified",
     "manager_verified",
     "credential_checked",
     "smoke_output_present",
+    "capability_evidence_recorded",
 ]
 WaitingReason = Literal[
     "credential_required", "agreement_required", "inventory_changed", "approval_expired"
@@ -85,6 +94,7 @@ SetupErrorCode = Literal[
     "preflight_invalid",
     "executor_failed",
     "unsupported_step",
+    "smoke_failed",
 ]
 # Fixed refusal codes for plan creation (HTTP 409/422; see docs/architecture/b8/api.md).
 PlanRejection = Literal[
@@ -96,7 +106,14 @@ PlanRejection = Literal[
     "diarization_model_mismatch",
     "venv_build_platform_unsupported",
     "profile_rebuild_unsupported",
+    "verification_unsupported",
+    "defaults_require_verification",
 ]
+# B4 recipes a setup can verify with the explicit smoke child (utteran.capabilities.smoke).
+VerificationRecipe = Literal["fw-cpu", "fw-cuda"]
+VERIFICATION_RECIPES: MappingProxyType[str, str] = MappingProxyType(
+    {"cpu": "fw-cpu", "cuda": "fw-cuda"}
+)
 
 PLAN_TTL_SECONDS = 24 * 3600
 APPROVAL_TTL_SECONDS = 24 * 3600
@@ -221,9 +238,20 @@ ASR_BACKENDS: frozenset[str] = frozenset({"faster-whisper", "whisper-cpp", "open
 
 
 class SetupPlanRequest(VersionedContract):
+    nonnullable_optional = frozenset({"verification_settings", "apply_defaults"})
+
     profile_kind: ProfileKind
     model_refs: Annotated[tuple[ModelRef, ...], Field(min_length=1, max_length=MAX_MODEL_REFS)]
     diarization_enabled: StrictBool
+    # F-A: the effective settings a job will run with. When present the plan ends with a
+    # ``capability_smoke`` step that records B4 evidence for exactly these settings
+    # (ASR only; the evidence scope binds the whole settings value). Private: the plan
+    # view exposes only its digest.
+    verification_settings: ProcessingSettings | None = None
+    # PR #91 P2-1: the person's intent "first setup: create the common defaults from the
+    # verified settings if the settings store is empty". Stored in the hashed plan so a
+    # reload, a retry or a second window recovers it; a re-verification never sets it.
+    apply_defaults: StrictBool | None = None
 
 
 class ApprovalRequest(VersionedContract):
@@ -272,8 +300,24 @@ class SetupStep(Contract):
     target: Annotated[StrictStr, Field(min_length=1, max_length=240)] | None
 
 
+class PlanVerification(Contract):
+    """Stored (private) verification target of a plan; never returned as is."""
+
+    recipe_id: VerificationRecipe
+    model_ref: ModelRef
+    settings: ProcessingSettings
+
+
+class PlanVerificationView(Contract):
+    recipe_id: VerificationRecipe
+    model_ref: ModelRef
+    settings_sha256: Digest
+
+
 class PlanContent(VersionedContract):
     """Hashed plan body (``plan_hash`` = SHA-256 of its canonical JSON)."""
+
+    nonnullable_optional = frozenset({"verification", "apply_defaults"})
 
     profile_kind: ProfileKind
     model_refs: tuple[ModelRef, ...]
@@ -285,9 +329,13 @@ class PlanContent(VersionedContract):
     preserved_environment_ids: tuple[ProfileKind, ...]
     required_agreements: tuple[AgreementId, ...]
     missing_credentials: tuple[CredentialId, ...]
+    verification: PlanVerification | None = None
+    apply_defaults: StrictBool | None = None
 
 
 class SetupPlan(VersionedContract):
+    nonnullable_optional = frozenset({"verification", "apply_defaults"})
+
     id: PlanId
     revision: Revision
     state: PlanState
@@ -305,6 +353,8 @@ class SetupPlan(VersionedContract):
     preserved_environment_ids: tuple[ProfileKind, ...]
     required_agreements: tuple[AgreementId, ...]
     missing_credentials: tuple[CredentialId, ...]
+    verification: PlanVerificationView | None = None
+    apply_defaults: StrictBool | None = None
 
 
 class Approval(VersionedContract):
@@ -377,6 +427,8 @@ PUBLIC_MODELS: tuple[type[Contract], ...] = (
     Estimate,
     SetupChange,
     SetupStep,
+    PlanVerification,
+    PlanVerificationView,
     PlanContent,
     SetupPlan,
     Approval,

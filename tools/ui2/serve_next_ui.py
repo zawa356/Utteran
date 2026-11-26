@@ -88,6 +88,7 @@ def build_app(
     v1_root: Path | None = None,
     port: int | None = None,
     hold_slow_launch: bool = False,
+    setup_e2e: bool = False,
 ) -> Any:
     # Fix the log location inside the temporary directory so the harness never reads the real
     # core config (``config.toml``) or user log folders. Fallback/raw-log variants are tested by
@@ -100,12 +101,17 @@ def build_app(
     icon.mkdir(exist_ok=True)
     shutil.copyfile(ROOT / "icon" / "utteran-glyph-512.png", icon / "utteran-glyph-512.png")
     jobs = synthetic_job_manager(data_dir)
+    tokens = TokenStore(SyntheticKeyring())
     v1: dict[str, Any] = {}
     if v1_root is not None:
         from synthetic_v1 import synthetic_v1_runtime
 
         runtime, settings_path = synthetic_v1_runtime(
-            v1_root, jobs.queue, hold_slow_launch=hold_slow_launch
+            v1_root,
+            jobs.queue,
+            hold_slow_launch=hold_slow_launch,
+            # 束F: the real B8 setup with a synthetic world (token presence via the real store).
+            setup_credential=(lambda: tokens.status().configured) if setup_e2e else None,
         )
         v1 = dict(
             operation_queue=jobs.queue,
@@ -117,12 +123,13 @@ def build_app(
             enable_v1_jobs=True,
             v1_jobs_runtime=runtime,
             enable_v1_events=True,
+            enable_v1_setup=setup_e2e,
         )
     return create_app(
         SESSION,
         repo_root=data_dir,
         settings_store=SettingsStore(data_dir / "gui-settings.json"),
-        token_store=TokenStore(SyntheticKeyring()),
+        token_store=tokens,
         environment_service=synthetic_environment_service(),
         job_manager=jobs,
         enable_next_ui=True,
@@ -140,6 +147,9 @@ def main() -> None:
         "--hold-slow-launch", action="store_true", help="gate synthetic slow launch"
     )
     parser.add_argument("--exit-on-stdin-close", action="store_true")
+    parser.add_argument(
+        "--setup-e2e", action="store_true", help="束F: real B8 setup with a synthetic world"
+    )
     parser.add_argument(
         "--reuse-data-root",
         action="store_true",
@@ -165,7 +175,11 @@ def main() -> None:
         listener.bind(("127.0.0.1", args.port))
         port = listener.getsockname()[1]
         app = build_app(
-            Path(temp), v1_root=v1_root, port=port, hold_slow_launch=args.hold_slow_launch
+            Path(temp),
+            v1_root=v1_root,
+            port=port,
+            hold_slow_launch=args.hold_slow_launch,
+            setup_e2e=args.setup_e2e,
         )
         print(f"http://127.0.0.1:{port}/launch?session={SESSION}", flush=True)
         server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))

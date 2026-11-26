@@ -58,6 +58,8 @@ class GpuAdapter:
 
     name: str
     vendor: GpuVendor
+    # OS-reported display driver version (Win32_VideoController.DriverVersion), if any.
+    driver_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -468,7 +470,7 @@ def detect_gpu() -> GpuReport:
                 "-NonInteractive",
                 "-Command",
                 "Get-CimInstance Win32_VideoController | "
-                "Select-Object Name,AdapterCompatibility | ConvertTo-Json -Compress",
+                "Select-Object Name,AdapterCompatibility,DriverVersion | ConvertTo-Json -Compress",
             ],
             check=False,
             capture_output=True,
@@ -484,10 +486,14 @@ def detect_gpu() -> GpuReport:
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         return GpuReport((), "none", error=_bounded_error(str(exc)))
     rows = payload if isinstance(payload, list) else [payload]
-    fields = [_adapter_fields(row) for row in rows]
     adapters = tuple(
-        GpuAdapter(name=name, vendor=_classify_vendor(name, compatibility))
-        for name, compatibility in fields
+        GpuAdapter(
+            name=name,
+            vendor=_classify_vendor(name, compatibility),
+            driver_version=_driver_version(row),
+        )
+        for row in rows
+        for name, compatibility in (_adapter_fields(row),)
         if name
     )
     return GpuReport(adapters, _dominant_vendor(adapters))
@@ -540,6 +546,14 @@ def _adapter_fields(row: object) -> tuple[str, str]:
     name = str(row.get("Name") or "")
     compatibility = str(row.get("AdapterCompatibility") or "")
     return name, compatibility
+
+
+def _driver_version(row: object) -> str | None:
+    value = row.get("DriverVersion") if isinstance(row, dict) else None
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()[:40]
+    return text if all(c.isalnum() or c in ".-_" for c in text) else None
 
 
 def _classify_vendor(name: str, compatibility: str) -> GpuVendor:

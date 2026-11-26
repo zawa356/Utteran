@@ -201,6 +201,8 @@ class ProviderResult:
     reason_code: str
     selection: ResolvedSelection | None
     worker_models: Mapping[str, str] = field(default_factory=dict)
+    # F-A readiness view only: per-profile selections that chose nothing (never admitted).
+    unselected: tuple[ResolvedSelection, ...] = ()
 
 
 class BridgeResolutionProvider:
@@ -217,6 +219,7 @@ class BridgeResolutionProvider:
     ) -> ProviderResult:
         profiles = [p for p in (policy.allowed_profile_ids or PROFILES) if p in PROFILES]
         last = "profile_missing"
+        unselected: list[ResolvedSelection] = []
         for profile in profiles:
             result = self.adapter.resolve(
                 InventoryRefreshRequest(
@@ -232,9 +235,10 @@ class BridgeResolutionProvider:
                 return ProviderResult("supported", result.selection, dict(result.worker_models))
             if result.selection is not None:
                 last = result.selection.error or "no_runnable_candidate"
+                unselected.append(result.selection)
             elif result.reason_code != "profile_missing":
                 last = result.reason_code
-        return ProviderResult(last, None)
+        return ProviderResult(last, None, unselected=tuple(unselected))
 
 
 def candidate_fingerprint(candidate: CapabilityCandidate) -> str:

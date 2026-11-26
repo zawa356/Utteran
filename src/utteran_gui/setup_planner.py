@@ -14,7 +14,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from utteran_contracts.setup import (
     ASR_BACKENDS,
@@ -22,9 +22,11 @@ from utteran_contracts.setup import (
     PROFILE_BACKENDS,
     PROFILE_KINDS,
     SETUP_MODELS,
+    VERIFICATION_RECIPES,
     Estimate,
     PlanContent,
     PlanRejection,
+    PlanVerification,
     SetupChange,
     SetupPlanRequest,
     SetupStep,
@@ -35,6 +37,8 @@ _STATUS: dict[str, int] = {
     "model_refs_duplicate": 422,
     "asr_model_required": 422,
     "diarization_model_mismatch": 422,
+    "verification_unsupported": 422,
+    "defaults_require_verification": 422,
 }
 
 
@@ -164,9 +168,33 @@ def _check_refs(request: SetupPlanRequest) -> None:
         raise PlanRejected("diarization_model_mismatch")
 
 
+def _verification(request: SetupPlanRequest) -> PlanVerification | None:
+    """The B4 smoke target: ASR-only settings that name one of the plan's ASR models.
+
+    The evidence scope binds the *whole* settings value, so these must be the effective
+    settings of the jobs to admit. Diarization and other engines are refused (the B3
+    worker and the smoke child cannot run them), never approximated.
+    """
+    settings = request.verification_settings
+    if settings is None:
+        return None
+    recipe = VERIFICATION_RECIPES.get(request.profile_kind)
+    ref = f"faster-whisper:{settings.asr.model}"
+    if (
+        recipe is None
+        or settings.asr.backend != "faster-whisper"
+        or settings.diarization.enabled
+        or ref not in request.model_refs
+        or ref not in SETUP_MODELS
+    ):
+        raise PlanRejected("verification_unsupported")
+    return PlanVerification(recipe_id=recipe, model_ref=ref, settings=settings)  # type: ignore[arg-type]
+
+
 def build_plan(request: SetupPlanRequest, observation: SetupObservation) -> PlanContent:
     """Pure: same request + observation -> same content (and therefore the same hash)."""
     _check_refs(request)
+    verification = _verification(request)
     profile = observation.profile(request.profile_kind)
     changes: list[SetupChange] = []
     steps: list[SetupStep] = []
@@ -248,23 +276,45 @@ def build_plan(request: SetupPlanRequest, observation: SetupObservation) -> Plan
         )
         model_steps.append(step_id)
     asr = next(model for model in models if model.backend in ASR_BACKENDS)
-    steps.append(
-        SetupStep(
-            id="smoke",
-            kind="smoke",
-            depends_on=(*base, *(("preflight",) if gated else ()), *model_steps),
-            required=True,
-            recovery="rerun",
-            target=asr.ref,
+    prior = (*base, *(("preflight",) if gated else ()), *model_steps)
+    if verification is None or request.diarization_enabled:
+        # CLI end-to-end run (local evidence only). With diarization it is the only check
+        # that the pipeline, the token and the gated model work together.
+        steps.append(
+            SetupStep(
+                id="smoke",
+                kind="smoke",
+                depends_on=prior,
+                required=True,
+                recovery="rerun",
+                target=asr.ref,
+            )
         )
-    )
+        prior = (*prior, "smoke")
+    if verification is not None:
+        steps.append(
+            SetupStep(
+                id="verify",
+                kind="capability_smoke",
+                depends_on=prior,
+                required=True,
+                recovery="rerun",
+                target=verification.model_ref,
+            )
+        )
     preserved = tuple(
         p.name
         for p in observation.profiles
         if p.exists and (p.name != request.profile_kind or profile.compatible is True)
     )
     size = None if unknown_size else download
+    extra: dict[str, Any] = {} if verification is None else {"verification": verification}
+    if request.apply_defaults:
+        if verification is None:
+            raise PlanRejected("defaults_require_verification")
+        extra["apply_defaults"] = True  # absent otherwise: older plan hashes are unchanged
     return PlanContent(
+        **extra,  # absent (not null) without verification: earlier plan hashes are unchanged
         schema_version=1,
         profile_kind=request.profile_kind,
         model_refs=request.model_refs,

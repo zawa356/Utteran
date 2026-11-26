@@ -32,6 +32,7 @@ from typing import Annotated, Literal, Protocol, cast, get_args
 
 from pydantic import Field, StrictStr, ValidationError
 
+from utteran.capabilities import nvml
 from utteran.capabilities.collector import collect_managed_deployments
 from utteran.capabilities.evaluator import (
     _verify_smoke_route,
@@ -190,6 +191,64 @@ def write_fixture(path: Path) -> str:
 # --------------------------------------------------------------------------- real runtime
 
 
+def _attested_gpu(ordinal: int) -> str | None:
+    """UUID of the GPU this smoke runs on, only where that is provable (PR #91 P2-2).
+
+    Accepted only for ordinal 0 on a host with exactly one NVIDIA GPU and no CUDA
+    visibility/order variables (``fingerprints.single_cuda_gpu``), and only when the CUDA
+    driver API in this very process reports that same UUID for the ordinal. Otherwise the
+    VRAM values stay unknown, so the evaluator keeps the candidate unknown (never ready).
+    """
+    from utteran.capabilities.fingerprints import single_cuda_gpu
+
+    expected = single_cuda_gpu()
+    if ordinal != 0 or expected is None:
+        return None
+    return expected.uuid if nvml.cuda_ordinal_uuid(ordinal) == expected.uuid else None
+
+
+class _VramPeak:
+    """Bounded sampling of this process's VRAM on one GPU (every 100 ms, at most 6000
+    samples). The maximum seen is a lower bound of the true peak for this short fixture,
+    not a guarantee for long audio; no sample at all (e.g. WDDM N/A) means unknown."""
+
+    INTERVAL = 0.1
+    LIMIT = 6000
+
+    def __init__(self, uuid: str) -> None:
+        import threading
+
+        self.uuid = uuid
+        self.peak: int | None = None
+        self._reader: nvml.UsageSampler | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _sample(self) -> None:
+        value = self._reader.read() if self._reader is not None else None
+        if value is not None and (self.peak is None or value > self.peak):
+            self.peak = value
+
+    def _run(self) -> None:
+        for _ in range(self.LIMIT):
+            self._sample()
+            if self._stop.wait(self.INTERVAL):
+                return
+
+    def __enter__(self) -> _VramPeak:
+        # One NVML session for all samples (init/shutdown per read is slow on Windows).
+        self._reader = nvml.UsageSampler(self.uuid).__enter__()
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=5)
+        self._sample()  # one more read right before unload
+        if self._reader is not None:
+            self._reader.__exit__()
+
+
 def _peak_rss_bytes() -> int | None:
     if sys.platform == "win32":
         return None
@@ -220,9 +279,14 @@ class FasterWhisperSmokeRuntime:
         from utteran.types import ASROptions
 
         available = read_memory("cpu").system_available_bytes if device == "cpu" else None
+        gpu_uuid = _attested_gpu(device_index) if device == "cuda" else None
+        if gpu_uuid is not None:
+            available = nvml.free_memory(gpu_uuid)
+        gpu_used: int | None = None
+        sampler = _VramPeak(gpu_uuid) if gpu_uuid is not None else contextlib.nullcontext()
         backend = FasterWhisperBackend()
         target = "cpu" if device == "cpu" else f"cuda:{device_index}"
-        with measure_peak() as monitor:
+        with measure_peak() as monitor, sampler:
             try:
                 backend.load(str(model_dir), target, compute_type)
             except VramExhaustedError:
@@ -261,6 +325,9 @@ class FasterWhisperSmokeRuntime:
             observed_device = getattr(replica, "device", None)
             observed_indices = getattr(replica, "device_index", None)
             observed_compute = getattr(replica, "compute_type", None)
+        if isinstance(sampler, _VramPeak):
+            # NVML reports N/A under some drivers (e.g. Windows WDDM) -> unknown, not guessed.
+            gpu_used = sampler.peak
         peak = max((v for v in (monitor.peak_bytes, _peak_rss_bytes()) if v), default=None)
         backend.unload()
         import ctranslate2
@@ -281,7 +348,7 @@ class FasterWhisperSmokeRuntime:
             device_indices=indices,
             compute_type=observed_compute if isinstance(observed_compute, str) else "",
             duration_seconds=duration,
-            required_memory_bytes=peak if device == "cpu" else None,
+            required_memory_bytes=peak if device == "cpu" else gpu_used,
             available_memory_bytes=available,
         )
 

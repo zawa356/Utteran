@@ -1,5 +1,7 @@
 # B4 ready/smoke — 明示smoke・private evidence・読取連携（0.1.50）
 
+> **追補（2026-11-25、0.1.71、束F）**: smoke 子は開発用入口に加え、承認済み B8 setup の `capability_smoke` ステップからも起動される（GUI プロセス内の heavy slot、journal 付き。GET・resolve・B7 は従来どおり読むだけ）。fw-cuda の runtime/hardware fingerprint と VRAM は NVML（ctypes）で取得し、ordinal→UUID は smoke 子内の CUDA driver API で確認する。取れない値は unknown のまま。§1.2・§6-2 の「CUDA は常に unknown」は本追補で更新（実機での ready 到達は未確認）。PR #91 P2-2 以降、fw-cuda の hardware identity は NVIDIA GPU 1 台かつ `CUDA_VISIBLE_DEVICES`/`CUDA_DEVICE_ORDER` 未設定の場合だけ（その UUID に束縛）、必要 VRAM は推論中の標本の最大値（下限値）。[ui3/f-setup](../ui3/f-setup.md) §2–§3。
+
 更新: 2026-11-12 JST（開発版`0.1.50`、未リリース、Draft PR）。基点`main` `9237040`（PR #46統合、0.1.49）。
 
 > **これはCloud開発工程の成果物である。** 実GPU・実モデル・Windows実機での成功は本書のどこでも主張しない。

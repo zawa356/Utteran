@@ -251,8 +251,11 @@ class JobDispatcher:
         poll_interval: float = 0.5,
         identity_of: Callable[[int], str | None] = start_identity,
         setup: Any = None,
+        gate: Any = None,
     ) -> None:
         self.store = store
+        # 束F: shared with the setup diagnostics (execution_gate.ExecutionGate), optional.
+        self.gate = gate
         # B8: optional SetupExecutor sharing this thread and the single heavy slot.
         self.setup = setup
         self.prestart = prestart
@@ -351,6 +354,15 @@ class JobDispatcher:
         candidate = self.store.next_dispatchable()
         if candidate is None:
             return False
+        if self.gate is not None and not self.gate.try_acquire("dispatch"):
+            return False  # a runtime probe holds the profile venv: try again next round
+        try:
+            return self._dispatch(candidate)
+        finally:
+            if self.gate is not None:
+                self.gate.release("dispatch")
+
+    def _dispatch(self, candidate: tuple[str, int]) -> bool:
         job_id, revision = candidate
         if self.setup is not None and job_id.startswith("setup_"):
             return bool(self.setup.dispatch(job_id, revision, self.owner))

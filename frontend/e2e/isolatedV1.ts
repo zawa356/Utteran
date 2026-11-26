@@ -11,14 +11,17 @@ const windows = process.platform === "win32";
 
 export const test = base.extend<{
   holdSlowLaunch: boolean;
+  setupE2e: boolean;
   backend: { root: string; url: string; releaseSlowLaunch: () => Promise<void> };
 }>({
   holdSlowLaunch: [false, { option: true }],
-  backend: async ({ holdSlowLaunch }, use) => {
+  setupE2e: [false, { option: true }],
+  backend: async ({ holdSlowLaunch, setupE2e }, use) => {
     const directory = await mkdtemp(join(tmpdir(), "utteran-s5b-e2e-"));
     const root = join(directory, "v1");
     const args = ["run", "--no-sync", "python", "../tools/ui2/serve_next_ui.py", "--port", "0", "--v1", "--data-root", root, "--exit-on-stdin-close"];
     if (holdSlowLaunch) args.push("--hold-slow-launch");
+    if (setupE2e) args.push("--setup-e2e");
     const child = spawn("uv", args, {
       detached: !windows,
       env: { ...process.env, TMPDIR: directory, TEMP: directory, TMP: directory },
