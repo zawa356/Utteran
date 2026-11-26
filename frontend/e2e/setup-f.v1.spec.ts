@@ -115,7 +115,10 @@ test("F-03 custom CPU: failed verification → retry succeeds; an additional set
   await detect(app);
   await app.getByTestId("fsetup-mode-custom").click();
   await app.getByTestId("fsetup-profile").click();
-  await expect(app.getByRole("option", { name: /Intel/ })).toHaveClass(/v-list-item--disabled/);
+  await app.getByRole("option", { name: /Intel/ }).click();
+  await expect(app.getByTestId("gsetup-variant")).toContainText("vulkan");
+  await expect(app.getByTestId("fsetup-model-base").locator("input")).toBeChecked();
+  await app.getByTestId("fsetup-profile").click();
   await app.getByRole("option", { name: /^CPU/ }).click();
   await app.getByTestId("fsetup-model-small").locator("input").check();
   await app.getByTestId("fsetup-plan").click();
