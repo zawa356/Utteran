@@ -427,6 +427,22 @@ describe("SetupController", () => {
     expect(verifyRefusal(null)).toBe("no_preset");
   });
 
+  it("plans Intel Vulkan or OpenVINO and freezes speaker options in the verified preset", () => {
+    const choice = {
+      profile: "intel", models: ["base"], primary: "base", variant: "openvino_vulkan",
+      diarization: true, diarizationDevice: "xpu", numSpeakers: 2, agreementAccepted: true,
+    } as const;
+    const selection = { ...choice, models: [...choice.models] };
+    const settings = defaultSettings(selection.primary, selection);
+    const body = planRequest(selection, settings, true);
+    expect(body.model_refs).toEqual([
+      "whisper-cpp:base", "whisper-cpp-vad:silero-v6.2.0", "pyannote:pyannote/speaker-diarization-community-1",
+    ]);
+    expect(settings.asr).toMatchObject({ backend: "whisper-cpp", whisper_cpp: { variant: "openvino_vulkan" } });
+    expect(settings.diarization).toMatchObject({ enabled: true, device_preference: "xpu", num_speakers: 2 });
+    expect(body.apply_defaults).toBe(true);
+  });
+
   it("planRequest never carries a path or token", () => {
     const body = planRequest({ profile: "cpu", models: ["large-v3-turbo"], primary: "large-v3-turbo", diarization: false, agreementAccepted: false }, defaultSettings("large-v3-turbo"));
     expect(JSON.stringify(body)).not.toMatch(/hf_|[A-Za-z]:\\|\/home\//);

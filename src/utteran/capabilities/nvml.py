@@ -29,7 +29,7 @@ _BUFFER = 96
 class NvmlGpu:
     uuid: str
     name: str
-    memory_total: int
+    memory_total: int | None
 
 
 @dataclass(frozen=True)
@@ -138,14 +138,15 @@ def snapshot(lib: Any | None = None) -> NvmlSnapshot | None:
                     return None
                 uuid = _text(lib.nvmlDeviceGetUUID, handle)
                 name = _text(lib.nvmlDeviceGetName, handle)
-                memory = _Memory()
-                if (
-                    uuid is None
-                    or name is None
-                    or lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(memory)) != _SUCCESS
-                ):
+                if uuid is None or name is None:
                     return None
-                gpus.append(NvmlGpu(uuid, name, int(memory.total)))
+                memory = _Memory()
+                get_memory = getattr(lib, "nvmlDeviceGetMemoryInfo", None)
+                measured = (
+                    get_memory is not None and get_memory(handle, ctypes.byref(memory)) == _SUCCESS
+                )
+                total = int(memory.total) if measured and memory.total != NOT_AVAILABLE else None
+                gpus.append(NvmlGpu(uuid, name, total))
             return NvmlSnapshot(driver, cuda_version, tuple(sorted(gpus, key=lambda g: g.uuid)))
     except Exception:
         return None
@@ -161,7 +162,7 @@ def free_memory(uuid: str, lib: Any | None = None) -> int | None:
             memory = _Memory()
             if handle is None or lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(memory)):
                 return None
-            return int(memory.free)
+            return int(memory.free) if memory.free != NOT_AVAILABLE else None
     except Exception:
         return None
 

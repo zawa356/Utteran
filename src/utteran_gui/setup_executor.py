@@ -56,6 +56,7 @@ SMOKE_REASONS: dict[str, StepReason] = {
     "out_of_memory": "smoke_out_of_memory",
     "route_unverified": "smoke_route_unverified",
     "route_mismatch": "smoke_route_unverified",
+    "runtime_mismatch": "smoke_route_unverified",
     "compute_mismatch": "smoke_route_unverified",
     "settings_unsupported": "smoke_unsupported",
     "recipe_unavailable": "smoke_unsupported",

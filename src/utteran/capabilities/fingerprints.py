@@ -172,7 +172,7 @@ def cuda_hardware_fingerprint() -> str | None:
             "version": 2,
             "machine": platform.machine(),
             # Bound to the one GPU by UUID: a replaced or added GPU is a different scope.
-            "gpu": [gpu.uuid, gpu.name, gpu.memory_total],
+            "gpu": [gpu.uuid, gpu.name],
             "ordinal": 0,
         }
     )
@@ -226,17 +226,17 @@ def windows_display_adapter() -> tuple[str, str, str] | None:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
         )
         row = json.loads(result.stdout.decode("utf-8-sig"))
-        adapter = (
-            tuple(row.get(key) for key in ("Name", "PNPDeviceID", "DriverVersion"))
-            if isinstance(row, dict)
-            else ()
-        )
-        if len(adapter) != 3 or any(
-            not isinstance(value, str) or not value.strip() for value in adapter
-        ):
+        if not isinstance(row, dict):
             return None
-        name, pnp, driver = adapter
-        if not pnp.upper().startswith("PCI\\VEN_"):
+        name, pnp, driver = (row.get(key) for key in ("Name", "PNPDeviceID", "DriverVersion"))
+        if not (
+            isinstance(name, str)
+            and name.strip()
+            and isinstance(pnp, str)
+            and pnp.upper().startswith("PCI\\VEN_")
+            and isinstance(driver, str)
+            and driver.strip()
+        ):
             return None
         return name, pnp, driver
     except (OSError, ValueError, subprocess.SubprocessError):

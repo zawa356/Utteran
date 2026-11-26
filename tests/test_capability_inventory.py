@@ -1104,14 +1104,17 @@ def test_verified_v2_memory_warning_does_not_override_policy_or_other_evidence(s
     data = replace_observation(
         data, "memory", state="unknown", reason_code="memory_unknown", source="smoke"
     )
-    result = resolve(inventory(settings, data), policy(), now=NOW)
+
+    def worker_inventory(deployment):
+        return make_inventory((deployment,), settings, "worker", revision=1, now=NOW)
+
+    result = resolve(worker_inventory(data), policy(), now=NOW)
     assert result.selected is not None
     assert "memory_unknown" in result.reason_codes
     # An explicit memory cap uses required memory. If it is unknown the cap cannot be checked.
     no_required = data.model_copy(update={"required_memory_bytes": None})
     assert (
-        resolve(inventory(settings, no_required), policy(max_memory_bytes=1), now=NOW).selected
-        is None
+        resolve(worker_inventory(no_required), policy(max_memory_bytes=1), now=NOW).selected is None
     )
     assert (
         evaluate(replace_observation(data, "hardware", state="unknown"), settings).runnable

@@ -182,12 +182,7 @@ def _check_refs(request: SetupPlanRequest) -> None:
 
 
 def _verification(request: SetupPlanRequest) -> PlanVerification | None:
-    """The B4 smoke target: ASR-only settings that name one of the plan's ASR models.
-
-    The evidence scope binds the *whole* settings value, so these must be the effective
-    settings of the jobs to admit. Diarization and other engines are refused (the B3
-    worker and the smoke child cannot run them), never approximated.
-    """
+    """Bind the B4 smoke to the precise ASR and speaker settings planned for jobs."""
     settings = request.verification_settings
     if settings is None:
         return None
@@ -204,6 +199,19 @@ def _verification(request: SetupPlanRequest) -> PlanVerification | None:
             raise PlanRejected("verification_unsupported")
     elif settings.asr.backend != "faster-whisper" or request.profile_kind not in {"cpu", "cuda"}:
         raise PlanRejected("verification_unsupported")
+    diar = settings.diarization
+    if diar.enabled:
+        allowed = {
+            "intel": {"auto", "cpu", "xpu"},
+            "vulkan": {"auto", "cpu"},
+            "cpu": {"auto", "cpu"},
+            "cuda": {"auto", "cpu", "cuda"},
+        }[request.profile_kind]
+        if (
+            diar.device_preference not in allowed
+            or "pyannote:" + diar.model not in request.model_refs
+        ):
+            raise PlanRejected("verification_unsupported")
     if (
         recipe is None
         or (settings.diarization.enabled and not request.diarization_enabled)

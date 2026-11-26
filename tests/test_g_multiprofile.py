@@ -150,3 +150,69 @@ def test_intel_setup_binds_native_ir_and_offline_diarization(tmp_path, variant, 
     assert "native" in steps["capability_smoke"].depends_on
     assert ("ir_build" in steps) == ("openvino" in variant)
     assert "smoke" not in steps
+
+
+def test_worker_writes_speaker_labels_through_existing_export_and_resume(
+    worker_request, tmp_path, monkeypatch
+):
+    import json
+
+    from test_application import SyntheticASR, normalize
+    from utteran.models.catalog import get_model
+    from utteran.models.manager import ModelManager
+    from utteran.types import CancelToken, DiarizationResult, SpeakerTurn
+    from utteran.worker_runtime import execute
+    from utteran_contracts.worker import WorkerRequest
+    from utteran_paths import resolve_data_paths
+
+    monkeypatch.setenv("UTTERAN_DATA_ROOT", str(tmp_path / "managed"))
+    model = ModelManager(resolve_data_paths().models).managed_path(get_model(community.MODEL))
+    model.mkdir(parents=True)
+    phases = []
+
+    class ASR(SyntheticASR):
+        def unload(self):
+            phases.append("asr-released")
+
+    class Diarization:
+        name = "pyannote"
+
+        def __init__(self, *, offline):
+            assert offline
+
+        def load(self, path, device):
+            assert phases == ["asr-released"]
+            assert (path, device) == (str(model), "cpu")
+            phases.append("diarization-loaded")
+
+        def diarize(self, *args):
+            turns = [SpeakerTurn(0, 1, "SPEAKER_00")]
+            return DiarizationResult(turns, turns, 1, self.name, community.MODEL, "cpu")
+
+        def unload(self):
+            pass
+
+    asr = ASR()
+    monkeypatch.setattr("utteran.worker_runtime.create_asr_backend", lambda *a, **kw: asr)
+    monkeypatch.setattr("utteran.worker_runtime.offline_preflight", lambda _config: None)
+    monkeypatch.setattr("utteran.pipeline.normalize_audio", normalize)
+    monkeypatch.setattr("utteran.diarization.pyannote.PyannoteBackend", Diarization)
+    payload = worker_request.model_dump(mode="json")
+    payload["settings"]["diarization"].update(enabled=True, model=community.MODEL)
+    payload["settings"]["output"].update(
+        formats=["srt", "vtt", "txt", "md", "json"],
+        show_speaker=True,
+        speaker_labels={"SPEAKER_00": "Synthetic speaker"},
+    )
+    request = WorkerRequest.model_validate(payload)
+    Path(request.input_path).write_bytes(b"synthetic")
+    first = execute(request, CancelToken(), lambda *a, **kw: None)
+    assert phases == ["asr-released", "diarization-loaded"]
+    files = {Path(record.path).suffix: Path(record.path) for record in first["artifacts"]}
+    assert set(files) == {".srt", ".vtt", ".txt", ".md", ".json"}
+    body = json.loads(files[".json"].read_text(encoding="utf-8"))
+    assert body["segments"][0]["speaker"] == "Synthetic speaker"
+    assert "Synthetic speaker" in files[".txt"].read_text(encoding="utf-8")
+    second = execute(request, CancelToken(), lambda *a, **kw: None)
+    assert first["artifacts"] == second["artifacts"]
+    assert asr.calls == 1 and phases.count("diarization-loaded") == 1

@@ -1494,3 +1494,14 @@ def test_gate_rechecks_lease_in_acquired_window(tmp_path):
     assert service._runtime_stage(0, False).reason_code == "setup_running"
     assert gate.try_acquire("dispatch")
     gate.release("dispatch")
+
+
+def test_nvml_identity_survives_unavailable_memory():
+    class MissingMemory(FakeNvml):
+        def nvmlDeviceGetMemoryInfo(self, _handle, _ref):
+            return 3
+
+    lib = MissingMemory([GPU_A])
+    observed = nvml.snapshot(lib)
+    assert observed is not None and observed.gpus == (nvml.NvmlGpu(GPU_A[0], GPU_A[1], None),)
+    assert nvml.free_memory(GPU_A[0], lib) is None
