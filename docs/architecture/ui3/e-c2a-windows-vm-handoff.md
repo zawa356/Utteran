@@ -1,5 +1,11 @@
 # E-C2a/E-C2b — Windows 11 VM 検証の引継ぎ（Codex 向け）
 
+> 2026-11-26統合候補: [Windows統合受入](windows-integration-acceptance.md)を参照。
+> 必須項目が1件でもPASS以外ならWindows製品再出力を無効にする（FAILだけでなくNOT_RUN/BLOCKEDも含む）。
+> 現候補はMSVC/wheel・対話操作・配布等が未受入のため無効。Rust core/POSIX回帰を維持し、
+> native adapter試験だけテスト内で明示的に有効化。製品APIのunsupported/no writesを別途必須検証する。
+> 今回のbranch/編集範囲・統合手順は#22の統合指示が下記の旧個別指示に優先する。
+
 [ADR](e-c2a-rust-safe-fs.md) §13 の Windows 再出力（0.1.70、Rust core）を実機で確認する手順。Issue [#86](https://github.com/zawa356/Utteran/issues/86)／[#87](https://github.com/zawa356/Utteran/issues/87)、Draft [#88](https://github.com/zawa356/Utteran/pull/88)。
 合成データのみ。Ready 化・merge・tag・Release はしない。
 

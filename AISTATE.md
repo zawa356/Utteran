@@ -1,5 +1,12 @@
 # AI 作業状態
 
+## Windows統合受入（2026-11-26、0.1.72・未リリース）
+
+- #22の統合指示を正本に、#93（#91を含む）へ#88をmerge。別cloneの`codex/windows-integration-acceptance`、統合`587484a`、修正`e4b886a`。元PR/mainは変更していない。
+- Windows pytest巨大ID・合成試験RAM依存・SetupのPython alias/PSModulePath・Windows合成E2E stdin停滞を修正。CPU実Setup/B4・4成功ジョブ・全5形式・取消retry・再起動照合・再検証の既定値保全を確認。実GUI操作はBLOCKED。
+- [受入表と再開手順](docs/architecture/ui3/windows-integration-acceptance.md)。Windows nativeは必須VM受入未完了のため無効（wheelがあってもunsupported/no writes）。Rust lib check/clippyは成功、実test/wheelはMSVC不足、installerはInno不足。GPU実機はNOT_RUN。
+- 最終HEADとFull/Native CIは統合Draft PRで追跡。Ready/merge/tag/Release/既定切替なし。#89/#55等を継続。
+
 ## 現在地（2026-11-26、束G、0.1.72・未リリース）
 
 - [#92](https://github.com/zawa356/Utteran/issues/92)。[#91](https://github.com/zawa356/Utteran/pull/91) 固定 HEAD `357dac29f5b676e8c429736abf5c1c64d521d559` から `codex/g-multiprofile` を分岐。Draft の base は `claude/admiring-brown-nv1ghq`。

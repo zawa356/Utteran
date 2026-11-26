@@ -308,6 +308,8 @@ binding の `detach` が `Send` データのみを借用すること、`test-hoo
 
 ## 13. 採用決定と E-C2b（#87）の組込み（2026-11-25）
 
+**2026-11-26統合候補の現在地:** [Windows受入記録](windows-integration-acceptance.md)。通常表示root/global DOS rootのidentity照合を追加したが、実shadow競合は未検証。必須項目のNOT_RUN/BLOCKEDを含め全PASS以外ではWindows製品再出力を無効化する。現候補は無効、Rust coreとPOSIX回帰は維持。以下は組込み時点の記録。
+
 オーナーが本方式を採用（[決定](https://github.com/zawa356/Utteran/pull/88#issuecomment-7162210189)）。同じ Draft で #87 の製品組込みまで進めた（0.1.70）。
 
 - **製品経路**: Windows の再出力だけを `utteran_gui/reexport_files_native.py`（Rust core）へ接続。service は `sys.platform == "win32"` で選ぶ。
