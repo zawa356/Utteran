@@ -26,6 +26,7 @@ from utteran_contracts.engines import (
     get_diarization_engine,
     get_engine,
     setting_refusals,
+    worker_refusals,
 )
 
 _NON_SPACE = NON_SPACE_LANGUAGES | {"auto", ""}
@@ -116,7 +117,8 @@ def _settings_issues(
         # Cross-field consistency of the engine's own namespace, not a capability.
         native = asr.whisper_cpp
         if native is not None and (
-            (native.vad is not None and native.vad != asr.vad.enabled)
+            (native.variant is not None and native.variant != recipe.requested_route.native_variant)
+            or (native.vad is not None and native.vad != asr.vad.enabled)
             or (
                 asr.vad.threshold is not None
                 and native.vad_threshold is not None
@@ -124,6 +126,12 @@ def _settings_issues(
             )
         ):
             codes.append("unsupported_setting")
+    if (
+        identity.execution_path == "worker"
+        and asr.whisper_cpp is not None
+        and asr.whisper_cpp.vad_model is not None
+    ):
+        codes.append("unsupported_setting")
     if settings.diarization.enabled:
         diar = settings.diarization
         if identity.diarization_device == "xpu" and identity.platform == "Linux":
@@ -241,7 +249,9 @@ def evaluate_candidate(
     if execution_path == "worker":
         if not recipe.worker_supported:
             transport_codes.append("worker_backend_unsupported")
-        if settings.diarization.enabled:
+        if "worker_diarization_unsupported" in worker_refusals(
+            get_engine(recipe.backend), settings
+        ):
             transport_codes.append("worker_diarization_unsupported")
         if not identity.local_complete_model:
             transport_codes.append("worker_model_not_local")
@@ -323,11 +333,36 @@ def evaluate_candidate(
             issues.append(SelectionIssue(kind=kind, code=code))
             blocked |= observation.state == "failed"
 
-    if deployment.required_memory_bytes is None or deployment.available_memory_bytes is None:
-        issues.append(SelectionIssue(kind="memory", code="memory_unknown"))
-    elif deployment.required_memory_bytes > deployment.available_memory_bytes:
-        issues.append(SelectionIssue(kind="memory", code="memory_insufficient"))
-        blocked = True
+    budgets = [(deployment.required_memory_bytes, deployment.available_memory_bytes)]
+    if settings.diarization.enabled and identity.smoke_version == 2:
+        budgets.append(
+            (
+                deployment.diarization_required_memory_bytes,
+                deployment.diarization_available_memory_bytes,
+            )
+        )
+    for required_bytes, available_bytes in budgets:
+        if required_bytes is None or available_bytes is None:
+            code = "memory_unknown"
+        elif required_bytes > available_bytes:
+            code = "memory_insufficient"
+            blocked = True
+        else:
+            continue
+        issue = SelectionIssue(kind="memory", code=code)
+        if issue not in issues:
+            issues.append(issue)
+    memory_warning = identity.smoke_version == 2 and any(
+        o.kind == "memory"
+        and o.source == "smoke"
+        and o.state == "unknown"
+        and o.reason_code == "memory_unknown"
+        for o in observations
+    )
+    unresolved = any(
+        not (memory_warning and issue.kind == "memory" and issue.code == "memory_unknown")
+        for issue in issues
+    )
     return CapabilityCandidate(
         schema_version=1,
         id="cand-" + digest(identity.to_wire()),
@@ -336,7 +371,7 @@ def evaluate_candidate(
         requested_route=recipe.requested_route,
         observations=tuple(observations),
         issues=tuple(issues),
-        runnable="blocked" if blocked else "unknown" if issues else "ready",
+        runnable="blocked" if blocked else "unknown" if unresolved else "ready",
     )
 
 

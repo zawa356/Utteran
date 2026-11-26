@@ -1,5 +1,7 @@
 # Architecture documents — where to start
 
+追補（2026-11-26、0.1.72未リリース）。[束G Intel 優先マルチプロファイル推論](ui3/g-multiprofile.md)。開発専用 v1 の native IPC・offline 話者分離・B4 証拠と総合受入条件。
+
 追補（2026-11-25、0.1.71未リリース）。[束F セットアップ・診断・検出](ui3/f-setup.md)。B8 の承認済み setup が B4 smoke 証拠を記録（`capability_smoke`）、`/api/v1/readiness-checks`・`/api/v1/setup-diagnostics` を追加。DB layout は不変。
 
 追補（2026-11-25、0.1.69未リリース）。[`--next-ui-v1` 検証済みJSONからのASRなし再出力](ui3/e-c-reexport.md)。共通レンダラ、独立 private ストア `reexport-v1`、B5/B7 不変。Windows は BLOCKED、実機未受入。

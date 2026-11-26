@@ -154,16 +154,21 @@ def test_unverifiable_requests_are_refused(tmp_path, profile, settings, refs) ->
     assert caught.value.code == "verification_unsupported" and caught.value.status == 422
 
 
-def test_verification_with_diarization_enabled_is_refused(tmp_path: Path) -> None:
+def test_verification_with_diarization_uses_the_same_offline_smoke(tmp_path: Path) -> None:
     world = World(tmp_path)
     world.install("cuda")
     data = asr_settings().to_wire()
     data["diarization"]["enabled"] = True
-    with pytest.raises(PlanRejected):
-        build_plan(
-            verify_request("cuda", TURBO, PYA, settings=ProcessingSettings.model_validate(data)),
-            world.observer.observe(),
-        )
+    plan = build_plan(
+        verify_request("cuda", TURBO, PYA, settings=ProcessingSettings.model_validate(data)),
+        world.observer.observe(),
+    )
+    assert [step.kind for step in plan.steps] == [
+        "credential_preflight",
+        "model_download",
+        "model_download",
+        "capability_smoke",
+    ]
 
 
 # --------------------------------------------------------------------------- executor
@@ -536,7 +541,9 @@ def test_gpu_probe_failure_is_unknown_with_a_cpu_recommendation(tmp_path) -> Non
 
 def test_recommendation_codes() -> None:
     assert recommend(gpu(), None)["reason_codes"] == ["no_gpu_detected"]
-    assert recommend(gpu("intel"), None)["profile"] == "cpu"
+    intel = recommend(gpu("intel"), RuntimeReport("cuda", None, True, True))
+    assert intel["profile"] == "intel" and not intel["confident"]
+    assert recommend(gpu("intel"), RuntimeReport("intel", None, vulkan=True))["confident"]
     no_driver = recommend(gpu("nvidia", driver=None), None)
     assert "nvidia_driver_unknown" in no_driver["reason_codes"]
     dead = recommend(gpu("nvidia"), RuntimeReport("cuda", None, False, False))
@@ -1469,3 +1476,90 @@ def test_defaults_view_never_creates_the_settings_store_and_rejects_a_bad_record
 
     with pytest.raises(SettingsError):
         setup_defaults.defaults_view(Store(), path, "setup_x")  # type: ignore[arg-type]
+
+
+def test_gate_rechecks_lease_in_acquired_window(tmp_path):
+    from utteran_gui.execution_gate import ExecutionGate
+
+    world = World(tmp_path)
+    world.install("cuda")
+    busy = iter((None, "retained-lease"))
+    gate = ExecutionGate()
+    service = SetupDiagnostics(
+        world.cli,
+        busy_profile=lambda: next(busy),
+        gate=gate,
+    )
+    service._probe = lambda *_: pytest.fail("probe overlapped retained lease")
+    assert service._runtime_stage(0, False).reason_code == "setup_running"
+    assert gate.try_acquire("dispatch")
+    gate.release("dispatch")
+
+
+def test_nvml_identity_survives_unavailable_memory():
+    class MissingMemory(FakeNvml):
+        def nvmlDeviceGetMemoryInfo(self, _handle, _ref):
+            return 3
+
+    lib = MissingMemory([GPU_A])
+    observed = nvml.snapshot(lib)
+    assert observed is not None and observed.gpus == (nvml.NvmlGpu(GPU_A[0], GPU_A[1], None),)
+    assert nvml.free_memory(GPU_A[0], lib) is None
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_managed_community_reuse_or_conflict_never_reads_token_or_downloads(tmp_path, conflict):
+    from utteran_contracts.setup import COMMUNITY_ASSETS_MISMATCH_EXIT
+
+    world = SmokeWorld(tmp_path)
+    world.install("cpu")
+    _model_ok(world, TURBO)
+    _model_ok(world, PYA)
+    if conflict:
+        world.fail[f"models verify {PYA}"] = COMMUNITY_ASSETS_MISMATCH_EXIT
+    settings = asr_settings()
+    settings = settings.model_copy(
+        update={"diarization": settings.diarization.model_copy(update={"enabled": True})}
+    )
+    req = verify_request("cpu", TURBO, PYA, settings=settings)
+    store = make_store(tmp_path / "ops.sqlite3")
+    op = queued_setup(store, world, req)
+    _run(store, world)
+    view = store.get_setup(op.body["id"])
+    if conflict:
+        assert view.status == "failed"
+        assert view.error is not None and view.error.code == "community_assets_mismatch"
+        assert any(step.reason_code == "community_assets_mismatch" for step in view.steps)
+    else:
+        assert view.status == "succeeded"
+    assert all("download" not in call and "token-status" not in call for call in world.calls)
+
+
+def test_new_root_community_download_requires_consent_and_credential(tmp_path):
+    from test_b8_setup import E, approve, plan, start
+    from utteran_control.errors import ControlError
+
+    world = SmokeWorld(tmp_path)
+    world.install("cpu")
+    settings = asr_settings()
+    settings = settings.model_copy(
+        update={"diarization": settings.diarization.model_copy(update={"enabled": True})}
+    )
+    store = make_store(tmp_path / "ops.sqlite3")
+    request = verify_request("cpu", TURBO, PYA, settings=settings)
+    planned = plan(store, world, request)
+    with pytest.raises(ControlError) as denied:
+        approve(store, world, planned)
+    assert denied.value.code is E.AGREEMENT_REQUIRED
+    agreements = tuple(planned.body["required_agreements"])
+    with pytest.raises(ControlError) as denied:
+        approve(store, world, planned, agreements)
+    assert denied.value.code is E.CREDENTIAL_REQUIRED
+    assert not world.calls
+
+    world.credential = True
+    approval = approve(store, world, planned, agreements)
+    op = start(store, world, approval)
+    _run(store, world)
+    assert store.get_setup(op.body["id"]).status == "succeeded"
+    assert any("download" in call and PYA in call for call in world.calls)

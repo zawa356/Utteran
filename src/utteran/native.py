@@ -59,7 +59,8 @@ def _portable_cmake_flags(flags: Sequence[str]) -> tuple[str, ...]:
 
 WHISPER_CPP_TAG = "v1.9.2"
 WHISPER_CPP_COMMIT = "306c88f4d1286aec1bf96e544632897886af5501"
-WHISPER_CPP_PATCH_LEVEL = "utteran-token-json-original-timeline-v1"
+LEGACY_WHISPER_CPP_PATCH_LEVEL = "utteran-token-json-original-timeline-v1"
+WHISPER_CPP_PATCH_LEVEL = "utteran-token-json-original-timeline-private-cli-v2"
 WHISPER_CPP_REPOSITORY = "https://github.com/ggml-org/whisper.cpp.git"
 
 _TOKEN_JSON_CURRENT_OLD = (
@@ -306,6 +307,152 @@ def _patch_whisper_cpp_token_json(source_dir: Path) -> None:
         raise NativeBuildError(f"whisper.cpp token JSON patchを書き込めません: {exc}") from exc
 
 
+_PRIVATE_CLI_ANCHOR = "    if (whisper_params_parse(argc, argv, params) == false) {"
+_PRIVATE_CLI_CODE = r"""    // Bounded NUL-delimited UTF-8 arguments through the worker pipe.
+    std::vector<std::string> utteran_args;
+    std::vector<char *> utteran_argv;
+    const bool utteran_private = argc == 2 && std::string(argv[1]) == "--utteran-stdin";
+    if (utteran_private) {
+        size_t gpus = 0;
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            auto * device = ggml_backend_dev_get(i);
+            auto type = ggml_backend_dev_type(device);
+            if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+                ++gpus;
+                fprintf(stderr, "utteran device %s|%s\n",
+                    ggml_backend_dev_name(device), ggml_backend_dev_description(device));
+            }
+        }
+        fprintf(stderr, "utteran gpu count %zu\n", gpus);
+#if defined(_WIN32)
+        if (_setmode(_fileno(stdin), _O_BINARY) == -1) {
+            return 1;
+        }
+#endif
+        utteran_args.emplace_back(argv[0]);
+        std::string arg;
+        size_t bytes = 0;
+        int ch;
+        while ((ch = fgetc(stdin)) != EOF) {
+            if (++bytes > 1024 * 1024 || utteran_args.size() > 128) {
+                return 1;
+            }
+            if (ch == 0) {
+                utteran_args.push_back(std::move(arg));
+                arg.clear();
+            } else {
+                arg.push_back(static_cast<char>(ch));
+            }
+        }
+        if (ferror(stdin) || !arg.empty() || utteran_args.size() < 2) {
+            return 1;
+        }
+        for (auto & value : utteran_args) {
+            utteran_argv.push_back(&value[0]);
+        }
+        argc = static_cast<int>(utteran_argv.size());
+        utteran_argv.push_back(nullptr);
+        argv = utteran_argv.data();
+    }
+
+"""
+
+
+def _patch_whisper_cpp_private_cli(source_dir: Path) -> None:
+    cli_path = source_dir / "examples" / "cli" / "cli.cpp"
+    source = cli_path.read_text(encoding="utf-8")
+    if _PRIVATE_CLI_CODE in source:
+        return
+    if source.count(_PRIVATE_CLI_ANCHOR) != 1:
+        raise NativeBuildError("whisper.cpp private CLI patch anchor mismatch")
+    headers = "#if defined(_WIN32)\n#include <fcntl.h>\n#include <io.h>\n#endif\n"
+    patched = headers + source.replace(_PRIVATE_CLI_ANCHOR, _PRIVATE_CLI_CODE + _PRIVATE_CLI_ANCHOR)
+    cli_path.write_text(patched, encoding="utf-8", newline="\n")
+
+
+def _replace_source(path: Path, old: str, new: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    if new in text:
+        return
+    if text.count(old) != 1:
+        raise NativeBuildError("whisper.cpp route patch anchor mismatch")
+    path.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
+
+
+def _patch_whisper_cpp_routes(source_dir: Path) -> None:
+    # The selected backend can fail or leave heavy operations on the CPU.
+    # Observe the graph output's scheduled backend after successful execution.
+    core = source_dir / "src" / "whisper.cpp"
+    for tensor, anchor, label in (
+        ("wstate.embd_enc", "    }\n\n    // cross\n", "encoder"),
+        ("logits", "    }\n\n    logits_out.resize(n_tokens*n_vocab);", "decoder"),
+    ):
+        old = (
+            "        if (!ggml_graph_compute_helper(sched, gf, n_threads)) {\n"
+            "            return false;\n        }\n" + anchor
+        )
+        new = (
+            "        if (!ggml_graph_compute_helper(sched, gf, n_threads, false)) {\n"
+            "            return false;\n        }\n"
+            '        if (getenv("UTTERAN_PRIVATE_NATIVE")) {\n'
+            "            auto * route = ggml_backend_sched_get_tensor_backend(\n"
+            f"                sched, {tensor});\n"
+            "            bool mixed = false;\n"
+            "            for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {\n"
+            "                auto * node = ggml_graph_node(gf, i);\n"
+            "                if (node->op == GGML_OP_MUL_MAT || node->op == GGML_OP_MUL_MAT_ID) {\n"
+            "                    auto * actual = ggml_backend_sched_get_tensor_backend(\n"
+            "                        sched, node);\n"
+            "                    mixed |= actual != route;\n"
+            "                }\n"
+            "            }\n"
+            f'            WHISPER_LOG_INFO("utteran {label} %s\\n",\n'
+            '                route && !mixed ? ggml_backend_name(route) : "unknown");\n'
+            "        }\n"
+            "        ggml_backend_sched_reset(sched);\n" + anchor
+        )
+        _replace_source(core, old, new)
+    _replace_source(
+        core,
+        "            whisper_openvino_encode(wstate.ctx_openvino, mel, wstate.embd_enc);",
+        "            if (!whisper_openvino_encode(wstate.ctx_openvino, mel, wstate.embd_enc)) {\n"
+        "                return false;\n            }",
+    )
+    ov = source_dir / "src" / "openvino" / "whisper-openvino-encoder.cpp"
+    _replace_source(
+        ov,
+        "    ov::InferRequest inferRequest;",
+        "    ov::InferRequest inferRequest;\n    bool gpu = false;",
+    )
+    _replace_source(
+        ov,
+        "        context->inferRequest = compiledModel.create_infer_request();",
+        '        if (const char * expected = getenv("UTTERAN_PRIVATE_NATIVE")) {\n'
+        "            const auto routes = compiledModel.get_property(ov::execution_devices);\n"
+        "            const auto devices = core.get_available_devices();\n"
+        "            size_t gpu_count = 0;\n"
+        "            for (const auto & candidate : devices) {\n"
+        '                if (candidate == "GPU" || candidate.rfind("GPU.", 0) == 0) {\n'
+        "                    ++gpu_count;\n"
+        "                }\n"
+        "            }\n"
+        "            context->gpu = gpu_count == 1 && routes.size() == 1 &&\n"
+        '                (routes[0] == "GPU" || routes[0] == "GPU.0") &&\n'
+        "                core.get_property(routes[0], ov::device::full_name) == expected;\n"
+        "        }\n"
+        "        context->inferRequest = compiledModel.create_infer_request();",
+    )
+    _replace_source(
+        ov,
+        "        ctx->inferRequest.infer();",
+        "        ctx->inferRequest.infer();\n"
+        '        if (getenv("UTTERAN_PRIVATE_NATIVE")) {\n'
+        '            const char * route = ctx->gpu ? "OpenVINO-GPU" : "unknown";\n'
+        '            fprintf(stderr, "utteran encoder %s\\n", route);\n'
+        "        }",
+    )
+
+
 class NativeBuilder:
     """Fetch whisper.cpp once and build the requested variants beside it."""
 
@@ -336,10 +483,29 @@ class NativeBuilder:
         if (
             not isinstance(whisper_cpp, dict)
             or whisper_cpp.get("commit") != WHISPER_CPP_COMMIT
-            or whisper_cpp.get("patch_level") != WHISPER_CPP_PATCH_LEVEL
+            or whisper_cpp.get("patch_level")
+            not in {LEGACY_WHISPER_CPP_PATCH_LEVEL, WHISPER_CPP_PATCH_LEVEL}
         ):
             return {}
         return data
+
+    def worker_executable(self, manifest: Mapping[str, Any], variant: str) -> Path | None:
+        """Resolve a private-IPC capable binary from the selected local build."""
+        if variant not in VARIANT_NAMES:
+            return None
+        backends = manifest.get("backends")
+        entry = backends.get(variant) if isinstance(backends, dict) else None
+        if not isinstance(entry, dict) or entry.get("patch_level") != WHISPER_CPP_PATCH_LEVEL:
+            return None
+        path = Path(str(entry.get("executable", "")))
+        if (
+            not path.is_absolute()
+            or not path.is_file()
+            or not path.resolve().is_relative_to(self.build_dir(variant).resolve())
+            or path.name not in {"whisper-cli.exe", "whisper-cli"}
+        ):
+            return None
+        return path
 
     def build_all(
         self,
@@ -443,6 +609,7 @@ class NativeBuilder:
             {
                 name: {
                     **entry,
+                    "patch_level": entry.get("patch_level", existing["whisper_cpp"]["patch_level"]),
                     "cmake_flags": list(
                         _portable_cmake_flags(
                             tuple(str(flag) for flag in entry.get("cmake_flags", []))
@@ -459,6 +626,7 @@ class NativeBuilder:
             {
                 name: {
                     "executable": str(result.executable),
+                    "patch_level": WHISPER_CPP_PATCH_LEVEL,
                     "cmake_flags": list(_portable_cmake_flags(result.cmake_flags)),
                     "requires": list(result.requires),
                 }
@@ -543,6 +711,8 @@ class NativeBuilder:
             result = self.runner.run([git, "-C", str(self.source_dir), "rev-parse", "HEAD"])
             if result.returncode == 0 and result.stdout.strip() == WHISPER_CPP_COMMIT and not force:
                 _patch_whisper_cpp_token_json(self.source_dir)
+                _patch_whisper_cpp_private_cli(self.source_dir)
+                _patch_whisper_cpp_routes(self.source_dir)
                 return
             fetch = self.runner.run(
                 [
@@ -586,6 +756,8 @@ class NativeBuilder:
         if verify.returncode != 0 or verify.stdout.strip() != WHISPER_CPP_COMMIT:
             raise NativeBuildError("取得したwhisper.cppのコミットが期待値と一致しません。")
         _patch_whisper_cpp_token_json(self.source_dir)
+        _patch_whisper_cpp_private_cli(self.source_dir)
+        _patch_whisper_cpp_routes(self.source_dir)
 
     def _build_variant(
         self,
@@ -604,9 +776,12 @@ class NativeBuilder:
             if isinstance(current, dict):
                 executable = Path(str(current.get("executable", "")))
                 current_flags = tuple(str(flag) for flag in current.get("cmake_flags", []))
-                if executable.is_file() and _portable_cmake_flags(
-                    current_flags
-                ) == _portable_cmake_flags(flags):
+                if (
+                    current.get("patch_level", existing.get("whisper_cpp", {}).get("patch_level"))
+                    == WHISPER_CPP_PATCH_LEVEL
+                    and executable.is_file()
+                    and _portable_cmake_flags(current_flags) == _portable_cmake_flags(flags)
+                ):
                     return BuildResult(name, executable, flags, requires)
 
         build_dir = self.build_dir(name)

@@ -10,7 +10,7 @@ from utteran import application
 from utteran.config import Config
 from utteran.errors import CancelledError
 from utteran.jobs import stage_config_hashes
-from utteran.types import CancelToken, PipelineOutcome
+from utteran.types import CancelToken
 from utteran.worker_runtime import execute, explicit_config, offline_preflight
 from utteran_contracts.worker import WorkerCompleted, WorkerRequest
 from utteran_contracts.worker_framing import ProtocolError
@@ -33,11 +33,7 @@ def test_real_pipeline_adapter_resume_force_and_artifact_compatibility(
     monkeypatch.setenv("UTTERAN_ASR__MODEL", "must-not-apply")
     backend = SyntheticASR()
     original = application.execute_single
-
-    def runner(*args: Any, **kwargs: Any) -> PipelineOutcome:
-        return original(*args, **kwargs, asr_backend=backend)
-
-    monkeypatch.setattr(application, "execute_single", runner)
+    monkeypatch.setattr("utteran.worker_runtime.create_asr_backend", lambda *a, **kw: backend)
     events: list[tuple[str, dict[str, Any]]] = []
 
     def emit(kind: str, **payload: Any) -> None:

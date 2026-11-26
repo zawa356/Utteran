@@ -301,7 +301,8 @@
             "gpu",
             "npu",
             "openvino-gpu",
-            "unknown"
+            "unknown",
+            "vulkan"
           ],
           "title": "Encoder Observed",
           "type": "string"
@@ -620,6 +621,32 @@
             }
           ],
           "default": null
+        },
+        "diarization_available_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diarization Available Memory Bytes"
+        },
+        "diarization_required_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diarization Required Memory Bytes"
         },
         "identity": {
           "$ref": "#/$defs/ExecutionIdentity"
@@ -1236,7 +1263,10 @@
           "title": "Runtime Fingerprint"
         },
         "smoke_version": {
-          "const": 1,
+          "enum": [
+            1,
+            2
+          ],
           "title": "Smoke Version",
           "type": "integer"
         }
@@ -2032,7 +2062,8 @@
             "gpu",
             "npu",
             "openvino-gpu",
-            "selected-device"
+            "selected-device",
+            "vulkan"
           ],
           "title": "Encoder",
           "type": "string"
@@ -2550,6 +2581,15 @@
           "minimum": 0,
           "title": "Vad Threshold",
           "type": "number"
+        },
+        "variant": {
+          "enum": [
+            "openvino",
+            "openvino_vulkan",
+            "vulkan"
+          ],
+          "title": "Variant",
+          "type": "string"
         }
       },
       "title": "WhisperCppSettings",

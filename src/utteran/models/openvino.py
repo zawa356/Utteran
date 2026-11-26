@@ -34,7 +34,9 @@ class OpenVINOManager:
         self.models = manager or ModelManager()
         self.root = self.models.root / "openvino-encoder"
 
-    def prepare(self, identifier: str, *, purge_cache: bool = False) -> OpenVINOStatus:
+    def prepare(
+        self, identifier: str, *, purge_cache: bool = False, reuse: bool = False
+    ) -> OpenVINOStatus:
         """Run the pinned compatible converter and install its XML/BIN pair."""
         _require_dependencies()
         entry = get_model(identifier, backend="whisper-cpp")
@@ -42,6 +44,20 @@ class OpenVINOManager:
             raise ModelNotFoundError(f"OpenVINO変換対象を解決できません: {identifier}")
         model_size = entry.model_size
         target = self._status(model_size)
+        if reuse:
+            ggml = self.models.managed_path(entry) / (entry.artifact_filename or "")
+            if not ggml.is_file():
+                raise ModelNotFoundError("managed GGML is missing")
+            aliases = _alias_paths(ggml)
+            if all(path.is_file() for path in aliases):
+                return OpenVINOStatus(model_size, *aliases, True)
+            if any(path.exists() for path in aliases) or (
+                target.xml_path.exists() != target.bin_path.exists()
+            ):
+                raise DependencyError("existing OpenVINO IR is incomplete")
+            if target.installed:
+                _install_selected_aliases(target, aliases)
+                return self._status(model_size)
         target.xml_path.parent.mkdir(parents=True, exist_ok=True)
         vendor = Path(__file__).with_name("vendor") / "convert_whisper_to_openvino.py"
         with tempfile.TemporaryDirectory(prefix="utteran-openvino-") as temporary:
@@ -75,7 +91,10 @@ class OpenVINOManager:
                 )
             shutil.move(generated_xml, target.xml_path)
             shutil.move(generated_bin, target.bin_path)
-        self.refresh_aliases(model_size)
+        if reuse:
+            _install_selected_aliases(self._status(model_size), aliases)
+        else:
+            self.refresh_aliases(model_size)
         if purge_cache:
             _purge_whisper_cache(model_size)
         completed = self._status(model_size)
@@ -129,6 +148,17 @@ class OpenVINOManager:
         xml = directory / f"ggml-{model_size}-encoder-openvino.xml"
         binary = xml.with_suffix(".bin")
         return OpenVINOStatus(model_size, xml, binary, xml.is_file() and binary.is_file())
+
+
+def _install_selected_aliases(status: OpenVINOStatus, aliases: tuple[Path, Path]) -> None:
+    for source, target in zip((status.xml_path, status.bin_path), aliases, strict=True):
+        try:
+            os.link(source, target)
+        except FileExistsError:
+            raise DependencyError("existing OpenVINO IR alias") from None
+        except OSError:
+            with source.open("rb") as reader, target.open("xb") as writer:
+                shutil.copyfileobj(reader, writer)
 
 
 def _require_dependencies() -> None:

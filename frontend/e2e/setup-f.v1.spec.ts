@@ -115,7 +115,10 @@ test("F-03 custom CPU: failed verification → retry succeeds; an additional set
   await detect(app);
   await app.getByTestId("fsetup-mode-custom").click();
   await app.getByTestId("fsetup-profile").click();
-  await expect(app.getByRole("option", { name: /Intel/ })).toHaveClass(/v-list-item--disabled/);
+  await app.getByRole("option", { name: /Intel/ }).click();
+  await expect(app.getByTestId("gsetup-variant")).toContainText("vulkan");
+  await expect(app.getByTestId("fsetup-model-base").locator("input")).toBeChecked();
+  await app.getByTestId("fsetup-profile").click();
   await app.getByRole("option", { name: /^CPU/ }).click();
   await app.getByTestId("fsetup-model-small").locator("input").check();
   await app.getByTestId("fsetup-plan").click();
@@ -175,8 +178,10 @@ test("F-06 a first setup that succeeded while the setup page was closed still ge
   await app.getByTestId("fsetup-plan").click();
   await startPlan(app);
   await expect(app.getByTestId("fsetup-operation")).toHaveAttribute("data-status", "running", { timeout: 20_000 });
-  // Leave the page and finish the setup without it.
-  await app.getByTestId("nav-settings").click();
+  // Unload the app while the child is still held. Section navigation keeps the
+  // AppCore polling, so it cannot simulate completing with the GUI closed.
+  const appUrl = app.url();
+  await app.goto("about:blank");
   const { unlinkSync } = await import("node:fs");
   unlinkSync(`${backend.root}/setup/hold-download`);
   await expect.poll(async () => {
@@ -184,7 +189,7 @@ test("F-06 a first setup that succeeded while the setup page was closed still ge
     return list.items[0]?.status;
   }, { timeout: 20_000 }).toBe("succeeded");
   expect(((await (await request.get("/api/v1/presets", { headers: AUTH })).json()) as { items: unknown[] }).items).toHaveLength(0);
-  await app.reload();
+  await app.goto(appUrl);
   await expect(app.getByTestId("app-ready")).toBeVisible();
   await openSetup(app);
   await expect(app.getByTestId("fsetup-defaults-created")).toBeVisible();

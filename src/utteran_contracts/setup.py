@@ -32,6 +32,9 @@ AgreementId = Annotated[StrictStr, Field(pattern=r"^hf-gated:[A-Za-z0-9][A-Za-z0
 CredentialId = Literal["hf_token"]
 ByteCount = Annotated[StrictInt, Field(ge=0)]
 
+# Fixed CLI status for the managed community-1 verify/download subprocess.
+COMMUNITY_ASSETS_MISMATCH_EXIT = 5
+
 PlanState = Literal["proposed", "approved", "consumed", "expired"]
 ChangeAction = Literal["create", "reuse", "rebuild", "verify"]
 ChangeKind = Literal["profile", "model", "native", "ir"]
@@ -61,6 +64,7 @@ StepReason = Literal[
     "launch_failed",
     "process_failed",
     "verification_failed",
+    "community_assets_mismatch",
     "credential_required",
     "agreement_required",
     "network_error",
@@ -82,6 +86,7 @@ EvidenceKind = Literal[
     "credential_checked",
     "smoke_output_present",
     "capability_evidence_recorded",
+    "native_asset_verified",
 ]
 WaitingReason = Literal[
     "credential_required", "agreement_required", "inventory_changed", "approval_expired"
@@ -90,6 +95,7 @@ SetupErrorCode = Literal[
     "launch_failed",
     "process_failed",
     "verification_failed",
+    "community_assets_mismatch",
     "network_error",
     "preflight_invalid",
     "executor_failed",
@@ -110,9 +116,12 @@ PlanRejection = Literal[
     "defaults_require_verification",
 ]
 # B4 recipes a setup can verify with the explicit smoke child (utteran.capabilities.smoke).
-VerificationRecipe = Literal["fw-cpu", "fw-cuda"]
+VerificationRecipe = Literal["fw-cpu", "fw-cuda", "wc-vulkan", "wc-ov", "wc-ov-vk"]
+NATIVE_VERIFICATION_RECIPES = MappingProxyType(
+    {"vulkan": "wc-vulkan", "openvino": "wc-ov", "openvino_vulkan": "wc-ov-vk"}
+)
 VERIFICATION_RECIPES: MappingProxyType[str, str] = MappingProxyType(
-    {"cpu": "fw-cpu", "cuda": "fw-cuda"}
+    {"cpu": "fw-cpu", "cuda": "fw-cuda", "intel": "wc-vulkan", "vulkan": "wc-vulkan"}
 )
 
 PLAN_TTL_SECONDS = 24 * 3600
@@ -208,6 +217,23 @@ SETUP_MODELS: MappingProxyType[str, SetupModel] = MappingProxyType(
                 1632087572,
                 False,
             ),
+            SetupModel("whisper-cpp", "base", "GGML", "ggerganov/whisper.cpp", 147951465, False),
+            SetupModel(
+                "whisper-cpp",
+                "large-v3-turbo-q5_0",
+                "GGML",
+                "ggerganov/whisper.cpp",
+                574041195,
+                False,
+            ),
+            SetupModel(
+                "whisper-cpp-vad",
+                "silero-v6.2.0",
+                "GGML VAD",
+                "ggml-org/whisper-vad",
+                885159,
+                False,
+            ),
             SetupModel(
                 "pyannote",
                 "pyannote/speaker-diarization-community-1",
@@ -225,12 +251,14 @@ PROFILE_BACKENDS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
     {
         "cpu": frozenset({"faster-whisper", "pyannote"}),
         "cuda": frozenset({"faster-whisper", "pyannote"}),
-        "intel": frozenset({"faster-whisper", "whisper-cpp", "openvino-genai", "pyannote"}),
-        "vulkan": frozenset({"faster-whisper", "whisper-cpp", "pyannote"}),
+        "intel": frozenset(
+            {"faster-whisper", "whisper-cpp", "whisper-cpp-vad", "openvino-genai", "pyannote"}
+        ),
+        "vulkan": frozenset({"faster-whisper", "whisper-cpp", "whisper-cpp-vad", "pyannote"}),
     }
 )
 # Backends the B8 executor can set up end to end (no native build / IR generation yet).
-EXECUTABLE_BACKENDS: frozenset[str] = frozenset({"faster-whisper", "pyannote"})
+EXECUTABLE_BACKENDS = frozenset({"faster-whisper", "whisper-cpp", "whisper-cpp-vad", "pyannote"})
 ASR_BACKENDS: frozenset[str] = frozenset({"faster-whisper", "whisper-cpp", "openvino-genai"})
 
 

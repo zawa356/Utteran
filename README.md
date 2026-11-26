@@ -6,9 +6,9 @@ utteranは、音声・動画から話者別の文字起こしをローカル生�
 会議・インタビュー・講演を、SRT / VTT / JSON / TXT / Markdownへ出力します。
 入力音声をクラウド文字起こしAPIへ送信しません。
 
-> 現在の開発版: `0.1.71`（未release）。API・設定は1.0まで変更されます。
+> 現在の開発版: `0.1.72`（未release）。API・設定は1.0まで変更されます。
 > 開発専用 v1 の名前付き作業セット（自動保存・復元）は [E-B の仕様](docs/architecture/ui3/e-b-worksets.md) を参照してください。
-> **0.1.71（束F・未リリース）**: `--next-ui-v1` の［セットアップ］ページで、環境の確認（GPU・ドライバー・VC++・GPUランタイム）、標準/カスタムのセットアップ（計画の確認→開始→進捗・取消・再試行・再開）、実行の検証（B4 証拠）と「実行の可否」の確認ができます。CUDA の ready は実機で未確認です。[束F の仕様](docs/architecture/ui3/f-setup.md)
+> **0.1.72（束F・未リリース）**: `--next-ui-v1` の［セットアップ］ページで、環境の確認（GPU・ドライバー・VC++・GPUランタイム）、標準/カスタムのセットアップ（計画の確認→開始→進捗・取消・再試行・再開）、実行の検証（B4 証拠）と「実行の可否」の確認ができます。CUDA の ready は実機で未確認です。[束F の仕様](docs/architecture/ui3/f-setup.md)
 >
 > **0.1.69（束 E-C・未リリース）**: Expert の結果・履歴から、成功したジョブの検証済み JSON だけを使って、音声の再認識なしに別の形式・表示設定で新しいフォルダへ再出力できます（`--next-ui-v1` のみ、Linux/macOS。Windows は安全な書込みを証明できないため現時点では利用不可）。[E-C の仕様](docs/architecture/ui3/e-c-reexport.md)
 > 開発専用 v1 の案件別 Preset 管理・用語集は [E-A の製品仕様](docs/architecture/ui3/e-a-presets-glossary.md) を参照してください。

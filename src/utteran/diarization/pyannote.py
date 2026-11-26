@@ -43,8 +43,11 @@ class PyannoteBackend(DiarizationBackend):
 
     name: ClassVar[str] = "pyannote"
 
-    def __init__(self, token_provider: TokenProvider | None = None) -> None:
+    def __init__(
+        self, token_provider: TokenProvider | None = None, *, offline: bool = False
+    ) -> None:
         self._token_provider = token_provider or default_token_provider()
+        self._offline = offline
         self._pipeline: Any | None = None
         self._model_id = ""
         self._device = ""
@@ -89,6 +92,10 @@ class PyannoteBackend(DiarizationBackend):
 
         token: str | None = None
         model_path = Path(model_id).expanduser()
+        if self._offline and (
+            device == "auto" or not model_path.is_absolute() or not model_path.is_dir()
+        ):
+            raise ModelNotFoundError("explicit local community-1 model and device required")
         if not model_path.exists():
             managed_model = find_runtime_model(
                 self.name,
@@ -116,11 +123,18 @@ class PyannoteBackend(DiarizationBackend):
 
             selected_device = _select_device(device, torch)
             _apply_debug_memory_fraction(torch, selected_device)
-            pipeline = Pipeline.from_pretrained(model_path, token=token)
+            if self._offline:
+                from utteran.diarization.community import load_pipeline, verify_pipeline_device
+
+                pipeline = load_pipeline(model_path)
+            else:
+                pipeline = Pipeline.from_pretrained(model_path, token=token)
             if pipeline is None:
                 raise ModelNotFoundError(f"話者分離モデル '{model_id}' の設定を読み込めません。")
             try:
                 pipeline.to(torch.device(selected_device))
+                if self._offline:
+                    verify_pipeline_device(pipeline, torch.device(selected_device))
             except Exception as move_error:
                 if device == "auto" and selected_device.startswith(("cuda", "xpu")):
                     accelerator = "XPU" if selected_device.startswith("xpu") else "CUDA"
@@ -139,11 +153,13 @@ class PyannoteBackend(DiarizationBackend):
         except (BackendUnavailableError, ConfigurationError, ModelNotFoundError):
             raise
         except Exception as exc:
-            _raise_backend_error("モデル読み込み", exc)
+            _raise_backend_error("モデル読み込み", exc, device=device)
 
         self._pipeline = pipeline
         self._model_id = model_id
         self._device = selected_device
+        if self._offline:
+            return
         structured_event(
             "diarization_device_resolved",
             backend=self.name,

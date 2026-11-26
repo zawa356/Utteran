@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -14,9 +15,11 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from utteran.config import TokenProvider, default_token_provider
 from utteran.errors import (
+    CommunityAssetsMismatchError,
     HuggingFaceAuthenticationError,
     HuggingFaceTokenMissingError,
     ModelAgreementError,
@@ -50,6 +53,27 @@ class VerificationResult:
     path: Path | None
     size_bytes: int
     message: str
+    community_assets_mismatch: bool = False
+
+
+def _community_assets_state(path: Path) -> Literal["missing", "verified", "conflict"]:
+    from utteran.diarization.community import verify_assets
+
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "conflict"
+    if not stat.S_ISDIR(info.st_mode) or (
+        getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+    ):
+        return "conflict"
+    try:
+        verify_assets(path)
+    except (OSError, ModelNotFoundError):
+        return "conflict"
+    return "verified"
 
 
 class ModelManager:
@@ -128,10 +152,21 @@ class ModelManager:
         *,
         progress: ProgressCallback | None = None,
         cancel: CancelToken | None = None,
+        managed_only: bool = False,
     ) -> Path:
         """Explicitly download one snapshot into the utteran model directory."""
         _check_cancel(cancel)
-        installed, _managed = self.find_installed(entry)
+        destination = self.managed_path(entry)
+        pinned_community = managed_only and entry.backend == "pyannote"
+        if pinned_community:
+            state = _community_assets_state(destination)
+            if state == "conflict":
+                raise CommunityAssetsMismatchError
+            installed = destination if state == "verified" else None
+        elif managed_only:
+            installed = destination if _looks_installed(entry, destination) else None
+        else:
+            installed, _managed = self.find_installed(entry)
         if installed is not None:
             structured_event("model_acquisition", model=entry.key, status="already_installed")
             if progress is not None:
@@ -147,8 +182,12 @@ class ModelManager:
         token = self._token_provider.get_token()
         if entry.gated and not token:
             raise HuggingFaceTokenMissingError
-        destination = self.managed_path(entry)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if pinned_community:
+            try:
+                destination.mkdir(exist_ok=False)
+            except FileExistsError:
+                raise CommunityAssetsMismatchError from None
         if progress is not None:
             progress(
                 ProgressEvent(
@@ -159,12 +198,17 @@ class ModelManager:
                 )
             )
         try:
-            progress_total = _download_hub_entry(entry, destination, token, progress, cancel)
+            progress_total = _download_hub_entry(
+                entry, destination, token, progress, cancel, pinned=managed_only
+            )
             downloaded = destination
         except Exception as exc:
             _raise_download_error(entry, exc)
         _check_cancel(cancel)
-        if not _looks_installed(entry, downloaded):
+        if pinned_community:
+            if _community_assets_state(downloaded) != "verified":
+                raise CommunityAssetsMismatchError
+        elif not _looks_installed(entry, downloaded):
             raise ModelNotFoundError(
                 f"取得したモデル '{entry.key}' に必要なファイルがありません。"
                 "`utteran models remove` 後に再取得してください。"
@@ -172,7 +216,7 @@ class ModelManager:
         _write_metadata(downloaded, entry)
         if entry.format == "CTranslate2":
             _verify_alignment_heads(downloaded)
-        elif entry.format == "GGML" and entry.model_size:
+        elif entry.format == "GGML" and entry.model_size and not managed_only:
             from utteran.models.openvino import OpenVINOManager
 
             OpenVINOManager(self).refresh_aliases(entry.model_size)
@@ -264,8 +308,24 @@ class ModelManager:
                 f"モデルキャッシュを削除できません: {entry.key}: {type(exc).__name__}"
             ) from None
 
-    def verify(self, entry: ModelEntry) -> VerificationResult:
+    def verify(self, entry: ModelEntry, *, managed_only: bool = False) -> VerificationResult:
         """Validate every format-specific required file and nonzero total size."""
+        if managed_only:
+            path = self.managed_path(entry)
+            if entry.backend == "pyannote":
+                state = _community_assets_state(path)
+                size = _directory_size(path) if state == "verified" else 0
+                return VerificationResult(
+                    entry,
+                    state == "verified",
+                    path,
+                    size,
+                    state,
+                    community_assets_mismatch=state == "conflict",
+                )
+            missing = _missing_required_files(entry, path)
+            size = _directory_size(path) if path.is_dir() else 0
+            return VerificationResult(entry, not missing and size > 0, path, size, "managed")
         status = self.status(entry)
         if status.path is None:
             return VerificationResult(entry, False, None, 0, "未導入")
@@ -487,11 +547,18 @@ def _download_hub_entry(
     token: str | None,
     progress: ProgressCallback | None,
     cancel: CancelToken | None,
+    *,
+    pinned: bool = False,
 ) -> int | None:
     """Download with byte progress when requested, retaining the fast default otherwise."""
     from huggingface_hub import hf_hub_download, snapshot_download
 
     local_dir = _snapshot_download_path(destination)
+    snapshot_options: dict[str, object] = {}
+    if pinned and entry.backend == "pyannote":
+        from utteran.diarization.community import ASSETS, REVISION
+
+        snapshot_options.update(revision=REVISION, allow_patterns=["config.yaml", *ASSETS])
     if progress is None:
         if entry.format in {"GGML", "GGML VAD"} and entry.artifact_filename:
             hf_hub_download(
@@ -501,7 +568,9 @@ def _download_hub_entry(
                 local_dir=local_dir,
             )
         else:
-            snapshot_download(repo_id=entry.repository_id, token=token, local_dir=local_dir)
+            snapshot_download(
+                repo_id=entry.repository_id, token=token, local_dir=local_dir, **snapshot_options
+            )
         return None
 
     filenames: list[tuple[str, int, bool]]
@@ -521,6 +590,7 @@ def _download_hub_entry(
                 token=token,
                 local_dir=local_dir,
                 dry_run=True,
+                **snapshot_options,
             )
             assert isinstance(infos, list)
             filenames = [(info.filename, info.file_size, info.is_cached) for info in infos]
@@ -534,7 +604,9 @@ def _download_hub_entry(
                 local_dir=local_dir,
             )
         else:
-            snapshot_download(repo_id=entry.repository_id, token=token, local_dir=local_dir)
+            snapshot_download(
+                repo_id=entry.repository_id, token=token, local_dir=local_dir, **snapshot_options
+            )
         return None
 
     total = max(1, sum(size for _name, size, _cached in filenames))
@@ -595,6 +667,7 @@ def _download_hub_entry(
             filename=filename,
             token=token,
             local_dir=local_dir,
+            **({"revision": snapshot_options["revision"]} if snapshot_options else {}),
             tqdm_class=ProgressTqdm,
         )
         if file_completed < size:

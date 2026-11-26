@@ -9,6 +9,12 @@
       "evidence": "tests/fixtures/benchmark/README.md; RIFF chunks are only fmt/data (no LIST/INFO metadata); reviewed 2026-11-03 in Backend Foundation Hardening."
     },
     {
+      "path": "src/utteran/capabilities/fixtures/japanese_reference.wav",
+      "git_blob_sha1": "e8fb29d27fc133bf8a5e956c81033f8e9df1f34d",
+      "reason": "Byte-identical product copy of the reviewed synthetic TTS benchmark WAV for offline B4 smoke.",
+      "evidence": "Same Git blob as tests/fixtures/benchmark/japanese_reference.wav; reviewed synthetic media, no recording or added metadata."
+    },
+    {
       "path": "tests/fixtures/diarization_quality/meeting.wav",
       "git_blob_sha1": "2ef1a97417d6b98355d8d57d1809f2e08f54825e",
       "reason": "Deterministic speech-shaped synthetic signal; no recording or voice model.",

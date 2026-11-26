@@ -31,6 +31,7 @@ from typing import Any, Literal, Protocol
 
 from utteran_contracts.control import OwnerIdentity, ProcessIdentity
 from utteran_contracts.setup import (
+    COMMUNITY_ASSETS_MISMATCH_EXIT,
     SETUP_MODELS,
     EvidenceKind,
     PlanContent,
@@ -56,6 +57,7 @@ SMOKE_REASONS: dict[str, StepReason] = {
     "out_of_memory": "smoke_out_of_memory",
     "route_unverified": "smoke_route_unverified",
     "route_mismatch": "smoke_route_unverified",
+    "runtime_mismatch": "smoke_route_unverified",
     "compute_mismatch": "smoke_route_unverified",
     "settings_unsupported": "smoke_unsupported",
     "recipe_unavailable": "smoke_unsupported",
@@ -332,7 +334,11 @@ class ProductionStepAdapter:
 
     def environment(self, profile: str) -> dict[str, str]:
         env: dict[str, str] = self.cli.environment(profile)
-        return env
+        return {
+            key: value
+            for key, value in env.items()
+            if key.upper() not in {"UTTERAN_MODEL_DIR", "UTTERAN_NATIVE_DIR"}
+        }
 
     def profile_command(self, profile: str, arguments: list[str]) -> list[str]:
         command: list[str] = self.cli.command(profile, arguments)
@@ -654,7 +660,15 @@ class SetupExecutor:
         elif step.kind == "credential_preflight":
             self._preflight(run, step, profile)
         elif step.kind == "model_download":
-            self._model(run, step, profile)
+            self._model(
+                run,
+                step,
+                profile,
+                managed_only=content.verification is not None,
+                acquisition_approved=bool(content.required_agreements),
+            )
+        elif step.kind in {"native_build", "ir_build"}:
+            self._native_asset(run, step, content)
         elif step.kind == "smoke":
             self._smoke(run, step, content)
         elif step.kind == "capability_smoke":
@@ -707,25 +721,82 @@ class SetupExecutor:
         else:
             self._fail(run, step, "preflight_invalid", "preflight_invalid")
 
-    def _verify_model(self, run: _Run, step: SetupStep, profile: str, ref: str) -> bool:
-        argv = self.adapter.profile_command(profile, ["models", "verify", ref])
-        return self._child(run, step, argv, profile=profile).exit_code == 0
+    def _native_asset(self, run: _Run, step: SetupStep, content: PlanContent) -> None:
+        from utteran_contracts.setup import NATIVE_VERIFICATION_RECIPES
 
-    def _model(self, run: _Run, step: SetupStep, profile: str) -> None:
+        verification = content.verification
+        target = step.target or ""
+        if verification is None:
+            self._fail(run, step, "process_failed", "unsupported_step")
+            return
+        if (
+            step.kind == "native_build"
+            and NATIVE_VERIFICATION_RECIPES.get(target) == verification.recipe_id
+        ):
+            args = ["native", "build", "--variant", target, "--managed-root"]
+        elif (
+            step.kind == "ir_build"
+            and target == verification.model_ref
+            and verification.recipe_id in {"wc-ov", "wc-ov-vk"}
+        ):
+            args = ["models", "prepare-openvino", target, "--yes", "--reuse"]
+        else:
+            self._fail(run, step, "process_failed", "unsupported_step")
+            return
+        profile = content.profile_kind
+        result = self._child(
+            run, step, self.adapter.profile_command(profile, args), profile=profile
+        )
+        if result.exit_code != 0:
+            self._fail(run, step, "process_failed", "process_failed")
+        self._finish(run, step, "succeeded", "verified", "native_asset_verified")
+
+    def _verify_model(
+        self, run: _Run, step: SetupStep, profile: str, ref: str, *, managed_only: bool
+    ) -> bool:
+        args = ["models", "verify", ref]
+        if managed_only:
+            args.append("--managed-only")
+        argv = self.adapter.profile_command(profile, args)
+        result = self._child(run, step, argv, profile=profile)
+        if managed_only and SETUP_MODELS[ref].gated:
+            self._check_community_assets(run, step, result)
+        return result.exit_code == 0
+
+    def _check_community_assets(self, run: _Run, step: SetupStep, result: ChildResult) -> None:
+        if result.exit_code == COMMUNITY_ASSETS_MISMATCH_EXIT:
+            self._fail(run, step, "community_assets_mismatch", "community_assets_mismatch")
+
+    def _model(
+        self,
+        run: _Run,
+        step: SetupStep,
+        profile: str,
+        *,
+        managed_only: bool,
+        acquisition_approved: bool,
+    ) -> None:
         ref = step.target or ""
         if ref not in SETUP_MODELS:
             self._fail(run, step, "process_failed", "unsupported_step")
         # Verify first: an existing complete copy (managed or HF cache) is reused untouched.
-        if self._verify_model(run, step, profile, ref):
+        if self._verify_model(run, step, profile, ref, managed_only=managed_only):
             self._finish(run, step, "skipped", "validated_reuse", "manager_verified")
             return
-        download = self.adapter.profile_command(
-            profile, ["models", "download", ref, "--progress-json"]
-        )
-        if self._child(run, step, download, profile=profile).exit_code != 0:
+        if managed_only and SETUP_MODELS[ref].gated and not acquisition_approved:
+            self._fail(run, step, "verification_failed", "verification_failed")
+            return
+        args = ["models", "download", ref, "--progress-json"]
+        if managed_only:
+            args.append("--managed-only")
+        download = self.adapter.profile_command(profile, args)
+        result = self._child(run, step, download, profile=profile)
+        if managed_only and SETUP_MODELS[ref].gated:
+            self._check_community_assets(run, step, result)
+        if result.exit_code != 0:
             self._fail(run, step, "process_failed", "process_failed")
         # Manager resume only; a partial copy is never accepted: verify again after download.
-        if not self._verify_model(run, step, profile, ref):
+        if not self._verify_model(run, step, profile, ref, managed_only=managed_only):
             self._fail(run, step, "verification_failed", "verification_failed")
         self._finish(run, step, "succeeded", "verified", "manager_verified")
 
@@ -786,7 +857,7 @@ class SetupExecutor:
             self._fail(run, step, "process_failed", "unsupported_step")
             return
         model = SETUP_MODELS.get(verification.model_ref)
-        if model is None or model.backend != "faster-whisper":
+        if model is None or model.backend not in {"faster-whisper", "whisper-cpp"}:
             self._fail(run, step, "process_failed", "unsupported_step")
             return
         try:

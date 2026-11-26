@@ -1020,6 +1020,15 @@
           "minimum": 0,
           "title": "Vad Threshold",
           "type": "number"
+        },
+        "variant": {
+          "enum": [
+            "vulkan",
+            "openvino",
+            "openvino_vulkan"
+          ],
+          "title": "Variant",
+          "type": "string"
         }
       },
       "title": "WhisperCppSettings",

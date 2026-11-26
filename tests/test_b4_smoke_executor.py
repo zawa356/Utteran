@@ -398,7 +398,7 @@ def test_pending_record_is_written_before_inference(settings, tmp_path) -> None:
         ("model_missing", "model_missing"),
         ("model_incomplete", "model_missing"),
         ("lock_changed", "profile_incompatible"),
-        ("diarization", "settings_unsupported"),
+        ("diarization", "model_missing"),
         ("extra_arguments", "settings_unsupported"),
         ("unknown_model", "recipe_unavailable"),
     ],
@@ -943,3 +943,78 @@ def test_child_outcomes_match_the_launcher_allowlist() -> None:
     from utteran.capabilities.smoke import SMOKE_OUTCOMES
 
     assert SMOKE_OUTCOMES == capability_smoke.CHILD_OUTCOMES
+
+
+def test_reviewed_speech_resource_is_available_without_a_tests_tree(tmp_path, monkeypatch):
+    from utteran.capabilities.smoke import write_speech_fixture
+
+    monkeypatch.chdir(tmp_path)
+    assert not (tmp_path / "tests").exists()
+    fixture = tmp_path / "smoke.wav"
+    digest = write_speech_fixture(fixture)
+    assert fixture.stat().st_size == 826446
+    assert digest == hashlib.sha256(fixture.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("data", [b"corrupt waveform", b"x" * (1024 * 1024 + 1)])
+def test_product_speech_resource_rejects_wrong_bytes_without_writing(tmp_path, monkeypatch, data):
+    from utteran.capabilities import smoke
+
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    (fixtures / "japanese_reference.wav").write_bytes(data)
+    monkeypatch.setattr(smoke, "files", lambda _package: tmp_path)
+    output = tmp_path / "out.wav"
+    with pytest.raises(ValueError, match="speech fixture"):
+        smoke.write_speech_fixture(output)
+    assert not output.exists()
+
+
+def test_diarization_smoke_measures_increment_after_asr(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from test_b4_smoke_evidence import base_deployment
+    from utteran.capabilities.smoke import RuntimeReport, _diarization_smoke
+
+    config = json.loads(
+        (ROOT / "frontend/src/domain/v1/presetTemplate.json").read_text(encoding="utf-8")
+    )
+    config["diarization"]["enabled"] = True
+    settings = ProcessingSettings.model_validate(config)
+    identity = base_deployment(
+        diarization_device="cpu",
+        diarization_device_index=0,
+        diarization_model=settings.diarization.model,
+        diarization_fingerprint=digest("synthetic diarization"),
+    ).identity
+    monkeypatch.setattr("utteran.capabilities.fingerprints.available_memory", lambda _: 300)
+    monkeypatch.setattr("utteran.memory.read_process_tree_memory", lambda _: 100)
+    monkeypatch.setattr(
+        "utteran.memory.measure_peak", lambda: nullcontext(SimpleNamespace(peak_bytes=150))
+    )
+
+    class Backend:
+        def __init__(self, *, offline):
+            assert offline
+
+        def load(self, _path, device):
+            assert device == "cpu"
+
+        def diarize(self, _audio, _options):
+            return SimpleNamespace(turns=[1], exclusive_turns=[1], device="cpu")
+
+        def unload(self):
+            pass
+
+    monkeypatch.setattr("utteran.diarization.pyannote.PyannoteBackend", Backend)
+    asr = RuntimeReport("cpu", (), "int8", 1.0, 80, 400)
+    result = _diarization_smoke(asr, identity, tmp_path / "smoke.wav", settings, tmp_path)
+    assert (result.required_memory_bytes, result.available_memory_bytes) == (80, 400)
+    assert (
+        result.diarization_required_memory_bytes,
+        result.diarization_available_memory_bytes,
+    ) == (
+        50,
+        300,
+    )

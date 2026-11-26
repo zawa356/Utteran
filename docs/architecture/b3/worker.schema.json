@@ -556,6 +556,15 @@
           "minimum": 0,
           "title": "Vad Threshold",
           "type": "number"
+        },
+        "variant": {
+          "enum": [
+            "vulkan",
+            "openvino",
+            "openvino_vulkan"
+          ],
+          "title": "Variant",
+          "type": "string"
         }
       },
       "title": "WhisperCppSettings",
@@ -977,6 +986,7 @@
         "validation_timeout",
         "cancelled",
         "core_failure",
+        "out_of_memory",
         "invalid_context",
         "unsupported_setting",
         "model_missing",

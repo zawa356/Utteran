@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[2]))
 import utteran.pipeline
 from test_application import SyntheticASR, normalize
-from utteran import application, worker_runtime
+from utteran import worker_runtime
 from utteran.worker import main
 
 mode = sys.argv[1]
@@ -27,16 +27,10 @@ class Backend(SyntheticASR):
         return super().transcribe(audio_path, options, progress, cancel)
 
 
-original = application.execute_single
 backend = Backend()
 
-
-def execute(*args, **kwargs):
-    return original(*args, **kwargs, asr_backend=backend)
-
-
 utteran.pipeline.normalize_audio = normalize
-application.execute_single = execute
+worker_runtime.create_asr_backend = lambda *a, **kw: backend
 worker_runtime.offline_preflight = lambda cfg: None
 sys.argv = ["utteran.worker", "--protocol", "1"]
 os._exit(main())

@@ -172,7 +172,7 @@ def cuda_hardware_fingerprint() -> str | None:
             "version": 2,
             "machine": platform.machine(),
             # Bound to the one GPU by UUID: a replaced or added GPU is a different scope.
-            "gpu": [gpu.uuid, gpu.name, gpu.memory_total],
+            "gpu": [gpu.uuid, gpu.name],
             "ordinal": 0,
         }
     )
@@ -200,3 +200,84 @@ def hardware_fingerprint(device: str) -> str | None:
 
 def current_fingerprints(device: str) -> tuple[str | None, str | None]:
     return runtime_fingerprint(device), hardware_fingerprint(device)
+
+
+def windows_display_adapter() -> tuple[str, str, str] | None:
+    """Only one OS-visible PCI display adapter is supported for native GPU evidence."""
+    import json
+    import subprocess
+
+    if sys.platform != "win32":
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
+                "Get-CimInstance Win32_VideoController | "
+                "Select-Object Name,PNPDeviceID,DriverVersion | ConvertTo-Json -Compress",
+            ],
+            capture_output=True,
+            check=True,
+            timeout=8,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+        )
+        row = json.loads(result.stdout.decode("utf-8-sig"))
+        if not isinstance(row, dict):
+            return None
+        name, pnp, driver = (row.get(key) for key in ("Name", "PNPDeviceID", "DriverVersion"))
+        if not (
+            isinstance(name, str)
+            and name.strip()
+            and isinstance(pnp, str)
+            and pnp.upper().startswith("PCI\\VEN_")
+            and isinstance(driver, str)
+            and driver.strip()
+        ):
+            return None
+        return name, pnp, driver
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+NATIVE_GPU_OVERRIDES = (
+    "GGML_VK_VISIBLE_DEVICES",
+    "WHISPER_DEVICE",
+    "GGML_BACKEND_PATH",
+    "VK_DRIVER_FILES",
+    "VK_ICD_FILENAMES",
+    "VK_ADD_DRIVER_FILES",
+    "VK_INSTANCE_LAYERS",
+    "ZE_AFFINITY_MASK",
+    "ONEAPI_DEVICE_SELECTOR",
+    "SYCL_DEVICE_FILTER",
+)
+
+
+def native_fingerprints(variant: str, profile: str) -> tuple[str | None, str | None]:
+    if any(name in os.environ for name in NATIVE_GPU_OVERRIDES):
+        return None, None
+    adapter = windows_display_adapter()
+    if adapter is None or (profile == "intel" and "VEN_8086" not in adapter[1].upper()):
+        return None, None
+    ov = None
+    if variant in {"openvino", "openvino_vulkan"}:
+        try:
+            ov = importlib.metadata.version("openvino")
+        except importlib.metadata.PackageNotFoundError:
+            return None, None
+    return digest((variant, platform.version(), ov, adapter[2])), digest(adapter)
+
+
+def available_memory(device: str) -> int | None:
+    if device == "cuda":
+        gpu = single_cuda_gpu()
+        return nvml.free_memory(gpu.uuid) if gpu is not None else None
+    if device == "cpu":
+        from utteran.memory import read_memory
+
+        return read_memory("cpu").system_available_bytes
+    return None

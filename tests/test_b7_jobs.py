@@ -675,7 +675,7 @@ def test_resolution_replay_is_keyed(env: Env) -> None:
 @pytest.mark.parametrize(
     "updates, status",
     [
-        (lambda s: s["diarization"].update(enabled=True), 422),
+        (lambda s: s["diarization"].update(enabled=True), 409),
         (
             lambda s: s["asr"].update(
                 extra_arguments={
@@ -691,7 +691,7 @@ def test_resolution_replay_is_keyed(env: Env) -> None:
                 s["asr"].update(backend="whisper-cpp", faster_whisper=None)
                 or s["asr"].pop("faster_whisper")
             ),
-            422,
+            409,
         ),
     ],
 )
@@ -702,7 +702,7 @@ def test_worker_unsupported_settings_are_refused_declaratively(
     with pytest.raises(AdmissionError) as excinfo:
         env.resolution(env.session(env.file("a.wav")))
     assert excinfo.value.status == status
-    assert env.provider.calls == 0  # never resolved, never routed to the legacy CLI
+    assert (env.provider.calls == 0) == (status == 422)
 
 
 @pytest.mark.parametrize(

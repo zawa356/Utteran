@@ -121,6 +121,9 @@ class RuntimeReport:
     probes: tuple[tuple[str, str], ...] = ()  # (fixed probe name, completed/timeout/error)
     # The first attempt of this pass (kept when a retry follows): fixed status + seconds.
     first_attempt: tuple[str, float] | None = None
+    torch_xpu: Tri = None
+    vulkan: Tri = None
+    openvino_gpu: Tri = None
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -131,6 +134,9 @@ class RuntimeReport:
             "reason_code": self.reason_code,
             "ctranslate2_cuda": self.ctranslate2_cuda,
             "torch_cuda": self.torch_cuda,
+            "torch_xpu": self.torch_xpu,
+            "vulkan": self.vulkan,
+            "openvino_gpu": self.openvino_gpu,
             "cuda_device_count": self.cuda_device_count,
             "attempts": self.attempts,
             "probes": [{"name": n, "status": s} for n, s in self.probes],
@@ -169,6 +175,8 @@ def parse_devices(profile: str, payload: dict[str, Any], attempts: int) -> Runti
     torch_cuda: Tri = (
         bool(torch.get("cuda_available")) if torch.get("cuda_status") == "completed" else None
     )
+    ov = payload.get("openvino")
+    vk = payload.get("vulkan")
     count = ct2.get("cuda_device_count")
     probes = tuple(
         (str(item["name"]), str(item["status"]))
@@ -187,12 +195,29 @@ def parse_devices(profile: str, payload: dict[str, Any], attempts: int) -> Runti
         count if isinstance(count, int) and ct2.get("cuda_status") == "completed" else None,
         attempts,
         probes,
+        torch_xpu=bool(torch.get("xpu_available"))
+        if torch.get("xpu_status") == "completed"
+        else None,
+        vulkan=bool(vk.get("runtime_available"))
+        if isinstance(vk, dict) and vk.get("status") == "completed"
+        else None,
+        openvino_gpu=(
+            any(name.startswith("GPU") for name in ov.get("values", ()) if isinstance(name, str))
+            if isinstance(ov, dict) and ov.get("status") == "completed"
+            else None
+        ),
     )
 
 
 def recommend(gpu: hardware.GpuReport, runtime: RuntimeReport | None) -> dict[str, Any]:
     """Fixed reason codes for the standard setup. Only cpu/cuda can be verified (B4)."""
     reasons: list[str] = []
+    if gpu.error is None and any(adapter.vendor == "intel" for adapter in gpu.adapters):
+        confirmed = runtime is not None and runtime.profile == "intel" and runtime.vulkan is True
+        reasons = ["intel_adapter_detected"]
+        if not confirmed:
+            reasons.append("runtime_not_confirmed")
+        return {"profile": "intel", "reason_codes": reasons, "confident": confirmed}
     if runtime is not None and runtime.ctranslate2_cuda is True:
         reasons.append("runtime_cuda_confirmed")
         if runtime.torch_cuda is not True:
@@ -392,7 +417,10 @@ class SetupDiagnostics:
             )
             vc = _safe(self.probes.vcredist, VcRedist("unknown"))
             self._apply(generation, gpu=gpu, memory=memory, disk=disk, vcredist=vc)
-            report = self._runtime_stage(generation, force) if runtime else None
+            profile = (
+                "intel" if any(adapter.vendor == "intel" for adapter in gpu.adapters) else "cuda"
+            )
+            report = self._runtime_stage(generation, force, profile) if runtime else None
             self._apply(
                 generation,
                 phase="completed",
@@ -411,21 +439,21 @@ class SetupDiagnostics:
         with self._lock:
             return self._state.phase == "running" or self._state.pending_force
 
-    def _runtime_profile(self) -> tuple[str | None, str | None]:
+    def _runtime_profile(self, target: str = "cuda") -> tuple[str | None, str | None]:
         """Only the ``cuda`` profile answers "can CUDA run": a CPU venv has no CUDA runtime,
         so its CTranslate2 saying "no CUDA" is not evidence about the GPU (PR #91 P2-4)."""
         try:
-            info = self.cli.profile_info("cuda")
+            info = self.cli.profile_info(target)
         except CliError:
-            return None, "cuda_profile_missing"
+            return None, f"{target}_profile_missing"
         if not info.exists:
-            return None, "cuda_profile_missing"
+            return None, f"{target}_profile_missing"
         if getattr(info, "compatible", True) is False:
-            return None, "cuda_profile_incompatible"
-        return "cuda", None
+            return None, f"{target}_profile_incompatible"
+        return target, None
 
-    def _runtime_stage(self, generation: int, force: bool) -> RuntimeReport:
-        profile, missing = self._runtime_profile()
+    def _runtime_stage(self, generation: int, force: bool, target: str = "cuda") -> RuntimeReport:
+        profile, missing = self._runtime_profile(target)
         if profile is None:
             return RuntimeReport(None, missing)
         if self.busy_profile() is not None:
@@ -435,6 +463,8 @@ class SetupDiagnostics:
             # A job or setup holds the heavy slot (and maybe the GPU / this venv): not now.
             return RuntimeReport(profile, "execution_running")
         try:
+            if gate is not None and self.busy_profile() is not None:
+                return RuntimeReport(profile, "setup_running")
             return self._probe(generation, profile, force)
         finally:
             if gate is not None:

@@ -1,5 +1,7 @@
 # B3機密情報・実行境界
 
+追補（束G）。v1 worker は [管理下の local pyannote と whisper.cpp 専用 stdin](../ui3/g-multiprofile.md) を使用できる。B4 と同じ環境 allowlist を適用し HF token を継承しない。以下は当初の B3 経路の記録。
+
 ## 秘密値と診断
 
 GUI→workerのargvはprofile Python・固定module・protocol版だけ。要求JSONはstdinだけへ送る。

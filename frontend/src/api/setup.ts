@@ -42,6 +42,9 @@ export interface Diagnostics {
     reasonCode: string | null;
     ctranslate2Cuda: Tri;
     torchCuda: Tri;
+    torchXpu?: Tri;
+    vulkan?: Tri;
+    openvinoGpu?: Tri;
     cudaDeviceCount: number | null;
     attempts: number;
   } | null;
@@ -194,6 +197,9 @@ export function parseDiagnostics(raw: unknown): Diagnostics {
       reasonCode: optStr(runtime.reason_code),
       ctranslate2Cuda: tri(runtime.ctranslate2_cuda, "runtime.ct2"),
       torchCuda: tri(runtime.torch_cuda, "runtime.torch"),
+      torchXpu: tri(runtime.torch_xpu ?? null, "runtime.xpu"),
+      vulkan: tri(runtime.vulkan ?? null, "runtime.vulkan"),
+      openvinoGpu: tri(runtime.openvino_gpu ?? null, "runtime.openvino"),
       cudaDeviceCount: optInt(runtime.cuda_device_count, "runtime.count"),
       attempts: int(runtime.attempts, "runtime.attempts"),
     },

@@ -1,5 +1,7 @@
 """Public exception hierarchy and CLI exit-code mapping."""
 
+from utteran_contracts.setup import COMMUNITY_ASSETS_MISMATCH_EXIT
+
 
 class UtteranError(Exception):
     """Base class for expected, user-actionable failures."""
@@ -57,6 +59,18 @@ class BackendUnavailableError(DependencyError):
 
 class ModelNotFoundError(DependencyError):
     """Raised when a requested model is unavailable locally."""
+
+
+class CommunityAssetsMismatchError(ModelNotFoundError):
+    """An occupied managed location lacks the exact pinned community-1 assets."""
+
+    exit_code = COMMUNITY_ASSETS_MISMATCH_EXIT
+
+    def __init__(self) -> None:
+        super().__init__(
+            "既存の community-1 資産が固定版と一致しないか、不完全です。"
+            "既存の資産を保管し、新しいデータ領域でセットアップを承認して再取得してください。"
+        )
 
 
 class VramExhaustedError(DependencyError):

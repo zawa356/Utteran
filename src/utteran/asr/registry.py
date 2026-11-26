@@ -1,5 +1,7 @@
 """ASR backend selection isolated from the pipeline."""
 
+from pathlib import Path
+
 from utteran.asr.base import ASRBackend
 from utteran.config import Config, WhisperCppConfig
 from utteran.errors import BackendUnavailableError, ConfigurationError
@@ -24,7 +26,9 @@ def validate_asr_configuration(config: Config) -> None:
         )
 
 
-def create_asr_backend(name: str, config: Config | None = None) -> ASRBackend:
+def create_asr_backend(
+    name: str, config: Config | None = None, *, private_model: tuple[str, Path] | None = None
+) -> ASRBackend:
     """Instantiate a Phase 1 ASR backend by stable registry name."""
     if name == "auto":
         from utteran.devices import detect_devices
@@ -47,11 +51,13 @@ def create_asr_backend(name: str, config: Config | None = None) -> ASRBackend:
     if name == "faster-whisper":
         from utteran.asr.faster_whisper import FasterWhisperBackend
 
-        return FasterWhisperBackend()
+        return FasterWhisperBackend(local_only=private_model is not None)
     if name == "whisper-cpp":
         from utteran.asr.whisper_cpp import WhisperCppBackend
 
-        return WhisperCppBackend(None if config is None else config.asr.whisper_cpp)
+        return WhisperCppBackend(
+            None if config is None else config.asr.whisper_cpp, private_model=private_model
+        )
     if name == "openvino-genai":
         if config is not None:
             validate_asr_configuration(config)
