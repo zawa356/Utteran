@@ -398,7 +398,7 @@ def test_pending_record_is_written_before_inference(settings, tmp_path) -> None:
         ("model_missing", "model_missing"),
         ("model_incomplete", "model_missing"),
         ("lock_changed", "profile_incompatible"),
-        ("diarization", "settings_unsupported"),
+        ("diarization", "model_missing"),
         ("extra_arguments", "settings_unsupported"),
         ("unknown_model", "recipe_unavailable"),
     ],

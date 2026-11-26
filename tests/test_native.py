@@ -175,7 +175,27 @@ def _make_builder(tmp_path: Path, runner: FakeRunner) -> NativeBuilder:
                             merged_token m{ whisper_token_to_str(ctx, tok.id), tok, tok.t1 };
                                 auto tok_next = whisper_full_get_token_data(ctx, i, j);
                                 m.text += whisper_token_to_str(ctx, tok_next.id);
+    if (whisper_params_parse(argc, argv, params) == false) {
 """,
+        encoding="utf-8",
+    )
+    core = builder.source_dir / "src"
+    (core / "openvino").mkdir(parents=True)
+    graph = """        if (!ggml_graph_compute_helper(sched, gf, n_threads)) {
+            return false;
+        }
+    }
+
+"""
+    (core / "whisper.cpp").write_text(
+        graph + "    // cross\n" + graph + "    logits_out.resize(n_tokens*n_vocab);\n"
+        "            whisper_openvino_encode(wstate.ctx_openvino, mel, wstate.embd_enc);\n",
+        encoding="utf-8",
+    )
+    (core / "openvino" / "whisper-openvino-encoder.cpp").write_text(
+        "    ov::InferRequest inferRequest;\n"
+        "        context->inferRequest = compiledModel.create_infer_request();\n"
+        "        ctx->inferRequest.infer();\n",
         encoding="utf-8",
     )
     return builder

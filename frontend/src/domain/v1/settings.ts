@@ -157,8 +157,7 @@ export function summarize(settings: JsonObject): SettingsSummary {
 export function knownWorkerLimits(settings: JsonObject): string[] {
   const s = summarize(settings);
   const limits: string[] = [];
-  if (s.backend !== "faster-whisper" && s.backend !== "auto") limits.push("worker_backend_unsupported");
-  if (s.diarization) limits.push("worker_diarization_unsupported");
+  if (!["faster-whisper", "whisper-cpp", "auto"].includes(s.backend)) limits.push("worker_backend_unsupported");
   if ((settings.asr as JsonObject).extra_arguments) limits.push("worker_arguments_unsupported");
   return limits;
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -17,7 +18,12 @@ from typing import Any, ClassVar, Literal
 from utteran.asr.base import ASRBackend
 from utteran.asr.whisper_cpp_words import has_dtw_timestamps, tokens_to_words
 from utteran.config import WhisperCppConfig
-from utteran.errors import BackendUnavailableError, CancelledError, ModelNotFoundError
+from utteran.errors import (
+    BackendUnavailableError,
+    CancelledError,
+    ModelNotFoundError,
+    VramExhaustedError,
+)
 from utteran.logging import mask_secrets, structured_event, write_raw_subprocess_log
 from utteran.models.catalog import ModelEntry, get_model
 from utteran.models.manager import ModelManager
@@ -32,6 +38,7 @@ from utteran.types import (
     TranscriptionResult,
     Word,
 )
+from utteran_paths import resolve_data_paths
 
 _PROGRESS = re.compile(r"progress\s*=\s*(\d{1,3})%")
 _OPENVINO_FAILURE_MARKERS = (
@@ -53,10 +60,16 @@ class WhisperCppBackend(ASRBackend):
     name: ClassVar[str] = "whisper-cpp"
 
     def __init__(
-        self, settings: WhisperCppConfig | None = None, *, allow_fallback: bool | None = None
+        self,
+        settings: WhisperCppConfig | None = None,
+        *,
+        allow_fallback: bool | None = None,
+        private_model: tuple[str, Path] | None = None,
     ) -> None:
         self.settings = settings or WhisperCppConfig()
-        self._allow_fallback = (
+        self._private_model = private_model
+        self.observed_route: tuple[str, str] | None = None
+        self._allow_fallback = private_model is None and (
             self.settings.variant == "auto" if allow_fallback is None else allow_fallback
         )
         self._entry: ModelEntry | None = None
@@ -88,20 +101,27 @@ class WhisperCppBackend(ASRBackend):
     def load(self, model_id: str, device: str, compute_type: str) -> None:
         del compute_type
         try:
-            entry = get_model(model_id, backend=self.name)
+            entry = get_model(
+                self._private_model[0] if self._private_model else model_id, backend=self.name
+            )
         except Exception:
             raise ModelNotFoundError(
                 f"whisper.cppモデルがカタログにありません: {model_id}"
             ) from None
-        manager = ModelManager()
-        directory, _managed = manager.find_installed(entry)
+        directory = (
+            self._private_model[1]
+            if self._private_model is not None
+            else ModelManager().find_installed(entry)[0]
+        )
         if directory is None or not entry.artifact_filename:
             raise ModelNotFoundError(
                 f"モデル未導入: {entry.key}。"
                 f"`utteran models download {entry.key}`を実行してください。"
             )
         model_path = directory / entry.artifact_filename
-        builder = NativeBuilder(resolve_native_dir())
+        builder = NativeBuilder(
+            resolve_data_paths().native if self._private_model is not None else resolve_native_dir()
+        )
         manifest = builder.load_manifest()
         backends = manifest.get("backends")
         if not isinstance(backends, dict):
@@ -125,6 +145,24 @@ class WhisperCppBackend(ASRBackend):
         self._device = requested
         self._backends = backends
         self._fallback_attempted = False
+        if self._private_model is not None:
+            from utteran.capabilities.fingerprints import native_fingerprints
+
+            if builder.worker_executable(manifest, requested) != self._executable:
+                raise BackendUnavailableError("whisper.cpp private executable unavailable")
+            if None in native_fingerprints(requested, os.environ.get("UTTERAN_PROFILE", "")):
+                raise BackendUnavailableError("native GPU identity unavailable")
+            if (
+                requested not in {"vulkan", "openvino", "openvino_vulkan"}
+                or not model_path.is_file()
+            ):
+                raise BackendUnavailableError("whisper.cpp worker route unavailable")
+            if requested in {"openvino", "openvino_vulkan"} and not all(
+                model_path.with_name(f"{model_path.stem}-encoder-openvino.{ext}").is_file()
+                for ext in ("xml", "bin")
+            ):
+                raise ModelNotFoundError("OpenVINO encoder model missing")
+            return
         structured_event(
             "asr_backend_resolved",
             backend=self.name,
@@ -149,8 +187,18 @@ class WhisperCppBackend(ASRBackend):
             staged_model = _stage_model(self._model_path, temporary_path / "model")
             run_settings = self.settings
             if run_settings.vad:
-                resolved_vad = _resolve_vad_model(self.settings)
+                if self._private_model is None:
+                    resolved_vad = _resolve_vad_model(self.settings)
+                else:
+                    vad_entry = get_model("whisper-cpp-vad:silero-v6.2.0")
+                    resolved_vad = ModelManager(resolve_data_paths().models).managed_path(
+                        vad_entry
+                    ) / (vad_entry.artifact_filename or "")
+                    if not resolved_vad.is_file():
+                        resolved_vad = None
                 if resolved_vad is None:
+                    if self._private_model is not None:
+                        raise ModelNotFoundError("Silero VAD model missing")
                     logging.getLogger(__name__).warning(
                         "Silero VADモデルが未取得のため、この実行だけVADを無効にします。"
                         "モデル管理またはセットアップウィザードから取得できます。"
@@ -159,18 +207,34 @@ class WhisperCppBackend(ASRBackend):
                 else:
                     staged_vad = _stage_model(resolved_vad, temporary_path / "vad-model")
                     run_settings = self.settings.model_copy(update={"vad_model": staged_vad})
+            private = self._private_model is not None
+            if private:
+                staged_audio = temporary_path / "audio.wav"
+                _link_or_copy(audio_path, staged_audio)
+                staged_model = staged_model.relative_to(temporary_path)
             command = build_command(
                 self._executable,
                 staged_model,
-                audio_path,
-                output_prefix,
+                Path("audio.wav") if private else audio_path,
+                Path("result") if private else output_prefix,
                 self._entry,
                 run_settings,
                 self._variant,
                 options,
             )
+            if private and self._variant == "openvino":
+                command.append("--no-gpu")
+            if private and "--vad-model" in command:
+                index = command.index("--vad-model") + 1
+                command[index] = str(Path(command[index]).relative_to(temporary_path))
             try:
-                stderr = _run_process(command, self._variant, progress, cancel)
+                if private:
+                    stderr = _run_process(
+                        command, self._variant, progress, cancel, private_cwd=temporary_path
+                    )
+                    self.observed_route = _private_route(stderr, self._variant)
+                else:
+                    stderr = _run_process(command, self._variant, progress, cancel)
             except BackendUnavailableError as error:
                 fallback = self._fallback_variant(str(error))
                 if fallback is None:
@@ -205,12 +269,17 @@ class WhisperCppBackend(ASRBackend):
             output_path = output_prefix.with_suffix(".json")
             if not output_path.is_file():
                 raise BackendUnavailableError(
-                    "whisper-cliがJSONを生成しませんでした: " + summarize_subprocess_error(stderr)
+                    "whisper-cliがJSONを生成しませんでした"
+                    if private
+                    else "whisper-cliがJSONを生成しませんでした: "
+                    + summarize_subprocess_error(stderr)
                 )
             raw_output = output_path.read_bytes()
             try:
                 output_text = raw_output.decode("utf-8")
             except UnicodeDecodeError as error:
+                if private:
+                    raise BackendUnavailableError("invalid native JSON") from None
                 logging.getLogger(__name__).warning(
                     "whisper.cpp JSONの不正UTF-8を置換しました: byte_offset=%d", error.start
                 )
@@ -393,11 +462,42 @@ def summarize_subprocess_error(stderr: str) -> str:
     return mask_secrets(" | ".join(diagnostics[-5:]) or "詳細はrawログの明示有効化後に確認")
 
 
+def _private_route(stderr: str, variant: str) -> tuple[str, str]:
+    encoders = set(re.findall(r"^utteran encoder (.+)$", stderr, re.MULTILINE))
+    decoders = set(re.findall(r"^utteran decoder (.+)$", stderr, re.MULTILINE))
+    observed = {"Vulkan0": "vulkan", "OpenVINO-GPU": "openvino-gpu", "CPU": "cpu"}
+    encoder = observed.get(next(iter(encoders)), "unknown") if len(encoders) == 1 else "unknown"
+    decoder = observed.get(next(iter(decoders)), "unknown") if len(decoders) == 1 else "unknown"
+    route = (encoder, decoder)
+    expected = {
+        "vulkan": ("vulkan", "vulkan"),
+        "openvino_vulkan": ("openvino-gpu", "vulkan"),
+        "openvino": ("openvino-gpu", "cpu"),
+    }[variant]
+    if route != expected:
+        raise BackendUnavailableError("native route unverified")
+    if "vulkan" in expected:
+        from utteran.capabilities.fingerprints import windows_display_adapter
+
+        devices = re.findall(r"^utteran device Vulkan0\|(.+)$", stderr, re.MULTILINE)
+        adapter = windows_display_adapter()
+        if (
+            "utteran gpu count 1" not in stderr.splitlines()
+            or len(devices) != 1
+            or adapter is None
+            or devices[0].casefold().strip() != adapter[0].casefold().strip()
+        ):
+            raise BackendUnavailableError("Vulkan device identity unverified")
+    return route
+
+
 def _run_process(
     command: list[str],
     variant: str,
     progress: ProgressCallback | None,
     cancel: CancelToken | None,
+    *,
+    private_cwd: Path | None = None,
 ) -> str:
     environment = os.environ.copy()
     runtime_dirs = resolve_runtime_library_dirs(variant)
@@ -408,8 +508,25 @@ def _run_process(
     creationflags = (
         int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
     )
+    private_body = None
+    if private_cwd is not None:
+        from utteran.capabilities.fingerprints import windows_display_adapter
+
+        adapter = windows_display_adapter()
+        if adapter is None:
+            raise BackendUnavailableError("native GPU identity unavailable")
+        environment["UTTERAN_PRIVATE_NATIVE"] = adapter[0]
+        args = command[1:]
+        if any("\0" in arg for arg in args):
+            raise BackendUnavailableError("invalid private native arguments")
+        private_body = ("\0".join(args) + "\0").encode("utf-8")
+        if len(private_body) > 1024 * 1024 or len(args) > 127:
+            raise BackendUnavailableError("private native arguments exceed limit")
+        command = [command[0], "--utteran-stdin"]
     process = subprocess.Popen(
         command,
+        cwd=private_cwd,
+        stdin=subprocess.PIPE if private_body is not None else subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
@@ -427,24 +544,61 @@ def _run_process(
         lines.put(None)
 
     threading.Thread(target=read_stderr, daemon=True).start()
+    if private_body is not None:
+        assert process.stdin is not None
+        stream = process.stdin
+        body = private_body
+
+        def feed() -> None:
+            assert isinstance(stream, io.TextIOWrapper)
+            try:
+                with stream:
+                    stream.buffer.write(body)
+                    stream.buffer.flush()
+            except OSError:
+                pass
+
+        threading.Thread(target=feed, daemon=True).start()
     captured: list[str] = []
     finished_reader = False
-    while process.poll() is None or not finished_reader:
-        if cancel is not None and cancel.is_cancelled:
+    try:
+        while process.poll() is None or not finished_reader:
+            if cancel is not None and cancel.is_cancelled:
+                raise CancelledError
+            try:
+                line = lines.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if line is None:
+                finished_reader = True
+                continue
+            if private_cwd is None:
+                captured.append(line)
+            elif line.startswith("utteran "):
+                if line not in captured and len(captured) < 64:
+                    captured.append(line)
+            elif "out of memory" not in captured and any(
+                word in line.casefold()
+                for word in ("out of memory", "out_of_device_memory", "bad_alloc")
+            ):
+                captured.append("out of memory")
+
+            percent = parse_progress(line)
+            if percent is not None and progress is not None:
+                progress(ProgressEvent("asr", percent, 100, "whisper.cpp文字起こし中"))
+        stderr = "".join(captured)
+    finally:
+        if process.poll() is None:
             _terminate_tree(process)
-            raise CancelledError
-        try:
-            line = lines.get(timeout=0.1)
-        except queue.Empty:
-            continue
-        if line is None:
-            finished_reader = True
-            continue
-        captured.append(line)
-        percent = parse_progress(line)
-        if percent is not None and progress is not None:
-            progress(ProgressEvent("asr", percent, 100, "whisper.cpp文字起こし中"))
-    stderr = "".join(captured)
+    if private_cwd is not None:
+        if process.returncode:
+            detail = stderr.casefold()
+            if any(
+                word in detail for word in ("out of memory", "out_of_device_memory", "bad_alloc")
+            ):
+                raise VramExhaustedError("native inference ran out of memory")
+            raise BackendUnavailableError("native inference failed")
+        return stderr
     write_raw_subprocess_log("whisper-cpp", stderr)
     if variant in {"openvino", "openvino_vulkan"}:
         status = parse_openvino_ir_status(stderr)
@@ -478,6 +632,7 @@ def _terminate_tree(process: subprocess.Popen[str]) -> None:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
+        process.wait()
 
 
 def _stage_model(source: Path, directory: Path) -> Path:

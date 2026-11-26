@@ -36,7 +36,11 @@ export const WORKER_MODELS = ["large-v3-turbo", "large-v3", "kotoba-whisper-v2.0
 export const ASR_MODELS = ["large-v3-turbo", "large-v3", "kotoba-whisper-v2.0", "medium", "small", "base", "tiny"] as const;
 export const DIARIZATION_REF = "pyannote:pyannote/speaker-diarization-community-1";
 /** Profiles the setup can verify end to end (B4 recipes fw-cpu / fw-cuda). */
-export const VERIFIABLE_PROFILES: readonly ProfileKind[] = ["cpu", "cuda"];
+export const VERIFIABLE_PROFILES: readonly ProfileKind[] = ["cpu", "cuda", "intel", "vulkan"];
+export const NATIVE_MODELS = ["base", "large-v3-turbo-q5_0"] as const;
+export const nativeProfile = (profile: ProfileKind): boolean => profile === "intel" || profile === "vulkan";
+export type NativeVariant = "vulkan" | "openvino_vulkan" | "openvino";
+export type DiarizationDevice = "auto" | "cpu" | "xpu" | "cuda";
 export const POLL_MS = 1000;
 
 export interface ResourceRef {
@@ -52,6 +56,9 @@ export interface SetupChoice {
   primary: string;
   diarization: boolean;
   agreementAccepted: boolean;
+  variant?: NativeVariant;
+  diarizationDevice?: DiarizationDevice;
+  numSpeakers?: number | null;
 }
 
 export interface SetupState {
@@ -78,15 +85,25 @@ export interface SetupState {
 const idle = { phase: "idle", error: null } as const;
 
 export function initialChoice(profile: ProfileKind = "cpu"): SetupChoice {
-  return { profile, models: ["large-v3-turbo"], primary: "large-v3-turbo", diarization: false, agreementAccepted: false };
+  const primary = nativeProfile(profile) ? "base" : "large-v3-turbo";
+  return { profile, models: [primary], primary, diarization: false, agreementAccepted: false };
 }
 
 /** The common default settings: the shared template with the primary model, ASR only. */
-export function defaultSettings(primary: string): JsonObject {
+export function defaultSettings(primary: string, choice?: SetupChoice): JsonObject {
   const settings = JSON.parse(JSON.stringify(template)) as JsonObject;
   (settings.asr as JsonObject).model = primary;
   (settings.asr as JsonObject).backend = "faster-whisper";
-  (settings.diarization as JsonObject).enabled = false;
+  if (choice && nativeProfile(choice.profile)) {
+    (settings.asr as JsonObject).backend = "whisper-cpp";
+    (settings.asr as JsonObject).whisper_cpp = { variant: choice.variant ?? "vulkan" };
+  }
+  const diarization = settings.diarization as JsonObject;
+  diarization.enabled = choice?.diarization ?? false;
+  if (diarization.enabled) {
+    diarization.device_preference = choice?.diarizationDevice ?? "auto";
+    diarization.num_speakers = choice?.numSpeakers ?? null;
+  }
   return settings;
 }
 
@@ -94,15 +111,18 @@ export function defaultSettings(primary: string): JsonObject {
 export function verifyRefusal(settings: JsonObject | null): string | null {
   if (!settings) return "no_preset";
   const asr = settings.asr as JsonObject | undefined;
-  const diarization = settings.diarization as JsonObject | undefined;
-  if (!asr || asr.backend !== "faster-whisper") return "backend_unsupported";
-  if (diarization?.enabled === true) return "diarization_unsupported";
-  if (!WORKER_MODELS.includes(String(asr.model) as (typeof WORKER_MODELS)[number])) return "model_unsupported";
+  if (!asr || (asr.backend !== "faster-whisper" && asr.backend !== "whisper-cpp")) return "backend_unsupported";
+  const models: readonly string[] = asr.backend === "whisper-cpp" ? NATIVE_MODELS : WORKER_MODELS;
+  if (!models.includes(String(asr.model))) return "model_unsupported";
   return null;
 }
 
 export function planRequest(choice: SetupChoice, settings: JsonObject, applyDefaults = false): JsonObject {
-  const refs = [choice.primary, ...choice.models.filter((m) => m !== choice.primary)].map((m) => `faster-whisper:${m}`);
+  const asr = settings.asr as JsonObject;
+  const refs = [choice.primary, ...choice.models.filter((m) => m !== choice.primary)].map((m) => `${asr.backend}:${m}`);
+  if (asr.backend === "whisper-cpp" && (asr.vad as JsonObject).enabled === true) {
+    refs.push("whisper-cpp-vad:silero-v6.2.0");
+  }
   if (choice.diarization) refs.push(DIARIZATION_REF);
   return {
     schema_version: 1,
@@ -241,7 +261,15 @@ export class SetupController {
   edit(partial: Partial<SetupChoice>): void {
     if (this.busy()) return;
     if (partial.profile !== undefined) this.profileTouched = true;
-    const next = { ...this.store.get().choice, ...partial };
+    const current = this.store.get().choice;
+    const next = { ...current, ...partial };
+    if (partial.profile && partial.profile !== current.profile) {
+      const defaults = initialChoice(partial.profile);
+      next.models = defaults.models;
+      next.primary = defaults.primary;
+      next.variant = "vulkan";
+      next.diarizationDevice = "auto";
+    }
     if (!next.models.includes(next.primary)) next.models = [next.primary, ...next.models];
     if (!next.diarization) next.agreementAccepted = false;
     this.store.patch({ choice: next });
@@ -274,9 +302,9 @@ export class SetupController {
       if (verifyRefusal(preset?.settings ?? null) !== null || !preset) return false;
       settings = preset.settings;
       const model = String((settings.asr as JsonObject).model);
-      choice = { ...choice, models: [model], primary: model, diarization: false };
+      choice = { ...choice, models: [model], primary: model, diarization: (settings.diarization as JsonObject).enabled === true };
     } else {
-      settings = defaultSettings(choice.primary);
+      settings = defaultSettings(choice.primary, choice);
     }
     if (!this.planIntent || state.plan.phase !== "error" || !state.plan.unknown) {
       // First setup / additional setup: ask the server to create defaults if (and only if)
@@ -527,6 +555,12 @@ export class SetupController {
     this.store.patch({ mode: "verify", choice: { ...this.store.get().choice, profile, diarization: false, agreementAccepted: false } });
     this.resetPlan();
     return this.createPlan();
+  }
+
+  acceptVerificationAgreement(agreementAccepted: boolean): void {
+    if (this.store.get().mode === "verify" && !this.busy()) {
+      this.store.patch({ choice: { ...this.store.get().choice, agreementAccepted } });
+    }
   }
 
   dismissResult(): void {

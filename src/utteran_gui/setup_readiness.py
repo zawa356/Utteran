@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from utteran_contracts.base import VersionedContract
 from utteran_contracts.capabilities import CapabilityCandidate
 from utteran_contracts.settings import Policy, ProcessingSettings, Ref
-from utteran_contracts.setup import VERIFICATION_RECIPES
+from utteran_contracts.setup import NATIVE_VERIFICATION_RECIPES, VERIFICATION_RECIPES
 from utteran_gui.job_admission import AdmissionError, JobAdmission, ProviderResult, _worker_issues
 from utteran_settings.errors import SettingsError
 from utteran_settings.inheritance import safe_contract_issues
@@ -63,7 +63,8 @@ def _candidate(
         "issues": issues,
         "worker_issues": worker,
         "verifiable": (
-            identity.recipe_id in VERIFICATION_RECIPES.values()
+            identity.recipe_id
+            in (*VERIFICATION_RECIPES.values(), *NATIVE_VERIFICATION_RECIPES.values())
             and candidate.runnable != "ready"
             and any(issue.code in VERIFIABLE for issue in candidate.issues)
             and not any(issue.kind in BLOCKING_KINDS for issue in candidate.issues)
@@ -99,6 +100,7 @@ def readiness_view(result: ProviderResult, settings: ProcessingSettings) -> dict
                 reasons.extend(problems)
             else:
                 state = "ready"
+                reasons.extend(issue.code for issue in selection.selected.issues)
         else:
             reasons.append(selection.error or "no_runnable_candidate")
     return {

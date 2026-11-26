@@ -25,7 +25,7 @@ import stat
 import sys
 import wave
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal, Protocol, cast, get_args
@@ -53,8 +53,10 @@ from utteran.capabilities.evidence import (
     write_evidence,
 )
 from utteran.capabilities.fingerprints import current_fingerprints
+from utteran.capabilities.recipes import get_recipe
 from utteran.models.catalog import get_model
 from utteran.models.manager import ModelManager
+from utteran.types import TranscriptionResult
 from utteran_contracts import ProcessingSettings
 from utteran_contracts.base import VersionedContract
 from utteran_contracts.capabilities import CapabilityObservation, ExecutionIdentity, ModelID
@@ -67,6 +69,7 @@ OFFLINE_ENVIRONMENT = {
     "TRANSFORMERS_OFFLINE": "1",
     "HF_DATASETS_OFFLINE": "1",
     "HF_HUB_DISABLE_TELEMETRY": "1",
+    "PYANNOTE_METRICS_ENABLED": "0",
 }
 
 # CTranslate2 reports the *effective* compute type. On CPU a requested ``int8`` runs as,
@@ -109,7 +112,7 @@ class SmokeRequest(VersionedContract):
     """Private (settings may hold a prompt). Sent on stdin only, never on argv."""
 
     profile_id: Literal["cpu", "cuda", "intel", "vulkan"]
-    recipe_id: Literal["fw-cpu", "fw-cuda"]
+    recipe_id: Literal["fw-cpu", "fw-cuda", "wc-vulkan", "wc-ov", "wc-ov-vk"]
     model_id: ModelID
     settings: ProcessingSettings
     work_dir: Annotated[StrictStr, Field(min_length=1, max_length=4096)]
@@ -125,6 +128,8 @@ class RuntimeReport:
     duration_seconds: float
     required_memory_bytes: int | None
     available_memory_bytes: int | None
+    route: tuple[str, str] | None = None
+    diarization_device: str | None = None
 
 
 class SmokeFailure(Exception):
@@ -219,21 +224,30 @@ class _VramPeak:
         import threading
 
         self.uuid = uuid
-        self.peak: int | None = None
+        self._peak: int | None = None
+        self._incomplete = False
         self._reader: nvml.UsageSampler | None = None
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
+    @property
+    def peak(self) -> int | None:
+        return None if self._incomplete else self._peak
+
     def _sample(self) -> None:
         value = self._reader.read() if self._reader is not None else None
-        if value is not None and (self.peak is None or value > self.peak):
-            self.peak = value
+        if value is not None and (self._peak is None or value > self._peak):
+            self._peak = value
 
     def _run(self) -> None:
-        for _ in range(self.LIMIT):
-            self._sample()
-            if self._stop.wait(self.INTERVAL):
-                return
+        try:
+            for _ in range(self.LIMIT):
+                self._sample()
+                if self._stop.wait(self.INTERVAL):
+                    return
+        finally:
+            if self._reader is not None:
+                self._reader.__exit__()
 
     def __enter__(self) -> _VramPeak:
         # One NVML session for all samples (init/shutdown per read is slow on Windows).
@@ -244,9 +258,9 @@ class _VramPeak:
     def __exit__(self, *_: object) -> None:
         self._stop.set()
         self._thread.join(timeout=5)
-        self._sample()  # one more read right before unload
-        if self._reader is not None:
-            self._reader.__exit__()
+        if self._thread.is_alive():
+            # The sampler owns its session until the in-flight call returns.
+            self._incomplete = True
 
 
 def _peak_rss_bytes() -> int | None:
@@ -272,19 +286,23 @@ class FasterWhisperSmokeRuntime:
         audio: Path,
         language: str | None,
         beam_size: int,
+        settings: ProcessingSettings | None = None,
     ) -> RuntimeReport:
         from utteran.asr.faster_whisper import FasterWhisperBackend
         from utteran.errors import BackendUnavailableError, ModelNotFoundError, VramExhaustedError
         from utteran.memory import measure_peak, read_memory
         from utteran.types import ASROptions
+        from utteran_contracts.prompting import CURRENT_PROMPT_COMPILER, compile_prompt
 
         available = read_memory("cpu").system_available_bytes if device == "cpu" else None
         gpu_uuid = _attested_gpu(device_index) if device == "cuda" else None
         if gpu_uuid is not None:
             available = nvml.free_memory(gpu_uuid)
+        if device == "cuda" and gpu_uuid is None:
+            raise SmokeFailure("runtime_mismatch")
         gpu_used: int | None = None
         sampler = _VramPeak(gpu_uuid) if gpu_uuid is not None else contextlib.nullcontext()
-        backend = FasterWhisperBackend()
+        backend = FasterWhisperBackend(local_only=True)
         target = "cpu" if device == "cpu" else f"cuda:{device_index}"
         with measure_peak() as monitor, sampler:
             try:
@@ -306,14 +324,26 @@ class FasterWhisperSmokeRuntime:
                     audio,
                     ASROptions(
                         language=language,
-                        initial_prompt=None,
-                        vad_filter=False,
+                        initial_prompt=(
+                            None
+                            if settings is None
+                            else compile_prompt(
+                                settings.asr.initial_prompt,
+                                settings.asr.glossary,
+                                settings.asr.language,
+                                compiler=CURRENT_PROMPT_COMPILER,
+                            )
+                        ),
+                        vad_filter=settings is not None and settings.asr.vad.enabled,
                         beam_size=beam_size,
-                        condition_on_previous_text=False,
-                        word_timestamps=False,
+                        condition_on_previous_text=settings is not None
+                        and settings.asr.condition_on_previous_text,
+                        word_timestamps=settings is not None,
                     ),
                 )
                 duration = float(result.duration)
+                if settings is not None and not _has_words(result):
+                    raise SmokeFailure("inference_failed")
                 del result  # never retained, logged or printed
             except (VramExhaustedError, MemoryError):
                 raise SmokeFailure("out_of_memory") from None
@@ -353,6 +383,106 @@ class FasterWhisperSmokeRuntime:
         )
 
 
+def _has_words(result: TranscriptionResult) -> bool:
+    return any(
+        word.text.strip() and 0 <= word.start < word.end <= result.duration + 0.1
+        for segment in result.segments
+        for word in segment.words
+    )
+
+
+def _native_smoke(
+    identity: ExecutionIdentity, model: Path, audio: Path, settings: ProcessingSettings
+) -> RuntimeReport:
+    from utteran.asr.whisper_cpp import WhisperCppBackend
+    from utteran.config import Config
+    from utteran.config_adapter import ExecutionContext, adapt_settings
+    from utteran.errors import BackendUnavailableError, ModelNotFoundError, VramExhaustedError
+    from utteran.pipeline import _asr_options
+
+    recipe = get_recipe(identity.recipe_id)
+    variant = recipe.requested_route.native_variant
+    assert variant is not None
+    config = adapt_settings(
+        settings,
+        ExecutionContext(
+            Config(),
+            recipe.backend,
+            identity.model_id,
+            variant,
+            identity.diarization_device or "cpu",
+            identity.compute_type,
+            variant,
+        ),
+    ).config
+    backend = WhisperCppBackend(config.asr.whisper_cpp, private_model=(identity.model_id, model))
+    try:
+        backend.load(str(model), variant, identity.compute_type)
+        options = _asr_options(config, backend.name)
+        result = backend.transcribe(audio, options)
+        if options.word_timestamps and not _has_words(result):
+            raise SmokeFailure("inference_failed")
+        if not result.segments or backend.observed_route is None:
+            raise SmokeFailure("inference_failed")
+        return RuntimeReport(
+            "gpu", (0,), "ggml", result.duration, None, None, backend.observed_route
+        )
+    except (MemoryError, VramExhaustedError):
+        raise SmokeFailure("out_of_memory") from None
+    except ModelNotFoundError:
+        raise SmokeFailure("model_load_failed") from None
+    except BackendUnavailableError:
+        raise SmokeFailure("backend_unavailable") from None
+    finally:
+        backend.unload()
+
+
+def _diarization_smoke(
+    report: RuntimeReport,
+    identity: ExecutionIdentity,
+    audio: Path,
+    settings: ProcessingSettings,
+    model_root: Path,
+) -> RuntimeReport:
+    from utteran.diarization.pyannote import PyannoteBackend
+    from utteran.errors import ModelNotFoundError, VramExhaustedError
+    from utteran.types import DiarizationOptions
+
+    device = identity.diarization_device
+    if (
+        device is None
+        or identity.diarization_model is None
+        or identity.diarization_fingerprint is None
+    ):
+        raise SmokeFailure("model_load_failed")
+    model = ModelManager(model_root).managed_path(
+        get_model(identity.diarization_model, backend="pyannote")
+    )
+    target = device if device == "cpu" else f"{device}:0"
+    backend = PyannoteBackend(offline=True)
+    try:
+        backend.load(str(model), target)
+        result = backend.diarize(
+            audio,
+            DiarizationOptions(
+                num_speakers=settings.diarization.num_speakers,
+                min_speakers=settings.diarization.min_speakers,
+                max_speakers=settings.diarization.max_speakers,
+            ),
+        )
+        if not result.turns or not result.exclusive_turns or result.device != target:
+            raise SmokeFailure("inference_failed")
+    except (MemoryError, VramExhaustedError):
+        raise SmokeFailure("out_of_memory") from None
+    except ModelNotFoundError:
+        raise SmokeFailure("model_load_failed") from None
+    finally:
+        backend.unload()
+    # Keep the ASR memory evidence. The worker measures the diarization device
+    # again at its stage boundary, after ASR has unloaded.
+    return replace(report, diarization_device=device)
+
+
 # --------------------------------------------------------------------------- orchestration
 
 
@@ -379,6 +509,12 @@ def _route_observation(record: SmokeEvidence, scope: str) -> CapabilityObservati
             expires_at=record.expires_at,
             fingerprint=scope,
             reason_code="supported",
+            initialized_route=(
+                route
+                if (route := get_recipe(record.recipe_id).requested_route).native_variant
+                is not None
+                else None
+            ),
             encoder_observed=record.encoder_observed,
             decoder_observed=record.decoder_observed,
             encoder_device_index_observed=record.encoder_device_index_observed,
@@ -393,7 +529,11 @@ def _precheck(
     kinds = {kind for kind, _code in candidate_issues}
     if "venv" in kinds:
         return "profile_incompatible"
-    if "model" in kinds or not identity.local_complete_model:
+    if (
+        "model" in kinds
+        or not identity.local_complete_model
+        or (identity.diarization_model is not None and identity.diarization_fingerprint is None)
+    ):
         return "model_missing"
     if kinds & {"settings", "software_support", "execution_path"}:
         return "settings_unsupported"
@@ -417,7 +557,8 @@ def run_smoke(
     if work_dir is None:
         return SmokeResult("request_invalid", "none")
     settings = request.settings
-    if settings.diarization.enabled or settings.asr.backend not in {"auto", "faster-whisper"}:
+    recipe = get_recipe(request.recipe_id)
+    if settings.asr.backend not in {"auto", recipe.backend}:
         return SmokeResult("settings_unsupported", "none")
     started = now()
     deployments = collect_managed_deployments(
@@ -445,15 +586,34 @@ def run_smoke(
     if refused is not None:
         return SmokeResult(refused, "none")
     identity = smoke_identity(deployment.identity, fingerprints)
-    if identity is None:
+    if identity is None or (identity.device == "gpu" and identity.hardware_fingerprint is None):
         return SmokeResult("recipe_unavailable", "none")
     model_dir = ModelManager(paths.models).managed_path(
-        get_model(request.model_id, backend="faster-whisper")
+        get_model(request.model_id, backend=recipe.backend)
     )
     if not model_dir.is_dir():
         return SmokeResult("model_missing", "none")
     scope = evidence_fingerprint(identity, settings)
-    fixture_sha = write_fixture(work_dir / FIXTURE_NAME)
+    audio = work_dir / FIXTURE_NAME
+    use_speech = isinstance(runtime, FasterWhisperSmokeRuntime)
+    if use_speech:
+        # Existing reviewed, synthetic TTS fixture. Verify the known Git blob before use.
+        source = repo_root / "tests" / "fixtures" / "benchmark" / "japanese_reference.wav"
+        try:
+            with source.open("rb") as fixture:
+                data = fixture.read(1024 * 1024)
+        except OSError:
+            return SmokeResult("recipe_unavailable", "none")
+        blob = b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+        if (
+            hashlib.sha1(blob, usedforsecurity=False).hexdigest()
+            != "e8fb29d27fc133bf8a5e956c81033f8e9df1f34d"
+        ):
+            return SmokeResult("recipe_unavailable", "none")
+        audio.write_bytes(data)
+        fixture_sha = hashlib.sha256(data).hexdigest()
+    else:
+        fixture_sha = write_fixture(audio)
     remove_temporaries(directory)
 
     def record(state: str, outcome: str, at: datetime, **values: object) -> SmokeEvidence:
@@ -491,15 +651,24 @@ def run_smoke(
 
     language = settings.asr.language.strip()
     try:
-        report = runtime.run(
-            model_dir=model_dir,
-            device=identity.device,
-            device_index=identity.device_index,
-            compute_type=identity.compute_type,
-            audio=work_dir / FIXTURE_NAME,
-            language=None if language.casefold() in {"", "auto"} else language,
-            beam_size=settings.asr.beam_size,
-        )
+        if recipe.backend == "whisper-cpp":
+            report = _native_smoke(identity, model_dir, audio, settings)
+        else:
+            runtime_args = dict(
+                model_dir=model_dir,
+                device=identity.device,
+                device_index=identity.device_index,
+                compute_type=identity.compute_type,
+                audio=audio,
+                language=None if language.casefold() in {"", "auto"} else language,
+                beam_size=settings.asr.beam_size,
+            )
+            if isinstance(runtime, FasterWhisperSmokeRuntime):
+                report = runtime.run(**runtime_args, settings=settings)  # type: ignore[arg-type]
+            else:
+                report = runtime.run(**runtime_args)  # type: ignore[arg-type]
+        if settings.diarization.enabled:
+            report = _diarization_smoke(report, identity, audio, settings, paths.models)
     except SmokeFailure as failure:
         return failed(failure.outcome)
     except Exception:
@@ -517,16 +686,19 @@ def run_smoke(
         index = None
     # CTranslate2 reports one replica device for the whole Whisper model; it is the
     # attestation for both components (smoke.md §1.1). CPU has no meaningful index.
-    attested_index = index if observed == "cuda" else None
+    encoder, decoder = report.route or (observed, observed)
+    encoder_index = index if encoder in {"cuda", "vulkan", "openvino-gpu"} else None
+    decoder_index = index if decoder in {"cuda", "vulkan"} else None
     finished = now()
     final = record(
         "passed",
         "passed",
         finished,
-        encoder_observed=observed,
-        decoder_observed=observed,
-        encoder_device_index_observed=attested_index,
-        decoder_device_index_observed=attested_index,
+        encoder_observed=encoder,
+        decoder_observed=decoder,
+        encoder_device_index_observed=encoder_index,
+        decoder_device_index_observed=decoder_index,
+        diarization_observed=report.diarization_device,
         required_memory_bytes=report.required_memory_bytes,
         available_memory_bytes=report.available_memory_bytes,
     )
@@ -555,6 +727,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="B4 explicit smoke child (development only)")
     parser.add_argument("action", choices=("run",))
     parser.parse_args(argv)
+    output_fd = os.dup(sys.stdout.fileno())
+    with open(os.devnull, "wb") as sink:
+        os.dup2(sink.fileno(), 1)
+        os.dup2(sink.fileno(), 2)
     os.environ.update(OFFLINE_ENVIRONMENT)
     logging.disable(logging.CRITICAL)
     try:
@@ -576,8 +752,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             except Exception:
                 result = SmokeResult("internal_error", "none")
-    sys.stdout.buffer.write((json.dumps(result.to_wire()) + "\n").encode("utf-8"))
-    sys.stdout.flush()
+    with os.fdopen(output_fd, "wb") as output:
+        output.write((json.dumps(result.to_wire()) + "\n").encode("utf-8"))
     return 0
 
 

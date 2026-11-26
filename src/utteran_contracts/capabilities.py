@@ -108,7 +108,7 @@ ReasonCode = Literal[
 class RequestedRoute(Contract):
     native_variant: Literal["cpu", "vulkan", "openvino", "openvino_vulkan"] | None
     encoder: Literal[
-        "cpu", "cuda", "gpu", "npu", "openvino-gpu", "selected-device", "backend-default"
+        "cpu", "cuda", "gpu", "npu", "vulkan", "openvino-gpu", "selected-device", "backend-default"
     ]
     decoder: Literal["cpu", "cuda", "gpu", "npu", "vulkan", "selected-device", "backend-default"]
 
@@ -135,7 +135,7 @@ class ExecutionIdentity(Contract):
     recipe_id: Identifier
     recipe_revision: Literal[1]
     adapter_version: Literal["b4.1"]
-    smoke_version: Literal[1]
+    smoke_version: Literal[1, 2]
     profile_id: Identifier
     profile_generation: Identifier
     profile_fingerprint: Digest | None
@@ -180,7 +180,9 @@ class CapabilityObservation(Contract):
     fingerprint: Digest | None
     reason_code: ReasonCode
     initialized_route: RequestedRoute | None = None
-    encoder_observed: Literal["unknown", "cpu", "cuda", "openvino-gpu", "gpu", "npu"] = "unknown"
+    encoder_observed: Literal["unknown", "cpu", "cuda", "vulkan", "openvino-gpu", "gpu", "npu"] = (
+        "unknown"
+    )
     decoder_observed: Literal["unknown", "cpu", "cuda", "vulkan", "gpu", "npu"] = "unknown"
 
     # Provider-attested runtime indices, never populated from the request by core.

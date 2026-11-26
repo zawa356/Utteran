@@ -155,6 +155,8 @@ def adapt_settings(settings: ProcessingSettings, context: ExecutionContext) -> A
             and native["vad_threshold"] != asr.vad.threshold
         ):
             _reject("/asr/vad/threshold", "context_conflict")
+        if native.get("variant", context.native_variant) != context.native_variant:
+            _reject("/asr/whisper_cpp/variant", "context_conflict")
         native["variant"] = context.native_variant
         native["vad"] = asr.vad.enabled
         if asr.vad.threshold is not None:

@@ -4,7 +4,7 @@ import type { ProfileKind, StepProgressView } from "../../api/setup";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore, useI18n } from "../../composables/core";
 import { useStore } from "../../composables/useStore";
-import { ASR_MODELS, isTerminal, readinessKey, VERIFIABLE_PROFILES, verifyRefusal, WORKER_MODELS } from "../../domain/v1/setup";
+import { ASR_MODELS, isTerminal, nativeProfile, NATIVE_MODELS, readinessKey, VERIFIABLE_PROFILES, verifyRefusal, WORKER_MODELS, type NativeVariant, type DiarizationDevice } from "../../domain/v1/setup";
 import type { MessageKey } from "../../i18n";
 import { ja } from "../../i18n/ja";
 
@@ -43,12 +43,20 @@ const profiles = computed(() =>
     props: { disabled: !VERIFIABLE_PROFILES.includes(value), subtitle: VERIFIABLE_PROFILES.includes(value) ? undefined : t("fs.profile.unsupported") },
   })),
 );
-const primaryChoices = computed(() => choice.value.models.filter((m) => (WORKER_MODELS as readonly string[]).includes(m)));
+const modelChoices = computed<readonly string[]>(() => nativeProfile(choice.value.profile) ? NATIVE_MODELS : ASR_MODELS);
+const workerModels = computed<readonly string[]>(() => nativeProfile(choice.value.profile) ? NATIVE_MODELS : WORKER_MODELS);
+const primaryChoices = computed(() => choice.value.models.filter((m) => workerModels.value.includes(m)));
+const variants: NativeVariant[] = ["vulkan", "openvino_vulkan", "openvino"];
+const diarizationDevices = computed<DiarizationDevice[]>(() => {
+  if (choice.value.profile === "intel") return ["auto", "xpu", "cpu"];
+  if (choice.value.profile === "cuda") return ["auto", "cuda", "cpu"];
+  return ["auto", "cpu"];
+});
 
 function toggleModel(model: string, on: boolean | null): void {
   const models = on ? [...new Set([...choice.value.models, model])] : choice.value.models.filter((m) => m !== model);
   if (models.length === 0) return;
-  const primary = models.includes(choice.value.primary) ? choice.value.primary : (models.find((m) => (WORKER_MODELS as readonly string[]).includes(m)) ?? choice.value.primary);
+  const primary = models.includes(choice.value.primary) ? choice.value.primary : (models.find((m) => workerModels.value.includes(m)) ?? choice.value.primary);
   setup.edit({ models, primary });
 }
 
@@ -137,6 +145,11 @@ onMounted(() => {
             <template v-else-if="diag.runtime.reasonCode && diag.runtime.ctranslate2Cuda === null">
               <span data-testid="fsetup-runtime-reason">{{ text("fs.reason", diag.runtime.reasonCode) }}</span>
             </template>
+            <template v-else-if="diag.runtime.profile === 'intel'">
+              {{ t("fs.diag.vulkan") }} {{ tri(diag.runtime.vulkan ?? null) }} ・
+              {{ t("fs.diag.xpu") }} {{ tri(diag.runtime.torchXpu ?? null) }} ・
+              {{ t("fs.diag.openvino") }} {{ tri(diag.runtime.openvinoGpu ?? null) }}
+            </template>
             <template v-else>
               {{ t("fs.diag.ct2", { value: tri(diag.runtime.ctranslate2Cuda) }) }} ・ {{ t("fs.diag.torch", { value: tri(diag.runtime.torchCuda) }) }}
               <span v-if="diag.runtime.attempts > 1" data-testid="fsetup-runtime-retried"> ・ {{ t("fs.diag.retried") }}</span>
@@ -185,12 +198,20 @@ onMounted(() => {
             data-testid="fsetup-profile"
             @update:model-value="(p: ProfileKind) => setup.edit({ profile: p })"
           />
+          <v-select
+            v-if="choice.profile === 'intel'"
+            :label="t('fs.choice.variant')"
+            :items="variants"
+            :model-value="choice.variant ?? 'vulkan'"
+            data-testid="gsetup-variant"
+            @update:model-value="(variant: NativeVariant) => setup.edit({ variant })"
+          />
           <fieldset class="u-stack" data-testid="fsetup-models">
             <legend>{{ t("fs.choice.models") }}</legend>
             <v-checkbox
-              v-for="m in ASR_MODELS"
+              v-for="m in modelChoices"
               :key="m"
-              :label="(WORKER_MODELS as readonly string[]).includes(m) ? m : `${m} — ${t('fs.choice.downloadOnly')}`"
+              :label="workerModels.includes(m) ? m : `${m} — ${t('fs.choice.downloadOnly')}`"
               :model-value="choice.models.includes(m)"
               density="compact"
               hide-details
@@ -215,6 +236,22 @@ onMounted(() => {
           data-testid="fsetup-diarization"
           @update:model-value="(on: boolean | null) => setup.edit({ diarization: on === true })"
         />
+        <div v-if="choice.diarization" class="u-row">
+          <v-select
+            :label="t('fs.choice.diarizationDevice')"
+            :items="diarizationDevices"
+            :model-value="choice.diarizationDevice ?? 'auto'"
+            data-testid="gsetup-diarization-device"
+            @update:model-value="(diarizationDevice: DiarizationDevice) => setup.edit({ diarizationDevice })"
+          />
+          <v-text-field
+            :label="t('fs.choice.speakers')"
+            type="number" min="1" max="100"
+            :model-value="choice.numSpeakers ?? ''"
+            data-testid="gsetup-speaker-count"
+            @update:model-value="(value: string) => setup.edit({ numSpeakers: value ? Number(value) : null })"
+          />
+        </div>
         <v-alert v-if="choice.diarization" type="info" density="compact" data-testid="fsetup-diarization-note">
           <p>{{ t("fs.choice.diarizationNote") }}</p>
           <p data-testid="fsetup-token-state">{{ tokenPresent ? t("fs.choice.tokenPresent") : t("fs.choice.tokenMissing") }}</p>
@@ -249,6 +286,9 @@ onMounted(() => {
           <li v-for="(c, i) in plan.changes" :key="i">{{ t(`fs.change.${c.kind}.${c.action}` as MessageKey, { id: c.id }) }}</li>
         </ul>
         <p data-testid="fsetup-estimate">{{ t("fs.review.download", { size: bytes(plan.estimate.downloadBytes) }) }}</p>
+        <v-alert v-if="plan.steps.some((step) => step.kind === 'native_build')" type="info" density="compact">
+          {{ t("fs.review.nativeTools") }}
+        </v-alert>
         <ol class="text-body-2" data-testid="fsetup-steps">
           <li v-for="s in plan.steps" :key="s.id">{{ t((known(`fs.step.${s.kind}`) ?? "fs.code.other") as MessageKey, { code: s.kind }) }}<template v-if="s.target"> — {{ s.target }}</template></li>
         </ol>
@@ -332,6 +372,9 @@ onMounted(() => {
             <li v-for="code in readiness.reasonCodes" :key="code">{{ text("v1.reason", code, "fs.code.other") }}</li>
           </ul>
         </v-alert>
+        <v-alert v-if="readiness?.state === 'ready' && readiness.reasonCodes.includes('memory_unknown')" type="warning" density="compact" data-testid="gsetup-memory-warning">
+          {{ t("fs.ready.memoryWarning") }}
+        </v-alert>
         <ErrorAlert v-if="state.readiness.phase === 'error' && state.readiness.error" :error="state.readiness.error" :title="t('fs.ready.failed')" testid="fsetup-ready-error" />
         <div class="u-row">
           <v-btn variant="outlined" :disabled="!library.preset.item || !library.policy.item || state.readiness.phase === 'pending'" data-testid="fsetup-ready-check" @click="setup.checkReadiness()">
@@ -349,6 +392,12 @@ onMounted(() => {
         </div>
         <p v-if="verifiable && verifyBlocked" class="text-body-2" data-testid="fsetup-verify-blocked">{{ text("fs.verifyBlocked", verifyBlocked) }}</p>
         <section v-if="state.mode === 'verify' && plan && !op" class="u-stack" data-testid="fsetup-verify-review">
+          <v-checkbox
+            v-if="plan.requiredAgreements.length"
+            :label="t('fs.choice.agreement')"
+            :model-value="choice.agreementAccepted"
+            @update:model-value="(on: boolean | null) => setup.acceptVerificationAgreement(on === true)"
+          />
           <p>{{ t("fs.verify.review", { model: plan.verification?.modelRef ?? "", profile: plan.profileKind }) }}</p>
           <div class="u-row">
             <v-btn color="primary" :disabled="!canStart" :loading="state.start.phase === 'pending'" data-testid="fsetup-verify-start" @click="setup.confirmAndStart()">{{ t("fs.verify.start") }}</v-btn>

@@ -12,6 +12,7 @@ prompt, settings body, raw stderr or traceback. They are private: do not log the
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import os
 import re
@@ -48,7 +49,7 @@ EVIDENCE_VERSION = 1
 EVIDENCE_TTL = timedelta(hours=24)
 EVIDENCE_FILE_LIMIT = 8 * 1024
 EVIDENCE_RECORD_LIMIT = 64
-SMOKE_RECIPES = frozenset({"fw-cpu", "fw-cuda"})
+SMOKE_RECIPES = frozenset({"fw-cpu", "fw-cuda", "wc-vulkan", "wc-ov", "wc-ov-vk"})
 
 _SCOPE = re.compile(r"^[a-f0-9]{64}$")
 _RECORD_NAME = re.compile(r"^[a-f0-9]{64}\.json$")
@@ -88,13 +89,14 @@ class SmokeEvidence(Contract):
     format: Literal["utteran-capability-smoke-evidence"]
     version: Literal[1]
     scope: Digest
-    recipe_id: Literal["fw-cpu", "fw-cuda"]
+    recipe_id: Literal["fw-cpu", "fw-cuda", "wc-vulkan", "wc-ov", "wc-ov-vk"]
     state: Literal["pending", "passed", "failed"]
     outcome: SmokeRecordOutcome
     observed_at: AwareDatetime
     expires_at: AwareDatetime
-    encoder_observed: Literal["unknown", "cpu", "cuda"]
-    decoder_observed: Literal["unknown", "cpu", "cuda"]
+    encoder_observed: Literal["unknown", "cpu", "cuda", "vulkan", "openvino-gpu"]
+    decoder_observed: Literal["unknown", "cpu", "cuda", "vulkan"]
+    diarization_observed: Literal["cpu", "cuda", "xpu"] | None = None
     encoder_device_index_observed: Index
     decoder_device_index_observed: Index
     required_memory_bytes: Annotated[StrictInt, Field(ge=1)] | None
@@ -339,17 +341,23 @@ def remove_temporaries(directory: Path) -> int:
 
 
 def smoke_identity(
-    identity: ExecutionIdentity, fingerprints: Fingerprints = current_fingerprints
+    identity: ExecutionIdentity,
+    fingerprints: Fingerprints = current_fingerprints,
+    native_identity: Callable[[str, str], tuple[str | None, str | None]] | None = None,
 ) -> ExecutionIdentity | None:
     """Identity with freshly computed runtime/hardware fingerprints, or None if no smoke
     evidence can apply (only worker-path faster-whisper recipes have a smoke executor)."""
-    if (
-        identity.recipe_id not in SMOKE_RECIPES
-        or identity.execution_path != "worker"
-        or identity.model_family != "ctranslate2"
-    ):
+    if identity.recipe_id not in SMOKE_RECIPES or identity.execution_path != "worker":
         return None
-    runtime, hardware = fingerprints(identity.device)
+    from utteran.capabilities.fingerprints import native_fingerprints
+    from utteran.capabilities.recipes import get_recipe
+
+    variant = get_recipe(identity.recipe_id).requested_route.native_variant
+    runtime, hardware = (
+        fingerprints(identity.device)
+        if variant is None
+        else (native_identity or native_fingerprints)(variant, identity.profile_id)
+    )
     return ExecutionIdentity.model_validate(
         {
             **identity.model_dump(mode="json"),
@@ -387,13 +395,18 @@ def _merge(
     old_scope: str,
     scope: str,
     record: SmokeEvidence,
+    available_now: Callable[[str], int | None] | None,
 ) -> DeploymentInventory:
+    from utteran.capabilities.recipes import get_recipe
+
+    requested = get_recipe(identity.recipe_id).requested_route
     smoke = _observation(
         "smoke",
         "passed",
         "supported",
         scope,
         record,
+        initialized_route=requested if requested.native_variant is not None else None,
         encoder_observed=record.encoder_observed,
         decoder_observed=record.decoder_observed,
         encoder_device_index_observed=record.encoder_device_index_observed,
@@ -410,6 +423,11 @@ def _merge(
         else _observation("hardware", "unknown", "not_observed", scope, record)
     )
     required, available = record.required_memory_bytes, record.available_memory_bytes
+    if available_now is not None:
+        current = available_now(identity.device) if required is not None else None
+        if required is not None and available is not None and available < required:
+            current = available if current is None else min(available, current)
+        available = current
     if required is None or available is None:
         memory = _observation("memory", "unknown", "memory_unknown", scope, record)
     elif required > available:
@@ -417,6 +435,12 @@ def _merge(
     else:
         memory = _observation("memory", "passed", "supported", scope, record)
     added = {o.kind: o for o in (smoke, runtime, hardware, memory)}
+    if (
+        identity.diarization_device is not None
+        and identity.diarization_fingerprint is not None
+        and identity.diarization_device == record.diarization_observed
+    ):
+        added["diarization"] = _observation("diarization", "passed", "supported", scope, record)
     kept = tuple(
         o.model_copy(update={"fingerprint": scope}) if o.fingerprint == old_scope else o
         for o in deployment.observations
@@ -438,15 +462,36 @@ def apply_smoke_evidence(
     now: datetime,
     directory: Path | None,
     fingerprints: Fingerprints = current_fingerprints,
+    memory_available: Callable[[str], int | None] | None = None,
 ) -> tuple[DeploymentInventory, ...]:
     """Read-only overlay. A deployment changes only when an adopted record matches the
     scope of its freshly re-identified identity; otherwise it is returned unchanged."""
     _check_time(now)
     if directory is None or _directory_safe(directory) is not True:
         return deployments
+    from utteran.capabilities.fingerprints import native_fingerprints
+
     result = []
+    identify = functools.cache(fingerprints)
+    identify_native = functools.cache(native_fingerprints)
+    observe_memory = functools.cache(memory_available) if memory_available is not None else None
     for deployment in deployments:
-        identity = smoke_identity(deployment.identity, fingerprints)
+        base_identity = deployment.identity
+        if base_identity.smoke_version == 2 and (
+            not base_identity.local_complete_model
+            or (settings.asr.model != "auto" and base_identity.model_id != settings.asr.model)
+            or any(
+                o.state == "failed"
+                and (
+                    o.kind in {"venv", "diarization"}
+                    or (o.kind == "native" and base_identity.model_family != "ctranslate2")
+                )
+                for o in deployment.observations
+            )
+        ):
+            result.append(deployment)
+            continue
+        identity = smoke_identity(deployment.identity, identify, identify_native)
         if identity is None:
             result.append(deployment)
             continue
@@ -456,5 +501,5 @@ def apply_smoke_evidence(
             result.append(deployment)
             continue
         old_scope = evidence_fingerprint(deployment.identity, settings)
-        result.append(_merge(deployment, identity, old_scope, scope, record))
+        result.append(_merge(deployment, identity, old_scope, scope, record, observe_memory))
     return tuple(result)

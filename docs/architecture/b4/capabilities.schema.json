@@ -301,7 +301,8 @@
             "gpu",
             "npu",
             "openvino-gpu",
-            "unknown"
+            "unknown",
+            "vulkan"
           ],
           "title": "Encoder Observed",
           "type": "string"
@@ -1236,7 +1237,10 @@
           "title": "Runtime Fingerprint"
         },
         "smoke_version": {
-          "const": 1,
+          "enum": [
+            1,
+            2
+          ],
           "title": "Smoke Version",
           "type": "integer"
         }
@@ -2032,7 +2036,8 @@
             "gpu",
             "npu",
             "openvino-gpu",
-            "selected-device"
+            "selected-device",
+            "vulkan"
           ],
           "title": "Encoder",
           "type": "string"
@@ -2550,6 +2555,15 @@
           "minimum": 0,
           "title": "Vad Threshold",
           "type": "number"
+        },
+        "variant": {
+          "enum": [
+            "openvino",
+            "openvino_vulkan",
+            "vulkan"
+          ],
+          "title": "Variant",
+          "type": "string"
         }
       },
       "title": "WhisperCppSettings",

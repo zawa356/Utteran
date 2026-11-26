@@ -941,6 +941,7 @@ def models_download(
     progress_json: Annotated[
         bool, typer.Option("--progress-json", help="進捗をJSON Linesで出力")
     ] = False,
+    managed_only: Annotated[bool, typer.Option("--managed-only", hidden=True)] = False,
 ) -> None:
     """モデルIDを指定するか、対話一覧から選択して取得します。"""
     try:
@@ -950,21 +951,25 @@ def models_download(
             console.print("モデルは選択されませんでした。")
             return
         for entry in entries:
-            existing = manager.status(entry)
-            if existing.installed:
+            existing = None if managed_only else manager.status(entry)
+            if existing is not None and existing.installed:
                 console.print(f"導入済み: {entry.display_name}  {existing.path}")
                 continue
-            if existing.path is not None:
+            if existing is not None and existing.path is not None:
                 console.print(f"不完全なモデルを再取得: {entry.display_name}  {existing.path}")
             console.print(
                 f"取得: {entry.display_name} ({entry.key}, "
                 f"概算 {_format_size(entry.approximate_size_bytes)})"
             )
             if progress_json:
-                path = manager.download(entry, progress=JsonProgressReporter())
+                path = manager.download(
+                    entry, progress=JsonProgressReporter(), managed_only=managed_only
+                )
             else:
                 with Progress(console=console) as progress:
-                    path = manager.download(entry, progress=RichProgressReporter(progress))
+                    path = manager.download(
+                        entry, progress=RichProgressReporter(progress), managed_only=managed_only
+                    )
             console.print(f"取得完了: {path}")
     except KeyboardInterrupt:
         _exit_expected(CancelledError())
@@ -1001,6 +1006,7 @@ def models_remove(
 @models_app.command("verify")
 def models_verify(
     identifier: Annotated[str | None, typer.Argument(help="省略時は導入済みモデルすべて")] = None,
+    managed_only: Annotated[bool, typer.Option("--managed-only", hidden=True)] = False,
 ) -> None:
     """Verify required files and sizes for installed models."""
     try:
@@ -1010,7 +1016,7 @@ def models_verify(
             if identifier is not None
             else [status.entry for status in manager.list_status()]
         )
-        results = [manager.verify(entry) for entry in entries]
+        results = [manager.verify(entry, managed_only=managed_only) for entry in entries]
     except UtteranError as exc:
         _exit_expected(exc)
     table = Table("ID", "結果", "サイズ", "詳細")
@@ -1062,6 +1068,7 @@ def models_prepare_openvino(
     device: Annotated[str, typer.Option("--device", help="実行時OpenVINO device")] = "GPU",
     purge_cache: Annotated[bool, typer.Option("--purge-cache")] = False,
     yes: Annotated[bool, typer.Option("--yes", help="大容量重み取得の確認を省略")] = False,
+    reuse: Annotated[bool, typer.Option("--reuse", hidden=True)] = False,
 ) -> None:
     """OpenAI重みからwhisper.cpp用OpenVINO encoder IRを生成します。"""
     try:
@@ -1075,7 +1082,9 @@ def models_prepare_openvino(
             return
         from utteran.models.openvino import OpenVINOManager
 
-        status = OpenVINOManager(_model_manager()).prepare(identifier, purge_cache=purge_cache)
+        status = OpenVINOManager(_model_manager()).prepare(
+            identifier, purge_cache=purge_cache, reuse=reuse
+        )
         console.print(f"OpenVINO IRを生成しました: {status.xml_path}")
     except UtteranError as exc:
         _exit_expected(exc)
@@ -1508,11 +1517,13 @@ def native_build_command(
         bool, typer.Option("--force", help="同一設定でも既存ビルドを再構築する")
     ] = False,
     config_path: Annotated[Path | None, typer.Option("--config")] = None,
+    managed_root: Annotated[bool, typer.Option("--managed-root", hidden=True)] = False,
 ) -> None:
     """Build whisper.cpp variants whose prerequisites are currently satisfied."""
     try:
-        config = Config.load(config_path=config_path)
-        native_dir = resolve_native_dir(config.general.native_dir)
+        native_dir = resolve_native_dir(
+            None if managed_root else Config.load(config_path=config_path).general.native_dir
+        )
         variants = _parse_variant_selection(variant)
         console.print(f"ネイティブビルド先: {native_dir}")
         console.print(

@@ -1570,6 +1570,31 @@
           "if": {
             "properties": {
               "path": {
+                "const": "/asr/whisper_cpp/variant"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "vulkan",
+                      "openvino",
+                      "openvino_vulkan"
+                    ],
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "path": {
                 "const": "/asr/word_timestamps"
               }
             }
@@ -2356,6 +2381,7 @@
             "/asr/whisper_cpp/vad",
             "/asr/whisper_cpp/vad_model",
             "/asr/whisper_cpp/vad_threshold",
+            "/asr/whisper_cpp/variant",
             "/asr/word_timestamps",
             "/diarization/backend",
             "/diarization/device_preference",
@@ -2503,6 +2529,15 @@
           "minimum": 0,
           "title": "Vad Threshold",
           "type": "number"
+        },
+        "variant": {
+          "enum": [
+            "vulkan",
+            "openvino",
+            "openvino_vulkan"
+          ],
+          "title": "Variant",
+          "type": "string"
         }
       },
       "title": "WhisperCppSettings",

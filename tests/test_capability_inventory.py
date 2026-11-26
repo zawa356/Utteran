@@ -233,8 +233,8 @@ def test_each_recipe_with_matching_synthetic_evidence(settings, recipe_id) -> No
 def test_worker_transport_is_narrow(settings, recipe_id) -> None:
     d = deployment(settings, recipe_id, execution_path="worker")
     candidate = evaluate(d, settings)
-    assert (candidate.runnable == "ready") == recipe_id.startswith("fw-")
-    if not recipe_id.startswith("fw-"):
+    assert (candidate.runnable == "ready") == (recipe_id not in {"wc-cpu", "genai-ov"})
+    if recipe_id in {"wc-cpu", "genai-ov"}:
         assert "worker_backend_unsupported" in codes(candidate)
 
 
@@ -266,7 +266,7 @@ def test_diarization_component_is_independent_of_asr(settings, diar_device) -> N
         == "blocked"
     )
     worker = deployment(settings, "fw-cpu", execution_path="worker", diarization_device=diar_device)
-    assert "worker_diarization_unsupported" in codes(evaluate(worker, settings))
+    assert evaluate(worker, settings).runnable == "ready"
 
 
 def test_xpu_unverified_platform_is_not_supported(settings) -> None:
@@ -867,7 +867,7 @@ def test_duplicate_and_unknown_observation_data_is_rejected(settings):
     with pytest.raises(ValidationError):
         d.observations[0].model_copy(update={"source": "/private/path"})
     with pytest.raises(ValidationError):
-        d.identity.model_copy(update={"smoke_version": 2})
+        d.identity.model_copy(update={"smoke_version": 3})
     with pytest.raises(ValueError):
         evaluate(d, settings, now=NOW.replace(tzinfo=None))
 
@@ -1037,14 +1037,14 @@ def test_native_route_requires_variant_and_required_components(settings, recipe_
 
 
 @pytest.mark.parametrize("recipe_id", ["wc-vulkan", "wc-ov"])
-def test_backend_default_is_not_a_required_component_observation(settings, recipe_id):
-    d = deployment(settings, recipe_id)
-    assert evaluate(d, settings).runnable == "ready"
+def test_native_route_requires_each_component_observation(settings, recipe_id):
+    deployment_with_route = deployment(settings, recipe_id)
+    assert evaluate(deployment_with_route, settings).runnable == "ready"
     component = "encoder" if recipe_id == "wc-vulkan" else "decoder"
-    assert (
-        getattr(next(o for o in d.observations if o.kind == "smoke"), component + "_observed")
-        == "unknown"
+    missing = replace_observation(
+        deployment_with_route, "smoke", **{f"{component}_observed": "unknown"}
     )
+    assert evaluate(missing, settings).runnable == "unknown"
 
 
 @pytest.mark.parametrize("device", ["cpu", "gpu", "npu"])
@@ -1096,3 +1096,26 @@ def test_unverified_route_resolution_and_failure_precedence(settings):
 def test_openvino_gpu_label_is_not_generic_gpu(settings):
     d = replace_observation(deployment(settings, "wc-ov"), "smoke", encoder_observed="gpu")
     assert "smoke_route_mismatch" in codes(evaluate(d, settings))
+
+
+def test_verified_v2_memory_warning_does_not_override_policy_or_other_evidence(settings):
+    data = deployment(settings, execution_path="worker", smoke_version=2)
+    data = data.model_copy(update={"available_memory_bytes": None})
+    data = replace_observation(
+        data, "memory", state="unknown", reason_code="memory_unknown", source="smoke"
+    )
+    result = resolve(inventory(settings, data), policy(), now=NOW)
+    assert result.selected is not None
+    assert "memory_unknown" in result.reason_codes
+    # An explicit memory cap uses required memory. If it is unknown the cap cannot be checked.
+    no_required = data.model_copy(update={"required_memory_bytes": None})
+    assert (
+        resolve(inventory(settings, no_required), policy(max_memory_bytes=1), now=NOW).selected
+        is None
+    )
+    assert (
+        evaluate(replace_observation(data, "hardware", state="unknown"), settings).runnable
+        == "unknown"
+    )
+    no_memory = data.model_copy(update={"available_memory_bytes": 0})
+    assert evaluate(no_memory, settings).runnable == "blocked"

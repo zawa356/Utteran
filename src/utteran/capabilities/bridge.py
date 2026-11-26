@@ -25,6 +25,7 @@ from utteran_contracts.capabilities import (
     InventoryRefreshResult,
     ResolvedSelection,
 )
+from utteran_contracts.engines import engine_for_family
 from utteran_paths import resolve_data_paths
 
 REQUEST_LIMIT = 1024 * 1024
@@ -36,16 +37,15 @@ def worker_model_dirs(candidates: tuple[CapabilityCandidate, ...]) -> dict[str, 
     Only complete managed copies are reported; no Hub ID, cache lookup or download.
     """
     root = ModelManager(resolve_data_paths().models)
-    entries = {entry.model_id: entry for entry in list_models(backend="faster-whisper")}
+    entries = {(entry.backend, entry.model_id): entry for entry in list_models()}
     result: dict[str, str] = {}
     for candidate in candidates:
         identity = candidate.deployment.identity
-        entry = entries.get(identity.model_id)
+        entry = entries.get((engine_for_family(identity.model_family).engine, identity.model_id))
         if (
             entry is None
             or identity.execution_path != "worker"
             or not identity.local_complete_model
-            or identity.model_family != "ctranslate2"
         ):
             continue
         path = root.managed_path(entry)

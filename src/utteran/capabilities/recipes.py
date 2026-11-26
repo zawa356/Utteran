@@ -36,7 +36,9 @@ def _recipe(
             ),
             devices=devices,
             compute_types=compute,
-            platforms=("Windows", "Linux"),
+            platforms=("Windows",)
+            if variant in {"vulkan", "openvino", "openvino_vulkan"}
+            else ("Windows", "Linux"),
             required_extras=extras,
             native_required=variant is not None,
             worker_supported=recipe_id in engine.worker.recipes,
@@ -77,7 +79,7 @@ RECIPES = (
         "whisper-cpp",
         "ggml",
         "vulkan",
-        "backend-default",
+        "vulkan",
         "vulkan",
         ("gpu",),
         ("ggml",),
@@ -89,7 +91,7 @@ RECIPES = (
         "ggml",
         "openvino",
         "openvino-gpu",
-        "backend-default",
+        "cpu",
         ("gpu",),
         ("ggml",),
         ("whisper-cpp", "openvino"),

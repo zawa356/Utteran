@@ -17,7 +17,7 @@ from utteran_contracts.capabilities import (
 
 # Explicit B4 heuristic, independent from legacy devices._auto_selection.
 # This is a preference, never evidence of quality, speed, or hardware success.
-_STATIC_ORDER = ("fw-cuda", "wc-vulkan", "wc-ov-vk", "wc-ov", "genai-ov", "fw-cpu", "wc-cpu")
+_STATIC_ORDER = ("wc-vulkan", "wc-ov-vk", "wc-ov", "fw-cpu", "fw-cuda", "genai-ov", "wc-cpu")
 
 
 def benchmark_key(benchmark: BenchmarkEvidence) -> str:
@@ -57,19 +57,24 @@ def resolve(inventory: InventorySnapshot, policy: Policy, *, now: datetime) -> R
         )
         reasons = list(dict.fromkeys(issue.code for issue in candidate.issues))
         identity = candidate.deployment.identity
+        policy_blocked = False
         if policy.allowed_profile_ids and identity.profile_id not in policy.allowed_profile_ids:
             reasons.append("profile_not_allowed")
+            policy_blocked = True
         memory = candidate.deployment.required_memory_bytes
         if policy.max_memory_bytes is not None:
             if memory is None:
                 reasons.append("memory_unknown")
+                policy_blocked = True
             elif memory > policy.max_memory_bytes:
                 reasons.append("memory_limit")
+                policy_blocked = True
         # No bounded execution-time evidence is supported by B4. Smoke and a
         # benchmark average cannot establish a hard deadline.
         if policy.execution_deadline_seconds is not None:
             reasons.append("deadline_unverified")
-        is_eligible = candidate.runnable == "ready" and not reasons
+            policy_blocked = True
+        is_eligible = candidate.runnable == "ready" and not policy_blocked
         alternatives.append(
             SelectionAlternative(
                 candidate=candidate,
@@ -120,6 +125,8 @@ def resolve(inventory: InventorySnapshot, policy: Policy, *, now: datetime) -> R
             error = "no_runnable_candidate"
             reasons_out.append("no_runnable_candidate")
 
+    if selected is not None and any(issue.code == "memory_unknown" for issue in selected.issues):
+        reasons_out.append("memory_unknown")
     return ResolvedSelection.model_validate(
         dict(
             schema_version=1,

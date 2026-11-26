@@ -154,16 +154,21 @@ def test_unverifiable_requests_are_refused(tmp_path, profile, settings, refs) ->
     assert caught.value.code == "verification_unsupported" and caught.value.status == 422
 
 
-def test_verification_with_diarization_enabled_is_refused(tmp_path: Path) -> None:
+def test_verification_with_diarization_uses_the_same_offline_smoke(tmp_path: Path) -> None:
     world = World(tmp_path)
     world.install("cuda")
     data = asr_settings().to_wire()
     data["diarization"]["enabled"] = True
-    with pytest.raises(PlanRejected):
-        build_plan(
-            verify_request("cuda", TURBO, PYA, settings=ProcessingSettings.model_validate(data)),
-            world.observer.observe(),
-        )
+    plan = build_plan(
+        verify_request("cuda", TURBO, PYA, settings=ProcessingSettings.model_validate(data)),
+        world.observer.observe(),
+    )
+    assert [step.kind for step in plan.steps] == [
+        "credential_preflight",
+        "model_download",
+        "model_download",
+        "capability_smoke",
+    ]
 
 
 # --------------------------------------------------------------------------- executor
@@ -536,7 +541,9 @@ def test_gpu_probe_failure_is_unknown_with_a_cpu_recommendation(tmp_path) -> Non
 
 def test_recommendation_codes() -> None:
     assert recommend(gpu(), None)["reason_codes"] == ["no_gpu_detected"]
-    assert recommend(gpu("intel"), None)["profile"] == "cpu"
+    intel = recommend(gpu("intel"), RuntimeReport("cuda", None, True, True))
+    assert intel["profile"] == "intel" and not intel["confident"]
+    assert recommend(gpu("intel"), RuntimeReport("intel", None, vulkan=True))["confident"]
     no_driver = recommend(gpu("nvidia", driver=None), None)
     assert "nvidia_driver_unknown" in no_driver["reason_codes"]
     dead = recommend(gpu("nvidia"), RuntimeReport("cuda", None, False, False))
@@ -1469,3 +1476,21 @@ def test_defaults_view_never_creates_the_settings_store_and_rejects_a_bad_record
 
     with pytest.raises(SettingsError):
         setup_defaults.defaults_view(Store(), path, "setup_x")  # type: ignore[arg-type]
+
+
+def test_gate_rechecks_lease_in_acquired_window(tmp_path):
+    from utteran_gui.execution_gate import ExecutionGate
+
+    world = World(tmp_path)
+    world.install("cuda")
+    busy = iter((None, "retained-lease"))
+    gate = ExecutionGate()
+    service = SetupDiagnostics(
+        world.cli,
+        busy_profile=lambda: next(busy),
+        gate=gate,
+    )
+    service._probe = lambda *_: pytest.fail("probe overlapped retained lease")
+    assert service._runtime_stage(0, False).reason_code == "setup_running"
+    assert gate.try_acquire("dispatch")
+    gate.release("dispatch")

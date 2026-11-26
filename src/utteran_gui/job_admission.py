@@ -70,7 +70,7 @@ HASH_BLOCK = 1024 * 1024
 # declarations (utteran_contracts.engines). Everything else is declaratively
 # unsupported in B7; a new route is enabled there, never by editing this module.
 WORKER_RECIPES = worker_recipes()
-PROFILES = ("cpu", "cuda", "intel", "vulkan")
+PROFILES = ("intel", "vulkan", "cpu", "cuda")
 _REPARSE = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
 
 Clock = Callable[[], datetime]
@@ -256,6 +256,7 @@ def candidate_fingerprint(candidate: CapabilityCandidate) -> str:
             "observations": sorted(
                 (o.kind, o.state, o.source, o.reason_code, o.fingerprint or "")
                 for o in candidate.observations
+                if o.kind != "memory"
             ),
         }
     )

@@ -584,7 +584,10 @@
         "recipe_id": {
           "enum": [
             "fw-cpu",
-            "fw-cuda"
+            "fw-cuda",
+            "wc-vulkan",
+            "wc-ov",
+            "wc-ov-vk"
           ],
           "title": "Recipe Id",
           "type": "string"
@@ -612,7 +615,10 @@
         "recipe_id": {
           "enum": [
             "fw-cpu",
-            "fw-cuda"
+            "fw-cuda",
+            "wc-vulkan",
+            "wc-ov",
+            "wc-ov-vk"
           ],
           "title": "Recipe Id",
           "type": "string"
@@ -1524,7 +1530,8 @@
             "manager_verified",
             "credential_checked",
             "smoke_output_present",
-            "capability_evidence_recorded"
+            "capability_evidence_recorded",
+            "native_asset_verified"
           ],
           "title": "Kind",
           "type": "string"
@@ -1725,6 +1732,15 @@
           "minimum": 0,
           "title": "Vad Threshold",
           "type": "number"
+        },
+        "variant": {
+          "enum": [
+            "vulkan",
+            "openvino",
+            "openvino_vulkan"
+          ],
+          "title": "Variant",
+          "type": "string"
         }
       },
       "title": "WhisperCppSettings",

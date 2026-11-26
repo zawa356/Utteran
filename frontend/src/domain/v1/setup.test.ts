@@ -422,7 +422,7 @@ describe("SetupController", () => {
     expect(body.verification_settings).toEqual(preset.settings);
     const withDiarization = defaultSettings("large-v3");
     (withDiarization.diarization as JsonObject).enabled = true;
-    expect(verifyRefusal(withDiarization)).toBe("diarization_unsupported");
+    expect(verifyRefusal(withDiarization)).toBeNull();
     expect(verifyRefusal(defaultSettings("small"))).toBe("model_unsupported");
     expect(verifyRefusal(null)).toBe("no_preset");
   });

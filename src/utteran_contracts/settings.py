@@ -60,6 +60,7 @@ class FasterWhisperSettings(Contract):
 class WhisperCppSettings(Contract):
     nonnullable_optional: ClassVar[frozenset[str]] = frozenset(
         [
+            "variant",
             "temperature",
             "temperature_increment",
             "no_context",
@@ -74,6 +75,7 @@ class WhisperCppSettings(Contract):
             "max_word_duration_seconds",
         ]
     )
+    variant: Literal["vulkan", "openvino", "openvino_vulkan"] | None = None
     temperature: Annotated[float, Field(ge=0, le=1, strict=True)] | None = None
     temperature_increment: Annotated[float, Field(ge=0, le=1, strict=True)] | None = None
     no_context: StrictBool | None = None

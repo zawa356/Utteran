@@ -159,7 +159,12 @@ def main() -> int:
         if any(name == prefix or name.startswith(prefix + "__") for prefix in prefixes):
             del os.environ[key]
     # Defense in depth for the audited local-only runtime, before SDK imports.
-    os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
+    os.environ.update(
+        HF_HUB_OFFLINE="1",
+        TRANSFORMERS_OFFLINE="1",
+        HF_HUB_DISABLE_TELEMETRY="1",
+        PYANNOTE_METRICS_ENABLED="0",
+    )
     # Never closed here: the daemon control thread may still hold the reader's lock while
     # blocked in readline, so close() would deadlock. os._exit ends the process instead
     # (as it did for sys.stdin.buffer).

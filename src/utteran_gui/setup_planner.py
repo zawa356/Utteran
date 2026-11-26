@@ -19,6 +19,7 @@ from typing import Any, Literal, Protocol
 from utteran_contracts.setup import (
     ASR_BACKENDS,
     EXECUTABLE_BACKENDS,
+    NATIVE_VERIFICATION_RECIPES,
     PROFILE_BACKENDS,
     PROFILE_KINDS,
     SETUP_MODELS,
@@ -133,15 +134,27 @@ class SetupObserver:
                     getattr(info, "compatibility_reason", None),
                 )
             )
-        models = tuple(
-            (ref, (self.models_root / model.backend / model.managed_component).is_dir())
-            for ref, model in sorted(SETUP_MODELS.items())
-        )
+        models = []
+        for ref, model in sorted(SETUP_MODELS.items()):
+            folder = self.models_root / model.backend / model.managed_component
+            required = (
+                "config.yaml",
+                "embedding/pytorch_model.bin",
+                "segmentation/pytorch_model.bin",
+                "plda/plda.npz",
+                "plda/xvec_transform.npz",
+            )
+            present = (
+                all((folder / name).is_file() for name in required)
+                if model.gated
+                else folder.is_dir()
+            )
+            models.append((ref, present))
         try:
             present = bool(self.credential_present())
         except Exception:
             present = False  # unknown presence is treated as missing, never as present
-        return SetupObservation(self.platform, lock_sha, tuple(profiles), models, present)
+        return SetupObservation(self.platform, lock_sha, tuple(profiles), tuple(models), present)
 
 
 def _check_refs(request: SetupPlanRequest) -> None:
@@ -155,7 +168,7 @@ def _check_refs(request: SetupPlanRequest) -> None:
             raise PlanRejected("model_unknown")
         if backend not in hosted:
             raise PlanRejected("unsupported_combination")  # e.g. OpenVINO GenAI on cuda
-        if backend == "whisper-cpp":
+        if backend == "whisper-cpp" and request.verification_settings is None:
             raise PlanRejected("native_build_unsupported")
         if backend not in EXECUTABLE_BACKENDS:
             raise PlanRejected("setup_backend_unsupported")
@@ -179,11 +192,21 @@ def _verification(request: SetupPlanRequest) -> PlanVerification | None:
     if settings is None:
         return None
     recipe = VERIFICATION_RECIPES.get(request.profile_kind)
-    ref = f"faster-whisper:{settings.asr.model}"
+    ref = f"{settings.asr.backend}:{settings.asr.model}"
+    if settings.asr.backend == "whisper-cpp":
+        variant = settings.asr.whisper_cpp.variant if settings.asr.whisper_cpp else None
+        recipe = NATIVE_VERIFICATION_RECIPES.get(variant or "vulkan")
+        if request.profile_kind not in {"intel", "vulkan"} or (
+            request.profile_kind == "vulkan" and variant not in {None, "vulkan"}
+        ):
+            raise PlanRejected("verification_unsupported")
+        if settings.asr.vad.enabled and "whisper-cpp-vad:silero-v6.2.0" not in request.model_refs:
+            raise PlanRejected("verification_unsupported")
+    elif settings.asr.backend != "faster-whisper" or request.profile_kind not in {"cpu", "cuda"}:
+        raise PlanRejected("verification_unsupported")
     if (
         recipe is None
-        or settings.asr.backend != "faster-whisper"
-        or settings.diarization.enabled
+        or (settings.diarization.enabled and not request.diarization_enabled)
         or ref not in request.model_refs
         or ref not in SETUP_MODELS
     ):
@@ -235,7 +258,11 @@ def build_plan(request: SetupPlanRequest, observation: SetupObservation) -> Plan
         unknown_size = True  # dependency download size is not knowable without uv
     base = tuple(step.id for step in steps)
     models = [SETUP_MODELS[ref] for ref in request.model_refs]
-    gated = [model for model in models if model.gated]
+    gated = [
+        model
+        for model in models
+        if model.gated and (verification is None or not observation.model_present(model.ref))
+    ]
     agreements = tuple(sorted({f"hf-gated:{model.repository_id}" for model in gated}))
     if gated:
         steps.append(
@@ -263,7 +290,7 @@ def build_plan(request: SetupPlanRequest, observation: SetupObservation) -> Plan
         if not present:
             download += model.approximate_size_bytes
         step_id = f"model-{index}"
-        depends = base + (("preflight",) if model.gated else ())
+        depends = base + (("preflight",) if model in gated else ())
         steps.append(
             SetupStep(
                 id=step_id,
@@ -277,7 +304,57 @@ def build_plan(request: SetupPlanRequest, observation: SetupObservation) -> Plan
         model_steps.append(step_id)
     asr = next(model for model in models if model.backend in ASR_BACKENDS)
     prior = (*base, *(("preflight",) if gated else ()), *model_steps)
-    if verification is None or request.diarization_enabled:
+    if verification is not None and verification.recipe_id.startswith("wc-"):
+        if observation.platform != "nt":
+            raise PlanRejected("venv_build_platform_unsupported")
+        variant = next(
+            variant
+            for variant, recipe in NATIVE_VERIFICATION_RECIPES.items()
+            if recipe == verification.recipe_id
+        )
+        steps.append(
+            SetupStep(
+                id="native",
+                kind="native_build",
+                depends_on=base,
+                required=True,
+                recovery="verified_reuse",
+                target=variant,
+            )
+        )
+        changes.append(
+            SetupChange(
+                resource_kind="native",
+                resource_id=variant,
+                action="verify",
+                reason_code="model_present_unverified",
+            )
+        )
+        prior = (*prior, "native")
+        unknown_size = True
+        if variant in {"openvino", "openvino_vulkan"}:
+            steps.append(
+                SetupStep(
+                    id="ir",
+                    kind="ir_build",
+                    depends_on=tuple(model_steps),
+                    required=True,
+                    recovery="verified_reuse",
+                    target=verification.model_ref,
+                )
+            )
+            changes.append(
+                SetupChange(
+                    resource_kind="ir",
+                    resource_id=verification.model_ref,
+                    action="verify",
+                    reason_code="model_present_unverified",
+                )
+            )
+            prior = (*prior, "ir")
+    if verification is None or (
+        request.diarization_enabled and not verification.settings.diarization.enabled
+    ):
         # CLI end-to-end run (local evidence only). With diarization it is the only check
         # that the pipeline, the token and the gated model work together.
         steps.append(

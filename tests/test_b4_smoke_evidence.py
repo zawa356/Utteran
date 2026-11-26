@@ -251,7 +251,7 @@ def test_record_round_trip_and_value_free_content(settings, directory) -> None:
     assert read_evidence(directory, scope, now=NOW + timedelta(hours=1)) == record(scope)
     # No settings body, prompt, path or transcript; digests only.
     assert "initial_prompt" not in raw and str(directory) not in raw and "tiny" not in raw
-    assert set(json.loads(raw)) == set(SmokeEvidence.model_fields)
+    assert set(json.loads(raw)) == set(SmokeEvidence.model_fields) - {"diarization_observed"}
     if os.name != "nt":
         assert path.stat().st_mode & 0o077 == 0
     assert sorted(p.name for p in directory.iterdir()) == [f"{scope}.json"]
