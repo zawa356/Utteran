@@ -1147,7 +1147,13 @@ def test_http_roundtrip_headers_boundary_and_value_free_errors(world: World, cap
 
 
 def test_reexport_modules_do_not_log_or_import_core() -> None:
-    for name in ("reexport_api", "reexport_files", "reexport_service", "reexport_store"):
+    for name in (
+        "reexport_api",
+        "reexport_files",
+        "reexport_files_native",
+        "reexport_service",
+        "reexport_store",
+    ):
         source = (ROOT / f"src/utteran_gui/{name}.py").read_text(encoding="utf-8")
         assert "import logging" not in source and "from utteran." not in source
         assert "import utteran\n" not in source

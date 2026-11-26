@@ -1,0 +1,19 @@
+[package]
+name = "utteran-safe-fs-py"
+description = "Thin PyO3 binding over utteran-safe-fs (abi3, CPython 3.11+)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "utteran_native_fs"
+crate-type = ["cdylib"]
+
+[dependencies]
+utteran-safe-fs = { path = "../safe-fs" }
+pyo3 = { version = "0.30.1", default-features = false, features = ["macros", "abi3-py311", "extension-module"] }
+
+[lints]
+workspace = true

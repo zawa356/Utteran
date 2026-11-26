@@ -1177,7 +1177,7 @@ export const en: Record<MessageKey, string> = {
   "ec.code.output_path_too_long": "The destination path is too long.",
   "ec.code.output_moved": "The destination or a folder above it was moved or replaced before writing, so writing stopped. The current location of the created folder cannot be confirmed.",
   "ec.code.output_inside_source": "Cannot save into the job's own folder or anything inside it. Choose another folder.",
-  "ec.code.output_in_repository": "Cannot save inside a Git repository unless .gitignore excludes the location.",
+  "ec.code.output_in_repository": "Cannot save inside a Git repository (on Linux/macOS only where .gitignore excludes the location).",
   "ec.code.output_git_unverified": "The safety of a destination inside a Git repository cannot be checked.",
   "ec.code.output_full": "Not enough disk space.",
   "ec.code.output_readonly": "The destination cannot be written (read-only or no permission).",

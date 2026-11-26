@@ -1175,7 +1175,7 @@ export const ja = {
   "ec.code.output_path_too_long": "保存先のパスが長すぎます。",
   "ec.code.output_moved": "書込みの前に保存先またはその上位のフォルダが移動・置換されたため、書込みを止めました。作成したフォルダの現在の場所は確認できません。",
   "ec.code.output_inside_source": "元のジョブのフォルダとその中には保存できません。別のフォルダを指定してください。",
-  "ec.code.output_in_repository": "Gitリポジトリ内の、.gitignoreで除外されていない場所には保存できません。",
+  "ec.code.output_in_repository": "Gitリポジトリ内には保存できません（Linux/macOSでは.gitignoreで除外された場所のみ可）。",
   "ec.code.output_git_unverified": "Gitリポジトリ内の保存先の安全性を確認できません。",
   "ec.code.output_full": "空き容量が不足しています。",
   "ec.code.output_readonly": "保存先に書き込めません（読み取り専用または権限なし）。",

@@ -17,6 +17,12 @@
 - 未実施: Windows 実機・NVIDIA GPU・実モデル取得・実 VC++（[§8 手順](docs/architecture/ui3/f-setup.md)、#22）。話者分離付き v1 実行は後続 Issue 提案（worker の offline pyannote・diarization 証拠が必要）。
 - [束F 正本](docs/architecture/ui3/f-setup.md)。HEAD・試験件数・CI・独立レビューは Draft PR に記録する。
 
+## E-C2a 採用・E-C2b Windows 再出力（2026-11-25、[#86](https://github.com/zawa356/Utteran/issues/86)／[#87](https://github.com/zawa356/Utteran/issues/87)、0.1.70・未リリース）
+
+- Draft [#88](https://github.com/zawa356/Utteran/pull/88)、branch `claude/focused-keller-9b6u6q`（main `f859a5d` を merge 済み）。オーナーが Rust 方式を採用し、同じ Draft で製品組込みまで実施。
+- `native/`（core `utteran-safe-fs`、wheel `utteran-native-fs`）。Windows の再出力だけを `reexport_files_native.py` へ接続（ローカル NTFS、Git は常に拒否）。Linux/macOS は E-C1 の Python 実装のまま。
+- `build.ps1`／`gui.spec` が wheel を build・同梱、`native.yml` を全 PR／main で実行（固定 4 ID の gate）。Windows VM 受入は Codex へ引継ぎ中（[手順](docs/architecture/ui3/e-c2a-windows-vm-handoff.md)）。W-14 等が FAIL なら Windows を無効に戻す。[ADR §13](docs/architecture/ui3/e-c2a-rust-safe-fs.md)。
+
 ## 現在地（2026-11-25、束 E-C、0.1.69・未リリース）
 
 - main 基点 `b8463129d5bd213d81a11427a02d58f726a0e056`（0.1.68、E-B 統合済み）。作業ブランチ `claude/eloquent-fermi-nfc18l`（セッション指定）、[#82](https://github.com/zawa356/Utteran/issues/82)。E-B 統合後の main CI は着手時点で実行中（完了待ちなしで着手、オーナー承認済み）。

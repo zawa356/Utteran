@@ -2,6 +2,8 @@
 
 追補（2026-11-25、0.1.71 未リリース）。[束F 新GUIセットアップ・環境診断・ハードウェア検出](f-setup.md)。B8 setup から B4 証拠を記録し、readiness を確認する。CUDA・Windows 実機は未受入（#22）。
 
+追補（2026-11-25、0.1.70 未リリース）。[E-C2a Rust 共通安全ファイル操作基盤（ADR、採用・§13 で E-C2b 組込み）](e-c2a-rust-safe-fs.md)と[Windows 11 VM 引継ぎ](e-c2a-windows-vm-handoff.md)（#86／#87）。Windows の再出力を Rust core で有効化、VM 受入待ち。
+
 追補（2026-11-25、0.1.69 未リリース）。[束 E-C 検証済み JSON からの ASR なし再出力](e-c-reexport.md)。Windows は安全な書込みを証明できないため BLOCKED、実機は未受入。
 
 追補（2026-11-24、0.1.68 未リリース）。[束 E-B 名前付き作業セットの自動保存・復元と容量上限](e-b-worksets.md)（offline schema [e-b-worksets.schema.json](e-b-worksets.schema.json)）。Windows 実機は未受入。

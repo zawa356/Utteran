@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -43,8 +44,14 @@ from utteran_contracts.transcript_export import (
     speakers,
 )
 from utteran_control.errors import ControlError
-from utteran_gui import reexport_files
 from utteran_gui.reexport_files import FileError, PartialOutput, Protected
+
+# Windows: the Rust core (E-C2b, #87); unsupported without the bundled native module.
+# POSIX: the descriptor-based E-C1 implementation (unchanged).
+if sys.platform == "win32":
+    from utteran_gui import reexport_files_native as reexport_files
+else:
+    from utteran_gui import reexport_files
 from utteran_gui.reexport_store import Record, ReexportError, ReexportStore, canonical, iso
 
 MAX_LABEL = 256

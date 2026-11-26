@@ -9,6 +9,7 @@ transcription API.
 > Current development version: `0.1.72` (unreleased).
 > The development-only v1 UI saves and restores named worksets automatically. See the [E-B specification](docs/architecture/ui3/e-b-worksets.md).
 > **0.1.72 (bundle F, unreleased)**: the Setup page of `--next-ui-v1` checks this computer (GPU, driver, VC++, GPU runtime), runs a standard or custom setup (review the plan → start → progress, cancel, retry, resume), records the run verification (B4 evidence) and shows whether jobs can run. CUDA readiness is not confirmed on real hardware yet. See the [bundle F specification](docs/architecture/ui3/f-setup.md).
+> **0.1.70 (E-C2b, unreleased)**: re-export on Windows (local NTFS only), with safe file operations done by the Rust core (internal wheel); output inside a Git checkout is always refused on Windows. Windows hardware acceptance is still pending. See the [E-C2a ADR](docs/architecture/ui3/e-c2a-rust-safe-fs.md).
 >
 > **0.1.69 (bundle E-C, unreleased)**: from Expert results and history, a succeeded job can be re-exported from its verified JSON only, without speech recognition, into a new folder with other formats or display settings (`--next-ui-v1` only, Linux/macOS; not available on Windows yet because safe writing cannot be proven there). See the [E-C specification](docs/architecture/ui3/e-c-reexport.md).
 > The development-only v1 UI supports project presets and glossary TXT workflows. See the [E-A specification](docs/architecture/ui3/e-a-presets-glossary.md).
