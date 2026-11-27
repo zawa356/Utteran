@@ -15,6 +15,8 @@ import ReexportDialog from "../results/ReexportDialog.vue";
 import RerunDialog from "../results/RerunDialog.vue";
 import ResultsPage from "../results/ResultsPage.vue";
 import V1DeleteDialog from "../transcribe/V1DeleteDialog.vue";
+import iconUrl from "../../assets/utteran.svg";
+import AppMenu from "./AppMenu.vue";
 import ExpertSidebar from "./ExpertSidebar.vue";
 import NormalTopNav from "./NormalTopNav.vue";
 
@@ -39,10 +41,12 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
 
 <template>
   <v-layout class="fill-height" :data-mode="state.mode">
-    <v-app-bar density="compact" :height="narrowBar ? 96 : undefined" :class="{ 'u-narrow-bar': narrowBar }" flat border="b" data-testid="app-bar">
+    <v-app-bar density="compact" :height="narrowBar ? 96 : apiMode === 'v1-dev' ? 52 : undefined" :class="{ 'u-narrow-bar': narrowBar }" flat border="b" data-testid="app-bar">
       <div class="u-brand">
+        <img v-if="apiMode === 'v1-dev'" :src="iconUrl" width="22" height="22" alt="" class="u-appicon" data-testid="app-icon" />
         <span class="u-subheading">{{ t("app.title") }}</span>
         <v-chip size="x-small" label class="ml-2" color="warning" variant="outlined" data-testid="preview-chip">{{ t("app.preview") }}</v-chip>
+        <AppMenu v-if="apiMode === 'v1-dev'" class="ml-2" />
       </div>
       <template v-if="state.mode === 'normal'">
         <span class="u-appbar-sep" aria-hidden="true"></span>
@@ -55,6 +59,7 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
         density="compact"
         variant="outlined"
         divided
+        :color="apiMode === 'v1-dev' ? 'primary' : undefined"
         :aria-label="t('mode.label')"
         class="mr-2 u-no-shrink u-shell-mode"
         data-testid="mode-toggle"
@@ -110,6 +115,10 @@ const currentTitle = computed(() => t(`section.${state.value.section}`));
 .u-dev-notice {
   font-size: 0.82rem;
   line-height: 1.35;
+}
+.u-appicon {
+  display: block;
+  margin-inline-end: 6px;
 }
 .u-narrow-bar :deep(.v-toolbar__content) {
   display: grid;

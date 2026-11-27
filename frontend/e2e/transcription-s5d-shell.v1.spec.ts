@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, SESSION, shot, test, isWorksetPath } from "./fixtures";
+import { choose, expect, SESSION, shot, test, isWorksetPath, fillOutput, revealLibrary } from "./fixtures";
 
 /**
  * Bundle D1 in the `--next-ui-v1` shape (real B5/B7 on the real loopback authority, synthetic B4
@@ -40,6 +40,7 @@ async function api<T>(request: APIRequestContext, path: string): Promise<T> {
 
 /** Use the S5-B Preset/Policy, creating them once (explicitly) when they do not exist yet. */
 async function library(page: Page, request: APIRequestContext): Promise<void> {
+  await revealLibrary(page);
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
   const presets = await api<{ items: { name: string }[] }>(request, "/api/v1/presets");
   if (!presets.items.some((p) => p.name === PRESET)) {
@@ -88,7 +89,7 @@ test("D1-04: a checked job and an accepted job keep their state across every pag
   await expect(app.getByTestId("preview-notice")).toHaveAttribute("data-notice", "app.previewNoticeV1");
   await library(app, request);
   await addInput(app, input("meeting.wav"));
-  await app.getByTestId("v1-output-path").locator("input").fill(OUT);
+  await fillOutput(app, OUT);
   await app.getByTestId("v1-check").click();
   await expect(app.getByTestId("v1-validated")).toBeVisible();
   await expect(app.getByTestId("v1-resolution")).toBeVisible();
@@ -119,7 +120,7 @@ test("D1-04: an unknown submit outcome survives every switch; nothing is resent 
   const seen = recordApi(app);
   await library(app, request);
   await addInput(app, input("other.wav"));
-  await app.getByTestId("v1-output-path").locator("input").fill(OUT);
+  await fillOutput(app, OUT);
   let first = true;
   await app.route("**/api/v1/jobs", async (route) => {
     if (route.request().method() !== "POST" || !first) return route.continue();

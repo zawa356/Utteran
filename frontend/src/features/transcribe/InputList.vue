@@ -37,11 +37,13 @@ function removeSelected() {
   core.inputs.removeSelected();
   confirming.value = false;
 }
+/** `bare` (#96): the Expert pane heading names the list; the list heading is for screen readers. */
+defineProps<{ bare?: boolean }>();
 </script>
 
 <template>
   <section class="u-stack" aria-labelledby="tx-list-heading" data-testid="tx-list">
-    <h2 id="tx-list-heading" class="u-subheading">{{ t("tx.list.title") }}</h2>
+    <h2 id="tx-list-heading" :class="bare ? 'u-sr-only' : 'u-subheading'">{{ t("tx.list.title") }}</h2>
     <InputAdd />
     <div class="u-row">
       <span class="text-body-2" data-testid="tx-list-count">{{ t("tx.list.count", { total: rows.length, selected: selectedCount }) }}</span>

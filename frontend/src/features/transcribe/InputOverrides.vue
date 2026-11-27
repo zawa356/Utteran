@@ -13,6 +13,19 @@ import type { MessageKey } from "../../i18n";
  * removes the override. Choices come only from the current environment answer. Rows that were
  * sent (accepted/unknown/sending) keep their frozen values and are not edited.
  */
+/**
+ * `fields` (#96): the Design Freeze categories show only their part of the form; staged changes
+ * live in the shared input controller, so switching category never loses them, and every part
+ * keeps the same Apply / Discard / Use-common row (which applies all staged fields).
+ */
+type Part = "engine" | "language" | "formats" | "output";
+const props = withDefaults(defineProps<{ fields?: readonly Part[]; bare?: boolean }>(), { fields: () => ["engine", "language", "formats", "output"] });
+const has = (part: Part) => props.fields.includes(part);
+const PART_FIELDS: Record<Part, readonly ("asrBackend" | "asrModel" | "asrDevice" | "language" | "formats" | "output")[]> = {
+  engine: ["asrBackend", "asrModel", "asrDevice"], language: ["language"], formats: ["formats"], output: ["output"],
+};
+const visibleFields = computed(() => props.fields.flatMap((p) => PART_FIELDS[p]));
+const subset = computed(() => props.fields.length < 4);
 const { core, list, form, common, gate } = useTranscription();
 const { t } = useI18n();
 
@@ -70,6 +83,11 @@ const outputPath = computed(() => {
 });
 const problems = computed(() => (list.value ? core.inputs.stagedProblems() : { output: null, formats: false }));
 const hasStaged = computed(() => Object.keys(staged.value).length > 0);
+// A change staged (or a problem) in another category is applied by the same Apply; say so here.
+const stagedElsewhere = computed(() => {
+  const keys = Object.keys(staged.value).map((k) => (k === "formatChanges" ? "formats" : k));
+  return subset.value && keys.some((k) => !(visibleFields.value as readonly string[]).includes(k));
+});
 const canApply = computed(() => rows.value.length > 0 && hasStaged.value && problems.value.output === null && !problems.value.formats);
 const commonOutput = computed(() => form.value.draft.outputDir);
 
@@ -81,13 +99,14 @@ function setOutputMode(mode: "inherit" | "custom" | null) {
 
 <template>
   <section class="u-stack" aria-labelledby="tx-ov-heading" data-testid="tx-ov">
-    <h2 id="tx-ov-heading" class="u-subheading">{{ t("tx.ov.title") }}</h2>
+    <h2 id="tx-ov-heading" :class="bare ? 'u-sr-only' : 'u-subheading'">{{ t("tx.ov.title") }}</h2>
     <p class="text-body-2" data-testid="tx-ov-count">{{ t("tx.ov.count", { count: rows.length }) }}</p>
     <p v-if="locked > 0" class="text-caption" data-testid="tx-ov-locked">{{ t("tx.ov.locked", { count: locked }) }}</p>
     <v-alert v-if="rows.length === 0" type="info" density="compact" data-testid="tx-ov-empty">{{ t("tx.ov.empty") }}</v-alert>
     <template v-else>
       <v-alert v-if="!options" type="info" density="compact" data-testid="tx-ov-no-options">{{ t("tx.ov.noOptions") }}</v-alert>
       <v-select
+        v-if="has('engine')"
         :label="t('tx.options.backend')"
         :items="backendItems"
         :model-value="shown('asrBackend')"
@@ -100,6 +119,7 @@ function setOutputMode(mode: "inherit" | "custom" | null) {
         @update:model-value="(v: string) => core.inputs.stage({ asrBackend: v })"
       />
       <v-select
+        v-if="has('engine')"
         :label="t('tx.options.model')"
         :items="modelItems"
         :model-value="shown('asrModel')"
@@ -112,6 +132,7 @@ function setOutputMode(mode: "inherit" | "custom" | null) {
         @update:model-value="(v: string) => core.inputs.stage({ asrModel: v })"
       />
       <v-select
+        v-if="has('engine')"
         :label="t('tx.options.device')"
         :items="deviceItems"
         :model-value="shown('asrDevice')"
@@ -124,6 +145,7 @@ function setOutputMode(mode: "inherit" | "custom" | null) {
         @update:model-value="(v: string) => core.inputs.stage({ asrDevice: v })"
       />
       <v-select
+        v-if="has('language')"
         :label="t('tx.options.language')"
         :items="languageItems"
         :model-value="shown('language')"
@@ -135,7 +157,7 @@ function setOutputMode(mode: "inherit" | "custom" | null) {
         data-testid="tx-ov-language"
         @update:model-value="(v: string) => core.inputs.stage({ language: v as JobLanguage })"
       />
-      <fieldset class="u-fieldset" data-testid="tx-ov-formats">
+      <fieldset v-if="has('formats')" class="u-fieldset" data-testid="tx-ov-formats">
         <legend class="text-body-2">{{ t("tx.options.formats") }}</legend>
         <div class="u-row">
           <v-checkbox
@@ -154,7 +176,7 @@ function setOutputMode(mode: "inherit" | "custom" | null) {
         <p v-if="problems.formats" class="text-caption text-error" data-testid="tx-ov-formats-empty">{{ t("tx.ov.formatsEmpty") }}</p>
       </fieldset>
 
-      <fieldset class="u-fieldset" data-testid="tx-ov-output">
+      <fieldset v-if="has('output')" class="u-fieldset" data-testid="tx-ov-output">
         <legend class="text-body-2">{{ t("tx.output.title") }}</legend>
         <v-radio-group :model-value="outputMode" inline hide-details @update:model-value="(v: unknown) => setOutputMode(v as 'inherit' | 'custom' | null)">
           <v-radio :label="t('tx.ov.outputInherit')" value="inherit" data-testid="tx-ov-output-inherit" />
@@ -179,10 +201,11 @@ function setOutputMode(mode: "inherit" | "custom" | null) {
         </template>
       </fieldset>
 
+      <p v-if="stagedElsewhere" class="text-caption" role="status" data-testid="tx-ov-staged-elsewhere">{{ t("ui3.ov.stagedElsewhere") }}</p>
       <div class="u-row">
         <v-btn color="primary" variant="tonal" :disabled="!canApply" data-testid="tx-ov-apply" @click="core.inputs.applyStaged()">{{ t("tx.ov.apply", { count: rows.length }) }}</v-btn>
         <v-btn variant="text" :disabled="!hasStaged" data-testid="tx-ov-discard" @click="core.inputs.discardStaged()">{{ t("tx.ov.discard") }}</v-btn>
-        <v-btn variant="text" data-testid="tx-ov-reset" @click="core.inputs.resetToCommon(['asrBackend', 'asrModel', 'asrDevice', 'language', 'formats', 'output'])">{{ t("tx.ov.reset", { count: rows.length }) }}</v-btn>
+        <v-btn variant="text" data-testid="tx-ov-reset" @click="core.inputs.resetToCommon([...visibleFields])">{{ subset ? t("ui3.ov.resetCategory", { count: rows.length }) : t("tx.ov.reset", { count: rows.length }) }}</v-btn>
       </div>
       <p class="text-caption">{{ t("tx.ov.note") }}</p>
     </template>

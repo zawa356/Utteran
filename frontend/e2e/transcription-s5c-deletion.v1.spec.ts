@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, shot, test, isWorksetPath } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot, test, isWorksetPath, fillOutput, revealLibrary } from "./fixtures";
 
 /**
  * Bundle C2c against the real FastAPI app in the `--next-ui-v1` shape (layout v8): the history-only
@@ -49,6 +49,7 @@ function ownDirectory(jobId: string): string | null {
 }
 
 async function library(page: Page, request: APIRequestContext): Promise<void> {
+  await revealLibrary(page);
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
   const presets = await api<{ items: { name: string }[] }>(request, "/api/v1/presets");
   if (!presets.items.some((p) => p.name === PRESET)) {
@@ -87,7 +88,7 @@ async function ensureQueueRunning(page: Page): Promise<void> {
 async function finishedJob(page: Page, request: APIRequestContext, seen: Request[], name: string): Promise<string> {
   await page.getByTestId("mode-expert").click();
   await library(page, request);
-  await page.getByTestId("v1-output-path").locator("input").fill(OUT);
+  await fillOutput(page, OUT);
   // Only the file added now is selected (earlier rows of this page stay unselected).
   const none = page.getByTestId("tx-list-select-none");
   if ((await none.count()) > 0 && (await none.isEnabled())) await none.click();
@@ -210,7 +211,7 @@ test("a retry chain: the person picks one internal job; the other attempt is not
   expect(pause.status()).toBe(200);
   await app.getByTestId("mode-expert").click();
   await library(app, request);
-  await app.getByTestId("v1-output-path").locator("input").fill(OUT);
+  await fillOutput(app, OUT);
   await app.getByTestId("tx-input-path").locator("input").fill(input("meeting.wav"));
   await app.getByTestId("tx-input-add-typed").click();
   await app.getByTestId("tx-list-select-none").click();

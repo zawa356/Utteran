@@ -100,10 +100,54 @@ export async function choose(page: Page, testid: string, optionText: RegExp | st
   await page.getByRole("option", { name: optionText }).click();
 }
 
-/** Expert keeps single-job recovery behind its disclosure; Normal shows it directly. */
+/**
+ * Expert keeps single-job recovery behind its disclosure; Normal shows it directly. Since #96 the
+ * queue and the server's job list inside it are folded until needed: open that fold too.
+ */
 export async function openSingleJobTools(page: Page): Promise<void> {
   const tools = page.getByTestId("v1-single-tools");
   if (await tools.isVisible() && await tools.getAttribute("open") === null) {
     await page.getByTestId("v1-single-tools-toggle").click();
   }
+  await openRunRecords(page);
+}
+
+/**
+ * UI-3 #96: Expert ② shows one Design Freeze category at a time for one target (the common
+ * defaults or the files selected in ①). Opens the given target and category; no value changes.
+ */
+export async function inspectorCategory(page: Page, target: "common" | "selection", category: "asr" | "prompt" | "diarization" | "output" | "advanced"): Promise<void> {
+  await page.getByTestId(`inspector-tab-${target}`).click();
+  await page.getByTestId(`category-${category}`).click();
+  await expect(page.getByTestId(`category-panel-${category}`)).toBeVisible();
+}
+
+/** UI-3 #96: Normal keeps the queue and the server's job list folded until they are needed. */
+export async function openRunRecords(page: Page): Promise<void> {
+  const toggle = page.locator("[data-testid='v1-records-toggle']:visible").first();
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+}
+
+/** UI-3 #96: Normal keeps the model, Preset/Policy and the environment folded under "details". */
+export async function openNormalDetails(page: Page): Promise<void> {
+  const toggle = page.getByTestId("normal-details-toggle");
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+}
+
+/**
+ * UI-3 #96: where the Preset/Policy library lives — Normal "details", Expert ② common › advanced.
+ * Only reveals it (no value changes).
+ */
+export async function revealLibrary(page: Page): Promise<void> {
+  const mode = await page.locator("[data-mode]").first().getAttribute("data-mode");
+  if (mode === "expert") await inspectorCategory(page, "common", "advanced");
+  else await openNormalDetails(page);
+}
+
+/** UI-3 #96: the common output folder — Normal "ファイル" card, Expert ② common › output. */
+export async function fillOutput(page: Page, folder: string): Promise<void> {
+  const mode = await page.locator("[data-mode]").first().getAttribute("data-mode");
+  if (mode === "expert") await inspectorCategory(page, "common", "output");
+  await page.getByTestId("v1-output-path").locator("input").fill(folder);
 }

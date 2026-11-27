@@ -1,10 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { choose, expect, SESSION_HEADER } from "./fixtures";
+import { choose, expect, inspectorCategory, revealLibrary, SESSION_HEADER, fillOutput } from "./fixtures";
 import { test } from "./isolatedV1";
 
 async function createPreset(page: Page, name: string) {
+  await revealLibrary(page);
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
   await page.getByTestId("v1-preset-create-open").click();
   await page.getByTestId("v1-preset-name").locator("input").fill(name);
@@ -24,6 +25,7 @@ test("Normal uses an adopted glossary revision, then duplicates and deletes the 
     },
   });
   expect(policy.status()).toBe(201);
+  await revealLibrary(app);
   await app.getByTestId("v1-lib-reload").click();
   await createPreset(app, "EA synthetic");
   await app.getByTestId("ea-manage").click();
@@ -76,7 +78,7 @@ test("Normal uses an adopted glossary revision, then duplicates and deletes the 
 
   await app.getByTestId("tx-input-path").locator("input").fill(join(backend.root, "in", "meeting.wav"));
   await app.getByTestId("tx-input-add-typed").click();
-  await app.getByTestId("v1-output-path").locator("input").fill(join(backend.root, "out"));
+  await fillOutput(app, join(backend.root, "out"));
   await app.getByTestId("v1-check").click();
   await expect(app.getByTestId("ea-validation-warnings")).toContainText("省かれる可能性");
   await expect(app.getByTestId("ea-validation-warnings")).toContainText("未検証");
@@ -89,6 +91,7 @@ test("Normal uses an adopted glossary revision, then duplicates and deletes the 
   expect(await jobs.text()).not.toContain(term);
 
   await app.reload();
+  await revealLibrary(app);
   await expect(app.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
   await choose(app, "v1-preset-select", /EA synthetic/);
   await expect(frozen).toContainText("保存済み用語集：3語");
@@ -123,6 +126,7 @@ test("Normal uses an adopted glossary revision, then duplicates and deletes the 
 
   await editor.getByRole("button", { name: "閉じる", exact: true }).click();
   await app.reload();
+  await revealLibrary(app);
   await expect(app.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
   await app.getByTestId("v1-preset-select").click();
   await expect(app.getByRole("option", { name: /EA synthetic/ })).toHaveCount(0);
@@ -162,6 +166,7 @@ test("Expert reconciles a lost write response with GET and keeps the selected re
   await expect(app.getByTestId("v1-preset-newer")).toBeVisible();
   await app.getByTestId("tx-input-path").locator("input").fill(join(backend.root, "in", "meeting.wav"));
   await app.getByTestId("tx-input-add-typed").click();
+  await inspectorCategory(app, "selection", "prompt");
   await app.getByTestId("ea-row-glossary").click();
   const rowEditor = app.getByRole("dialog").filter({ has: app.getByTestId("ea-glossary") });
   await rowEditor.getByTestId("ea-glossary").locator("textarea").first().fill("行の用語");

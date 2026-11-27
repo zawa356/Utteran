@@ -74,3 +74,111 @@
 [data-api-mode="v1-dev"] .u-row .v-chip {
   max-inline-size: 100%;
 }
+
+/*
+ * UI-3 #96: Design Freeze (iteration 5) alignment of the v1 workspace. Values follow the
+ * prototype's preview.css (.p-card / .p-fields / .p-formats / .p-filebox / .p-editor) so the product
+ * reads like the approved design. Scoped to the v1 shape: the legacy `--next-ui` screens are unchanged.
+ */
+.u-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+[data-api-mode="v1-dev"] .u-fcard {
+  padding: 16px;
+}
+[data-api-mode="v1-dev"] .u-fcard > * + * {
+  margin-top: 12px;
+}
+[data-api-mode="v1-dev"] .u-fcard > .v-card__underlay + *,
+[data-api-mode="v1-dev"] .u-fcard > .v-card__loader + * {
+  margin-top: 0;
+}
+[data-api-mode="v1-dev"] .u-fcard__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+[data-api-mode="v1-dev"] .u-fcard__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+[data-api-mode="v1-dev"] .u-tight > * + * {
+  margin-top: 6px;
+}
+/* The chosen file: name first, the full path below (the prototype's file box). */
+[data-api-mode="v1-dev"] .u-filebox {
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: rgba(var(--v-theme-on-surface), 0.05);
+}
+[data-api-mode="v1-dev"] .u-filebox > .u-path {
+  margin: 2px 0 0;
+}
+/* Everyday settings: two columns from a 520 px card, formats always on their own row (#31). */
+[data-api-mode="v1-dev"] .u-fields-wrap {
+  container-type: inline-size;
+}
+[data-api-mode="v1-dev"] .u-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@container (min-width: 520px) {
+  [data-api-mode="v1-dev"] .u-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
+  }
+}
+[data-api-mode="v1-dev"] .u-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+[data-api-mode="v1-dev"] .u-field--wide {
+  grid-column: 1 / -1;
+}
+[data-api-mode="v1-dev"] .u-field__label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0;
+}
+[data-api-mode="v1-dev"] .u-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+[data-api-mode="v1-dev"] .u-chips > .v-chip {
+  min-width: 4.75rem;
+  justify-content: center;
+}
+/* Folded "details" sections (prototype .p-editor__fold). */
+[data-api-mode="v1-dev"] .u-fold {
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 4px;
+}
+[data-api-mode="v1-dev"] .u-fold .v-expansion-panel-title {
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+[data-api-mode="v1-dev"] .u-fold .v-expansion-panel-text__wrapper {
+  padding: 8px 12px 12px;
+}
+[data-api-mode="v1-dev"] .u-run-actions > .v-btn {
+  flex: 1 1 12rem;
+}
+[data-api-mode="v1-dev"] .u-field-btn {
+  margin-top: 2px;
+}

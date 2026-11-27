@@ -1,4 +1,4 @@
-import { expect, isWorksetPath } from "./fixtures";
+import { expect, inspectorCategory, isWorksetPath } from "./fixtures";
 import { test } from "./isolatedV1";
 import { expectSplitterFeedback } from "./splitterStyle";
 
@@ -83,6 +83,7 @@ test("D4-A keeps drafts and bounded separator widths through switches", async ({
   const sidebar = app.getByTestId("resize-sidebar");
   await sidebar.press("End");
   await expect(sidebar).toHaveAttribute("aria-valuenow", "360");
+  await inspectorCategory(app, "common", "advanced");
   await app.getByTestId("v1-policy-create-open").click();
   const name = app.getByTestId("v1-policy-name").locator("input");
   await name.fill("Synthetic draft");

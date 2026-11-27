@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page, Request, Route } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, SESSION_HEADER, shot, test, isWorksetPath } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, SESSION_HEADER, shot, test, isWorksetPath, fillOutput, revealLibrary } from "./fixtures";
 import { test as isolatedTest } from "./isolatedV1";
 
 /**
@@ -49,6 +49,7 @@ interface QueueWire {
 // ------------------------------------------------------------------ real-data helpers
 
 async function library(page: Page, request: APIRequestContext): Promise<void> {
+  await revealLibrary(page);
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
   const presets = await api<{ items: { name: string }[] }>(request, "/api/v1/presets");
   if (!presets.items.some((p) => p.name === PRESET)) {
@@ -76,7 +77,7 @@ async function library(page: Page, request: APIRequestContext): Promise<void> {
 async function expert(page: Page, request: APIRequestContext, files: string[], root = ROOT): Promise<void> {
   await page.getByTestId("mode-expert").click();
   await library(page, request);
-  await page.getByTestId("v1-output-path").locator("input").fill(`${root}/out`);
+  await fillOutput(page, `${root}/out`);
   for (const name of files) {
     await page.getByTestId("tx-input-path").locator("input").fill(input(name, root));
     await page.getByTestId("tx-input-add-typed").click();

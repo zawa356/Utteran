@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import type { APIRequestContext, Page } from "@playwright/test";
-import { choose, expect, SESSION, SESSION_HEADER } from "./fixtures";
+import { choose, expect, SESSION, SESSION_HEADER, fillOutput, revealLibrary } from "./fixtures";
 import { test } from "./isolatedV1";
 
 /**
@@ -60,7 +60,7 @@ test("first run, Normal → Expert, autosave and reload restore the same workset
   await choose(app, "v1-policy-select", /EB CPU/);
   await addTyped(app, input(backend.root, "meeting.wav"));
   await addTyped(app, input(backend.root, "other.wav"));
-  await app.getByTestId("v1-output-path").locator("input").fill(join(backend.root, "out"));
+  await fillOutput(app, join(backend.root, "out"));
   // A half-typed path is not saved.
   await app.getByTestId("tx-input-path").locator("input").fill(input(backend.root, "half-typed.wav"));
   await saved(app);
@@ -87,6 +87,7 @@ test("first run, Normal → Expert, autosave and reload restore the same workset
   await expect(rows).toHaveCount(2);
   await expect(rows.filter({ hasText: "meeting.wav" }).getByTestId("tx-list-check").locator("input")).not.toBeChecked();
   await expect(rows.filter({ hasText: "other.wav" }).getByTestId("tx-list-check").locator("input")).toBeChecked();
+  await revealLibrary(app);
   await expect(app.getByTestId("v1-preset-frozen")).toContainText("EB 合成");
   await expect(app.getByTestId("tx-input-path").locator("input")).toHaveValue("");
   await app.getByTestId("mode-normal").click();
@@ -104,7 +105,7 @@ test("new, rename, switch and delete keep each workset's rows; deleting changes 
   await createPreset(app, "EBD 合成");
   await choose(app, "v1-policy-select", /EBD CPU/);
   await addTyped(app, input(backend.root, "meeting.wav"));
-  await app.getByTestId("v1-output-path").locator("input").fill(join(backend.root, "out"));
+  await fillOutput(app, join(backend.root, "out"));
   await saved(app);
   // One real job on the first workset.
   await app.getByTestId("v1-check").click();
@@ -195,7 +196,7 @@ test("while another workset is being opened, the v1 check cannot start and nothi
   await createPreset(app, "EBX 合成");
   await choose(app, "v1-policy-select", /EBX CPU/);
   await addTyped(app, input(backend.root, "meeting.wav"));
-  await app.getByTestId("v1-output-path").locator("input").fill(join(backend.root, "out"));
+  await fillOutput(app, join(backend.root, "out"));
   await saved(app);
   await app.getByTestId("ws-menu").click();
   await app.getByTestId("ws-new").click();

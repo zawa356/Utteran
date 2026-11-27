@@ -1,6 +1,6 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, shot, isWorksetPath } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot, isWorksetPath, revealLibrary, fillOutput, inspectorCategory } from "./fixtures";
 import { test } from "./isolatedV1";
 
 /**
@@ -48,11 +48,13 @@ async function loadRecent(page: Page): Promise<void> {
 }
 
 async function listsLoaded(page: Page): Promise<void> {
+  await revealLibrary(page);
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
 }
 
 /** Use this spec's own Preset/Policy, creating them once (explicitly) when they do not exist yet. */
 async function library(page: Page, request: APIRequestContext): Promise<void> {
+  await revealLibrary(page);
   await listsLoaded(page);
   const presets = await api<{ items: { name: string }[] }>(request, "/api/v1/presets");
   if (!presets.items.some((p) => p.name === PRESET)) {
@@ -87,7 +89,7 @@ async function addInput(page: Page, path: string): Promise<void> {
 async function expert(page: Page, request: APIRequestContext, files: string[], root: string): Promise<void> {
   await page.getByTestId("mode-expert").click();
   await library(page, request);
-  await page.getByTestId("v1-output-path").locator("input").fill(`${root}/out`);
+  await fillOutput(page, `${root}/out`);
   for (const name of files) await addInput(page, input(root, name));
   await page.getByTestId("tx-list-select-all").click();
   await expect(page.getByTestId("v1-batch-count")).toContainText(String(files.length));
@@ -468,6 +470,7 @@ test("D3-B Expert results and history share explicit rerun and verified artifact
   await expert(app, request, ["meeting.wav"], root);
   const [id] = await submitBatch(app, seen);
   await ensureQueueRunning(app);
+  await inspectorCategory(app, "selection", "output");
   await app.getByTestId("tx-ov-output-custom").click();
   await app.getByTestId("tx-ov-output-path").locator("input").fill(customOutput);
   await app.getByTestId("tx-ov-apply").click();

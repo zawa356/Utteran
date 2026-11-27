@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, shot, test, isWorksetPath } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, shot, test, isWorksetPath, revealLibrary, fillOutput } from "./fixtures";
 
 /**
  * UI-3 S5-A against the real FastAPI app in the `--next-ui-v1` shape (tools/ui2/serve_next_ui.py
@@ -45,7 +45,7 @@ async function addInput(page: Page, path: string): Promise<void> {
 }
 
 async function setOutput(page: Page): Promise<void> {
-  await page.getByTestId("v1-output-path").locator("input").fill(OUT);
+  await fillOutput(page, OUT);
 }
 
 async function createPreset(page: Page, name: string, model = "large-v3-turbo"): Promise<void> {
@@ -61,6 +61,7 @@ async function createPreset(page: Page, name: string, model = "large-v3-turbo"):
 
 /** Both lists answered (a select opened while its list re-renders loses the click). */
 async function listsLoaded(page: Page): Promise<void> {
+  await revealLibrary(page);
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
 }
 
@@ -91,6 +92,7 @@ test("first start: empty store, nothing created implicitly; explicit Preset/Poli
   await expect(app.getByTestId("v1-mode-notice")).toContainText("Expert");
   await expect(app.getByTestId("v1-presets-empty")).toBeVisible();
   await expect(app.getByTestId("v1-policies-empty")).toBeVisible();
+  await openSingleJobTools(app);
   await expect(app.getByTestId("v1-queue-dispatch")).toContainText(/停止中/);
   // Loading the screen and adding an input only read.
   await addInput(app, input("meeting.wav"));
@@ -189,7 +191,7 @@ test("refusals are shown with reasons and create no job: unready model (409), ba
   await expect(app.getByTestId("v1-submit")).toBeDisabled();
 
   await useSaved(app);
-  await app.getByTestId("v1-output-path").locator("input").fill(`${ROOT}/absent-folder`);
+  await fillOutput(app, `${ROOT}/absent-folder`);
   await app.getByTestId("v1-check").click();
   await expect(app.getByTestId("v1-rejected-issues")).toContainText("/files/0/output_dir");
   expect((await serverJobs(request)).length).toBe(before);
@@ -266,6 +268,7 @@ test("Expert uses the same v1 controller; the batch panel cannot submit before i
   await app.reload();
   await expect(app.getByTestId("app-ready")).toBeVisible();
   await expect(app.getByTestId("v1-unknown")).toHaveCount(0); // page memory only
+  await openSingleJobTools(app);
   await expect(app.getByTestId("v1-recent-item").first()).toBeVisible();
   expect(writes(seen)).toEqual([]);
 });
@@ -312,6 +315,7 @@ test("PR #48 P2: with more than 100 durable jobs the list reads every cursor pag
     last = (await submitted.json()).jobs[0].id;
   }
   const seen = recordApi(app);
+  await openSingleJobTools(app);
   await app.getByTestId("v1-recent-reload").click();
   await expect(app.getByTestId("v1-recent-item")).toHaveCount(20);
   await expect(app.getByTestId("v1-recent-item").first()).toContainText(last);
@@ -336,6 +340,7 @@ test("PR #48 additional P2: while a cancel is pending or unknown the submit butt
     await route.abort("failed");
   });
   const before = (await serverJobsAll(request)).length;
+  await openSingleJobTools(app);
   await app.getByTestId("v1-recent-follow").first().click(); // a waiting job from the previous test
   await expect(app.getByTestId("v1-status")).toHaveText(/待機中/);
   await app.getByTestId("v1-cancel").click();
