@@ -5,16 +5,15 @@ import GlossaryEditor from "./GlossaryEditor.vue";
 import PresetManager from "./PresetManager.vue";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCodeText, useV1 } from "../../composables/v1";
-import { MAX_JOB_PATH_LENGTH } from "../../domain/paths";
 import { DEFAULT_PRESET_MODEL, type PresetDraft, presetDraftIssues, presetSettings, summarize, V1_LANGUAGES } from "../../domain/v1/settings";
 import type { MessageKey } from "../../i18n";
 
 /**
- * S5-A (`--next-ui-v1`): the saved Preset/Policy revisions this start uses, the screen's
- * differences (B5 `common_overrides`) and the output folder. Nothing is saved implicitly: a first
- * Preset/Policy is created only through "check → save" here.
+ * S5-A (`--next-ui-v1`): the saved Preset/Policy revisions a start uses (split out of the former
+ * V1Settings for the #96 Design Freeze layout; behaviour unchanged). Nothing is saved implicitly:
+ * a first Preset/Policy is created only through "check → save" here.
  */
-const { core, v1, library, form } = useV1();
+const { v1, library } = useV1();
 const { t, reason } = useCodeText();
 
 const presetItems = computed(() => library.value.presets.items.map((p: PresetV1) => ({ title: t("v1.lib.itemTitle", { name: p.name, revision: p.revision }), value: p.id })));
@@ -22,22 +21,10 @@ const policyItems = computed(() => library.value.policies.items.map((p: PolicyV1
 const preset = computed(() => library.value.preset.item);
 const policy = computed(() => library.value.policy.item);
 const presetSummary = computed(() => (preset.value ? summarize(preset.value.settings) : null));
-const screen = computed(() => library.value.screen);
-const languageItems = computed(() => [
-  { title: t("v1.diff.inherit", { value: presetSummary.value ? langText(presetSummary.value.language) : "" }), value: null },
-  ...V1_LANGUAGES.map((l) => ({ title: langText(l), value: l })),
-]);
-const effectiveFormats = computed<readonly string[]>(() => screen.value.formats ?? presetSummary.value?.formats ?? []);
-const diffCount = computed(() => (preset.value ? (screen.value.language !== null && screen.value.language !== presetSummary.value?.language ? 1 : 0) + (screen.value.formats !== null && screen.value.formats.join() !== presetSummary.value?.formats.join() ? 1 : 0) : 0));
 
 function langText(code: string): string {
   const key = `tx.lang.${code}`;
   return (V1_LANGUAGES as readonly string[]).includes(code) ? t(key as MessageKey) : code;
-}
-function toggleFormat(f: OutputFormatV1, on: boolean) {
-  const base = [...effectiveFormats.value] as OutputFormatV1[];
-  const next = on ? [...new Set([...base, f])] : base.filter((x) => x !== f);
-  v1.library.setFormats(OUTPUT_FORMATS_V1.filter((x) => next.includes(x)));
 }
 
 // ---- explicit creation (check → save)
@@ -62,14 +49,11 @@ const policyForm = ref({ open: false, confirm: false, name: "" });
 async function savePolicy() {
   if (await v1.library.createPolicy(policyForm.value.name)) policyForm.value = { open: false, confirm: false, name: "" };
 }
-const draft = computed(() => form.value.draft);
 </script>
 
 <template>
-  <section class="u-stack" aria-labelledby="v1-settings-heading" data-testid="v1-settings" :data-lists="`${library.presets.phase}/${library.policies.phase}`">
-    <h2 id="v1-settings-heading" class="u-subheading">{{ t("v1.lib.title") }}</h2>
+  <section class="u-stack" :aria-label="t('v1.lib.title')" data-testid="v1-settings" :data-lists="`${library.presets.phase}/${library.policies.phase}`">
     <p class="text-caption">{{ t("v1.lib.explain") }}</p>
-
     <!-- Preset -->
     <p class="text-caption">{{ t("ea.presetCount", { count: presetItems.length }) }}</p>
     <h3 class="u-subheading">{{ t("v1.lib.preset") }}</h3>
@@ -225,56 +209,5 @@ const draft = computed(() => form.value.draft);
         </template>
       </v-alert>
     </v-card>
-
-    <!-- Differences from the Preset (common_overrides) -->
-    <h3 class="u-subheading">{{ t("v1.diff.title") }}</h3>
-    <p class="text-caption" data-testid="v1-diff-count">{{ t("v1.diff.explain", { count: diffCount }) }}</p>
-    <v-select
-      :label="t('tx.options.language')"
-      :items="languageItems"
-      :model-value="screen.language"
-      :disabled="!preset"
-      hide-details
-      data-testid="v1-diff-language"
-      @update:model-value="(v: string | null) => v1.library.setLanguage(v)"
-    />
-    <fieldset class="u-fieldset" data-testid="v1-diff-formats">
-      <legend class="text-body-2">{{ t("tx.options.formats") }}</legend>
-      <div class="u-row">
-        <v-checkbox
-          v-for="f in OUTPUT_FORMATS_V1"
-          :key="f"
-          :label="f"
-          :model-value="effectiveFormats.includes(f)"
-          :disabled="!preset"
-          density="compact"
-          hide-details
-          :data-testid="`v1-diff-format-${f}`"
-          @update:model-value="(on: boolean | null) => toggleFormat(f, on === true)"
-        />
-      </div>
-      <p v-if="preset && !effectiveFormats.includes('json')" class="text-caption" role="status" data-testid="v1-diff-no-json">{{ t("ec.noJsonWarning") }}</p>
-      <v-btn v-if="screen.formats !== null" variant="text" size="small" data-testid="v1-diff-formats-reset" @click="v1.library.setFormats(null)">{{ t("v1.diff.reset") }}</v-btn>
-    </fieldset>
-
-    <!-- Output folder (the S1 saved default or an explicit choice) -->
-    <h3 class="u-subheading">{{ t("tx.output.title") }}</h3>
-    <div class="u-row">
-      <v-btn variant="outlined" :loading="form.picking === 'output_folder'" :disabled="form.picking !== null" data-testid="v1-output-pick" @click="core.transcription.pick('output_folder', core.host)">{{ t("tx.output.pick") }}</v-btn>
-    </div>
-    <v-text-field
-      :label="t('tx.output.label')"
-      :model-value="draft.outputDir"
-      :readonly="form.picking === 'output_folder'"
-      :maxlength="MAX_JOB_PATH_LENGTH + 1"
-      autocomplete="off"
-      spellcheck="false"
-      hide-details="auto"
-      data-testid="v1-output-path"
-      @update:model-value="(v: string) => core.transcription.edit({ outputDir: v ?? '' })"
-    />
-    <p v-if="draft.outputSource" class="text-caption">{{ t(`tx.output.source.${draft.outputSource}` as MessageKey) }}</p>
-    <v-alert v-if="form.pickError" type="info" role="status">{{ form.pickError.reason === "host_unavailable" ? t("tx.pick.hostUnavailable") : t("tx.pick.failed") }}</v-alert>
-    <p class="text-caption">{{ t("v1.output.checked") }}</p>
   </section>
 </template>

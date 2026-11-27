@@ -12,14 +12,15 @@ import InputList from "../transcribe/InputList.vue";
 import InputOverrides from "../transcribe/InputOverrides.vue";
 import TranscribeJob from "../transcribe/TranscribeJob.vue";
 import TranscribeOptions from "../transcribe/TranscribeOptions.vue";
-import RowGlossary from "../transcribe/RowGlossary.vue";
 import V1Batch from "../transcribe/V1Batch.vue";
 import V1Job from "../transcribe/V1Job.vue";
 import V1JobBoard from "../transcribe/V1JobBoard.vue";
-import V1Settings from "../transcribe/V1Settings.vue";
 import WorksetBar from "../transcribe/WorksetBar.vue";
+import ExpertInspector from "./ExpertInspector.vue";
 
-const { shell, apiMode } = useCore();
+const core = useCore();
+const { shell, apiMode } = core;
+const inputsState = useStore(core.inputs.store);
 const v1 = apiMode === "v1-dev";
 const state = useStore(shell.store);
 const { t } = useI18n();
@@ -47,7 +48,8 @@ const panes = computed(() => (v1 && columns.value === 2 ? order.slice(1) : order
   value, title: v1 ? `${order.indexOf(value) + 1} ${title(value)}` : title(value),
 })));
 const visible = (pane: ExpertPane) => !v1 || columns.value === 3 || (columns.value === 2 && pane === "inputs") || selected.value === pane;
-const current = (pane: ExpertPane) => ({ "u-pane": true, "u-pane--current": state.value.expertPane === pane });
+const current = (pane: ExpertPane) => ({ "u-pane": true, "u-pane--surface": v1, "u-pane--current": state.value.expertPane === pane });
+const selectedCount = computed(() => (v1 ? inputsState.value.rows.filter((r) => r.selected).length : 0));
 const node = (pane: ExpertPane) => area.value?.querySelector<HTMLElement>(`[data-pane="${pane}"]`);
 const focusedPane = () => order.find((pane) => node(pane)?.contains(document.activeElement));
 
@@ -85,7 +87,7 @@ if (v1) {
     :data-columns="v1 ? columns : undefined"
     data-testid="expert-workspace"
   >
-    <v-card v-if="v1" class="pa-2 mb-2 u-workset-card"><WorksetBar /></v-card>
+    <WorksetBar v-if="v1" compact class="u-workset-card" />
     <v-btn-toggle
       v-if="!v1 || columns < 3"
       class="u-pane-switch"
@@ -105,8 +107,10 @@ if (v1) {
       <section v-show="visible('inputs')" id="u-pane-inputs" :class="current('inputs')" :tabindex="v1 ? -1 : undefined" data-pane="inputs" :aria-label="title('inputs')" data-testid="pane-inputs">
         <h2 v-if="v1" class="u-pane-title">
           <span aria-hidden="true">1</span>{{ title("inputs") }}
+          <span class="u-pane-meta" aria-hidden="true" data-testid="pane-inputs-meta">{{ t("ui3.inspector.selectedShort", { count: selectedCount }) }}</span>
         </h2>
-        <v-card class="pa-3"><InputList /></v-card>
+        <div v-if="v1" class="u-pane-block"><InputList bare /></div>
+        <v-card v-else class="pa-3"><InputList /></v-card>
       </section>
       <ResizeHandle
         v-if="v1 && columns > 1"
@@ -122,15 +126,14 @@ if (v1) {
       <section v-show="visible('inspector')" id="u-pane-inspector" :class="current('inspector')" :tabindex="v1 ? -1 : undefined" data-pane="inspector" :aria-label="title('inspector')" data-testid="pane-inspector">
         <h2 v-if="v1" class="u-pane-title">
           <span aria-hidden="true">2</span>{{ title("inspector") }}
+          <span class="u-pane-meta" aria-hidden="true">{{ t("ui3.inspector.targetShort", { count: selectedCount }) }}</span>
         </h2>
-        <v-card v-if="v1" class="pa-3"><V1Settings /></v-card>
-        <v-card class="pa-3" :class="{ 'mt-3': v1 }">
-          <InputOverrides />
-          <RowGlossary v-if="v1" class="mt-2" />
-          <p v-if="v1" class="mt-2 text-caption" data-testid="v1-overrides-note">{{ t("v1.overrides.note") }}</p>
-        </v-card>
-        <v-card v-if="!v1" class="pa-3 mt-3"><TranscribeOptions /></v-card>
-        <v-card class="pa-3 mt-3"><EnvironmentPanel detail /></v-card>
+        <div v-if="v1" class="u-pane-block"><ExpertInspector /></div>
+        <template v-else>
+          <v-card class="pa-3"><InputOverrides /></v-card>
+          <v-card class="pa-3 mt-3"><TranscribeOptions /></v-card>
+          <v-card class="pa-3 mt-3"><EnvironmentPanel detail /></v-card>
+        </template>
       </section>
       <ResizeHandle
         v-if="v1 && columns === 3"
@@ -148,14 +151,15 @@ if (v1) {
         <h2 v-if="v1" class="u-pane-title">
           <span aria-hidden="true">3</span>{{ title("queue") }}
         </h2>
-        <template v-if="v1">
-          <v-card class="pa-3"><V1Batch /></v-card>
-          <v-card class="pa-3 mt-3"><V1JobBoard /></v-card>
-          <details class="u-single-tools mt-3" data-testid="v1-single-tools">
+        <div v-if="v1" class="u-pane-block u-stack">
+          <V1Batch />
+          <v-divider />
+          <V1JobBoard />
+          <details class="u-single-tools" data-testid="v1-single-tools">
             <summary data-testid="v1-single-tools-toggle">{{ t("expert.singleTools") }}</summary>
-            <v-card class="pa-3 mt-2"><V1Job /></v-card>
+            <div class="pt-2"><V1Job /></div>
           </details>
-        </template>
+        </div>
         <template v-else>
           <v-card class="pa-3"><BatchPanel /></v-card>
           <v-card class="pa-3 mt-3 u-stack">
@@ -202,18 +206,41 @@ if (v1) {
   font-size: 1rem;
   background: rgb(var(--v-theme-background));
 }
-.u-pane-title span {
+.u-pane-title > span:first-child {
   display: inline-grid;
   place-items: center;
   width: 24px;
   height: 24px;
   flex: none;
-  border-radius: 4px;
-  color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.12);
+  color: rgb(var(--v-theme-on-primary));
+  background: rgb(var(--v-theme-primary));
+  border-radius: 50%;
 }
 .u-workset-card {
   flex: none;
+  margin-bottom: 8px;
+}
+/* #96: each pane is one surface with its numbered heading inside (prototype .p-pane / .p-panehead). */
+.u-expert-layout .u-pane--surface {
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 4px;
+  padding: 0;
+}
+.u-pane--surface > .u-pane-title {
+  padding: 10px 12px 8px;
+  margin: 0 0 0;
+  border-bottom: 1px solid rgba(var(--v-theme-primary), 0.35);
+  background: rgb(var(--v-theme-surface));
+}
+.u-pane-block {
+  padding: 10px 12px 12px;
+}
+.u-pane-meta {
+  margin-inline-start: auto;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
 }
 .u-single-tools > summary {
   cursor: pointer;

@@ -13,6 +13,8 @@ import RowStatusChip from "./RowStatusChip.vue";
  * Normal mode input: the shared list, shown short. One *current* file (the list's primary row) is
  * started here like S3-A; several files, per-file settings and the staged batch live in Expert.
  */
+/** `bare`: the surrounding Design Freeze card names the area, so the heading is for screen readers only. */
+defineProps<{ bare?: boolean }>();
 const { core, list, batch, primary, primaryStatus, statusOf } = useTranscription();
 const { t } = useI18n();
 
@@ -31,7 +33,7 @@ const batchCounts = computed(() => (batchRun.value ? countItems(batchRun.value.i
 
 <template>
   <section class="u-stack" aria-labelledby="tx-input-heading" data-testid="tx-input">
-    <h2 id="tx-input-heading" class="u-subheading">{{ t("tx.input.title") }}</h2>
+    <h2 id="tx-input-heading" :class="bare ? 'u-sr-only' : 'u-subheading'">{{ t("tx.input.title") }}</h2>
     <InputAdd />
 
     <div v-if="primary" class="u-stack" data-testid="tx-input-primary">
@@ -44,7 +46,10 @@ const batchCounts = computed(() => (batchRun.value ? countItems(batchRun.value.i
         data-testid="tx-input-choose"
         @update:model-value="(v: string) => core.inputs.setPrimary(v)"
       />
-      <p class="text-body-2 u-path" data-testid="tx-input-current">{{ primary.inputPath }}</p>
+      <div :class="{ 'u-filebox': bare }">
+        <div v-if="bare" class="text-body-1 font-weight-medium u-break" data-testid="tx-input-name">{{ fileName(primary.inputPath) ?? "?" }}</div>
+        <p class="text-body-2 u-path" data-testid="tx-input-current">{{ primary.inputPath }}</p>
+      </div>
       <div class="u-row">
         <RowStatusChip :status="primaryStatus" testid="tx-input-status" />
         <v-chip v-if="primary.availability === 'missing' || primary.availability === 'not_file'" size="small" color="error" variant="outlined" data-testid="tx-input-missing">{{ t(primary.availability === "missing" ? "eb.row.missing" : "eb.row.notFile") }}</v-chip>

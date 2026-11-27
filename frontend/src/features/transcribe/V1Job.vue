@@ -14,6 +14,8 @@ import type { MessageKey } from "../../i18n";
  * Two steps: "check" (B5 validation + B7 resolution) → "submit" (B7 job, the same frozen request).
  * The status is the last `GET /api/v1/jobs/{id}`; "accepted" is never "started" or "done".
  */
+/** `bare` (#96): inside the Design Freeze "文字起こし" card — the card names the area. */
+defineProps<{ bare?: boolean }>();
 const { v1, job: s, inputs, evaluation, block, stale } = useV1();
 const { t, reason, issue, status, formIssue } = useCodeText();
 
@@ -63,11 +65,27 @@ const switchBlocked = computed(() => {
   void s.value;
   return v1.job.switchBlocked();
 });
+
+// The queue and the server's job list are shown when they are needed: the queue is paused while a
+// tracked job or any queued item waits, a queue/control action failed or is unknown, or a send's outcome is
+// unknown/lost (the list is how it is re-checked). They never close on their own.
+const needsRecords = computed(() => {
+  const q = s.value.queue;
+  const tracked = !!s.value.job && s.value.tracking === "active";
+  const waiting = q.view?.dispatch === "paused" && q.view.items.length > 0;
+  return (tracked && q.view?.dispatch === "paused") || waiting || switchBlocked.value !== null || q.phase === "error"
+    || s.value.control.phase === "unknown" || s.value.control.phase === "rejected" || s.value.control.phase === "conflict"
+    || s.value.step === "unknown" || s.value.tracking === "lost" || s.value.recent.phase === "error";
+});
+const records = ref<string[]>(needsRecords.value ? ["records"] : []);
+watch(needsRecords, (needed) => {
+  if (needed && !records.value.includes("records")) records.value = [...records.value, "records"];
+});
 </script>
 
 <template>
   <section class="u-stack" aria-labelledby="v1-job-heading" data-testid="v1-job">
-    <h2 id="v1-job-heading" class="u-subheading">{{ t("v1.job.title") }}</h2>
+    <h2 id="v1-job-heading" :class="bare ? 'u-sr-only' : 'u-subheading'">{{ t("v1.job.title") }}</h2>
     <p class="text-caption">{{ t("v1.job.explain") }}</p>
 
     <div v-if="evaluation.issues.length > 0" data-testid="v1-missing">
@@ -85,9 +103,9 @@ const switchBlocked = computed(() => {
     </v-alert>
     <v-alert v-if="block" type="info" density="compact" role="status" data-testid="v1-block">{{ t(`v1.block.${block}` as MessageKey) }}</v-alert>
 
-    <div class="u-row">
-      <v-btn color="primary" variant="outlined" :disabled="!canCheck" :loading="s.step === 'validating' || s.step === 'resolving'" data-testid="v1-check" @click="v1.job.prepare()">{{ t("v1.job.check") }}</v-btn>
-      <v-btn color="primary" :disabled="!canSubmit" :loading="s.step === 'submitting'" data-testid="v1-submit" @click="v1.job.submit()">{{ t("v1.job.submit") }}</v-btn>
+    <div class="u-row" :class="{ 'u-run-actions': bare }">
+      <v-btn color="primary" variant="outlined" :size="bare ? 'large' : undefined" :disabled="!canCheck" :loading="s.step === 'validating' || s.step === 'resolving'" data-testid="v1-check" @click="v1.job.prepare()">{{ t("v1.job.check") }}</v-btn>
+      <v-btn color="primary" :size="bare ? 'large' : undefined" :disabled="!canSubmit" :loading="s.step === 'submitting'" data-testid="v1-submit" @click="v1.job.submit()">{{ t("v1.job.submit") }}</v-btn>
       <v-btn v-if="prepared && !busy && s.step !== 'unknown' && s.step !== 'accepted'" variant="text" size="small" data-testid="v1-reset" @click="v1.job.reset()">{{ t("v1.job.reset") }}</v-btn>
     </div>
     <p v-if="s.step === 'validating'" role="status" class="text-body-2" data-testid="v1-validating">{{ t("v1.job.validating") }}</p>
@@ -188,58 +206,70 @@ const switchBlocked = computed(() => {
       <p class="text-caption">{{ t("v1.job.leaveNote") }}</p>
     </v-card>
 
-    <v-alert v-if="queueBusy" type="info" density="compact">{{ t("queue.disabled.busy") }}</v-alert>
-    <!-- The v1 queue (paused after first start / recovery; resumed only explicitly) -->
-    <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-queue">
-      <h3 class="u-subheading">{{ t("v1.queue.title") }}</h3>
-      <ErrorAlert v-if="s.queue.phase === 'error' && s.queue.error" :error="s.queue.error" testid="v1-queue-error" @retry="v1.job.loadQueue()" />
-      <template v-if="queue">
-        <p class="text-body-2" role="status" data-testid="v1-queue-dispatch">{{ queue.dispatch === "paused" ? t("v1.queue.paused") : t("v1.queue.running") }}</p>
-        <p class="text-caption" data-testid="v1-queue-count">{{ t("v1.queue.count", { count: queue.items.length, revision: queue.revision }) }}</p>
-        <p v-if="queue.dispatch === 'paused'" class="text-caption">{{ t("v1.queue.pausedNote") }}</p>
-      </template>
-      <v-alert v-if="s.control.phase === 'conflict'" type="info" density="compact" data-testid="v1-queue-conflict">{{ t("v1.queue.conflict") }}</v-alert>
-      <ErrorAlert v-if="s.control.phase === 'rejected' && s.control.error" :error="s.control.error" testid="v1-queue-control-error" />
-      <v-alert v-if="s.control.phase === 'unknown'" type="warning" density="compact" data-testid="v1-queue-unknown">
-        {{ t("v1.queue.unknown") }}
-        <template #append>
-          <v-btn variant="text" size="small" data-testid="v1-queue-recheck" @click="v1.job.recheckResume()">{{ t("v1.unknown.recheck") }}</v-btn>
-        </template>
-      </v-alert>
-      <div class="u-row">
-        <v-btn
-          v-if="queue?.dispatch === 'paused'"
-          variant="outlined"
-          :loading="s.control.phase === 'pending'"
-          :disabled="queueBusy || s.queue.phase !== 'done'"
-          data-testid="v1-queue-resume"
-          @click="v1.job.resumeQueue()"
-        >
-          {{ t("v1.queue.resume") }}
-        </v-btn>
-        <v-btn variant="text" size="small" :loading="s.queue.phase === 'pending'" data-testid="v1-queue-reload" @click="v1.job.loadQueue()">{{ t("v1.queue.reload") }}</v-btn>
-      </div>
-    </v-card>
+    <v-expansion-panels v-model="records" multiple variant="accordion" flat class="u-fold" data-testid="v1-records">
+      <v-expansion-panel value="records" :data-needed="needsRecords">
+        <v-expansion-panel-title data-testid="v1-records-toggle">
+          {{ t("ui3.run.records") }}
+          <v-chip v-if="needsRecords" size="x-small" color="warning" variant="tonal" class="ml-2" data-testid="v1-records-needed">{{ t("ui3.normal.detailsNeeded") }}</v-chip>
+        </v-expansion-panel-title>
+        <v-expansion-panel-text>
+          <div class="u-stack">
+            <v-alert v-if="queueBusy" type="info" density="compact">{{ t("queue.disabled.busy") }}</v-alert>
+            <!-- The v1 queue (paused after first start / recovery; resumed only explicitly) -->
+            <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-queue">
+              <h3 class="u-subheading">{{ t("v1.queue.title") }}</h3>
+              <ErrorAlert v-if="s.queue.phase === 'error' && s.queue.error" :error="s.queue.error" testid="v1-queue-error" @retry="v1.job.loadQueue()" />
+              <template v-if="queue">
+                <p class="text-body-2" role="status" data-testid="v1-queue-dispatch">{{ queue.dispatch === "paused" ? t("v1.queue.paused") : t("v1.queue.running") }}</p>
+                <p class="text-caption" data-testid="v1-queue-count">{{ t("v1.queue.count", { count: queue.items.length, revision: queue.revision }) }}</p>
+                <p v-if="queue.dispatch === 'paused'" class="text-caption">{{ t("v1.queue.pausedNote") }}</p>
+              </template>
+              <v-alert v-if="s.control.phase === 'conflict'" type="info" density="compact" data-testid="v1-queue-conflict">{{ t("v1.queue.conflict") }}</v-alert>
+              <ErrorAlert v-if="s.control.phase === 'rejected' && s.control.error" :error="s.control.error" testid="v1-queue-control-error" />
+              <v-alert v-if="s.control.phase === 'unknown'" type="warning" density="compact" data-testid="v1-queue-unknown">
+                {{ t("v1.queue.unknown") }}
+                <template #append>
+                  <v-btn variant="text" size="small" data-testid="v1-queue-recheck" @click="v1.job.recheckResume()">{{ t("v1.unknown.recheck") }}</v-btn>
+                </template>
+              </v-alert>
+              <div class="u-row">
+                <v-btn
+                  v-if="queue?.dispatch === 'paused'"
+                  variant="outlined"
+                  :loading="s.control.phase === 'pending'"
+                  :disabled="queueBusy || s.queue.phase !== 'done'"
+                  data-testid="v1-queue-resume"
+                  @click="v1.job.resumeQueue()"
+                >
+                  {{ t("v1.queue.resume") }}
+                </v-btn>
+                <v-btn variant="text" size="small" :loading="s.queue.phase === 'pending'" data-testid="v1-queue-reload" @click="v1.job.loadQueue()">{{ t("v1.queue.reload") }}</v-btn>
+              </div>
+            </v-card>
 
-    <!-- Durable jobs on the server (re-display after a restart; not a claim about an unknown send) -->
-    <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-recent" :data-phase="s.recent.phase">
-      <h3 class="u-subheading">{{ t("v1.recent.title") }}</h3>
-      <p class="text-caption">{{ t("v1.recent.explain") }}</p>
-      <ErrorAlert v-if="s.recent.phase === 'error' && s.recent.error" :error="s.recent.error" testid="v1-recent-error" />
-      <p v-if="switchBlocked" class="text-caption" role="status" data-testid="v1-switch-blocked">{{ t(`v1.switch.${switchBlocked}` as MessageKey) }}</p>
-      <p v-if="s.recent.phase === 'done' && s.recent.items.length === 0" class="text-body-2" data-testid="v1-recent-empty">{{ t("v1.recent.empty") }}</p>
-      <v-list v-if="s.recent.items.length > 0" density="compact" data-testid="v1-recent-items">
-        <v-list-item v-for="item in s.recent.items" :key="item.id" data-testid="v1-recent-item" :data-status="item.status">
-          <v-list-item-title class="u-break">{{ status(item.status) }} · {{ t("v1.job.id", { id: item.id, revision: item.revision }) }}</v-list-item-title>
-          <v-list-item-subtitle>{{ item.createdAt }}</v-list-item-subtitle>
-          <template #append>
-            <v-btn variant="text" size="small" :disabled="view?.id === item.id || switchBlocked !== null" data-testid="v1-recent-follow" @click="v1.job.follow(item.id)">{{ t("v1.recent.follow") }}</v-btn>
-          </template>
-        </v-list-item>
-      </v-list>
-      <div class="u-row">
-        <v-btn variant="text" size="small" :loading="s.recent.phase === 'pending'" data-testid="v1-recent-reload" @click="v1.job.loadRecent()">{{ t("v1.recent.reload") }}</v-btn>
-      </div>
-    </v-card>
+            <!-- Durable jobs on the server (re-display after a restart; not a claim about an unknown send) -->
+            <v-card variant="outlined" class="pa-3 u-stack" data-testid="v1-recent" :data-phase="s.recent.phase">
+              <h3 class="u-subheading">{{ t("v1.recent.title") }}</h3>
+              <p class="text-caption">{{ t("v1.recent.explain") }}</p>
+              <ErrorAlert v-if="s.recent.phase === 'error' && s.recent.error" :error="s.recent.error" testid="v1-recent-error" />
+              <p v-if="switchBlocked" class="text-caption" role="status" data-testid="v1-switch-blocked">{{ t(`v1.switch.${switchBlocked}` as MessageKey) }}</p>
+              <p v-if="s.recent.phase === 'done' && s.recent.items.length === 0" class="text-body-2" data-testid="v1-recent-empty">{{ t("v1.recent.empty") }}</p>
+              <v-list v-if="s.recent.items.length > 0" density="compact" data-testid="v1-recent-items">
+                <v-list-item v-for="item in s.recent.items" :key="item.id" data-testid="v1-recent-item" :data-status="item.status">
+                  <v-list-item-title class="u-break">{{ status(item.status) }} · {{ t("v1.job.id", { id: item.id, revision: item.revision }) }}</v-list-item-title>
+                  <v-list-item-subtitle>{{ item.createdAt }}</v-list-item-subtitle>
+                  <template #append>
+                    <v-btn variant="text" size="small" :disabled="view?.id === item.id || switchBlocked !== null" data-testid="v1-recent-follow" @click="v1.job.follow(item.id)">{{ t("v1.recent.follow") }}</v-btn>
+                  </template>
+                </v-list-item>
+              </v-list>
+              <div class="u-row">
+                <v-btn variant="text" size="small" :loading="s.recent.phase === 'pending'" data-testid="v1-recent-reload" @click="v1.job.loadRecent()">{{ t("v1.recent.reload") }}</v-btn>
+              </div>
+            </v-card>
+          </div>
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+    </v-expansion-panels>
   </section>
 </template>

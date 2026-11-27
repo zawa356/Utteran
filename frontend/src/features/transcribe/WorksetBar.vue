@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { mdiInformationOutline } from "@mdi/js";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import ErrorAlert from "../../components/ErrorAlert.vue";
 import { useCore, useI18n } from "../../composables/core";
@@ -12,6 +13,8 @@ import type { MessageKey } from "../../i18n";
  * creating and restoring first confirm the save; deleting asks first and removes only the
  * workset (never inputs, outputs, jobs or history).
  */
+/** `compact` (#96): one quiet strip; the long explanation moves behind an info button. */
+defineProps<{ compact?: boolean }>();
 const core = useCore();
 const worksets = core.v1!.worksets;
 const s = useStore(worksets.store);
@@ -111,7 +114,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="u-stack u-workset" aria-labelledby="ws-heading" data-testid="ws-bar" :data-phase="status.phase" :data-current="s.current?.id ?? ''">
+  <section class="u-stack u-workset" :class="{ 'u-workset--compact': compact }" aria-labelledby="ws-heading" data-testid="ws-bar" :data-phase="status.phase" :data-current="s.current?.id ?? ''">
     <div class="u-row u-workset-row">
       <h2 id="ws-heading" class="u-subheading u-no-shrink">{{ t("eb.label") }}</h2>
       <v-select
@@ -140,8 +143,14 @@ onUnmounted(() => {
           <v-list-item :title="t('eb.delete')" :disabled="s.items.length <= 1" data-testid="ws-delete" @click="askDelete" />
         </v-list>
       </v-menu>
+      <v-tooltip v-if="compact" location="bottom" max-width="420">
+        <template #activator="{ props: tip }">
+          <v-btn v-bind="tip" :icon="mdiInformationOutline" variant="text" size="small" density="comfortable" :aria-label="t('ui3.workset.about')" data-testid="ws-explain" />
+        </template>
+        {{ t("eb.explain") }}
+      </v-tooltip>
     </div>
-    <p class="text-caption">{{ t("eb.explain") }}</p>
+    <p v-if="!compact" class="text-caption">{{ t("eb.explain") }}</p>
 
     <v-alert v-if="s.phase === 'error' && s.error" type="error" density="compact" data-testid="ws-load-error">
       {{ t("eb.status.offline") }}
@@ -248,6 +257,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.u-workset--compact .u-workset-row {
+  gap: 4px 8px;
+}
+.u-workset--compact > * + * {
+  margin-top: 8px;
+}
 .u-workset-row {
   align-items: center;
   flex-wrap: wrap;

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import type { APIRequestContext, Page, Request } from "@playwright/test";
-import { choose, expect, openSingleJobTools, SESSION, SESSION_HEADER } from "./fixtures";
+import { choose, expect, openSingleJobTools, SESSION, SESSION_HEADER, revealLibrary, fillOutput } from "./fixtures";
 import { test } from "./isolatedV1";
 
 /**
@@ -31,6 +31,7 @@ function recordApi(page: Page): Request[] {
 const line = (r: Request) => `${r.method()} ${new URL(r.url()).pathname}`;
 
 async function library(page: Page, request: APIRequestContext, base = ""): Promise<void> {
+  await revealLibrary(page);
   await expect(page.getByTestId("v1-settings")).toHaveAttribute("data-lists", "done/done");
   const presets = (await (await request.get(`${base}/api/v1/presets`, { headers: AUTH })).json()) as { items: { name: string }[] };
   if (!presets.items.some((p) => p.name === PRESET)) {
@@ -65,7 +66,7 @@ async function finishedJob(page: Page, request: APIRequestContext, seen: Request
   await page.getByTestId("mode-expert").click();
   await page.getByTestId("nav-transcribe").click();
   await library(page, request, base);
-  await page.getByTestId("v1-output-path").locator("input").fill(join(root, "out"));
+  await fillOutput(page, join(root, "out"));
   const none = page.getByTestId("tx-list-select-none");
   if ((await none.count()) > 0 && (await none.isEnabled())) await none.click();
   await page.getByTestId("tx-input-path").locator("input").fill(join(root, "in", name));
